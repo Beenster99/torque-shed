@@ -216,70 +216,110 @@ func test_map() -> void:
 	await t.get_tree().process_frame
 
 
-## The route planner channel: a Dashboard page of kind "route" holding the planner (RouteTv). Touched like any shed screen (a click into
-## the page), it takes pins from the map and from the places list, shows the road the game plans, and the host starts it.
+## The Swaledale cells and their land, for the world on the TV (see tests/cells_tests.gd); offline, with no index of
+## the world's cells, so nothing is fetched.
+func _world_fixtures(on: bool) -> void:
+	var dirs: Array[String] = ["res://tests/fixtures/cells"]
+	if not on:
+		dirs = ["res://data/cells", "user://cells"]
+	RealRegion.cell_dirs = dirs
+	var heights: Array[String] = ["res://tests/fixtures/heights"]
+	if not on:
+		heights = ["res://data/heights"]
+	HeightTiles.dirs = heights
+	HeightTiles.offline = on
+	HeightTiles.reset()
+	CellStore.offline = on
+	CellStore.dir = "user://test_no_cells" if on else "user://cells"
+	CellStore.forget_index()
+	RealRegion.forget_areas()
+
+
+## (lat, lon) of a place in the Swaledale cells, by name.
+func _dales_place(name: String) -> Vector2:
+	var dales := RealRegion.get_region("dales")
+	var xz: Vector2 = {"Gunnerside": Vector2(-2422, -4363), "Grinton": Vector2(7187, -4599)}[name]
+	var g := dales.xz_to_geo(xz.x, xz.y)
+	return Vector2(g[0], g[1])
+
+
+## The route planner channel: a Dashboard page of kind "route" holding the planner (RouteTv) and the world on it
+## (WorldView). Touched like any shed screen (a click into the page): the world first, a search that takes the crew to a
+## place, a touch on the world that looks closer, the roads of the cells there, pins on them anywhere, the road the
+## game plans between them, and the host's Start.
 func test_tv() -> void:
+	_world_fixtures(true)
 	Shed.adventure = {}
 	Shed.journey = {}
 	Shed.route_tv = {}
 	var dash := Dashboard.new("route", 3.4)
 	t.add_child(dash)
 	dash.show_page("route", {})
-	for i in 6:
-		await t.get_tree().process_frame
 	var board: RouteTv = dash._route
-	check(board != null and board.visible and board.region != null and RealRegion.list().has(board.region.id), "the route planner shows a region's map (%s)" % (board.region.title if board and board.region else "none"))
-	# Each region has a button on the TV: touch the island's.
-	var island: Button = null
-	for c in board._region_row.get_children():
-		if c is Button and (c as Button).text == "Shodoshima":
-			island = c
-	check(island != null and RealRegion.list().size() >= 2, "there is a button for each region (%d)" % board._region_row.get_child_count())
-	dash.tap(island.global_position + island.size * 0.5)
-	for i in 3:
-		await t.get_tree().process_frame
-	check(board.region.id == REGION, "and touching it shows that map")
+	await _settle(func(): return board != null and WorldMap.loaded() and not board.view.busy())
+	check(board != null and board.visible and WorldMap.mesh("land") != null and board.view.span > 10000000.0,
+		"the route planner shows the world (%.0f km across)" % (board.view.span / 1000.0 if board else 0.0))
 	check(dash.kind == "route" and TvChannels.channels_for("f1").has("route") and TvChannels.channels_for("crew").has("route")
 		and TvChannels.channels_for("bay0").has("route") and not TvChannels.screen_exists("route"),
 		"it is a channel every TV has (the crew board and the bay screens too), not a screen of its own")
-	var r := board.region
-	var a: Vector2 = pins()[0]
-	var b: Vector2 = pins()[1]
-	var origin := board.view.global_position
-	dash.tap(origin + board.view.to_screen(a))
-	await t.get_tree().process_frame
-	check((Shed.journey.get("pins", []) as Array).size() == 1, "a touch on the map pins a place")
-	dash.tap(origin + board.view.to_screen(b))
-	await t.get_tree().process_frame
-	var end := Time.get_ticks_msec() + 30000
-	while board.view.route_pts.size() < 2 and Time.get_ticks_msec() < end:
+	# Find a place: the tab, a few letters, and a touch on what it finds takes the crew there.
+	var tab: Button = board._tab_buttons["find"]
+	dash.tap(tab.global_position + tab.size * 0.5)
+	await _settle(func(): return board._find_box.visible)
+	for ch in "LEEDS":
+		var key := _key(board, ch)
+		dash.tap(key.global_position + key.size * 0.5)
+		await _settle(func(): return board._q().ends_with(ch.to_lower()))
+	await _settle(func(): return board._results.get_child_count() > 0 and board._results.get_child(0) is Button)
+	var hit: Button = board._results.get_child(0) if board._results.get_child_count() > 0 else null
+	check(str(Shed.route_tv.get("q", "")) == "leeds" and hit is Button and (hit as Button).text.begins_with("Leeds"),
+		"the keyboard types a search for every TV, and it finds Leeds (%s)" % ((hit as Button).text if hit is Button else "nothing"))
+	dash.tap(hit.global_position + hit.size * 0.5)
+	await _settle(func(): return board._plan_box.visible and board.view.span < 100000.0)
+	check(absf(board.view.lat - 53.8) < 0.2 and absf(board.view.lon + 1.55) < 0.2 and board.view.span <= RouteTv.FOUND_SPAN
+		and str(Shed.route_tv.get("q", "x")) == "", "and a touch on it takes the crew there, close in (%.2f, %.2f)" % [board.view.lat, board.view.lon])
+	# Out over the world a touch looks closer; Swaledale has roads.
+	board.ask({"lat": 54.0, "lon": -2.0, "span": 2000000.0})
+	await _settle(func(): return board.view.span > 1000000.0)
+	var dale := _dales_place("Gunnerside").lerp(_dales_place("Grinton"), 0.5)
+	dash.tap(board.view.global_position + board.view.to_screen(dale.x, dale.y))
+	await _settle(func(): return board.view.span < 1000000.0)
+	check(is_equal_approx(board.view.span, 2000000.0 / WorldView.TOUCH_ZOOM) and Shed.journey.is_empty(),
+		"a touch on the world looks closer there, and pins nothing (%.0f km across)" % (board.view.span / 1000.0))
+	board.ask({"lat": dale.x, "lon": dale.y, "span": 20000.0})
+	await _settle(func(): return board.view.roads_shown() and not board.view.busy())
+	check(board.view.roads_shown() and board.view.roads.id.begins_with(RealRegion.CELLS_PREFIX) and board.view.roads.edge_count() > 1000,
+		"close in, the roads of the cells there are on the map (%d)" % (board.view.roads.edge_count() if board.view.roads else 0))
+	# Pins on the roads: a journey anywhere, on the cells it needs.
+	for name in ["Gunnerside", "Grinton"]:
+		var g := _dales_place(name)
+		var before := (Shed.journey.get("pins", []) as Array).size()
+		dash.tap(board.view.global_position + board.view.to_screen(g.x, g.y))
+		await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() > before)
+	var pins: Array = Shed.journey.get("pins", [])
+	check(pins.size() == 2 and AdventureJourney.anywhere(Shed.journey) and pins[0].has("lat")
+		and RealRegion.cells_of_area(str(Shed.journey["region"])).has(Vector2i(577, 711)),
+		"a touch on a road pins it, the journey on the cells it needs (%s)" % str(Shed.journey.get("region", "")))
+	var end := Time.get_ticks_msec() + 60000
+	while board.view.route_geo.size() < 2 and Time.get_ticks_msec() < end:
 		await t.get_tree().create_timer(0.1).timeout
-		board.refresh()
-	check(board.view.route_pts.size() > 100 and "km" in board._facts.text and not board._start.disabled,
+	check(board.view.route_geo.size() > 100 and "km" in board._facts.text and not board._start.disabled,
 		"the planned road is on the map, its facts on the panel and Start lit (%s)" % board._facts.text.split("\n")[0])
 	check(board._pins.get_child_count() >= 2, "each pin is listed")
-	# Another style of ride, by touch.
 	var scenic: Button = board._mode_buttons["scenic"]
 	dash.tap(scenic.global_position + scenic.size * 0.5)
 	await t.get_tree().process_frame
 	check(str(Shed.journey["mode"]) == "scenic", "a touch on Scenic changes the style for everyone")
-	# Places: the tab, a town, and it is pinned.
-	var tabs: Button = board._tab_buttons["places"]
-	dash.tap(tabs.global_position + tabs.size * 0.5)
-	await t.get_tree().process_frame
-	await t.get_tree().process_frame
-	check(board._tab() == "places" and board._place_list.get_child_count() > 3, "the Places tab lists the towns (%d rows)" % board._place_list.get_child_count())
-	var first: Button = board._place_list.get_child(0)
-	var pins_before := (Shed.journey["pins"] as Array).size()
-	dash.tap(first.global_position + first.size * 0.5)
-	await t.get_tree().process_frame
-	check((Shed.journey["pins"] as Array).size() == pins_before + 1 and board._tab() == "plan", "a touch on a place pins it and goes back to the ride")
+	# A pin taken off with a touch, and put back.
+	var first := AdventureJourney.pin_geo(Shed.journey, 0)
+	dash.tap(board.view.global_position + board.view.to_screen(first.x, first.y))
+	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 1)
+	check((Shed.journey["pins"] as Array).size() == 1 and str(Shed.journey["pins"][0]["name"]) != "", "a touch on a pin takes it off")
+	Shed.request({"a": "adventure_pin", "lat": first.x, "lon": first.y, "name": "Gunnerside", "at": 0})
 	# The host starts it.
-	Shed.request({"a": "adventure_unpin", "i": pins_before})
-	end = Time.get_ticks_msec() + 30000
+	end = Time.get_ticks_msec() + 60000
 	while board._start.disabled and Time.get_ticks_msec() < end:
 		await t.get_tree().create_timer(0.1).timeout
-		board.refresh()
 	dash.tap(board._start.global_position + board._start.size * 0.5)
 	await t.get_tree().process_frame
 	check(Adventure.active() and Shed.adventure.get("plan") is Dictionary and str(Shed.adventure["real"]).begins_with("plan_"),
@@ -289,12 +329,68 @@ func test_tv() -> void:
 	Shed.route_tv = {}
 	dash.queue_free()
 	await t.get_tree().process_frame
+	_world_fixtures(false)
+
+
+func _key(board: RouteTv, ch: String) -> Button:
+	for line in board._find_box.get_children():
+		if line is HBoxContainer:
+			for b in line.get_children():
+				if b is Button and (b as Button).text == ch:
+					return b
+	return null
+
+
+## Pins anywhere (AdventureJourney): on the cells the journey needs, each pin in that area's frame, worked out again as
+## pins go down and come off; a first pin where the game has no cells but a bundled region falls back to it; nowhere
+## mapped, too far, and junk are turned down.
+func test_anywhere() -> void:
+	_world_fixtures(true)
+	Shed.adventure = {}
+	Shed.journey = {}
+	var a := _dales_place("Gunnerside")
+	var b := _dales_place("Grinton")
+	check(AdventureJourney.check(1, {"a": "adventure_pin", "lat": a.x, "lon": a.y}) == "", "a pin can go down where the game has cells")
+	Shed.request({"a": "adventure_pin", "lat": b.x, "lon": b.y, "name": "Grinton"})
+	var one: Dictionary = Shed.journey.duplicate(true)
+	Shed.request({"a": "adventure_pin", "lat": a.x, "lon": a.y, "name": "Gunnerside", "at": 0})
+	var cells := RealRegion.cells_of_area(str(Shed.journey["region"]))
+	var frame := RealRegion.frame_of(str(Shed.journey["region"]))
+	var p0: Dictionary = Shed.journey["pins"][0]
+	check(cells[0] == RealRegion.cell_of(a.x, a.y) and cells.size() >= 9 and str(one["region"]) != str(Shed.journey["region"])
+		and RealRegion.to_frame(frame, a.x, a.y).distance_to(Vector2(float(p0["x"]), float(p0["z"]))) < 0.2,
+		"a pin put first moves the journey's frame to its cell, and every pin is placed again in it (%d cells)" % cells.size())
+	var extent := RealRegion.extent_of(str(Shed.journey["region"]))
+	var plan := AdventureJourney.plan_of(Shed.journey)
+	check(extent.size.x > 40000.0 and not plan.is_empty() and str(plan["region"]) == str(Shed.journey["region"]),
+		"the journey's area is known by its cells without stitching them, and it plans")
+	Shed.request({"a": "adventure_unpin", "i": 0})
+	check(str(Shed.journey["region"]) == str(one["region"]) and (Shed.journey["pins"] as Array).size() == 1, "and taken off again, it is as it was")
+	Shed.journey = {}
+	check(AdventureJourney.check(1, {"a": "adventure_pin", "lat": 10.0, "lon": 20.0}) == "Nobody has mapped the roads there yet.",
+		"nowhere mapped, no pin")
+	check(AdventureJourney.check(1, {"a": "adventure_pin", "lat": NAN, "lon": 20.0}) != "", "a pin must be somewhere")
+	var far := AdventureJourney.cells_for([a, a + Vector2(0.0, 10.0)])
+	check(far.is_empty() and AdventureJourney.cells_for([a, b]).size() <= 16, "a journey that would need too many cells is turned down")
+	# Where the game has no cells, a bundled region's map.
+	RealRegion.cell_dirs.clear()
+	var shodo := RealRegion.get_region("shodoshima")
+	var g := shodo.xz_to_geo(pins()[0].x, pins()[0].y)
+	Shed.request({"a": "adventure_pin", "lat": g[0], "lon": g[1]})
+	check(str(Shed.journey.get("region", "")) == REGION and not AdventureJourney.anywhere(Shed.journey)
+		and AdventureJourney.pin_geo(Shed.journey, 0).distance_to(Vector2(g[0], g[1])) < 0.01,
+		"where the game has no cells, a first pin goes on a bundled region's map")
+	check(AdventureJourney.check(1, {"a": "adventure_pin", "lat": a.x, "lon": a.y}).begins_with("That's off the"),
+		"and the rest of the journey must be on it too")
+	Shed.journey = {}
+	_world_fixtures(false)
 
 
 ## Every Route planner TV shows the crew's one view (Shed.route_tv): two screens on the channel, whatever is pressed on
-## either, show the same map, from the same place, as far in, on the same tab and page; and a view that came from the
-## host (as a player's copy of the shed gets it) is what both show.
+## either, show the same part of the world, as close in, on the same tab with the same search; and a view that came from
+## the host (as a player's copy of the shed gets it) is what both show.
 func test_tv_shared() -> void:
+	_world_fixtures(true)
 	Shed.adventure = {}
 	Shed.journey = {}
 	Shed.route_tv = {}
@@ -304,59 +400,36 @@ func test_tv_shared() -> void:
 		t.add_child(d)
 		d.show_page("route", {})
 		dashes.append(d)
-	for i in 6:
-		await t.get_tree().process_frame
 	var a: RouteTv = dashes[0]._route
 	var b: RouteTv = dashes[1]._route
 	var same := func() -> bool:
-		return a.region != null and b.region == a.region and a.view.view_centre().distance_to(b.view.view_centre()) < 0.01 \
-			and absf(a.view.view_span() - b.view.view_span()) < 0.01 and a._places_box.visible == b._places_box.visible
-	await _settle(same)
-	check(a.region != null and str(Shed.route_tv.get("region", "")) == a.region.id and same.call(),
-		"two TVs on the planner show the host's first map, the same (%s)" % str(Shed.route_tv))
-	# Zoom on one, move on the other: both follow every press.
-	var fit_span := a.view.view_span()
-	a.zoom(2.0)
-	await _settle(func(): return same.call() and absf(b.view.view_span() - fit_span / 2.0) < 1.0)
-	var was := b.view.view_centre()
+		return is_equal_approx(a.view.lat, b.view.lat) and is_equal_approx(a.view.lon, b.view.lon) and is_equal_approx(a.view.span, b.view.span) \
+			and a._find_box.visible == b._find_box.visible and a._query.text == b._query.text
+	await _settle(func(): return same.call() and WorldMap.loaded())
+	check(same.call() and is_equal_approx(a.view.span, RouteTv.WORLD[2]), "two TVs on the planner show the world, the same")
+	a.zoom(4.0)
+	await _settle(func(): return same.call() and b.view.span < RouteTv.WORLD[2])
+	var was := Vector2(b.view.lat, b.view.lon)
 	b.pan(Vector2(0.3, -0.2))
-	await _settle(func(): return same.call() and a.view.view_centre().distance_to(was) > 1.0)
-	check(same.call() and absf(a.view.view_span() - fit_span / 2.0) < 1.0 and Shed.route_tv.has("x"),
-		"a zoom on one and a move on the other: both show it (%.0f m across, was %.0f)" % [a.view.view_span(), fit_span])
-	# Another map, from the other.
-	var other := "dales" if a.region.id != "dales" else REGION
-	b.ask({"region": other})
-	await _settle(func(): return same.call() and a.region.id == other)
-	check(other != "" and a.region.id == other and same.call() and not Shed.route_tv.has("x"),
-		"another map picked on one is on both, all of it (%s: %s; %s %s / %s %s)" % [other, str(Shed.route_tv), a.region.id, str(a.view.view_centre()), b.region.id, str(b.view.view_centre())])
-	# The places, a kind and a page.
-	a.ask({"tab": "places", "cat": 0, "page": 1})
-	await _settle(func(): return same.call() and b._places_box.visible)
-	var page_of := func(board: RouteTv) -> String:
-		var last := board._place_list.get_child(board._place_list.get_child_count() - 1)
-		return (last as Label).text if last is Label else ""
-	check(same.call() and a._places_box.visible and page_of.call(a) == page_of.call(b) and page_of.call(a).begins_with("Page "),
-		"the places tab, its kind and page are the same on both (%s)" % page_of.call(b))
-	# A view from the host, as a player's game takes it in: both show it within a moment.
-	var r := RealRegion.get_region(REGION)
-	var at := r.bounds.get_center() + Vector2(300.0, 200.0)
-	Shed.route_tv = AdventureJourney.sanitize_view({"region": REGION, "x": at.x, "z": at.y, "span": 6000.0, "tab": "plan"})
-	await _settle(func(): return same.call() and a.region == r and a.view.view_centre().distance_to(at) < 0.2)
-	check(same.call() and a.region == r and a.view.view_centre().distance_to(at) < 0.2 and absf(b.view.view_span() - 6000.0) < 0.5
-		and a._plan_box.visible, "a view that came from the host is on both screens (%s %s %.0f / %s %s %.0f, plan %s)" % [a.region.id, str(a.view.view_centre()), a.view.view_span(), b.region.id, str(b.view.view_centre()), b.view.view_span(), a._plan_box.visible])
-	# A pin on another map takes the TVs there.
-	a.ask({"region": "dales"})
-	await _settle(func(): return same.call() and a.region.id == "dales")
-	var p: Vector2 = pins()[0]
-	Shed.request({"a": "adventure_pin", "region": REGION, "x": p.x, "z": p.y})
-	await _settle(func(): return same.call() and a.region.id == REGION)
-	check(a.region.id == REGION and same.call(), "a pin put on another map takes the crew's TVs there")
-	# Junk is made safe.
-	var bad := AdventureJourney.sanitize_view({"region": "nowhere", "x": NAN, "z": 1.0, "span": 5.0, "tab": "sideways", "cat": -4, "page": 1e9})
-	var tiny := AdventureJourney.sanitize_view({"x": 1.0, "z": 2.0, "span": 1.0})
-	check(not bad.has("region") and not bad.has("x") and bad["tab"] == "plan" and bad["cat"] == 0 and bad["page"] == 9999
-		and is_equal_approx(float(tiny["span"]), AdventureJourney.SPAN_MIN) and AdventureJourney.sanitize_view("x").is_empty(),
-		"a view that's no good is made safe (%s)" % str(bad))
+	await _settle(func(): return same.call() and Vector2(a.view.lat, a.view.lon).distance_to(was) > 1.0)
+	check(same.call() and is_equal_approx(a.view.span, RouteTv.WORLD[2] / 4.0) and Shed.route_tv.has("lat"),
+		"a zoom on one and a move on the other: both show it (%.0f km across)" % (a.view.span / 1000.0))
+	a.ask({"tab": "find"})
+	b.type("t")
+	b.type("o")
+	await _settle(func(): return same.call() and b._find_box.visible and a._q() == "to")
+	check(same.call() and a._find_box.visible and a._query.text.contains("TO") and a._results.get_child_count() > 0,
+		"the search tab, and what is typed in it on either, are the same on both (%s)" % a._query.text)
+	var at := _dales_place("Grinton")
+	Shed.route_tv = AdventureJourney.sanitize_view({"lat": at.x, "lon": at.y, "span": 6000.0, "tab": "plan"})
+	await _settle(func(): return same.call() and is_equal_approx(a.view.span, 6000.0) and a._plan_box.visible)
+	check(same.call() and Vector2(a.view.lat, a.view.lon).distance_to(at) < 1e-5 and a._plan_box.visible,
+		"a view that came from the host is on both screens")
+	var bad := AdventureJourney.sanitize_view({"lat": NAN, "lon": 1.0, "span": 5.0, "tab": "sideways", "q": "Ödön-Hörváth 12345678901234567890"})
+	var tiny := AdventureJourney.sanitize_view({"lat": 95.0, "lon": 190.0, "span": 1.0})
+	check(not bad.has("lat") and bad["tab"] == "plan" and bad["q"] == "odonhorvath 123456789012" and is_equal_approx(float(tiny["span"]), AdventureJourney.SPAN_MIN)
+		and float(tiny["lat"]) == 80.0 and float(tiny["lon"]) < 0.0 and AdventureJourney.sanitize_view("x").is_empty(),
+		"a view that's no good is made safe (%s, %s)" % [str(bad), str(tiny)])
 	check(AdventureJourney.check(2, {"a": "adventure_view", "view": "x"}) != "" and TvChannels.home("dyno") == "route"
 		and TvChannels.screen_exists("dyno"), "a view must be a view, and the Dyno Room's TV is a screen that comes on at the planner")
 	Shed.adventure = {}
@@ -365,6 +438,23 @@ func test_tv_shared() -> void:
 	for d in dashes:
 		d.queue_free()
 	await t.get_tree().process_frame
+	_world_fixtures(false)
+
+
+## The world's map (WorldMap): read, the land in triangles, mercator there and back, the search and the nearest place.
+func test_world_map() -> void:
+	var ms := Time.get_ticks_msec()
+	check(WorldMap.load_world() and WorldMap.mesh("land") != null and WorldMap.mesh("land_low") != null and WorldMap.lines("borders").size() > 1000
+		and WorldMap.places().size() > 5000, "the world's map is read: land, lakes, rivers, borders and %d places (%d ms)" % [WorldMap.places().size(), Time.get_ticks_msec() - ms])
+	var m := WorldMap.mercator(54.3, -2.0)
+	var back := WorldMap.geo_of(m)
+	check(back.distance_to(Vector2(54.3, -2.0)) < 1e-4 and WorldMap.mercator(0.0, -180.0).is_equal_approx(Vector2(0.0, 0.5)),
+		"mercator there and back (%s)" % str(back))
+	var hits := WorldMap.search("takam")
+	check(not hits.is_empty() and str(hits[0][0]) == "Takamatsu" and str(WorldMap.search("LONDON")[0][0]) == "London"
+		and WorldMap.fold("Zürich ") == "zurich ", "the search finds Takamatsu and London, whatever the case or the accents")
+	check(WorldMap.nearest_place(51.51, -0.12) == "London" and WorldMap.nearest_place(34.34, 134.05) == "Takamatsu",
+		"the nearest town or city to a point")
 
 
 ## Waits (ten seconds at most: a new map is shaded first) for `cond`, a frame at a time.

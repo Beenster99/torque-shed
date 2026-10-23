@@ -4,7 +4,7 @@ extends Node
 ## both must see all of them, and the style of ride the client picks. Each game plans the same journey itself; the host
 ## starts the ride and both must be riding the same planned road (the same hash, checked by AdventureTrip.real_mismatch),
 ## each seen by the other at the right spot on it. The host ends it. On the way, the Route planner TVs: the client
-## moves the map on the Dyno Room's wall TV and the host turns it to the places, and both must show the same.
+## moves the world's map on the Dyno Room's wall TV and the host types in its search, and both must show the same.
 
 const REGION := "shodoshima"
 
@@ -15,6 +15,7 @@ var main: Node
 func _ready() -> void:
 	Shed.demo_bikes = true
 	AdventureTrip.instant = true
+	CellStore.offline = true   # (the TV's world needs no cells from the network here)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
@@ -48,33 +49,32 @@ func _ready() -> void:
 		Shed.request({"a": "adventure_mode", "mode": "scenic"})
 	var mode_ok := await _until(func(): return str(Shed.journey.get("mode", "")) == "scenic", 20.0)
 	# The TV: one view for the crew. Both walk into the Dyno Room (its planner comes on as they come near), the client
-	# moves the map, the host turns it to the places.
+	# moves the world's map there, the host turns it to the search and types in it.
 	main.walker.place(Transform3D(Basis(Vector3.UP, PI * 0.5), DynoRoom.CENTER + Vector3(1.0 if role == "host" else 2.0, 0.0, 0.5)))
-	var tv_ok := await _until(func(): return main.workshop.dyno_room.plan_tv._route != null \
-		and main.workshop.dyno_room.plan_tv._route.region != null, 20.0)
+	var tv_ok := await _until(func(): return main.workshop.dyno_room.plan_tv._route != null, 20.0)
 	var board: RouteTv = main.workshop.dyno_room.plan_tv._route if tv_ok else null
-	var at := mid + Vector2(250.0, -120.0)
+	var at := Vector2(34.53, 134.22)
 	if tv_ok and role == "client":
-		board._ask_view(at, 4000.0)
+		board.ask({"lat": at.x, "lon": at.y, "span": 4000.0})
 	if tv_ok and role == "host":
-		await _until(func(): return Shed.route_tv.has("x"), 20.0)
-		board.ask({"tab": "places", "cat": 1, "page": 0})
+		await _until(func(): return Shed.route_tv.has("lat"), 20.0)
+		board.ask({"tab": "find"})
+		for ch in "TAK":
+			board.type(ch)
 	var view_ok := false
 	if tv_ok:
 		view_ok = await _until(func():
-				return str(Shed.route_tv.get("region", "")) == REGION and str(Shed.route_tv.get("tab", "")) == "places" \
-				and board.region.id == REGION and board.view.view_centre().distance_to(at) < 0.2 \
-				and absf(board.view.view_span() - 4000.0) < 1.0 and board._places_box.visible and board._category() == 1, 20.0)
-	print("MP journey note %s: the TV on %s at %s (asked %s), %.1f m across, the %s tab, places shown %s, kind %d (channel %s)" % [role,
-		board.region.id if board else "?", str(board.view.view_centre()) if board else "?", str(at), board.view.view_span() if board else 0.0,
-		Shed.route_tv.get("tab", "?"), board._places_box.visible if board else false, board._category() if board else -1,
-		str(Shed.screen_channel("dyno").get("ch", "?"))])
-	# The client says its screen has caught up (the next page), and the host waits for that before the ride: out on the
-	# road, the shed and its TVs sleep.
+			return board._q() == "tak" and is_equal_approx(board.view.span, 4000.0) and Vector2(board.view.lat, board.view.lon).distance_to(at) < 1e-5 \
+				and board._find_box.visible and board._query.text.contains("TAK"), 20.0)
+	print("MP journey note %s: the TV at %.4f, %.4f, %.0f m across, the %s tab, typed %s (channel %s)" % [role,
+		board.view.lat if board else 0.0, board.view.lon if board else 0.0, board.view.span if board else 0.0,
+		Shed.route_tv.get("tab", "?"), board._q() if board else "?", str(Shed.screen_channel("dyno").get("ch", "?"))])
+	# The client says its screen has caught up (another letter), and the host waits for that before the ride: out on
+	# the road, the shed and its TVs sleep.
 	if view_ok and role == "client":
-		board.ask({"page": 1})
+		board.type("a")
 	if view_ok:
-		view_ok = await _until(func(): return int(Shed.route_tv.get("page", 0)) == 1, 20.0)
+		view_ok = await _until(func(): return board._q() == "taka", 20.0)
 	# Each plans it: the same road, the same hash.
 	var plan := AdventureJourney.plan_of(Shed.journey)
 	var res := AdventurePlans.result(plan, true)

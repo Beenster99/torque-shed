@@ -22,6 +22,8 @@ static var offline := false
 static var _lock := Mutex.new()
 static var _index := {}
 static var _index_at := 0
+## One fetch at a time (the TV's view and a journey's plan may both want a cell).
+static var _fetching := Mutex.new()
 
 
 ## The index: {format, release, cells: {"ROW_COLUMN": {hash, bytes, url} or {empty: true}}, areas: {name: {...}}}. Fetched
@@ -53,6 +55,14 @@ static func index(refresh := false) -> Dictionary:
 	_index_at = Time.get_ticks_msec()
 	_lock.unlock()
 	return got
+
+
+## Forgets the index fetched (the tests change where it comes from).
+static func forget_index() -> void:
+	_lock.lock()
+	_index = {}
+	_index_at = 0
+	_lock.unlock()
 
 
 ## The index as last fetched, from disk (no network): {} if it never was.
@@ -92,8 +102,41 @@ static func missing(south: float, west: float, north: float, east: float, idx: D
 ## Fetches the cells of a box the game hasn't got, one by one, each checked against its hash. Returns "" or why not.
 ## `progress(done, total)` is called as each comes. Never call it on the main thread.
 static func fetch_box(south: float, west: float, north: float, east: float, progress := Callable()) -> String:
+	var a := RealRegion.cell_of(south, west)
+	var b := RealRegion.cell_of(north - 1e-9, east - 1e-9)
+	var cells: Array[Vector2i] = []
+	for i in range(a.x, b.x + 1):
+		for j in range(a.y, b.y + 1):
+			cells.append(Vector2i(i, j))
+	return fetch_cells(cells, progress)
+
+
+## What the game knows of cell `c`: "here" (it has it), "baked" (the index has it, to fetch), "sea" (no roads), or
+## "unknown" (nobody has baked it yet) from index `idx`.
+static func state_of(c: Vector2i, idx: Dictionary) -> String:
+	if RealRegion.cell_dir(c) != "":
+		return "here"
+	var e = (idx.get("cells", {}) as Dictionary).get("%d_%d" % [c.x, c.y])
+	if not e is Dictionary:
+		return "unknown"
+	return "sea" if bool(e.get("empty", false)) else "baked"
+
+
+## Fetches those of `cells` the game hasn't got and the index has baked, one by one, each checked against its hash.
+## Returns "" or why not. `progress(done, total)` is called as each comes. Never call it on the main thread.
+static func fetch_cells(cells: Array[Vector2i], progress := Callable()) -> String:
+	_fetching.lock()
+	var why := _fetch_cells(cells, progress)
+	_fetching.unlock()
+	return why
+
+
+static func _fetch_cells(cells: Array[Vector2i], progress: Callable) -> String:
 	var idx := index()
-	var want := missing(south, west, north, east, idx)
+	var want: Array[Vector2i] = []
+	for c in cells:
+		if state_of(c, idx) == "baked":
+			want.append(c)
 	if want.is_empty():
 		return ""
 	if offline:

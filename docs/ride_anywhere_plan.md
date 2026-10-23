@@ -210,10 +210,16 @@ cells and tiles a journey used.
 
 **Size.** About three weeks.
 
-**Status.** Started (`claude/world-tv`): the view is the crew's (`Shed.route_tv`, changed through the host by
-`adventure_view`), so every Route planner screen on every player's game shows the same map, place, zoom, tab and page;
-the Dyno Room has a wall-sized planning TV. Next: the basemap and place index, cells fetched for the view, then the
-main-roads sketch, Survey and the paste box.
+**Status.** Part built. `claude/world-tv`: the view is the crew's (`Shed.route_tv`, changed through the host by
+`adventure_view`), so every Route planner screen on every player's game shows the same; the Dyno Room has a wall-sized
+planning TV. `claude/world-map`: the world on the TV (`WorldView`: Natural Earth's land, lakes, rivers, borders and
+7,342 towns and cities, `data/world` by `tools/world_bake.py`, 7.8 MB), the view as latitude, longitude and metres
+across, a search with the TV's own keyboard, the roads of the cells in view fetched and stitched on a worker under
+60 km across, and pins anywhere there are roads: a journey is an area of listed cells (`area:@...`, the cells along
+the pins' line and one either side, the frame at the first pin's cell), worked out by the host from the pins' latitude
+and longitude. Still to do: the main-roads sketch, Survey and its worker, the paste box, credits from the cells used,
+the Esc menu's full-screen map on the world too, and a better coast close in (Natural Earth's is coarse beside the
+roads).
 
 ### Step 5: consensus, and journeys kept
 

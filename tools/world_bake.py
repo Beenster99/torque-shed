@@ -4,9 +4,10 @@ between countries and the world's towns and cities, from Natural Earth (public d
 
     python3 tools/world_bake.py --out data/world
 
-Writes `world.bin`, the lines (see below), and `places.json`, [[name, lat, lon, population, country], ...] biggest first.
+Writes `world.tsw`, the land and lines (see below), and `places.json`, [[name, lat, lon, population, country], ...] the
+most important first (as Natural Earth's own maps name them: capitals and great cities first).
 
-world.bin (little-endian): b"TSW2", then a u32 count of layers, each: a u8 name length and the name (ascii), a u8 kind,
+world.tsw (little-endian): b"TSW2", then a u32 count of layers, each: a u8 name length and the name (ascii), a u8 kind,
 then for kind 0 (areas to fill, already cut into triangles) a u32 count of points, the points, a u32 count of corners
 and the corners (u32 indices into the points, three a triangle); for kind 1 (lines) a u32 count of lines and each line a
 u32 count of points and the points. A point is an i32 pair (longitude, latitude) in 1e-5 degrees. Layers: "land_low"
@@ -176,9 +177,12 @@ def bake_places(fc):
         if not name:
             continue
         lon, lat = feat["geometry"]["coordinates"][:2]
-        out.append([name, round(lat, 5), round(lon, 5), int(p.get("pop_max") or 0), p.get("adm0name") or ""])
-    out.sort(key=lambda r: (-r[3], r[0]))
-    return out
+        rank = float(p.get("min_zoom") or 10.0)
+        out.append((rank, [name, round(lat, 5), round(lon, 5), int(p.get("pop_max") or 0), p.get("adm0name") or ""]))
+    # In the order Natural Earth's own maps name them (the zoom each first shows at: capitals and great cities first),
+    # then the biggest.
+    out.sort(key=lambda r: (r[0], -r[1][3], r[1][0]))
+    return [r[1] for r in out]
 
 
 def main(argv=None):
@@ -197,13 +201,13 @@ def main(argv=None):
             data = bake_lines(fc, tol, keep)
             print("%s: %d lines, %d points" % (name, len(data), sum(len(r) for r in data)))
         layers.append((name, kind, data))
-    write_bin(os.path.join(args.out, "world.bin"), layers)
+    write_bin(os.path.join(args.out, "world.tsw"), layers)
     places = bake_places(fetch(PLACES, args.cache))
     with open(os.path.join(args.out, "places.json"), "w", encoding="utf-8") as f:
         json.dump(places, f, ensure_ascii=False, separators=(",", ":"))
         f.write("\n")
     print("places: %d" % len(places))
-    print("world.bin %.1f MB, places.json %.1f MB" % (os.path.getsize(os.path.join(args.out, "world.bin")) / 1e6,
+    print("world.tsw %.1f MB, places.json %.1f MB" % (os.path.getsize(os.path.join(args.out, "world.tsw")) / 1e6,
                                                       os.path.getsize(os.path.join(args.out, "places.json")) / 1e6))
     return 0
 

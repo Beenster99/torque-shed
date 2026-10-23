@@ -1,16 +1,16 @@
 class_name RouteTv
 extends Control
-## The crew's route planner on a shed TV (a Dashboard page of kind "route": the Route planner channel every TV has, see TvChannels): the map of a real
-## region with everyone's pins on it (Shed.journey, shared by the whole crew), the style of ride, the road the game
-## plans between the pins, places to pin from a list, and the host's Start. It is drawn in the TV's own 1024 x 576 page
-## (under the header) and touched with the shed's touch cursor (ScreenTouch): there is no wheel or keyboard, so the map
-## has zoom and move buttons and places are picked from a list.
+## The crew's route planner on a shed TV (a Dashboard page of kind "route": the Route planner channel every TV has, see
+## TvChannels): the world (WorldView), from the whole globe down to the roads, with everyone's pins on it (Shed.journey,
+## shared by the whole crew), the style of ride, the road the game plans between the pins, a search for places, and
+## the host's Start. It is drawn in the TV's own 1024 x 576 page (under the header) and touched with the shed's touch
+## cursor (ScreenTouch): there is no wheel or keyboard, so the map has zoom and move buttons, a touch on the world looks
+## closer there, and the search has a keyboard of its own.
 ##
-## What the crew does goes through the same Shed requests as the full-screen map (JourneyMap): adventure_pin,
-## adventure_unpin, adventure_mode, adventure_clear and adventure_start. What the screen shows (the map, how far in, where,
-## the tab and the page of places) is the crew's too (Shed.route_tv, changed by adventure_view): every Route planner
-## TV in the shed, on every player's machine, shows the same, and a button pressed asks the host rather than moving
-## this screen alone.
+## What the crew does goes through Shed requests: adventure_pin (anywhere there are roads), adventure_unpin,
+## adventure_mode, adventure_clear and adventure_start. What the screen shows (where, how far in, the tab, what is typed
+## in the search) is the crew's too (Shed.route_tv, changed by adventure_view): every Route planner TV in the shed, on
+## every player's machine, shows the same, and a button pressed asks the host rather than moving this screen alone.
 
 signal changed
 
@@ -19,18 +19,20 @@ const INK := Color(0.93, 0.95, 0.98)
 const DIM := Color(0.62, 0.68, 0.74)
 const PANEL_X := 616.0
 const MODES := ["main", "scenic", "tracks"]
-const CATEGORIES := [["Towns", ["town", "village"]], ["Sights", ["lighthouse", "castle", "viewpoint", "beach", "peak", "worship"]],
-	["Eat and drink", ["cafe", "pub", "inn"]], ["Fuel", ["fuel"]]]
-const PER_PAGE := 7
 const REFRESH := 0.1
+## Where the map looks when nobody has moved it and nothing is pinned: the world.
+const WORLD := [30.0, 10.0, 30000000.0]
+## How close a place found looks (metres across): close enough for its roads.
+const FOUND_SPAN := 30000.0
+const KEYS := ["ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ "]
+const RESULTS := 5
 
-var region: RealRegion
-var view: JourneyView
-var _region_row: HBoxContainer
+var view: WorldView
 var _pins: VBoxContainer
 var _plan_box: VBoxContainer
-var _places_box: VBoxContainer
-var _place_list: VBoxContainer
+var _find_box: VBoxContainer
+var _query: Label
+var _results: VBoxContainer
 var _facts: Label
 var _note: Label
 var _start: Button
@@ -55,17 +57,24 @@ func _ready() -> void:
 	back.size = SIZE
 	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(back)
-	view = JourneyView.new()
+	view = WorldView.new()
 	view.big = true
 	view.position = Vector2(6, 6)
 	view.size = Vector2(PANEL_X - 12, SIZE.y - 12)
 	add_child(view)
-	view.moved.connect(func(): changed.emit())
+	view.changed.connect(func(): changed.emit())
+	view.asked_pin.connect(func(lat: float, lon: float, place: String):
+		Shed.request({"a": "adventure_pin", "lat": lat, "lon": lon, "name": place})
+		_timer = 0.0)
+	view.asked_unpin.connect(func(i: int):
+		Shed.request({"a": "adventure_unpin", "i": i})
+		_timer = 0.0)
+	view.asked_view.connect(func(lat: float, lon: float, span: float): ask({"lat": lat, "lon": lon, "span": span}))
 	# Zoom and move, over the map's corner.
 	var pad := GridContainer.new()
 	pad.columns = 3
 	pad.position = Vector2(16, SIZE.y - 168)
-	for spec in [["+", func(): zoom(1.6)], ["^", func(): pan(Vector2(0, -0.3))], ["-", func(): zoom(1.0 / 1.6)],
+	for spec in [["+", func(): zoom(2.0)], ["^", func(): pan(Vector2(0, -0.3))], ["-", func(): zoom(0.5)],
 		["<", func(): pan(Vector2(-0.3, 0))], ["o", fit], [">", func(): pan(Vector2(0.3, 0))],
 		["", Callable()], ["v", func(): pan(Vector2(0, 0.3))], ["", Callable()]]:
 		var b := _button(str(spec[0]), 44.0, 26)
@@ -76,23 +85,20 @@ func _ready() -> void:
 			b.modulate = Color(1, 1, 1, 0)
 		pad.add_child(b)
 	add_child(pad)
-	# The panel: region, tabs, the plan or the places.
+	# The panel: tabs, the ride or the search.
 	var panel := VBoxContainer.new()
 	panel.position = Vector2(PANEL_X, 6)
 	panel.size = Vector2(SIZE.x - PANEL_X - 6, SIZE.y - 12)
 	panel.add_theme_constant_override("separation", 6)
 	add_child(panel)
-	_region_row = HBoxContainer.new()
-	_region_row.add_theme_constant_override("separation", 6)
-	panel.add_child(_region_row)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 6)
 	panel.add_child(tabs)
-	for t in [["plan", "The ride"], ["places", "Places"]]:
+	for t in [["plan", "The ride"], ["find", "Find a place"]]:
 		var b := _button(str(t[1]), 0.0, 20)
 		b.toggle_mode = true
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.pressed.connect(func(): ask({"tab": str(t[0]), "page": 0}))
+		b.pressed.connect(func(): ask({"tab": str(t[0])}))
 		tabs.add_child(b)
 		_tab_buttons[t[0]] = b
 	_plan_box = VBoxContainer.new()
@@ -127,36 +133,37 @@ func _ready() -> void:
 	_start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_start.pressed.connect(start)
 	row.add_child(_start)
-	_places_box = VBoxContainer.new()
-	_places_box.add_theme_constant_override("separation", 5)
-	_places_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_child(_places_box)
-	var cats := GridContainer.new()
-	cats.columns = 2
-	cats.add_theme_constant_override("h_separation", 5)
-	cats.add_theme_constant_override("v_separation", 5)
-	_places_box.add_child(cats)
-	for i in CATEGORIES.size():
-		var b := _button(str(CATEGORIES[i][0]), 0.0, 18)
-		b.toggle_mode = true
+	# The search: what's typed, a keyboard, and what it finds.
+	_find_box = VBoxContainer.new()
+	_find_box.add_theme_constant_override("separation", 4)
+	_find_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(_find_box)
+	_query = _label("", 20, INK)
+	_query.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_find_box.add_child(_query)
+	for keys: String in KEYS:
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 4)
+		_find_box.add_child(line)
+		for ch in keys:
+			var b := _button("Space" if ch == " " else ch, 40.0, 18)
+			b.custom_minimum_size = Vector2(40.0, 34.0)
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.pressed.connect(func(): type(ch))
+			line.add_child(b)
+	var edits := HBoxContainer.new()
+	edits.add_theme_constant_override("separation", 4)
+	_find_box.add_child(edits)
+	for spec in [["Back", func(): ask({"q": _q().left(maxi(_q().length() - 1, 0))})], ["Clear", func(): ask({"q": ""})]]:
+		var b := _button(str(spec[0]), 0.0, 18)
+		b.custom_minimum_size = Vector2(0.0, 34.0)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.pressed.connect(func(): ask({"cat": i, "page": 0}))
-		cats.add_child(b)
-		b.set_meta("cat", i)
-	_place_list = VBoxContainer.new()
-	_place_list.add_theme_constant_override("separation", 3)
-	_place_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_places_box.add_child(_place_list)
-	var paging := HBoxContainer.new()
-	paging.add_theme_constant_override("separation", 6)
-	_places_box.add_child(paging)
-	var up := _button("Back", 0.0, 18)
-	up.pressed.connect(func(): ask({"page": maxi(_page() - 1, 0)}))
-	paging.add_child(up)
-	var down := _button("More", 0.0, 18)
-	down.pressed.connect(func(): ask({"page": _page() + 1}))
-	paging.add_child(down)
-	_places_box.set_meta("cats", cats)
+		b.pressed.connect(spec[1])
+		edits.add_child(b)
+	_results = VBoxContainer.new()
+	_results.add_theme_constant_override("separation", 3)
+	_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_find_box.add_child(_results)
 	refresh()
 
 
@@ -184,8 +191,8 @@ func _button(text: String, width: float, size_px: int) -> Button:
 
 # ---------------------------------------------------------------------------- the crew's view
 
-## Asks the host to change what every Route planner TV shows (see Shed.route_tv): `fields` of {region, x, z, span, tab,
-## cat, page}. The screen changes when the host's answer comes back, the same moment as everyone else's.
+## Asks the host to change what every Route planner TV shows (see Shed.route_tv): `fields` of {lat, lon, span, tab, q}.
+## The screen changes when the host's answer comes back, the same moment as everyone else's.
 func ask(fields: Dictionary) -> void:
 	Shed.request({"a": "adventure_view", "view": fields})
 	_timer = 0.0   # (the host's answer is looked for next frame: at once, on the host)
@@ -195,73 +202,63 @@ func _tab() -> String:
 	return str(Shed.route_tv.get("tab", "plan"))
 
 
-func _category() -> int:
-	return clampi(int(Shed.route_tv.get("cat", 0)), 0, CATEGORIES.size() - 1)
+func _q() -> String:
+	return str(Shed.route_tv.get("q", ""))
 
 
-func _page() -> int:
-	return int(Shed.route_tv.get("page", 0))
+## Types `ch` into the crew's search.
+func type(ch: String) -> void:
+	ask({"q": _q() + ch.to_lower()})
 
 
-## Zooms the crew's view in (factor over 1) or out about its middle.
+## Where the crew's view is, [lat, lon, span]: the host's, else the crew's pins, else the world.
+func _view() -> Array:
+	var v: Dictionary = Shed.route_tv
+	if v.has("lat"):
+		return [float(v["lat"]), float(v["lon"]), float(v["span"])]
+	return _fit_view()
+
+
+## [lat, lon, span] showing all of the crew's pins (and room round them), else the world.
+func _fit_view() -> Array:
+	var pins: Array = Shed.journey.get("pins", [])
+	var box := Rect2()
+	var n := 0
+	for i in pins.size():
+		var g := AdventureJourney.pin_geo(Shed.journey, i)
+		if g == Vector2.INF:
+			continue
+		box = Rect2(g, Vector2.ZERO) if n == 0 else box.expand(g)
+		n += 1
+	if n == 0:
+		return WORLD.duplicate()
+	var mid := box.get_center()
+	var across := maxf(box.size.y * WorldMap.metres_per_unit(mid.x) / 360.0, box.size.x * WorldMap.EARTH / 360.0 * 1.4)
+	return [mid.x, mid.y, clampf(across * 1.6, 15000.0, AdventureJourney.SPAN_MAX)]
+
+
+## Looks closer (factor over 1) or further out, about the middle.
 func zoom(factor: float) -> void:
-	if region != null:
-		_ask_view(view.view_centre(), view.view_span() / factor)
+	var v := _view()
+	ask({"lat": v[0], "lon": v[1], "span": float(v[2]) / factor})
 
 
 ## Moves the crew's view by a fraction of the map (to the right and down for positive).
 func pan(frac: Vector2) -> void:
-	if region != null:
-		var span := view.view_span()
-		_ask_view(view.view_centre() + Vector2(frac.x * span, frac.y * span * view.size.y / view.size.x), span)
+	var g := view.to_geo(view.size * (Vector2(0.5, 0.5) + frac))
+	ask({"lat": g.x, "lon": g.y, "span": _view()[2]})
 
 
-## Shows the crew all of the map.
+## Shows the crew all of their pins, or the world.
 func fit() -> void:
-	if region != null:
-		var v := view.fit_view()
-		_ask_view(v[0], v[1])
-
-
-## Takes the crew's view to world point `p`, in close enough to see its roads.
-func look_at_point(p: Vector2) -> void:
-	_ask_view(p, minf(view.view_span(), view.size.x / 0.05))
-
-
-func _ask_view(centre: Vector2, span: float) -> void:
-	ask({"x": centre.x, "z": centre.y, "span": span})
-
-
-## The map the crew's view is on: the host's choice (the first it has, until someone picks another or pins on one).
-func _region_id() -> String:
-	var id := str(Shed.route_tv.get("region", ""))
-	if id == "" and Shed.is_authority() and not RealRegion.list().is_empty():
-		var first: String = str(Shed.journey.get("region", ""))
-		ask({"region": first if RealRegion.list().has(first) else RealRegion.list()[0]})
-		id = str(Shed.route_tv.get("region", ""))
-	return id
-
-
-## Puts the crew's view on this screen: its map, then where it looks (all of the map if nobody has moved it).
-func _show_view() -> void:
-	var rid := _region_id()
-	var r := RealRegion.get_region(rid) if RealRegion.list().has(rid) else null
-	if r != region:
-		region = r
-		view.show_region(r)
-	if region == null:
-		return
-	var v: Dictionary = Shed.route_tv
-	if v.has("x"):
-		view.set_view(Vector2(float(v["x"]), float(v["z"])), float(v["span"]))
-	else:
-		var f := view.fit_view()
-		view.set_view(f[0], f[1])
+	var v := _fit_view()
+	ask({"lat": v[0], "lon": v[1], "span": v[2]})
 
 
 func _process(delta: float) -> void:
-	if view != null and view.poll_shade():
+	if view != null and view.poll():
 		changed.emit()
+		_sig = ""   # (the roads in view came, or the world's map: the search may find more)
 	if _warm < 8:
 		_warm += 1   # (the controls lay themselves out over the first frames: the TV is redrawn as they settle)
 		changed.emit()
@@ -280,55 +277,30 @@ func _signature() -> String:
 	return "%s|%s|%s|%s|%s" % [JSON.stringify(Shed.journey), JSON.stringify(Shed.route_tv), str(not res.is_empty()), str(Shed.is_authority()), str(Adventure.active())]
 
 
-## Brings the panel and the route up to date with the board and the plan, and says the TV should be redrawn.
+## Brings the panel and the map up to date with the crew's view, the board and the plan, and says the TV should be
+## redrawn.
 func refresh() -> void:
 	_sig = _signature()
-	_show_view()
-	if region == null:
-		var rid := str(Shed.route_tv.get("region", ""))
-		if rid == "" and not Shed.is_authority():
-			_facts.text = "Tuning in to the crew's map..."
-		elif rid != "":
-			_facts.text = "This game doesn't have the crew's map (%s)." % rid
-		else:
-			_facts.text = "This game has no map to plan on."
-		changed.emit()
-		return
-	# Which regions there are to pick (the one the board is on lit).
-	for c in _region_row.get_children():
-		c.queue_free()
-	for id in RealRegion.list():
-		var r := RealRegion.get_region(id)
-		if r == null:
-			continue
-		var b := _button(r.title, 0.0, 20)
-		b.toggle_mode = true
-		b.button_pressed = id == region.id
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.pressed.connect(func():
-			if id != region.id:
-				Shed.request({"a": "adventure_clear"})
-				ask({"region": id, "tab": "plan", "page": 0}))
-		_region_row.add_child(b)
+	var v := _view()
+	view.show_view(v[0], v[1], v[2])
 	var tab := _tab()
 	for t in _tab_buttons:
 		(_tab_buttons[t] as Button).set_pressed_no_signal(t == tab)
 	_plan_box.visible = tab == "plan"
-	_places_box.visible = tab == "places"
-	if tab == "plan":
-		_refresh_plan()
-	else:
-		_refresh_places()
+	_find_box.visible = tab == "find"
+	_refresh_plan()
+	if tab == "find":
+		_refresh_find()
 	changed.emit()
 
 
 func _refresh_plan() -> void:
 	for c in _pins.get_children():
 		c.queue_free()
-	var journey: Dictionary = Shed.journey if str(Shed.journey.get("region", "")) == region.id else {}
+	var journey: Dictionary = Shed.journey
 	var pins: Array = journey.get("pins", [])
 	if pins.is_empty():
-		_pins.add_child(_label("Touch the map or pick a place to pin where you start.", 17, DIM))
+		_pins.add_child(_label("Find a place or touch the map to look closer, then touch a road to pin where you start.", 17, DIM))
 	for i in pins.size():
 		var p: Dictionary = pins[i]
 		var row := HBoxContainer.new()
@@ -346,7 +318,7 @@ func _refresh_plan() -> void:
 	for m in _mode_buttons:
 		(_mode_buttons[m] as Button).set_pressed_no_signal(m == mode)
 	var plan := AdventureJourney.plan_of(journey)
-	view.route_pts = PackedVector2Array()
+	view.route_geo = PackedVector2Array()
 	_note.text = ""
 	if pins.size() < 2:
 		_facts.text = "Pin where you start and where you want to get to. More pins in between make it your way."
@@ -361,38 +333,55 @@ func _refresh_plan() -> void:
 		else:
 			var pack: RealPack = res["pack"]
 			_facts.text = JourneyMap.journey_text(pack)
-			for k in range(0, pack.x.size(), 6):
-				view.route_pts.append(Vector2(pack.x[k], pack.z[k]))
-			view.route_pts.append(Vector2(pack.x[pack.x.size() - 1], pack.z[pack.z.size() - 1]))
+			var frame := RealRegion.frame_of(str(plan["region"]))
+			if frame != Vector2.INF:
+				for k in range(0, pack.x.size(), 6):
+					view.route_geo.append(RealRegion.from_frame(frame, pack.x[k], pack.z[k]))
+				view.route_geo.append(RealRegion.from_frame(frame, pack.x[pack.x.size() - 1], pack.z[pack.z.size() - 1]))
 	var why := AdventureJourney.start_reason(journey)
 	_start.disabled = why != "" or plan.is_empty() or not JourneyMap.plan_ok(plan)
 	_note.text = why if why != "" and pins.size() >= 2 else ""
 	view.queue_redraw()
 
 
-func _refresh_places() -> void:
-	var cats: GridContainer = _places_box.get_meta("cats")
-	for c in cats.get_children():
-		(c as Button).set_pressed_no_signal(int(c.get_meta("cat")) == _category())
-	for c in _place_list.get_children():
+## What the search finds: the towns and villages of the roads in view first, then the world's towns and cities:
+## [{name, lat, lon, what}].
+func found() -> Array:
+	var q := _q().strip_edges()
+	var out: Array = []
+	if q == "":
+		return out
+	if view.roads != null:
+		var frame := Vector2(view.roads.frame_lat, view.roads.frame_lon)
+		for p: Dictionary in view.roads.places:
+			if out.size() >= RESULTS:
+				break
+			if WorldMap.fold(str(p["name"])).begins_with(q):
+				var g := RealRegion.from_frame(frame, float(p["x"]), float(p["z"]))
+				out.append({"name": str(p["name"]), "lat": g.x, "lon": g.y, "what": str(p["kind"])})
+	for p: Array in WorldMap.search(q, RESULTS):
+		if out.size() >= RESULTS:
+			break
+		if out.any(func(h): return h["name"] == str(p[0]) and absf(float(h["lat"]) - float(p[1])) < 0.2):
+			continue
+		out.append({"name": str(p[0]), "lat": float(p[1]), "lon": float(p[2]), "what": str(p[4])})
+	return out
+
+
+func _refresh_find() -> void:
+	_query.text = "Find: %s_" % _q().to_upper()
+	for c in _results.get_children():
 		c.queue_free()
-	var kinds: Array = CATEGORIES[_category()][1]
-	var hits := JourneyMap.all_places(region).filter(func(h): return kinds.has(str(h["kind"])))
-	var pages := maxi(int(ceil(float(hits.size()) / PER_PAGE)), 1)
-	var page := clampi(_page(), 0, pages - 1)
-	for h: Dictionary in hits.slice(page * PER_PAGE, (page + 1) * PER_PAGE):
-		var b := _button("%s  (%s)" % [str(h["name"]), str(h["kind"])], 0.0, 18)
+	var hits := found()
+	for h: Dictionary in hits:
+		var b := _button("%s  (%s)" % [str(h["name"]), str(h["what"])], 0.0, 18)
+		b.custom_minimum_size = Vector2(0.0, 34.0)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.clip_text = true
-		b.pressed.connect(func():
-			Shed.request({"a": "adventure_pin", "region": region.id, "x": float(h["x"]), "z": float(h["z"])})
-			var at := Vector2(float(h["x"]), float(h["z"]))
-			ask({"x": at.x, "z": at.y, "span": minf(view.view_span(), view.size.x / 0.05), "tab": "plan"}))
-		_place_list.add_child(b)
+		b.pressed.connect(func(): ask({"lat": float(h["lat"]), "lon": float(h["lon"]), "span": FOUND_SPAN, "tab": "plan", "q": ""}))
+		_results.add_child(b)
 	if hits.is_empty():
-		_place_list.add_child(_label("Nothing of that kind here.", 17, DIM))
-	_place_list.add_child(_label("Page %d of %d" % [page + 1, pages], 15, DIM))
-	view.queue_redraw()
+		_results.add_child(_label("Type the start of a town's name." if _q() == "" else "Nowhere by that name.", 17, DIM))
 
 
 ## Host: starts the ride along the pinned journey, for the whole crew.
