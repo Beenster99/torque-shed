@@ -675,7 +675,6 @@ func _run_all() -> void:
 	_test_offer_beam()
 	await _test_offer_beam_ride()
 	print("Simon's v0.21.0 round: dirt tracks and side roads start at the road's edge")
-	_test_tracks_adventure()
 	_test_tracks_real()
 	await _test_tracks_world()
 	print("Simon's v0.21.0 round: air and oil filters changed with the engine in the frame")
@@ -698,7 +697,6 @@ func _run_all() -> void:
 	_test_smooth_fair()
 	_test_smooth_real()
 	_test_smooth_fork_joins()
-	_test_smooth_made_up()
 	_test_smooth_surface()
 	_test_smooth_land_under()
 	await _test_smooth_ride()
@@ -23193,10 +23191,6 @@ func _tracks() -> RefCounted:
 	return load("res://tests/tracks_tests.gd").new(self)
 
 
-func _test_tracks_adventure() -> void:
-	_tracks().test_adventure()
-
-
 func _test_tracks_real() -> void:
 	_tracks().test_real()
 
@@ -23247,10 +23241,6 @@ func _test_smooth_real() -> void:
 
 func _test_smooth_fork_joins() -> void:
 	_smooth().test_fork_joins()
-
-
-func _test_smooth_made_up() -> void:
-	_smooth().test_made_up()
 
 
 func _test_smooth_surface() -> void:

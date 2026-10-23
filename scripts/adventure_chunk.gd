@@ -148,7 +148,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 					var steps := maxi(1, int((lat - prev) / 40.0))
 					for q in range(1, steps + 1):
 						var at := lerpf(prev, lat, float(q) / steps)
-						if route.other_road_near(i, route.px[i] + rx * at * side, route.pz[i] + rz * at * side, 30.0):
+						if route.other_road_near(i, route.px[i] + rx * at * side, route.pz[i] + rz * at * side, 30.0, at):
 							stopped = true
 							break
 				if stopped:

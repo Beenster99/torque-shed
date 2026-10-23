@@ -5,6 +5,8 @@ extends RefCounted
 ## off (muddier and lighter on petrol); a tyre can still go down. Run from tests/run_tests.gd:
 ## its _test_advdmg_* functions hand over to these.
 
+const Rides := preload("res://tests/rides.gd")
+
 var t: Node   # the test runner: check(), get_tree()
 
 
@@ -86,7 +88,7 @@ func test_shed_wear() -> void:
 	var me := Shed.me()
 	var faithful: int = t._bike_named("Old Faithful")
 	_ready_to_wear(faithful)
-	Shed.request({"a": "adventure_start", "seed": 12, "km": 30.0})
+	Adventure.start(Rides.plan(30.0), 12)
 	Shed.request({"a": "adventure_join", "bike": faithful})
 	check(Adventure.active() and Shed.riding(me) == faithful and Shed.adventure["riders"].has(me), "out on an adventure on Old Faithful")
 	var before := _health(faithful)
@@ -174,7 +176,10 @@ func test_ride() -> void:
 	_ready_to_wear(faithful)
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0
-	Adventure.start(27, 40.0, "varied")
+	# The tour of the Dales by its tracks, for some gravel to ride.
+	var plan := AdventurePlans.tour("dales")
+	plan["mode"] = "tracks"
+	Adventure.start(AdventurePlans.clean(plan), 27)
 	await _ticks(30)
 	var trip: AdventureTrip = main.trip
 	check(trip.on_trip() and main.bike != null and Shed.riding(me) == faithful, "out on an adventure on Old Faithful")
@@ -182,6 +187,7 @@ func test_ride() -> void:
 		await _done(main)
 		return
 	var w := trip.world
+	await Rides.take_main_roads(trip)   # (the road's built all the way)
 	# The roughest 3 km of the road that's there to ride.
 	var end := minf(w.route.total, w.route.stream_end()) - 3100.0
 	var best_s := 200.0

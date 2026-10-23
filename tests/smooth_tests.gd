@@ -11,7 +11,6 @@ var t: Node   # the test runner: check(), get_tree()
 ## it's a lift or a drop of 625 times this (m/s²): 0.003 is under 2 m/s², a fifth of a g. The made-up roads were
 ## always a third of that.
 const REAL_CURVE := 0.003
-const MADE_CURVE := 0.0012
 ## A chunk's road meets the next's to this (m).
 const SEAM := 0.003
 ## The steepest a real road gets (its data is cut and filled to 15%).
@@ -87,7 +86,7 @@ func test_fair() -> void:
 ## dip, nowhere steeper than the data allows.
 func test_real() -> void:
 	for id in ["shodoshima", "dales"]:
-		var pack := RealPack.get_pack(id)
+		var pack := AdventurePlans.pack_for(AdventurePlans.tour(id))
 		var r := AdventureRoute.new()
 		r.plan_real(pack, 7, pack.max_km())
 		var raw := PackedFloat64Array()
@@ -115,7 +114,7 @@ func test_real() -> void:
 
 ## Where a real fork's way leaves the road and comes back to it: the same height and the same grade, no step or kink.
 func test_fork_joins() -> void:
-	var pack := RealPack.get_pack("dales")
+	var pack := AdventurePlans.pack_for(AdventurePlans.tour("dales"))
 	var r := AdventureRoute.new()
 	r.plan_real(pack, 7, pack.max_km())
 	check(not r.forks.is_empty(), "the Dales ride has forks (%d)" % r.forks.size())
@@ -134,30 +133,12 @@ func test_fork_joins() -> void:
 	check(worst < REAL_CURVE, "every way at every fork joins the road smoothly both ends (sharpest %.4f /m, %s)" % [worst, where])
 
 
-## The made-up roads (every theme, every way at the forks) were always smooth, and stay so.
-func test_made_up() -> void:
-	var worst := {"curve": 0.0}
-	var name := ""
-	for m in [["hills", 7], ["alpine", 42], ["varied", 1234], ["coastal", 3], ["desert", 11]]:
-		var r := AdventureRoute.new()
-		r.plan(int(m[1]), 60.0, str(m[0]))
-		var w := _worst(every_way(r))
-		if float(w["curve"]) > float(worst["curve"]):
-			worst = w
-			name = "%s %d" % [m[0], m[1]]
-	check(float(worst["curve"]) < MADE_CURVE, "the made-up roads: sharpest crest or dip %.4f /m (%s), %.1f m/s² at 90 km/h" % [
-		worst["curve"], name, float(worst["curve"]) * 625.0])
-
-
 ## The road's surface runs on from chunk to chunk with no step, its collision is the very surface drawn, and a side
 ## road's mouth lies on the road's tarmac rather than standing up off it.
 func test_surface() -> void:
-	for real_id in ["", "dales"]:
+	for real_id in ["shodoshima", "dales"]:
 		var r := AdventureRoute.new()
-		if real_id == "":
-			r.plan(7, 30.0, "hills")
-		else:
-			r.plan_real(RealPack.get_pack(real_id), 7, 30.0)
+		r.plan_real(AdventurePlans.pack_for(AdventurePlans.tour(real_id)), 7, 30.0)
 		var step := 0.0
 		var odd := 0
 		var lip := 0.0
@@ -213,20 +194,23 @@ func test_surface() -> void:
 						lip = maxf(lip, p.y - y)
 						mouths += 1
 			prev = d
-		var nm := "a made-up road" if real_id == "" else "the Dales road"
+		var nm := "the Dales road" if real_id == "dales" else "the Shodoshima road"
 		check(step < SEAM, "%s: the road runs on from chunk to chunk without a step (%.4f m at the most)" % [nm, step])
 		check(odd == 0, "%s: its collision is the road as drawn, triangle for triangle (overlapping the next chunk's by %.0f cm)" % [nm, AdventureChunk.SEAM_OVERLAP * 100.0])
 		# Side roads now begin at the road's edge, so few or no points reach over its tarmac; any that do sit on it.
 		check(lip < 0.03, "%s: no side road's mouth stands proud of its tarmac (%d points over it, %.3f m up at the most)" % [nm, mouths, lip])
 
 
-## Up Shodoshima's stack of hairpins (the legs 20 m apart and 120 m apart along the road): no land from the next leg
-## stands up through the road (its wide triangles reached over it by as much as half a metre: a hump, then a drop).
+## Up the stack of hairpins on the tour of Shodoshima (21 km in, the legs under 20 m apart and 120 m apart along the
+## road): no land from the next leg stands up through the road (its wide triangles reached over it by as much as half
+## a metre: a hump, then a drop).
 func test_land_under() -> void:
 	var r := AdventureRoute.new()
-	r.plan_real(RealPack.get_pack("shodoshima"), 11, 23.0)
-	var s0 := 2800.0
-	var s1 := 3350.0
+	r.plan_real(AdventurePlans.pack_for(AdventurePlans.tour("shodoshima")), 11, 23.0)
+	for f in r.forks.size():
+		r.choose(f, 0)   # (nothing past a fork still open is built)
+	var s0 := 20600.0
+	var s1 := 21900.0
 	# Every land triangle near the stretch, filed by the 8 m cells its box covers (route frame).
 	var cells := {}
 	var tris := []
@@ -253,6 +237,7 @@ func test_land_under() -> void:
 						cells[key].append(tris.size() - 1)
 	var worst := -INF
 	var at := ""
+	var under := 0
 	var s := s0
 	while s < s1:
 		var e := r.width_at_s(s) * 0.5
@@ -268,6 +253,7 @@ func test_land_under() -> void:
 				var w = Geometry2D.point_is_inside_triangle(p, Vector2(a.x, a.z), Vector2(b.x, b.z), Vector2(cc.x, cc.z))
 				if not w:
 					continue
+				under += 1
 				# The land's height there, on the triangle's plane.
 				var n := (b - a).cross(cc - a)
 				if absf(n.y) < 1e-6:
@@ -277,16 +263,18 @@ func test_land_under() -> void:
 					worst = y - road
 					at = "%.0f m, %.1f m across" % [s, f * e]
 		s += 2.0
-	check(worst < 0.01, "up Shodoshima's hairpins no land stands through the road (the highest over it is %+.2f m from its surface, at %s)" % [worst, at])
+	check(under > 0 and worst < 0.01, "up Shodoshima's hairpins no land stands through the road (%d points of it over the next leg's land, the highest of that %+.2f m from its surface, at %s)" % [under, worst, at])
 
 
-## Ridden at 90 km/h over the worst of Shodoshima's roads (the bike held to its lane, everything up and down left to
-## its suspension): no jolt to speak of, and it doesn't throw you off.
+## Ridden at 90 km/h over the worst of Shodoshima's roads, its stack of hairpins (the bike held to its lane, everything
+## up and down left to its suspension): no jolt to speak of, and it doesn't throw you off.
 func test_ride() -> void:
 	var w := AdventureWorld.new()
-	w.setup(11, 23.0, "coastal", "", "shodoshima")
-	var s0 := 2700.0
-	var s1 := 3300.0
+	w.setup(AdventurePlans.pack_for(AdventurePlans.tour("shodoshima")), 11, 23.0)
+	for f in w.route.forks.size():
+		w.route.choose(f, 0)
+	var s0 := 20500.0
+	var s1 := 21900.0
 	var bike := Bike.new()
 	bike.setup(BikeBuild.new(Contracts.style_build("classic")))
 	var spot := {"p": w.transform_at(s0).origin}
@@ -308,6 +296,7 @@ func test_ride() -> void:
 	var k := 0
 	var vy_was := NAN
 	var acc := PackedFloat32Array()
+	var acc_s := PackedFloat32Array()   # (where along the road each was)
 	var crashed := false
 	while s < s1:
 		k += 1
@@ -320,12 +309,15 @@ func test_ride() -> void:
 		if k > Engine.physics_ticks_per_second:
 			if not is_nan(vy_was):
 				acc.append((bike.linear_velocity.y - vy_was) / dt)
+				acc_s.append(s)
 			vy_was = bike.linear_velocity.y
 	Weather.current = weather if is_instance_valid(weather) else null
 	bike.queue_free()
 	w.queue_free()
 	await t.get_tree().process_frame
-	check(not crashed and felt(acc) < 2.5, "Shodoshima at 90 km/h: never thrown off, the bike lifted or dropped %.1f m/s² at the most (over a tenth of a second)" % felt(acc))
+	var worst := felt_at(acc)
+	check(not crashed and float(worst[0]) < 2.5, "Shodoshima at 90 km/h: never thrown off, the bike lifted or dropped %.1f m/s² at the most (over a tenth of a second, at %.0f m)" % [
+		worst[0], acc_s[int(worst[1])] if not acc_s.is_empty() else 0.0])
 
 
 ## Holds `bike` on its line along the road: where it is across and along it, and which way it faces, from `road` and
@@ -348,12 +340,20 @@ static func hold(bike: Bike, road: Basis, p: Vector3, v: float) -> void:
 ## The biggest vertical acceleration in `acc` (m/s² a tick) felt over a tenth of a second (the tyres' rumble over the
 ## road's grain left out).
 static func felt(acc: PackedFloat32Array) -> float:
+	return float(felt_at(acc)[0])
+
+
+## felt(acc), and the index in `acc` where it was felt: [m/s², index].
+static func felt_at(acc: PackedFloat32Array) -> Array:
 	var win := maxi(1, int(0.1 * Engine.physics_ticks_per_second))
 	var sum := 0.0
 	var most := 0.0
+	var at := 0
 	for i in acc.size():
 		sum += acc[i]
 		if i >= win:
 			sum -= acc[i - win]
-			most = maxf(most, absf(sum / win))
-	return most
+			if absf(sum / win) > most:
+				most = absf(sum / win)
+				at = i
+	return [most, at]

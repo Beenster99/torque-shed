@@ -268,10 +268,13 @@ func test_verge_edges() -> void:
 	world.queue_free()
 	await t.get_tree().physics_frame
 	# The adventure road: the land beside it, where that's another surface (sand and snow roads
-	# run out on to sand and snow, which grip the same).
+	# run out on to sand and snow, which grip the same). The tour of the Dales by its tracks, for
+	# gravel as well as tarmac.
 	var spot := {}
 	var w := AdventureWorld.new()
-	w.setup(42, 60.0)
+	var plan := AdventurePlans.tour("dales")
+	plan["mode"] = "tracks"
+	w.setup(AdventurePlans.pack_for(AdventurePlans.clean(plan)), 42, 60.0)
 	for f in w.route.forks.size():
 		w.route.choose(f, 0)
 	spot["p"] = w.transform_at(20.0).origin
@@ -300,5 +303,6 @@ func test_verge_edges() -> void:
 			func(_p: Vector3) -> String: return surf)
 		check(abad.size() <= 1, "the adventure road's %s runs flush on to its %s, which grips less %s"
 			% [surf, AdventureSurface.LAND[surf], str(abad)])
+	check(surfs.has("tarmac") and surfs.has("gravel"), "the adventure road's edges looked at on tarmac and gravel %s" % str(surfs.keys()))
 	w.queue_free()
 	await t.get_tree().physics_frame

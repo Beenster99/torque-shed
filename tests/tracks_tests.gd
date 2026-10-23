@@ -126,30 +126,12 @@ static func _junction_faults(route: AdventureRoute, most: int) -> Array:
 	return [seen, arms_seen, faults, lanes]
 
 
-## Made-up adventure roads (a few seeds and themes): every junction's side roads start at the edge.
-func test_adventure() -> void:
-	var junctions := 0
-	var arms := 0
-	var faults: Array[String] = []
-	var lanes := 0
-	for run in [[42, "varied"], [7, "alpine"], [1234, "desert"], [99, "coastal"], [5, "hills"]]:
-		var r := AdventureRoute.new()
-		r.plan(int(run[0]), 60.0, str(run[1]))
-		var got := _junction_faults(r, 14)
-		lanes += int(got[3])
-		junctions += int(got[0])
-		arms += int(got[1])
-		faults.append_array(got[2])
-	check(junctions >= 12 and arms >= 14, "made-up roads: %d junctions with %d side roads looked at (%d dirt lanes off tarmac)" % [junctions, arms, lanes])
-	check(lanes >= 2, "and among them dirt lanes joining a tarmac road")
-	check(faults.is_empty(), "made-up roads: every side road starts at the road's edge, none of it on the tarmac%s"
-		% ("" if faults.is_empty() else " (%d faults: %s)" % [faults.size(), "; ".join(faults.slice(0, 4))]))
-
-
 ## A real road (the bundled pack): its junctions' side roads start at the edge too.
 func test_real() -> void:
 	var r := AdventureRoute.new()
-	r.plan_real(RealPack.get_pack("shodoshima"), 7, 1000.0)
+	r.plan_real(AdventurePlans.pack_for(AdventurePlans.tour("shodoshima")), 7, 1000.0)
+	for f in r.forks.size():
+		r.choose(f, 0)   # (the road is only looked up as far as the first fork still open)
 	var got := _junction_faults(r, 10)
 	var faults: Array = got[2]
 	check(int(got[0]) >= 3, "real road: %d junctions with %d side roads looked at" % [got[0], got[1]])

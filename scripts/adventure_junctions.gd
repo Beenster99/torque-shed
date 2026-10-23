@@ -538,7 +538,9 @@ static func edge_at_s(route: AdventureRoute, s: float) -> float:
 ## Chunk-local `v` of a side road's strip running out along `dirv` on `side` of the main road,
 ## slid along `dirv` onto the main road's edge (and level with it) where it lies on the tarmac
 ## (or, with `mouth`, anywhere: its mouth row lies along the edge): [the point], or [] where it
-## stays put.
+## stays put. Where sliding it runs away (a strip running almost along the road, the road bending
+## back on itself near by: once 220 m off, a triangle across the land), it goes straight across to
+## the edge instead.
 static func _to_edge(route: AdventureRoute, v: Vector3, dirv: Vector3, side: float, si: int, ax: float, az: float,
 		mouth: bool) -> Array:
 	var hit := route.locate(v.x + ax, v.z + az, si)
@@ -550,6 +552,8 @@ static func _to_edge(route: AdventureRoute, v: Vector3, dirv: Vector3, side: flo
 	if out >= e and not mouth:
 		return []
 	# A few goes, as the edge narrows or widens along the way (round a roundabout's ring).
+	var s0 := s
+	var far := absf(e - out) / 0.2 + 1.0   # (as far as one go below can take it: further is running away)
 	var p := v
 	for go in 6:
 		var h := route.heading_at_s(s)
@@ -563,8 +567,12 @@ static func _to_edge(route: AdventureRoute, v: Vector3, dirv: Vector3, side: flo
 		out = float(at["lat"]) * side
 		if absf(e - out) < 0.005:
 			break
+	if p.distance_to(v) > far:
+		s = s0
+		e = edge_at_s(route, s)
+		out = -INF
 	if out < e - 0.005:
-		# Still short (running almost along a ring's curve): straight out across the road to its edge.
+		# Still short (running almost along a ring's curve), or run away: straight across the road to its edge.
 		var xz := route.xz_at(s, side * e)
 		p = Vector3(float(xz[0]) - ax, p.y, float(xz[1]) - az)
 	return [Vector3(p.x, route.height_at_s(s) + MOUTH_LIFT, p.z)]
