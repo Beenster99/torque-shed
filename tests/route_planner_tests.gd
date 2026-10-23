@@ -318,12 +318,13 @@ func test_tv() -> void:
 	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 1)
 	check((Shed.journey["pins"] as Array).size() == 1 and str(Shed.journey["pins"][0]["name"]) != "", "a touch on a pin takes it off")
 	Shed.request({"a": "adventure_pin", "lat": first.x, "lon": first.y, "name": "Gunnerside", "at": 0})
-	# The host starts it.
+	# The host starts it, once the panel has caught up with the board (its new road planned).
 	end = Time.get_ticks_msec() + 60000
-	while board._start.disabled and Time.get_ticks_msec() < end:
+	while not (board._sig == board._signature() and JourneyMap.plan_ok(AdventureJourney.plan_of(Shed.journey)) and not board._start.disabled) \
+			and Time.get_ticks_msec() < end:
 		await t.get_tree().create_timer(0.1).timeout
 	dash.tap(board._start.global_position + board._start.size * 0.5)
-	await t.get_tree().process_frame
+	await _settle(func(): return Adventure.active())
 	check(Adventure.active() and Shed.adventure.get("plan") is Dictionary and str(Shed.adventure["real"]).begins_with("plan_"),
 		"and a touch on Start starts the ride along it")
 	Shed.adventure = {}
