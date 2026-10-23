@@ -698,6 +698,10 @@ func _run_all() -> void:
 	_test_smooth_fair()
 	_test_smooth_real()
 	_test_smooth_fork_joins()
+	print("Simon's v0.22.0 round: deleting a wall-mounted diary, and a more dipped dipped beam")
+	_test_diary_delete_take_down()
+	await _test_beam_dipped()
+	await _test_beam_ride()
 	_test_smooth_surface()
 	_test_smooth_land_under()
 	await _test_smooth_ride()
@@ -7510,8 +7514,8 @@ func _test_soft_beam() -> void:
 		"the flood is much wider (%.0f vs %.0f degrees) and dimmer" % [flood.spot_angle, core.spot_angle])
 	check(core.spot_angle_attenuation < 1.0 and flood.spot_angle_attenuation < 0.5,
 		"both fade from the middle outwards (falloff %.2f / %.2f), nothing left at the edge" % [core.spot_angle_attenuation, flood.spot_angle_attenuation])
-	check(core.light_projector == null and flood.light_projector == null,
-		"no projector narrowing the pool: the cones' own falloff softens its edge")
+	check(core.light_projector == BikeEffects.cutoff_texture(BikeEffects.LOW_AIM - BikeEffects.LOW_CUTOFF) and flood.light_projector == null,
+		"no round projector narrowing the pool (dipped, only the level cut-off): the cones' own falloff softens its edge")
 	check(core.light_volumetric_fog_energy == 0.0 and flood.light_volumetric_fog_energy > 0.0,
 		"only the soft flood lights the night air, never the bright core")
 	check(fx.beam_fog() > 0.5 and fx.beam_fog() <= BikeEffects.BEAM_FOG_LOW + 0.01, "the haze is faint (%.2f)" % fx.beam_fog())
@@ -23258,3 +23262,17 @@ func _test_smooth_land_under() -> void:
 
 func _test_smooth_ride() -> void:
 	await _smooth().test_ride()
+
+
+# ---------------------------------------------------------------------------- deleting a diary, the dipped beam (tests/diary_delete_tests.gd, tests/beam_tests.gd)
+
+func _test_diary_delete_take_down() -> void:
+	load("res://tests/diary_delete_tests.gd").new(self).test_take_down()
+
+
+func _test_beam_dipped() -> void:
+	await load("res://tests/beam_tests.gd").new(self).test_dipped()
+
+
+func _test_beam_ride() -> void:
+	await load("res://tests/beam_tests.gd").new(self).test_ride()

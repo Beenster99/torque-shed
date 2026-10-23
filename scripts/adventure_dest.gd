@@ -377,3 +377,88 @@ static func hang_album(player: String) -> int:
 			Shed.request({"a": "adventure_photo", "photo": p})
 			n += 1
 	return n
+
+
+## Forgets the photo `key` from every album on this machine (so it isn't hung again). Whether
+## it was in one.
+static func album_forget(key: String) -> bool:
+	var all := _read_album()
+	var found := false
+	for player in all.keys():
+		if not (all[player] is Array):
+			continue
+		var kept: Array = (all[player] as Array).filter(func(p): return not (p is Dictionary and str(p.get("key", "")) == key))
+		if kept.size() != (all[player] as Array).size():
+			found = true
+			all[player] = kept
+	if not found:
+		return false
+	if album_path == "":
+		_album_mem = all
+		return true
+	var f := FileAccess.open(album_path, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(all, "\t"))
+		f.close()
+	return true
+
+
+# ---------------------------------------------------------------------------- taking one down
+
+## Simon: "We need to be able to delete wall mounted diaries." An adventure's photo on the shed
+## wall is taken down the way the shed scraps anything (hold the scrap key, then press it again to
+## say yes): the photo goes from the shed for the whole crew (action diary_delete {furniture},
+## through the host), the host's game forgets it from its album so it isn't hung again, and the
+## Adventure Diary of that ride is deleted on the machine of whoever took it down. Everyone else
+## keeps their own copy of the diary (it's on their own computer), still in the magazine.
+##
+## Who may: the host, or anyone named on the photo (they were on that ride). Playing alone, you.
+
+## Whether `peer` is one of the riders named on photo furniture `f`.
+static func rode_on(peer: int, f: Dictionary) -> bool:
+	var who := str(Shed.crew.get(peer, {}).get("name", ""))
+	var names: Array = (f.get("photo", {}) as Dictionary).get("names", [])
+	return who != "" and names.map(func(n): return str(n)).has(who)
+
+
+## Why `peer` can't take down the photo the action names, or "" (`online`: in co-op, where only
+## the host and that ride's riders may).
+static func delete_check(peer: int, action: Dictionary, online := Net.is_online()) -> String:
+	var f: Dictionary = Shed.furniture.get(int(action.get("furniture", 0)), {})
+	if f.is_empty():
+		return "That has gone."
+	if str(f.get("model", "")) != PHOTO_MODEL:
+		return "That's not an adventure's photo."
+	if Staff.is_staff_peer(peer):
+		return "The staff leave the crew's photos alone."
+	if online and peer != 1 and not rode_on(peer, f):
+		return "Only the host or someone who was on that ride can take it down."
+	if int(f.get("mover", 0)) != 0 and int(f["mover"]) != peer:
+		return "Someone else is moving that."
+	var key := str((f.get("photo", {}) as Dictionary).get("key", ""))
+	if Adventure.active() and str((Shed.adventure.get("photo", {}) as Dictionary).get("key", "")) == key:
+		return "Not while that adventure is still on: ride home first."
+	return ""
+
+
+## Host: takes the photo down (see delete_check) and forgets it from this machine's album. What
+## to tell the crew: {key, mine (for who took it down), others (for everyone else)}.
+static func take_down(peer: int, action: Dictionary) -> Dictionary:
+	var id := int(action["furniture"])
+	var photo: Dictionary = Shed.furniture[id].get("photo", {})
+	var key := str(photo.get("key", ""))
+	Shed.furniture.erase(id)
+	album_forget(key)
+	var where := name_of(str(photo.get("dest", "")))
+	var who := str(Shed.crew.get(peer, {}).get("name", "Someone"))
+	return {"key": key,
+		"mine": "Took down the photo of %s and deleted its Adventure Diary." % where,
+		"others": "%s took down the photo of %s. Your own copy of its diary is still in the magazine, if you have one." % [who, where]}
+
+
+## On the machine of whoever took the photo `key` down: its diary deleted, and the album forgets
+## it. Whether there was a diary to delete.
+static func forget_here(key: String) -> bool:
+	album_forget(key)
+	var id := AdventureDiary.find_by_photo(key)
+	return id != "" and AdventureDiary.delete(id)

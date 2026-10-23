@@ -1108,14 +1108,24 @@ func _update_turning(delta: float) -> void:
 func _scrap_target() -> Dictionary:
 	var pushed := Shed.moving(Shed.me())
 	if pushed != 0:
-		return {"furniture": pushed, "name": Shed.furniture_name(Shed.furniture[pushed]).to_lower()}
+		return _scrap_furniture(pushed)
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
 		return {"item": held, "name": Shed.item_title(held).to_lower()}
 	var looked := looked_at_furniture()
 	if looked != 0 and Shed.scrappable(Shed.furniture[looked]):
-		return {"furniture": looked, "name": Shed.furniture_name(Shed.furniture[looked]).to_lower()}
+		return _scrap_furniture(looked)
 	return {}
+
+
+## Equipment `id` as the scrap key's target. An adventure's photo is taken down instead, and
+## its diary deleted with it ("diary").
+func _scrap_furniture(id: int) -> Dictionary:
+	var f: Dictionary = Shed.furniture[id]
+	if str(f.get("model", "")) == AdventureDest.PHOTO_MODEL:
+		var where := AdventureDest.name_of(str((f.get("photo", {}) as Dictionary).get("dest", "")))
+		return {"furniture": id, "diary": true, "name": "photo of %s" % where}
+	return {"furniture": id, "name": Shed.furniture_name(f).to_lower()}
 
 
 ## The shed equipment the crosshair is on (its frame, top, label plate, a place on it or a
@@ -1163,7 +1173,10 @@ func _update_scrap(delta: float) -> void:
 		progress = 0.0
 		scrap_armed = what.duplicate()
 		scrap_armed["until"] = Time.get_ticks_msec() + int(SCRAP_CONFIRM * 1000.0)
-		Shed.feedback.emit("Scrap the %s for good? Press {scrap} again in the next few seconds to scrap it." % what["name"], false)
+		if what.get("diary", false):
+			Shed.feedback.emit("Take down the %s and delete its Adventure Diary for good? It can't be undone. Press {scrap} again in the next few seconds to delete it." % what["name"], false)
+		else:
+			Shed.feedback.emit("Scrap the %s for good? Press {scrap} again in the next few seconds to scrap it." % what["name"], false)
 
 
 ## The second press after holding the scrap key: it goes for good.
@@ -1176,6 +1189,8 @@ func confirm_scrap() -> void:
 
 
 func _scrap_action(what: Dictionary) -> Dictionary:
+	if what.get("diary", false):
+		return {"a": "diary_delete", "furniture": int(what["furniture"])}
 	if what.has("furniture"):
 		return {"a": "scrap", "furniture": int(what["furniture"])}
 	# Anything bolted to it or a tyre on it goes on the floor in front of you.
@@ -1461,8 +1476,8 @@ func _push(id: int, delta: float) -> void:
 		lines.append("%s: turn it (%s)" % [_keys("rotate_left", "rotate_right"), turn_mode_text()])
 	if Shed.furniture[id]["kind"] == "poster":
 		lines.append("%s: turn it (portrait or landscape)" % _keys("rotate_left", "rotate_right"))
-	if Shed.check(Shed.me(), {"a": "scrap", "furniture": id}) == "":
-		lines.append("Hold %s: scrap it for good%s" % [_keys("scrap"), ", and drop what's on it" if _has_parts_on(id) else ""])
+	if _scrap_line(id) != "":
+		lines.append(_scrap_line(id))
 	var snap := snap_text()
 	if Settings.snap_placement:
 		lines.append("%s{alt_act}: snapping off" % (snap + "  ·  " if snap != "" else "Snapping to walls and corners  ·  "))
@@ -2524,9 +2539,21 @@ func _describe() -> String:
 	if kind == "shed_pump" or ShedPump.holder() == Shed.me():
 		lines.append_array(ShedPump.describe(target, Shed.me()))
 	var looked := looked_at_furniture() if Shed.held_by(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0 else 0
-	if looked != 0 and Shed.scrappable(Shed.furniture[looked]) and Shed.check(Shed.me(), {"a": "scrap", "furniture": looked}) == "":
-		lines.append("Hold %s: scrap it for good%s" % [_keys("scrap"), ", and drop what's on it" if _has_parts_on(looked) else ""])
+	if looked != 0 and Shed.scrappable(Shed.furniture[looked]) and _scrap_line(looked) != "":
+		lines.append(_scrap_line(looked))
 	return "\n".join(lines)
+
+
+## The HUD's line for the scrap key on equipment `id` ("" when it can't go): scrapping it, or
+## for an adventure's photo, taking it down and deleting its diary.
+func _scrap_line(id: int) -> String:
+	if _scrap_furniture(id).get("diary", false):
+		if Shed.check(Shed.me(), {"a": "diary_delete", "furniture": id}) != "":
+			return ""
+		return "Hold %s: take it down and delete its diary for good" % _keys("scrap")
+	if Shed.check(Shed.me(), {"a": "scrap", "furniture": id}) != "":
+		return ""
+	return "Hold %s: scrap it for good%s" % [_keys("scrap"), ", and drop what's on it" if _has_parts_on(id) else ""]
 
 
 ## Engine Whisperer (a skill): how much power a worn or grimy engine part is costing, worked

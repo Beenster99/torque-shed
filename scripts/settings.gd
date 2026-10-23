@@ -91,7 +91,7 @@ const ACTIONS := [
 	["rename", "Name a bike", ["foot"]], ["order_bike", "Looking at a bike: order one of these or copy its blueprint", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
-	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
+	["scrap", "Scrap equipment or a part, or take down an adventure photo (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot"]],
 	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
 	["visor", "Flick your helmet visor (or goggles) up or down", ["foot", "ride"]],
