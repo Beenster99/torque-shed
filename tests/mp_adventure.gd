@@ -207,9 +207,11 @@ var _ghost_verdict := -1
 var _ghost_note := ""
 
 
-## The client respawns (see BikeGhost): its own bike is a ghost for 5 s, and the host sees its
-## bike drawn see-through, its own bike passing through it, and solid again 5 s on (give or take
-## the network's lag). The host says what it saw.
+## The client respawns (see BikeGhost): its own bike is a ghost for 5 s of game time, and the host
+## sees its bike drawn see-through, its own bike passing through it, and solid again once the
+## client's is. The host says what it saw. (Run with --fixed-fps, each side's game time runs as
+## fast as its machine can step it, not with the clock: the 5 s is checked in the client's own
+## physics ticks, and the host only checks it was a ghost for a good while, then solid.)
 func _ghost_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 	if not trip.on_trip() or main.bike == null:
 		return false
@@ -220,17 +222,19 @@ func _ghost_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 			return Time.get_ticks_msec() > settle, 3.0)
 		main.bike.respawn()
 		var t0 := Time.get_ticks_msec()
+		var f0 := Engine.get_physics_frames()
 		_ghost_from.rpc()
 		var mine_ok: bool = main.bike.is_ghost() and BikeGhost.drawn(main.bike.model) > 0.3
 		await _until(func():
 			_hold(trip, s, lat)
 			return main.bike == null or not main.bike.is_ghost(), 8.0)
-		var lasted := (Time.get_ticks_msec() - t0) / 1000.0
-		mine_ok = mine_ok and main.bike != null and BikeGhost.drawn(main.bike.model) == 0.0 and absf(lasted - BikeGhost.TIME) < 0.6
+		var lasted := (Engine.get_physics_frames() - f0) / float(Engine.physics_ticks_per_second)
+		var wall := (Time.get_ticks_msec() - t0) / 1000.0
+		mine_ok = mine_ok and main.bike != null and BikeGhost.drawn(main.bike.model) == 0.0 and absf(lasted - BikeGhost.TIME) < 0.1
 		await _until(func():
 			_hold(trip, s, lat)
 			return _ghost_verdict >= 0, 15.0)
-		print("MP adv note %s: my respawn a ghost for %.1f s %s; the host saw it: %s" % [role, lasted, mine_ok, _ghost_note])
+		print("MP adv note %s: my respawn a ghost for %.2f s of game time (%.1f s on the clock) %s; the host saw it: %s" % [role, lasted, wall, mine_ok, _ghost_note])
 		return mine_ok and _ghost_verdict == 1
 	await _until(func():
 		_hold(trip, s, lat)
@@ -247,7 +251,7 @@ func _ghost_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 		rb = _remote_bike() as RemoteBike
 		return rb != null and not rb.is_ghost() and BikeGhost.drawn(rb.model) == 0.0, 8.0)
 	var lasted := (Time.get_ticks_msec() - t0) / 1000.0
-	var ok := seen and passes and solid and lasted > BikeGhost.TIME - 1.0 and lasted < BikeGhost.TIME + 1.0
+	var ok := seen and passes and solid and lasted > 1.0
 	_ghost_note = "seen ghosted %s (my bike passing through it %s), solid again %.1f s later %s" % [seen, passes, lasted, solid]
 	print("MP adv note %s: the client's respawn %s" % [role, _ghost_note])
 	_ghost_verdict_from.rpc(1 if ok else 0, _ghost_note)
