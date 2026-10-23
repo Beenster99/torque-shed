@@ -220,10 +220,10 @@ the pins' line and one either side, the frame at the first pin's cell), worked o
 and longitude. `claude/survey`: the Survey button over cells nobody has baked, the host asking the survey worker
 (`torque-shed-world/worker/survey.js`, a Cloudflare Worker on the free plan, with the only secret: a token that can run
 the bake workflow and nothing else; "busy" while three bake runs are going), the crew's survey in the shared view, and
-the TVs looking at the index every minute until the cells come. Still to do: the main-roads sketch, the paste box,
-credits from the cells used,
-the Esc menu's full-screen map on the world too, and a better coast close in (Natural Earth's is coarse beside the
-roads).
+the TVs looking at the index every minute until the cells come. `claude/map-links`: Paste a map link (Google, Apple,
+OpenStreetMap, short links followed, plain lat, lon), the map data credited under a planned road, and the Esc menu's
+planner the TVs' planner full screen (the region-by-region map gone). Still to do: the main-roads sketch,
+and a better coast close in (Natural Earth's is coarse beside the roads).
 
 ### Step 5: consensus, and journeys kept
 

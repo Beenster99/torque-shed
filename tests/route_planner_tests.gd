@@ -180,40 +180,111 @@ func test_board() -> void:
 	Shed.adventure = saved_adventure
 
 
-## The map: opens on the region, a click pins a road junction, a click on a pin takes it off, the panel and the plan follow.
+## The Esc menu's planner (JourneyMap): the TVs' planner full screen, with the mouse. It opens on the crew's view,
+## fills the screen keeping its shape, a click is a touch (it pins a road), the wheel zooms about the pointer for the
+## whole crew, and it folds itself away when the ride starts.
 func test_map() -> void:
-	var r := RealRegion.get_region(REGION)
+	_world_fixtures(true)
 	Shed.adventure = {}
 	Shed.journey = {}
+	var dale := _dales_place("Gunnerside").lerp(_dales_place("Grinton"), 0.5)
+	Shed.route_tv = AdventureJourney.sanitize_view({"lat": dale.x, "lon": dale.y, "span": 20000.0})
 	var map := JourneyMap.new()
 	t.add_child(map)
-	map.open(REGION)
-	await t.get_tree().process_frame
-	await t.get_tree().process_frame
-	check(map.visible and map.region == r and map._view._scale > 0.0, "the map opens on the region, all of it in view")
-	var a: Vector2 = pins()[0]
-	var b: Vector2 = pins()[1]
-	map._view.click(map._view.to_screen(a))
-	map._view.click(map._view.to_screen(b))
-	check((Shed.journey["pins"] as Array).size() == 2, "a click on the map puts a pin down")
-	map.refresh()
-	await t.get_tree().process_frame
-	check(map._pin_box.get_child_count() == 2, "and the panel lists it")
-	var end := Time.get_ticks_msec() + 20000
-	while map._view.route_pts.size() < 2 and Time.get_ticks_msec() < end:
-		await t.get_tree().process_frame
-		map.refresh()
-		await t.get_tree().create_timer(0.1).timeout
-	check(map._view.route_pts.size() > 100 and "km" in map._facts.text, "the road is planned and shown (%s)" % map._facts.text.split("\n")[0])
-	check(not map._start.disabled, "and the host can start it")
-	map._view.click(map._view.to_screen(Vector2(float(Shed.journey["pins"][1]["x"]), float(Shed.journey["pins"][1]["z"]))))
-	check((Shed.journey["pins"] as Array).size() == 1, "a click on a pin takes it off")
-	map.refresh()
-	check(map._start.disabled and "Pin where you start" in map._facts.text, "with one pin there is nothing to start")
-	var img := JourneyView.shade_image(r)
-	check(img.get_width() > 100 and img.get_height() > 50 and img.get_pixel(img.get_width() / 2, img.get_height() / 2).a >= 0.0, "the land is shaded for the map (%d x %d)" % [img.get_width(), img.get_height()])
-	map.queue_free()
+	map.open()
+	var p: RouteTv = map.planner
+	await _settle(func(): return p != null and p._warm >= 8 and p.view.roads_shown() and not p.view.busy())
+	var k := map._frame.scale.x
+	check(map.visible and p.visible and k > 0.5 and is_equal_approx(map._frame.scale.y, k) and is_equal_approx(p.view.span, 20000.0)
+		and p.view.roads_shown(), "the full-screen planner is the TVs' planner, on the crew's view and its roads (scaled %.2f)" % k)
+	# A click pins a road, as a touch does.
+	var g := _dales_place("Gunnerside")
+	var at := p.view.to_screen(g.x, g.y)
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = true
+	ev.position = at
+	p.view._gui_input(ev)
+	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 1)
+	check((Shed.journey.get("pins", []) as Array).size() == 1, "a click on a road pins it")
+	# The wheel: closer, about the pointer (the place under it stays put), for everyone.
+	var corner := Vector2(p.view.size.x * 0.25, p.view.size.y * 0.3)
+	var under := p.view.to_geo(corner)
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	wheel.pressed = true
+	wheel.position = corner
+	p.view._gui_input(wheel)
+	await _settle(func(): return p.view.span < 20000.0)
+	var still := p.view.to_geo(corner)
+	check(is_equal_approx(float(Shed.route_tv["span"]), 20000.0 / WorldView.WHEEL_ZOOM) and still.distance_to(under) < 1e-4,
+		"the wheel zooms the crew's view about the pointer (%.0f m across, the place under it moved %.6f deg)" % [p.view.span, still.distance_to(under)])
+	# It folds away when the ride starts.
+	var shut := [false]
+	map.closed.connect(func(): shut[0] = true)
+	Shed.adventure = {"id": 1}   # (an adventure on, as Adventure.active() sees it)
+	await _settle(func(): return shut[0])
+	check(shut[0], "and it folds itself away when the ride starts")
+	Shed.adventure = {}
 	Shed.journey = {}
+	Shed.route_tv = {}
+	map.queue_free()
+	await t.get_tree().process_frame
+	_world_fixtures(false)
+
+
+## A map link pasted on the planner (MapLink, RouteTv.paste_link): Google's, Apple's and OpenStreetMap's ways of saying
+## where, plain "lat, lon", a short link followed through its redirects, and nothing where a link says nowhere.
+func test_map_links() -> void:
+	var cases := {
+		"https://www.google.com/maps/@54.3801,-2.0123,13z": Vector2(54.3801, -2.0123),
+		"https://www.google.com/maps/place/Reeth/@54.38,-1.95,15z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d54.3888!4d-1.9455": Vector2(54.3888, -1.9455),
+		"https://maps.google.com/?q=34.48,134.25": Vector2(34.48, 134.25),
+		"https://maps.apple.com/?ll=51.5007%2C-0.1246&q=Big%20Ben": Vector2(51.5007, -0.1246),
+		"https://www.openstreetmap.org/#map=14/54.2988/-2.2001": Vector2(54.2988, -2.2001),
+		"https://www.openstreetmap.org/?mlat=35.0&mlon=135.75#map=12/35.0/135.75": Vector2(35.0, 135.75),
+		"  54.31, -1.83 ": Vector2(54.31, -1.83),
+	}
+	var all_ok := true
+	for text in cases:
+		var got := MapLink.parse(text)
+		if got == Vector2.INF or got.distance_to(cases[text]) > 1e-5:
+			all_ok = false
+			print("  (link %s -> %s)" % [text, str(got)])
+	check(all_ok, "Google's, Apple's and OpenStreetMap's links, and plain lat, lon, say where (%d of them)" % cases.size())
+	check(MapLink.parse("https://www.google.com/maps") == Vector2.INF and MapLink.parse("hello") == Vector2.INF and MapLink.parse("95.0, 10.0") == Vector2.INF
+		and MapLink.needs_following("https://maps.app.goo.gl/AbC123") and not MapLink.needs_following("54.3, -2.0"),
+		"a link that says nowhere, or junk, is nowhere; a short link is to be followed")
+	# A short link, followed: a stand-in plays the link service.
+	var host := CellsTests.FakeHost.new()
+	host.start()
+	host.redirects["/s/abc"] = "http://127.0.0.1:%d/maps/place/Tonosho/@34.4870,134.1860,14z" % host.port
+	var was_offline := CellStore.offline
+	CellStore.offline = false
+	var got := [Vector2.ZERO]
+	var task := WorkerThreadPool.add_task(func(): got[0] = MapLink.resolve("http://127.0.0.1:%d/s/abc" % host.port))
+	while not WorkerThreadPool.is_task_completed(task):
+		host.serve()
+		await t.get_tree().process_frame
+	WorkerThreadPool.wait_for_task_completion(task)
+	host.stop()
+	CellStore.offline = was_offline
+	check((got[0] as Vector2).distance_to(Vector2(34.487, 134.186)) < 1e-5, "a short link is followed to where it points (%s)" % str(got[0]))
+	# On the planner: pasted, the crew's view goes there.
+	Shed.route_tv = {}
+	var dash := Dashboard.new("route", 3.4)
+	t.add_child(dash)
+	dash.show_page("route", {})
+	var board: RouteTv = dash._route
+	await _settle(func(): return board != null and board._warm >= 8)
+	board.paste_link("https://www.google.com/maps/@54.3801,-2.0123,13z")
+	await _settle(func(): return Shed.route_tv.has("lat"))
+	check(absf(float(Shed.route_tv.get("lat", 0.0)) - 54.3801) < 1e-5 and is_equal_approx(float(Shed.route_tv.get("span", 0.0)), RouteTv.FOUND_SPAN),
+		"pasted on the planner, the crew's view goes there")
+	check(RouteTv.credits_line(["Elevation: Mapterhorn (mapterhorn.com)...", "Roads: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."])
+		== "Map data: roads © OpenStreetMap contributors and Overture Maps (ODbL); heights Mapterhorn.", "a road's map data is credited in a line")
+	Shed.route_tv = {}
+	dash.queue_free()
 	await t.get_tree().process_frame
 
 
