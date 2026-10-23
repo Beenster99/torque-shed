@@ -2,12 +2,13 @@ extends Node
 ## Screenshots of the respawn ghost (see BikeGhost) in the real game: a bike in the shed's yard
 ## just respawned, then in its last flickering second and solid again, and the same out on an
 ## adventure, with a crew mate's ghosted bike beside it.
-##   xvfb-run -a godot --path . res://tests/ghost_shots.tscn -- --out=/tmp/shots
+##   xvfb-run -a godot --path . res://tests/ghost_shots.tscn -- --out=/tmp/shots [--adventure-only]
 
 const Rides := preload("res://tests/rides.gd")
 
 var out_dir := "/tmp/shots"
 var main: Node
+var yard := true
 
 
 func _ready() -> void:
@@ -16,6 +17,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out_dir = a.trim_prefix("--out=")
+		elif a == "--adventure-only":
+			yard = false
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(1280, 720)
 	SaveGame.slot_override = "shots"
@@ -37,8 +40,9 @@ func _ready() -> void:
 		return
 	# Out in the yard, facing away from the shed.
 	main.bike.place(Shed.RETRIEVE_ROW + Vector3(4.0, 0.0, 4.0), PI * 0.5)
-	await _frames(60)
-	await _ghost_shots("yard")
+	if yard:
+		await _frames(60)
+		await _ghost_shots("yard")
 	# Out on an adventure.
 	main.bike.place(Shed.RETRIEVE_ROW + Vector3(4.0, 0.0, 4.0), PI * 0.5)
 	Rides.start(20.0, 3)
@@ -67,7 +71,7 @@ func _ready() -> void:
 	main.world.add_child(rb)
 	rb.setup("Mate", BikeBuild.new({}), Color(0.15, 0.3, 0.8))
 	var at := w.transform_at(s + 6.0, 1.6)
-	var st := main.bike.get_net_state()
+	var st: PackedFloat32Array = main.bike.get_net_state()
 	var q := Basis(Vector3.UP, w.heading_at(s + 6.0) + PI).get_rotation_quaternion()
 	for k in 3:
 		st[k] = at.origin[k] + (0.35 if k == 1 else 0.0)
@@ -94,6 +98,11 @@ func _ghost_shots(where: String, rb: RemoteBike = null, st := PackedFloat32Array
 	main.bike.ghost_left = 60.0   # held as a ghost for the pictures
 	main.camera.snap()
 	await _frames(90)
+	if rb:
+		# (Their ghost is timed on the clock, and a frame drawn without a GPU can take seconds.)
+		st[27] = 60.0
+		rb.push_state(st)
+		await _frames(3)
 	_save("%s_ghost" % where)
 	main.bike.ghost_left = 0.85
 	if rb:
@@ -104,7 +113,8 @@ func _ghost_shots(where: String, rb: RemoteBike = null, st := PackedFloat32Array
 	if rb:
 		st[27] = 0.0
 		rb.push_state(st)
-	await _frames(90)
+	main.bike.ghost_left = 0.01
+	await _frames(30)
 	_save("%s_solid" % where)
 
 
