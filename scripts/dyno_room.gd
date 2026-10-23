@@ -2,8 +2,9 @@ class_name DynoRoom
 extends Node3D
 ## The tuning room behind the shed's back wall, through a doorway between bays 2 and 3: a
 ## rolling-road dyno set into the floor (a drum under the rear wheel, a clamp for the front,
-## strap-down posts and a cooling fan), the dyno desk where bikes are tuned and run, and a big
-## screen on the far wall showing the latest run. Wheel a bike in and let go of it near the
+## strap-down posts and a cooling fan), the dyno desk where bikes are tuned and run, a big
+## screen on the far wall showing the latest run, and a wall-sized TV on the west wall for the crew
+## to plan rides on (its home channel is the Route planner, see RouteTv). Wheel a bike in and let go of it near the
 ## drum and it squares up on the rig (Shed._park); strap it down at the four posts before a run.
 ## The room has its own lights, a wall switch for the cooling fan, an exhaust extraction hose on
 ## a hook and ear defenders hanging by the door (Shed.dyno holds their state). A run is the
@@ -39,9 +40,14 @@ const HOSE_REACH := 5.6
 ## Switches by the door (lights, fan) and the ear defenders' hook, on the shed side wall.
 const SWITCHES := Vector3(-1.3, 1.35, 59.17)
 const PHONES_HOOK := Vector3(-2.1, 1.62, 59.15)
+## The planning TV on the west wall: metres across (most of the wall), and its middle.
+const PLAN_TV_WIDTH := 5.0
+const PLAN_TV := Vector3(-HALF.x + 0.08, 1.95, 55.6)
 
 var workshop: Workshop
 var screen: DynoGraph
+## The wall-sized planning TV (screen key "dyno", see TvChannels).
+var plan_tv: Dashboard
 var _screen_view: SubViewport
 var _drum: Node3D
 var _fan: Node3D
@@ -130,6 +136,7 @@ func build(shop: Workshop) -> void:
 	_build_fan()
 	_build_desk()
 	_build_screen()
+	_build_plan_tv()
 	_build_decor()
 	_build_lights()
 	_build_switches()
@@ -543,6 +550,17 @@ func _build_screen() -> void:
 	screen.show_runs("DYNO", [], 1.0, {}, "Wheel a bike onto the rig and run it from the dyno desk.")
 
 
+## The crew's planning TV, filling most of the west wall: a shed screen like any other (its channel
+## changes the same way), which comes on at the Route planner.
+func _build_plan_tv() -> void:
+	plan_tv = Dashboard.new("route", PLAN_TV_WIDTH)
+	plan_tv.name = "PlanTv"
+	plan_tv.position = PLAN_TV
+	plan_tv.rotation.y = PI * 0.5
+	add_child(plan_tv)
+	workshop._screen_target(plan_tv, "dyno")
+
+
 func _build_decor() -> void:
 	var c := CENTER
 	var hz := HALF.y
@@ -554,7 +572,7 @@ func _build_decor() -> void:
 	# Signs.
 	_poster("DYNO ROOM", c + Vector3(0.0, DOOR_HEIGHT + 0.45, hz + 0.32), 0.0, Vector2(1.0, 0.26), 64)
 	_poster("STRAP IT DOWN. EARS ON.", c + Vector3(-2.6, 1.6, -hz + 0.025), 0.0, Vector2(1.2, 0.22), 40)
-	_poster("PULL IN, LET GO NEAR THE DRUM", c + Vector3(-HALF.x + 0.025, 1.6, 0.4), PI * 0.5, Vector2(1.4, 0.22), 40)
+	_poster("PULL IN, LET GO NEAR THE DRUM", c + Vector3(2.6, 2.3, -hz + 0.025), 0.0, Vector2(1.4, 0.22), 40)
 	_poster("HOSE ON THE EXHAUST", HOSE_HOOK + Vector3(-0.025, 0.45, 0.0), -PI * 0.5, Vector2(0.8, 0.16), 34)
 	_poster("TUNE AT THE DESK ({interact})", DESK + Vector3(0.0, 1.75, -0.33), 0.0, Vector2(0.9, 0.2), 40)
 

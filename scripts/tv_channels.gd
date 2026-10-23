@@ -5,7 +5,7 @@ extends RefCounted
 ## press R (right mouse, X on a pad) for the next channel, T (B on a pad) for the one before.
 ##
 ## Every screen has a key: "f<furniture id>" for a bought TV, "bay0".."bay3" for the bay
-## screens and "crew" for the crew board. What each one is tuned to is shed state
+## screens, "crew" for the crew board and "dyno" for the planning TV on the Dyno Room's wall. What each one is tuned to is shed state
 ## (Shed.screens), changed through the host, so the whole crew sees the same channel.
 ##
 ## The money pages read their numbers from one function each here (money_data, garage_data,
@@ -17,7 +17,7 @@ const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "mon
 const NAMES := {"bay": "Bay", "live": "Live riding", "route": "Route planner", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
 	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
 	"sales": "Sales", "staff": "Staff", "workflow": "Workflow"}
-const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]
+const BUILT_IN: Array[String] = ["crew", "dyno", "bay0", "bay1", "bay2", "bay3"]
 ## The how-to-play pages turn over on their own, this many seconds each.
 const HOWTO_PAGE_TIME := 9.0
 const HEADER_INK := Color(0.05, 0.05, 0.05)
@@ -89,6 +89,8 @@ static func home(key: String) -> String:
 		return "bay"
 	if key == "crew":
 		return "crew"
+	if key == "dyno":
+		return "route"
 	return "live"
 
 

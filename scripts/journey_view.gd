@@ -128,6 +128,34 @@ func zoom_by(factor: float, about := Vector2(-1, -1)) -> void:
 	moved.emit()
 
 
+## The view as a middle (metres) and the metres across it, the way the crew's TVs share it (Shed.route_tv).
+func view_centre() -> Vector2:
+	return _centre
+
+
+func view_span() -> float:
+	return size.x / _scale
+
+
+## What fit() would show: [middle, metres across].
+func fit_view() -> Array:
+	var box := size if size.x > 10.0 else Vector2(900, 640)
+	var scale := clampf(minf(box.x / region.bounds.size.x, box.y / region.bounds.size.y) * 0.96, MIN_SCALE, MAX_SCALE)
+	return [region.bounds.get_center(), box.x / scale]
+
+
+## Shows `span` metres across, about `centre`.
+func set_view(centre: Vector2, span: float) -> void:
+	var scale := clampf(size.x / maxf(span, 1.0), MIN_SCALE, MAX_SCALE)
+	_fitted = true
+	if centre.is_equal_approx(_centre) and is_equal_approx(scale, _scale):
+		return
+	_centre = centre
+	_scale = scale
+	queue_redraw()
+	moved.emit()
+
+
 ## Moves the view by a fraction of its size (to the right and down for positive).
 func pan_by(frac: Vector2) -> void:
 	_centre += Vector2(frac.x * size.x, frac.y * size.y) / _scale

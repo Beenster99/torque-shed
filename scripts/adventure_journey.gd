@@ -7,13 +7,22 @@ extends RefCounted
 ## Shed.journey: {} when nothing is pinned, else {region (a RealRegion id), pins: [{x, z, name, by}], mode ("main",
 ## "scenic" or "tracks")}. Pins are on roads (junctions of the region's graph), so the same pins plan the same road.
 ##
+## Shed.route_tv: what the Route planner TVs show (RouteTv), one view for every screen and every player, so the crew
+## looks at the same thing: {region, x, z (the middle of the map, in the region's metres), span (metres across the
+## map), tab ("plan" or "places"), cat (the kind of place listed), page (of that list)}. A view with no x, z or span
+## shows all of the region. It changes only through the host, like the pins.
+##
 ## Actions (Shed.request, from any player): adventure_pin {region, x, z, at (where in the list, default the end)},
-## adventure_unpin {i}, adventure_mode {mode}, adventure_clear.
+## adventure_unpin {i}, adventure_mode {mode}, adventure_clear, adventure_view {view: the fields to change}.
 
 const MAX_PINS := AdventurePlans.MAX_PINS
 ## A pin is put on the nearest junction within this (m); a place's name is taken from within NAME_REACH of it.
 const SNAP_M := 800.0
 const NAME_REACH := 350.0
+## The TV's tabs, and the most metres it can show across or the fewest.
+const TV_TABS := ["plan", "places"]
+const SPAN_MIN := 50.0
+const SPAN_MAX := 5000000.0
 
 
 static func sanitize(v: Variant) -> Dictionary:
@@ -31,6 +40,29 @@ static func sanitize(v: Variant) -> Dictionary:
 					"name": str(p.get("name", "")).left(AdventurePlans.MAX_NAME), "by": str(p.get("by", "")).left(24)})
 	var mode := str(v.get("mode", "main"))
 	return {"region": region_id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+
+
+## A Route planner TV view (see Shed.route_tv) made safe: {} when it is no good.
+static func sanitize_view(v: Variant) -> Dictionary:
+	if not v is Dictionary:
+		return {}
+	var out := {}
+	var region_id := str(v.get("region", ""))
+	if region_id != "" and RealRegion.extent_of(region_id).size != Vector2.ZERO:
+		out["region"] = region_id
+	if v.has("x") and v.has("z") and v.has("span"):
+		var x := float(v["x"])
+		var z := float(v["z"])
+		var span := float(v["span"])
+		if is_finite(x) and is_finite(z) and is_finite(span) and absf(x) < 1e8 and absf(z) < 1e8:
+			out["x"] = snappedf(x, 0.1)
+			out["z"] = snappedf(z, 0.1)
+			out["span"] = snappedf(clampf(span, SPAN_MIN, SPAN_MAX), 0.1)
+	var tab := str(v.get("tab", "plan"))
+	out["tab"] = tab if TV_TABS.has(tab) else "plan"
+	out["cat"] = clampi(int(v.get("cat", 0)), 0, 15)
+	out["page"] = clampi(int(v.get("page", 0)), 0, 9999)
+	return out
 
 
 ## The plan the board makes ({} until it has two pins).
@@ -76,6 +108,9 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's no style of ride like that."
 		"adventure_clear":
 			pass
+		"adventure_view":
+			if not action.get("view") is Dictionary:
+				return "That's not a view of the map."
 	return ""
 
 
@@ -90,6 +125,8 @@ static func apply(peer: int, action: Dictionary, who: String) -> String:
 			var pins: Array = Shed.journey["pins"]
 			var at := clampi(int(action.get("at", pins.size())), 0, pins.size())
 			pins.insert(at, {"x": snappedf(pos.x, 0.1), "z": snappedf(pos.y, 0.1), "name": place_name(region, n), "by": who})
+			if str(Shed.route_tv.get("region", "")) != region.id:
+				Shed.route_tv = sanitize_view({"region": region.id})   # the TVs go to where the pins are
 		"adventure_unpin":
 			(Shed.journey["pins"] as Array).remove_at(int(action["i"]))
 		"adventure_mode":
@@ -97,6 +134,14 @@ static func apply(peer: int, action: Dictionary, who: String) -> String:
 				Shed.journey["mode"] = str(action["mode"])
 		"adventure_clear":
 			Shed.journey = {}
+		"adventure_view":
+			var was: Dictionary = Shed.route_tv
+			var view: Dictionary = was.duplicate()
+			view.merge(action["view"], true)
+			if str(view.get("region", "")) != str(was.get("region", "")) and not (action["view"] as Dictionary).has("x"):
+				for k in ["x", "z", "span"]:
+					view.erase(k)   # another map: all of it, to begin with
+			Shed.route_tv = sanitize_view(view)
 	return ""
 
 

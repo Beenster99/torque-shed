@@ -74,7 +74,7 @@ static func _is_host(peer: int) -> bool:
 
 static func check(peer: int, action: Dictionary) -> String:
 	match str(action.get("a", "")):
-		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear":
+		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear", "adventure_view":
 			return AdventureJourney.check(peer, action)
 		"adventure_start":
 			if not _is_host(peer):
@@ -117,7 +117,7 @@ static func check(peer: int, action: Dictionary) -> String:
 static func apply(peer: int, action: Dictionary) -> String:
 	var who := str(Shed.crew.get(peer, {}).get("name", "Someone"))
 	match str(action.get("a", "")):
-		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear":
+		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear", "adventure_view":
 			return AdventureJourney.apply(peer, action, who)
 		"adventure_start":
 			var planned: Dictionary = AdventureJourney.start_info(action)

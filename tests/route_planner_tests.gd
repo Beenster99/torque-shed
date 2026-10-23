@@ -221,6 +221,7 @@ func test_map() -> void:
 func test_tv() -> void:
 	Shed.adventure = {}
 	Shed.journey = {}
+	Shed.route_tv = {}
 	var dash := Dashboard.new("route", 3.4)
 	t.add_child(dash)
 	dash.show_page("route", {})
@@ -267,12 +268,12 @@ func test_tv() -> void:
 	dash.tap(tabs.global_position + tabs.size * 0.5)
 	await t.get_tree().process_frame
 	await t.get_tree().process_frame
-	check(board._tab == "places" and board._place_list.get_child_count() > 3, "the Places tab lists the towns (%d rows)" % board._place_list.get_child_count())
+	check(board._tab() == "places" and board._place_list.get_child_count() > 3, "the Places tab lists the towns (%d rows)" % board._place_list.get_child_count())
 	var first: Button = board._place_list.get_child(0)
 	var pins_before := (Shed.journey["pins"] as Array).size()
 	dash.tap(first.global_position + first.size * 0.5)
 	await t.get_tree().process_frame
-	check((Shed.journey["pins"] as Array).size() == pins_before + 1 and board._tab == "plan", "a touch on a place pins it and goes back to the ride")
+	check((Shed.journey["pins"] as Array).size() == pins_before + 1 and board._tab() == "plan", "a touch on a place pins it and goes back to the ride")
 	# The host starts it.
 	Shed.request({"a": "adventure_unpin", "i": pins_before})
 	end = Time.get_ticks_msec() + 30000
@@ -285,8 +286,92 @@ func test_tv() -> void:
 		"and a touch on Start starts the ride along it")
 	Shed.adventure = {}
 	Shed.journey = {}
+	Shed.route_tv = {}
 	dash.queue_free()
 	await t.get_tree().process_frame
+
+
+## Every Route planner TV shows the crew's one view (Shed.route_tv): two screens on the channel, whatever is pressed on
+## either, show the same map, from the same place, as far in, on the same tab and page; and a view that came from the
+## host (as a player's copy of the shed gets it) is what both show.
+func test_tv_shared() -> void:
+	Shed.adventure = {}
+	Shed.journey = {}
+	Shed.route_tv = {}
+	var dashes: Array[Dashboard] = []
+	for w in [3.4, DynoRoom.PLAN_TV_WIDTH]:
+		var d := Dashboard.new("route", w)
+		t.add_child(d)
+		d.show_page("route", {})
+		dashes.append(d)
+	for i in 6:
+		await t.get_tree().process_frame
+	var a: RouteTv = dashes[0]._route
+	var b: RouteTv = dashes[1]._route
+	var same := func() -> bool:
+		return a.region != null and b.region == a.region and a.view.view_centre().distance_to(b.view.view_centre()) < 0.01 \
+			and absf(a.view.view_span() - b.view.view_span()) < 0.01 and a._places_box.visible == b._places_box.visible
+	await _settle(same)
+	check(a.region != null and str(Shed.route_tv.get("region", "")) == a.region.id and same.call(),
+		"two TVs on the planner show the host's first map, the same (%s)" % str(Shed.route_tv))
+	# Zoom on one, move on the other: both follow every press.
+	var fit_span := a.view.view_span()
+	a.zoom(2.0)
+	await _settle(func(): return same.call() and absf(b.view.view_span() - fit_span / 2.0) < 1.0)
+	var was := b.view.view_centre()
+	b.pan(Vector2(0.3, -0.2))
+	await _settle(func(): return same.call() and a.view.view_centre().distance_to(was) > 1.0)
+	check(same.call() and absf(a.view.view_span() - fit_span / 2.0) < 1.0 and Shed.route_tv.has("x"),
+		"a zoom on one and a move on the other: both show it (%.0f m across, was %.0f)" % [a.view.view_span(), fit_span])
+	# Another map, from the other.
+	var other := "dales" if a.region.id != "dales" else REGION
+	b.ask({"region": other})
+	await _settle(func(): return same.call() and a.region.id == other)
+	check(other != "" and a.region.id == other and same.call() and not Shed.route_tv.has("x"),
+		"another map picked on one is on both, all of it (%s: %s; %s %s / %s %s)" % [other, str(Shed.route_tv), a.region.id, str(a.view.view_centre()), b.region.id, str(b.view.view_centre())])
+	# The places, a kind and a page.
+	a.ask({"tab": "places", "cat": 0, "page": 1})
+	await _settle(func(): return same.call() and b._places_box.visible)
+	var page_of := func(board: RouteTv) -> String:
+		var last := board._place_list.get_child(board._place_list.get_child_count() - 1)
+		return (last as Label).text if last is Label else ""
+	check(same.call() and a._places_box.visible and page_of.call(a) == page_of.call(b) and page_of.call(a).begins_with("Page "),
+		"the places tab, its kind and page are the same on both (%s)" % page_of.call(b))
+	# A view from the host, as a player's game takes it in: both show it within a moment.
+	var r := RealRegion.get_region(REGION)
+	var at := r.bounds.get_center() + Vector2(300.0, 200.0)
+	Shed.route_tv = AdventureJourney.sanitize_view({"region": REGION, "x": at.x, "z": at.y, "span": 6000.0, "tab": "plan"})
+	await _settle(func(): return same.call() and a.region == r and a.view.view_centre().distance_to(at) < 0.2)
+	check(same.call() and a.region == r and a.view.view_centre().distance_to(at) < 0.2 and absf(b.view.view_span() - 6000.0) < 0.5
+		and a._plan_box.visible, "a view that came from the host is on both screens (%s %s %.0f / %s %s %.0f, plan %s)" % [a.region.id, str(a.view.view_centre()), a.view.view_span(), b.region.id, str(b.view.view_centre()), b.view.view_span(), a._plan_box.visible])
+	# A pin on another map takes the TVs there.
+	a.ask({"region": "dales"})
+	await _settle(func(): return same.call() and a.region.id == "dales")
+	var p: Vector2 = pins()[0]
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": p.x, "z": p.y})
+	await _settle(func(): return same.call() and a.region.id == REGION)
+	check(a.region.id == REGION and same.call(), "a pin put on another map takes the crew's TVs there")
+	# Junk is made safe.
+	var bad := AdventureJourney.sanitize_view({"region": "nowhere", "x": NAN, "z": 1.0, "span": 5.0, "tab": "sideways", "cat": -4, "page": 1e9})
+	var tiny := AdventureJourney.sanitize_view({"x": 1.0, "z": 2.0, "span": 1.0})
+	check(not bad.has("region") and not bad.has("x") and bad["tab"] == "plan" and bad["cat"] == 0 and bad["page"] == 9999
+		and is_equal_approx(float(tiny["span"]), AdventureJourney.SPAN_MIN) and AdventureJourney.sanitize_view("x").is_empty(),
+		"a view that's no good is made safe (%s)" % str(bad))
+	check(AdventureJourney.check(2, {"a": "adventure_view", "view": "x"}) != "" and TvChannels.home("dyno") == "route"
+		and TvChannels.screen_exists("dyno"), "a view must be a view, and the Dyno Room's TV is a screen that comes on at the planner")
+	Shed.adventure = {}
+	Shed.journey = {}
+	Shed.route_tv = {}
+	for d in dashes:
+		d.queue_free()
+	await t.get_tree().process_frame
+
+
+## Waits (ten seconds at most: a new map is shaded first) for `cond`, a frame at a time.
+func _settle(cond: Callable) -> void:
+	var end := Time.get_ticks_msec() + 10000
+	while not cond.call() and Time.get_ticks_msec() < end:
+		await t.get_tree().process_frame
 
 
 ## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
