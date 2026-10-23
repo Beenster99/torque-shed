@@ -196,6 +196,7 @@ class FakeHost:
 	var port := 0
 	var files := {}        # path -> PackedByteArray
 	var asked: Array[String] = []
+	var bodies := {}       # path -> the body last sent to it (a POST's)
 	var _peers: Array = []
 
 	func start() -> bool:
@@ -222,8 +223,18 @@ class FakeHost:
 			var text := (c["got"] as PackedByteArray).get_string_from_utf8()
 			if not text.contains("\r\n\r\n"):
 				continue
+			var head := text.get_slice("\r\n\r\n", 0)
+			var length := 0
+			for line in head.split("\r\n"):
+				if line.to_lower().begins_with("content-length:"):
+					length = int(line.get_slice(":", 1).strip_edges())
+			var body_text := text.substr(head.length() + 4)
+			if body_text.to_utf8_buffer().size() < length:
+				continue   # (the rest of the body is still coming)
 			var path := text.get_slice(" ", 1)
 			asked.append(path)
+			if length > 0:
+				bodies[path] = body_text
 			var reply := PackedByteArray()
 			if path.begins_with("/dl/"):
 				reply = ("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:%d/zips/%s.zip\r\nContent-Length: 0\r\n\r\n" % [port, path.trim_prefix("/dl/")]).to_utf8_buffer()

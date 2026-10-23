@@ -14,12 +14,13 @@ extends RefCounted
 ##
 ## Shed.route_tv: what the Route planner TVs show (RouteTv, WorldView), one view for every screen and every player, so
 ## the crew looks at the same thing: {lat, lon (the middle of the map), span (metres across it), tab ("plan" or "find"),
-## q (what is typed in the search box)}. A view without lat, lon and span looks at the crew's pins, else at the world.
+## q (what is typed in the search box), survey (the crew's survey, see Survey)}. A view without lat, lon and span looks
+## at the crew's pins, else at the world.
 ## It changes only through the host, like the pins.
 ##
 ## Actions (Shed.request, from any player): adventure_pin {lat, lon, name, at (where in the list, default the end)} for a
 ## pin anywhere, or {region, x, z, at} on a region's own map; adventure_unpin {i}, adventure_mode {mode},
-## adventure_clear, adventure_view {view: the fields to change}.
+## adventure_clear, adventure_view {view: the fields to change}, adventure_survey {cells} (see Survey).
 
 const MAX_PINS := AdventurePlans.MAX_PINS
 ## A pin is put on the nearest junction within this (m); a place's name is taken from within NAME_REACH of it.
@@ -69,6 +70,9 @@ static func sanitize_view(v: Variant) -> Dictionary:
 	var tab := str(v.get("tab", "plan"))
 	out["tab"] = tab if TV_TABS.has(tab) else "plan"
 	out["q"] = WorldMap.fold(str(v.get("q", ""))).left(MAX_QUERY)
+	var survey := Survey.sanitize(v.get("survey"))
+	if not survey.is_empty():
+		out["survey"] = survey
 	return out
 
 
@@ -200,6 +204,9 @@ static func check(peer: int, action: Dictionary) -> String:
 		"adventure_view":
 			if not action.get("view") is Dictionary:
 				return "That's not a view of the map."
+		"adventure_survey":
+			if Survey.cells_of(action.get("cells")).is_empty():
+				return "There's nothing there to survey."
 	return ""
 
 
@@ -228,8 +235,15 @@ static func apply(peer: int, action: Dictionary, who: String) -> String:
 			Shed.journey = {}
 		"adventure_view":
 			var view: Dictionary = Shed.route_tv.duplicate()
-			view.merge(action["view"], true)
+			view.erase("survey")   # (the survey is the host's to change, see Survey)
+			var asked: Dictionary = action["view"]
+			for k in asked:
+				if str(k) != "survey":
+					view[k] = asked[k]
+			view["survey"] = Shed.route_tv.get("survey", {})
 			Shed.route_tv = sanitize_view(view)
+		"adventure_survey":
+			Survey.start(Survey.cells_of(action["cells"]))
 	return ""
 
 

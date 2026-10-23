@@ -36,6 +36,7 @@ var _results: VBoxContainer
 var _facts: Label
 var _note: Label
 var _start: Button
+var _survey: Button
 var _mode_buttons := {}
 var _tab_buttons := {}
 var _sig := ""
@@ -85,6 +86,12 @@ func _ready() -> void:
 			b.modulate = Color(1, 1, 1, 0)
 		pad.add_child(b)
 	add_child(pad)
+	# Survey, where nobody has mapped the roads (over the map's top corner).
+	_survey = _button("Survey here", 180.0, 20)
+	_survey.position = Vector2(PANEL_X - 12.0 - 190.0, 16.0)
+	_survey.visible = false
+	_survey.pressed.connect(survey)
+	add_child(_survey)
 	# The panel: tabs, the ride or the search.
 	var panel := VBoxContainer.new()
 	panel.position = Vector2(PANEL_X, 6)
@@ -237,6 +244,16 @@ func _fit_view() -> Array:
 	return [mid.x, mid.y, clampf(across * 1.6, 15000.0, AdventureJourney.SPAN_MAX)]
 
 
+## Asks the surveyors (through the host, see Survey) to map the roads of the cells in view nobody has mapped yet.
+func survey() -> void:
+	var cells: Array = []
+	for c in view.unmapped.slice(0, Survey.MAX_CELLS):
+		cells.append("%d_%d" % [c.x, c.y])
+	if not cells.is_empty():
+		Shed.request({"a": "adventure_survey", "cells": cells})
+		_timer = 0.0
+
+
 ## Looks closer (factor over 1) or further out, about the middle.
 func zoom(factor: float) -> void:
 	var v := _view()
@@ -259,6 +276,11 @@ func _process(delta: float) -> void:
 	if view != null and view.poll():
 		changed.emit()
 		_sig = ""   # (the roads in view came, or the world's map: the search may find more)
+	var can_survey := view != null and view.span <= WorldView.ROADS_SPAN and not view.unmapped.is_empty() and view.surveying().is_empty() \
+		and not view.busy()
+	if _survey != null and _survey.visible != can_survey:
+		_survey.visible = can_survey
+		changed.emit()
 	if _warm < 8:
 		_warm += 1   # (the controls lay themselves out over the first frames: the TV is redrawn as they settle)
 		changed.emit()

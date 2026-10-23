@@ -168,6 +168,12 @@ static func _fetch_cells(cells: Array[Vector2i], progress: Callable) -> String:
 
 ## GETs `url` (https or http), following redirects: {code, body}. Code 0 when there was no answer. Blocks.
 static func http_get(url: String) -> Dictionary:
+	return http(url)
+
+
+## Asks `url` (https or http) with `method`, sending `json` (a body, as JSON) if there is one, following redirects (as a
+## GET): {code, body}. Code 0 when there was no answer. Blocks.
+static func http(url: String, method := HTTPClient.METHOD_GET, json := "") -> Dictionary:
 	for hop in MAX_REDIRECTS + 1:
 		var tls := url.begins_with("https://")
 		var rest := url.substr(8 if tls else 7)
@@ -178,39 +184,44 @@ static func http_get(url: String) -> Dictionary:
 		if host.contains(":"):
 			port = int(host.get_slice(":", 1))
 			host = host.get_slice(":", 0)
-		var http := HTTPClient.new()
-		if http.connect_to_host(host, port, TLSOptions.client() if tls else null) != OK:
+		var client := HTTPClient.new()
+		if client.connect_to_host(host, port, TLSOptions.client() if tls else null) != OK:
 			return {"code": 0, "body": PackedByteArray()}
 		var since := Time.get_ticks_msec()
 		var sent := false
 		var body := PackedByteArray()
 		while Time.get_ticks_msec() - since < TIMEOUT_MS:
-			http.poll()
-			var st := http.get_status()
+			client.poll()
+			var st := client.get_status()
 			if st == HTTPClient.STATUS_CONNECTED and not sent:
 				sent = true
-				if http.request(HTTPClient.METHOD_GET, path, ["User-Agent: " + USER_AGENT]) != OK:
+				var send := ["User-Agent: " + USER_AGENT]
+				if json != "":
+					send.append("Content-Type: application/json")
+				if client.request(method, path, send, json) != OK:
 					return {"code": 0, "body": PackedByteArray()}
 			elif st == HTTPClient.STATUS_BODY:
-				body.append_array(http.read_response_body_chunk())
+				body.append_array(client.read_response_body_chunk())
 			elif st == HTTPClient.STATUS_CONNECTED and sent:
 				break
-			elif sent and http.has_response() and (st == HTTPClient.STATUS_DISCONNECTED or st == HTTPClient.STATUS_CONNECTION_ERROR):
+			elif sent and client.has_response() and (st == HTTPClient.STATUS_DISCONNECTED or st == HTTPClient.STATUS_CONNECTION_ERROR):
 				# The server closed the connection once it had answered: whole, if it said how long and it's all here.
-				var want := http.get_response_body_length()
+				var want := client.get_response_body_length()
 				if want >= 0 and body.size() != want:
 					return {"code": 0, "body": PackedByteArray()}
 				break
 			elif st != HTTPClient.STATUS_RESOLVING and st != HTTPClient.STATUS_CONNECTING and st != HTTPClient.STATUS_REQUESTING:
 				return {"code": 0, "body": PackedByteArray()}
 			OS.delay_msec(2)
-		var code := http.get_response_code()
+		var code := client.get_response_code()
 		if code in [301, 302, 303, 307, 308]:
-			var headers := http.get_response_headers_as_dictionary()
+			var headers := client.get_response_headers_as_dictionary()
 			var to := str(headers.get("Location", headers.get("location", "")))
 			if to == "":
 				return {"code": code, "body": body}
 			url = to if to.begins_with("http") else "%s://%s%s" % ["https" if tls else "http", host, to]
+			method = HTTPClient.METHOD_GET
+			json = ""
 			continue
 		return {"code": code, "body": body}
 	return {"code": 0, "body": PackedByteArray()}

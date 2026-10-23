@@ -50,6 +50,11 @@ var _task_result: Array = []   # [region, bbox, note] when the worker is done
 var _task_lock := Mutex.new()
 var _progress := ""
 var _world_task := -1
+## The cells in view nobody has mapped (baked) yet, for the Survey button.
+var unmapped: Array[Vector2i] = []
+var _stale := false            # the roads in view are to be fetched again (a survey's cells came)
+var _look_task := -1           # looking at the world's index while a survey is on
+var _look_at := -1000000
 
 
 func _init() -> void:
@@ -64,11 +69,12 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for t in [_task, _world_task]:
+	for t in [_task, _world_task, _look_task]:
 		if t >= 0:
 			WorkerThreadPool.wait_for_task_completion(t)
 	_task = -1
 	_world_task = -1
+	_look_task = -1
 
 
 ## Shows `span_m` metres across, about (`at_lat`, `at_lon`).
@@ -135,14 +141,16 @@ func _want_roads() -> void:
 	_want = want
 	if want == "":
 		note = ""
+		unmapped.clear()
 	_start_task()
 
 
 func _start_task() -> void:
-	if _task >= 0 or _want == "" or (roads != null and roads.id == _want) or _task_id == _want:
+	if _task >= 0 or _want == "" or (not _stale and ((roads != null and roads.id == _want) or _task_id == _want)):
 		return
 	var id := _want
 	_task_id = id
+	_stale = false
 	_progress = "Fetching the roads here..."
 	note = _progress
 	_task = WorkerThreadPool.add_task(func(): _load_roads(id))
@@ -153,9 +161,12 @@ func _load_roads(id: String) -> void:
 	var cells := RealRegion.cells_of_area(id)
 	var idx := CellStore.index()
 	var states := {}
+	var nobody: Array[Vector2i] = []
 	for c in cells:
 		var st := CellStore.state_of(c, idx)
 		states[st] = int(states.get(st, 0)) + 1
+		if st == "unknown":
+			nobody.append(c)
 	var why := ""
 	if states.has("baked"):
 		why = CellStore.fetch_cells(cells, func(done: int, total: int):
@@ -179,7 +190,7 @@ func _load_roads(id: String) -> void:
 			said = "Nobody has mapped the roads here yet." if not states.has("sea") or states.size() > 1 else ""
 	var bbox := _edge_boxes(r) if r != null else PackedFloat32Array()
 	_task_lock.lock()
-	_task_result = [r, bbox, said, id]
+	_task_result = [r, bbox, said, id, nobody]
 	_task_lock.unlock()
 
 
@@ -222,20 +233,66 @@ func poll() -> bool:
 			_task_result = []
 			_progress = ""
 			_task_lock.unlock()
-			if res.size() == 4:
+			if res.size() == 5:
 				roads = res[0]
 				_roads_bbox = res[1]
 				note = str(res[2]) if _want != "" else ""
+				unmapped = res[4] if _want != "" else ([] as Array[Vector2i])
 			again = true
 			_start_task()
 	if size.x > 10.0 and _want == "" and span <= ROADS_SPAN:
 		_want_roads()
-	return again
+	return _poll_survey() or again
 
 
-## Whether the view is waiting for anything (the world's map, the roads).
+## The crew's survey over the view: the world's index looked at every Survey.look_every seconds, and the roads fetched
+## again once any of its cells are in it. True when the map should be drawn again.
+func _poll_survey() -> bool:
+	if _look_task >= 0:
+		if not WorkerThreadPool.is_task_completed(_look_task):
+			return false
+		WorkerThreadPool.wait_for_task_completion(_look_task)
+		_look_task = -1
+		var idx := CellStore.saved_index()
+		for c in surveying():
+			if CellStore.state_of(c, idx) != "unknown":
+				_stale = true   # (its cells came: fetch the roads here again)
+				_start_task()
+				return true
+		return false
+	if not surveying().is_empty() and Time.get_ticks_msec() - _look_at >= int(Survey.look_every * 1000.0):
+		_look_at = Time.get_ticks_msec()
+		_look_task = WorkerThreadPool.add_task(func(): CellStore.index(true))
+	return false
+
+
+## The cells in view the crew's survey is baking.
+func surveying() -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var here := RealRegion.cells_of_area(_want)
+	for key in Survey.going():
+		var rc := key.split("_")
+		var c := Vector2i(int(rc[0]), int(rc[1]))
+		if here.has(c) and unmapped.has(c):
+			out.append(c)
+	return out
+
+
+## What the map says along its foot: a survey going on here, or what the surveyors said, or the note.
+func shown_note() -> String:
+	var here := surveying()
+	var s: Dictionary = Shed.route_tv.get("survey", {})
+	var ago := Time.get_unix_time_from_system() - float(s.get("since", 0.0))
+	if not here.is_empty():
+		return "Being surveyed: %d cell%s, about ten minutes (asked %d min ago)." % [here.size(), "" if here.size() == 1 else "s", int(ago / 60.0)]
+	if not s.is_empty() and (s.get("cells", []) as Array).is_empty() and str(s.get("said", "")) != "" and ago < 90.0 and _want != "":
+		return str(s["said"])
+	return note
+
+
+## Whether the view is waiting for anything (the world's map, the roads, the world's index).
 func busy() -> bool:
-	return _world_task >= 0 or _task >= 0
+	return _world_task >= 0 or _task >= 0 or _look_task >= 0
 
 
 ## Whether the roads in view are drawn, so a touch there pins.
@@ -311,13 +368,14 @@ func _draw() -> void:
 		draw_polyline(pts, ROUTE, 6.0 if big else 4.5, true)
 	_draw_names()
 	_draw_pins()
-	if note != "":
+	var said := shown_note()
+	if said != "":
 		var font := ThemeDB.fallback_font
 		var fs := 18 if big else 14
-		var w := font.get_string_size(note, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var w := font.get_string_size(said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var box := Rect2(Vector2((size.x - w) * 0.5 - 10.0, size.y - fs - 22.0), Vector2(w + 20.0, fs + 14.0))
 		draw_rect(box, NOTE)
-		draw_string(font, box.position + Vector2(10.0, fs + 3.0), note, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+		draw_string(font, box.position + Vector2(10.0, fs + 3.0), said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 
 
 func _draw_lines(layer: String, view_m: Rect2, k: float, m0: Vector2, col: Color, width: float) -> void:
