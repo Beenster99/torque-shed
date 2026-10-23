@@ -23,6 +23,8 @@ var _marking := false        # its back tyre was laying rubber last frame
 var rider_gear := {}
 ## Wheeled along on foot (see Roadside): nobody's sat on it.
 var pushed := false
+## When (on the clock, s) their respawn's ghost is over, from their snapshots (see BikeGhost).
+var _ghost_until := 0.0
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
@@ -76,9 +78,22 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 func push_state(state: PackedFloat32Array) -> void:
 	if state.size() < 19:
 		return
-	_snapshots.append({"t": Time.get_ticks_msec() / 1000.0, "s": state})
+	var now := Time.get_ticks_msec() / 1000.0
+	_snapshots.append({"t": now, "s": state})
 	while _snapshots.size() > 30:
 		_snapshots.pop_front()
+	# Their ghost's time left [27]; drawn here a moment behind, like the rest of their snapshot.
+	_ghost_until = now + DELAY + state[27] if state.size() > 27 and state[27] > 0.0 else 0.0
+
+
+## Seconds left of their respawn's ghost, as you see it (0 once they're solid).
+func ghost_left() -> float:
+	return maxf(0.0, _ghost_until - Time.get_ticks_msec() / 1000.0)
+
+
+## Whether they're a ghost now, just respawned: your bike passes through theirs (see Bike._update_passing).
+func is_ghost() -> bool:
+	return ghost_left() > 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -109,6 +124,7 @@ func _physics_process_body(delta: float) -> void:
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
 		lerpf(sa[14], sb[14], f), sb[18], 0.0)
 	model.set_rider_visible(sb[17] < 0.5 and not pushed)
+	BikeGhost.apply(model, BikeGhost.look(ghost_left()))
 	# Their left foot down as their bike comes to rest, by its speed as their snapshots have it.
 	model.update_foot(Vector3(sb[7], sb[8], sb[9]).length(), delta, sb[17] < 0.5)
 	audio.rpm = sb[15]

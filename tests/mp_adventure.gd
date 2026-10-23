@@ -9,7 +9,8 @@ extends Node
 ## there both must see the same traffic (AdventureTraffic: the same vehicles at the same places
 ## along the road, each drawn where it should be in its own frame). Each must say how far along
 ## the road the other is (the host "4.0 km ahead", the client "4.0 km behind"), and with both
-## menus up (the game doesn't pause in co-op) neither bike may move, on either screen.
+## menus up (the game doesn't pause in co-op) neither bike may move, on either screen. Then the
+## client respawns: the host must see its bike drawn as a ghost, and solid again about 5 s on.
 ## Finally the host ends the adventure and both must be back at the shed, off their bikes.
 
 const Rides := preload("res://tests/rides.gd")
@@ -65,6 +66,7 @@ func _ready() -> void:
 	var again_ok := false
 	var friends_ok := false
 	var menu_ok := false
+	var ghost_ok := false
 	var err := [Vector2(INF, INF)]
 	if start_seen:
 		# Give the other side time to see us at the start too before setting off.
@@ -119,6 +121,7 @@ func _ready() -> void:
 		if again_ok:
 			friends_ok = await _friends_check(trip, mine, expect, my_lat)
 			menu_ok = await _menu_check(trip, mine, my_lat)
+			ghost_ok = await _ghost_check(trip, mine, my_lat)
 	# Home: the host ends it (once the client has had time to check, too).
 	var asked := [false]
 	var end_at := Time.get_ticks_msec() + 3000
@@ -127,15 +130,15 @@ func _ready() -> void:
 			asked[0] = true
 			Shed.request({"a": "adventure_end"})
 		return not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0 and not Adventure.active(), 25.0)
-	var ok := ok_start and start_seen and fork_ok and far_ok and traffic_ok and again_ok and friends_ok and menu_ok and home_ok
+	var ok := ok_start and start_seen and fork_ok and far_ok and traffic_ok and again_ok and friends_ok and menu_ok and ghost_ok and home_ok
 	# The client stays until the host has gone, so the host's checks finish first.
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 20 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, back at the shed=%s" % [
-		"PASS" if ok else "FAIL", role, ok_start, start_seen, fork_ok, far_ok, traffic_ok, again_ok, friends_ok, menu_ok, home_ok])
+	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 20 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, the client's respawn seen as a ghost then solid=%s, back at the shed=%s" % [
+		"PASS" if ok else "FAIL", role, ok_start, start_seen, fork_ok, far_ok, traffic_ok, again_ok, friends_ok, menu_ok, ghost_ok, home_ok])
 	get_tree().quit(0 if ok else 1)
 
 
@@ -195,6 +198,71 @@ func _menu_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 	main.menu.hide()
 	print("MP adv note %s: 4 s with the menu up, my bike moved %.3f m, the other's %.3f m" % [role, moved, seen])
 	return moved < 0.02 and seen < 0.05
+
+
+# ---------------------------------------------------------------------------- the respawn ghost
+
+var _other_ghost := false
+var _ghost_verdict := -1
+var _ghost_note := ""
+
+
+## The client respawns (see BikeGhost): its own bike is a ghost for 5 s, and the host sees its
+## bike drawn see-through, its own bike passing through it, and solid again 5 s on (give or take
+## the network's lag). The host says what it saw.
+func _ghost_check(trip: AdventureTrip, s: float, lat: float) -> bool:
+	if not trip.on_trip() or main.bike == null:
+		return false
+	if role == "client":
+		var settle := Time.get_ticks_msec() + 1500
+		await _until(func():
+			_hold(trip, s, lat)
+			return Time.get_ticks_msec() > settle, 3.0)
+		main.bike.respawn()
+		var t0 := Time.get_ticks_msec()
+		_ghost_from.rpc()
+		var mine_ok := main.bike.is_ghost() and BikeGhost.drawn(main.bike.model) > 0.3
+		await _until(func():
+			_hold(trip, s, lat)
+			return main.bike == null or not main.bike.is_ghost(), 8.0)
+		var lasted := (Time.get_ticks_msec() - t0) / 1000.0
+		mine_ok = mine_ok and main.bike != null and BikeGhost.drawn(main.bike.model) == 0.0 and absf(lasted - BikeGhost.TIME) < 0.6
+		await _until(func():
+			_hold(trip, s, lat)
+			return _ghost_verdict >= 0, 15.0)
+		print("MP adv note %s: my respawn a ghost for %.1f s %s; the host saw it: %s" % [role, lasted, mine_ok, _ghost_note])
+		return mine_ok and _ghost_verdict == 1
+	await _until(func():
+		_hold(trip, s, lat)
+		return _other_ghost, 25.0)
+	var rb := _remote_bike() as RemoteBike
+	var seen := await _until(func():
+		_hold(trip, s, lat)
+		rb = _remote_bike() as RemoteBike
+		return rb != null and rb.is_ghost() and BikeGhost.drawn(rb.model) > 0.3, 3.0)
+	var t0 := Time.get_ticks_msec()
+	var passes: bool = seen and main.bike != null and main.bike.passes(rb)
+	var solid := await _until(func():
+		_hold(trip, s, lat)
+		rb = _remote_bike() as RemoteBike
+		return rb != null and not rb.is_ghost() and BikeGhost.drawn(rb.model) == 0.0, 8.0)
+	var lasted := (Time.get_ticks_msec() - t0) / 1000.0
+	var ok := seen and passes and solid and lasted > BikeGhost.TIME - 1.0 and lasted < BikeGhost.TIME + 1.0
+	_ghost_note = "seen ghosted %s (my bike passing through it %s), solid again %.1f s later %s" % [seen, passes, lasted, solid]
+	print("MP adv note %s: the client's respawn %s" % [role, _ghost_note])
+	_ghost_verdict_from.rpc(1 if ok else 0, _ghost_note)
+	return ok
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _ghost_from() -> void:
+	_other_ghost = true
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _ghost_verdict_from(v: int, note: String) -> void:
+	_ghost_verdict = v
+	_ghost_note = note
 
 
 # ---------------------------------------------------------------------------- the traffic
