@@ -3,6 +3,7 @@ extends RefCounted
 ## _test_planner_* functions hand over to these.
 
 const REGION := "shodoshima"
+const CellsTests := preload("res://tests/cells_tests.gd")
 ## Two ends of Shodoshima (where its first baked road ran, about 24 km apart by road).
 const START := Vector2(34.518638, 134.269646)
 const END := Vector2(34.499373, 134.347915)
@@ -346,6 +347,85 @@ func _key(board: RouteTv, ch: String) -> Button:
 				if b is Button and (b as Button).text == ch:
 					return b
 	return null
+
+
+## Survey (Survey, the survey worker): over cells nobody has mapped, the TV offers it; a touch asks the surveyors
+## (through the host) for the cells in view, every TV says they're being surveyed, and when the cells come into the
+## world's index the roads are fetched and drawn. A stand-in on this machine plays GitHub and the survey worker.
+func test_survey() -> void:
+	_world_fixtures(true)
+	var cells_tests := CellsTests.new(t)
+	var host := CellsTests.FakeHost.new()
+	check(host.start(), "a stand-in for GitHub and the surveyors listens on this machine")
+	var store := "user://test_survey_cells"
+	RegionStore._remove_tree(store)
+	var index := {"format": 1, "release": "2026-10-21.0", "cells": {}}
+	host.files["/index.json"] = JSON.stringify(index).to_utf8_buffer()
+	host.files["/survey"] = JSON.stringify({"status": "baking", "cells": ["577_711", "577_712"], "message": "Surveying 2 cells: about ten minutes."}).to_utf8_buffer()
+	CellStore.index_url = "http://127.0.0.1:%d/index.json" % host.port
+	CellStore.dir = store
+	CellStore.offline = false
+	CellStore.forget_index()
+	var dirs: Array[String] = [store]
+	RealRegion.cell_dirs = dirs
+	Survey.url = "http://127.0.0.1:%d/survey" % host.port
+	Survey.look_every = 0.5
+	Shed.adventure = {}
+	Shed.journey = {}
+	Shed.route_tv = {}
+	var dash := Dashboard.new("route", 3.4)
+	t.add_child(dash)
+	dash.show_page("route", {})
+	var board: RouteTv = dash._route
+	var pump := func(cond: Callable, seconds: float) -> bool:
+		var end := Time.get_ticks_msec() + int(seconds * 1000.0)
+		while not cond.call() and Time.get_ticks_msec() < end:
+			host.serve()
+			Survey.poll()   # (the host's Shed does this each frame in a game)
+			await t.get_tree().process_frame
+		return cond.call()
+	await pump.call(func(): return WorldMap.loaded() and board._warm >= 8, 10.0)
+	var dale := _dales_place("Gunnerside").lerp(_dales_place("Grinton"), 0.5)
+	board.ask({"lat": dale.x, "lon": dale.y, "span": 20000.0})
+	var offered: bool = await pump.call(func(): return board._survey.visible, 20.0)
+	check(offered and board.view.unmapped.has(Vector2i(577, 711)),
+		"where nobody has baked the cells, the TV offers a survey (%d cells; the Dales bundled with the game drawn meanwhile)" % board.view.unmapped.size())
+	dash.tap(board._survey.global_position + board._survey.size * 0.5)
+	var asked: bool = await pump.call(func(): return not Survey.going().is_empty(), 20.0)
+	var sent = JSON.parse_string(str(host.bodies.get("/survey", "{}")))
+	var baking: Array[String] = ["577_711", "577_712"]
+	check(asked and sent is Dictionary and (sent["cells"] as Array).has("577_711") and (sent["cells"] as Array).size() == board.view.unmapped.size()
+		and Survey.going() == baking,
+		"a touch asks the surveyors for the cells in view, and the crew's TVs know which are being baked (%s)" % str(Survey.going()))
+	await pump.call(func(): return not board._survey.visible, 5.0)
+	check(board.view.shown_note().begins_with("Being surveyed: 2 cells") and not board._survey.visible,
+		"the map says they're being surveyed, and there's no second survey to ask for (%s)" % board.view.shown_note())
+	# The cells come into the world's index: the TV fetches them and draws their roads.
+	for name in ["c577_711", "c577_712"]:
+		var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(CellsTests.CELLS.path_join(name).path_join("region.json")))
+		host.files["/zips/%s.zip" % name] = cells_tests._zip_cell(name)
+		index["cells"][name.trim_prefix("c")] = {"hash": meta["hash"], "bytes": (host.files["/zips/%s.zip" % name] as PackedByteArray).size(),
+			"url": "http://127.0.0.1:%d/dl/%s" % [host.port, name]}
+	host.files["/index.json"] = JSON.stringify(index).to_utf8_buffer()
+	var came: bool = await pump.call(func(): return board.view.roads_shown() and board.view.roads.edge_count() > 1000 and not board.view.busy(), 60.0)
+	check(came and board.view.surveying().is_empty() and not board.view.unmapped.has(Vector2i(577, 711)) and RealRegion.cell_dir(Vector2i(577, 711)).begins_with(store),
+		"when the cells come into the index the TV fetches them and draws their roads (%d)" % (board.view.roads.edge_count() if board.view.roads else 0))
+	# Busy surveyors: nothing more is baked, and the map says so.
+	host.files["/survey"] = JSON.stringify({"status": "busy", "cells": [], "message": "The surveyors are busy: try again in a few minutes."}).to_utf8_buffer()
+	Shed.request({"a": "adventure_survey", "cells": ["100_100"]})
+	var answered: bool = await pump.call(func(): return str(Shed.route_tv.get("survey", {}).get("said", "")).begins_with("The surveyors are busy"), 20.0)
+	check(answered and Survey.going().is_empty(), "busy surveyors bake nothing, and the crew is told")
+	check(AdventureJourney.check(1, {"a": "adventure_survey", "cells": ["no"]}) != "" and Survey.cells_of(["1_1", "1_1", "2_2"]).size() == 2
+		and Survey.cells_of(range(17).map(func(i): return "500_%d" % i)).is_empty(), "only cells can be surveyed, and not too many at once")
+	host.stop()
+	dash.queue_free()
+	await t.get_tree().process_frame
+	RegionStore._remove_tree(store)
+	CellStore.index_url = CellStore.INDEX_URL
+	Survey.url = Survey.URL
+	Survey.look_every = 60.0
+	Shed.route_tv = {}
+	_world_fixtures(false)
 
 
 ## Pins anywhere (AdventureJourney): on the cells the journey needs, each pin in that area's frame, worked out again as

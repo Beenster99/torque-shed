@@ -217,7 +217,11 @@ planning TV. `claude/world-map`: the world on the TV (`WorldView`: Natural Earth
 across, a search with the TV's own keyboard, the roads of the cells in view fetched and stitched on a worker under
 60 km across, and pins anywhere there are roads: a journey is an area of listed cells (`area:@...`, the cells along
 the pins' line and one either side, the frame at the first pin's cell), worked out by the host from the pins' latitude
-and longitude. Still to do: the main-roads sketch, Survey and its worker, the paste box, credits from the cells used,
+and longitude. `claude/survey`: the Survey button over cells nobody has baked, the host asking the survey worker
+(`torque-shed-world/worker/survey.js`, a Cloudflare Worker on the free plan, with the only secret: a token that can run
+the bake workflow and nothing else; "busy" while three bake runs are going), the crew's survey in the shared view, and
+the TVs looking at the index every minute until the cells come. Still to do: the main-roads sketch, the paste box,
+credits from the cells used,
 the Esc menu's full-screen map on the world too, and a better coast close in (Natural Earth's is coarse beside the
 roads).
 

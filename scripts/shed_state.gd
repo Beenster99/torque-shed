@@ -5850,6 +5850,7 @@ func _process_body(delta: float) -> void:
 	if not active or not is_authority():
 		return
 	_cool_dyno(delta)
+	Survey.poll()   # (the surveyors' answer to the crew's Survey, see Survey)
 	ShedPump.process(delta)
 	_money_clock()
 	Money.record_graph()
