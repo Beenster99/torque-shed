@@ -52,6 +52,10 @@ func test_take_down() -> void:
 	AdventureDiary.root = ROOT
 	_wipe(ROOT)
 	AdventureDest.album_path = ""
+	# The album in memory starts empty: earlier tests' rides leave their photos in it under
+	# "Tester", and those would go up again on the hang_album check below.
+	var mem_was: Dictionary = AdventureDest._album_mem
+	AdventureDest._album_mem = {}
 	Shed.start_new("Tester", 5)
 	if not Shed.crew.has(Shed.me()):
 		Shed.crew[Shed.me()] = {}
@@ -107,3 +111,4 @@ func test_take_down() -> void:
 	_wipe(ROOT)
 	AdventureDiary.root = root_was
 	AdventureDest.album_path = album_was
+	AdventureDest._album_mem = mem_was
