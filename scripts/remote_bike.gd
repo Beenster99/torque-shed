@@ -23,6 +23,9 @@ var _marking := false        # its back tyre was laying rubber last frame
 var rider_gear := {}
 ## Wheeled along on foot (see Roadside): nobody's sat on it.
 var pushed := false
+## Its speed along itself last step (m/s), and how fast it's slowing, eased (m/s/s).
+var _speed_was := INF
+var _decel := 0.0
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
@@ -108,6 +111,14 @@ func _physics_process_body(delta: float) -> void:
 	_last = sb
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
 		lerpf(sa[14], sb[14], f), sb[18], 0.0)
+	# Their rider in their riding style (see BikeModel.update_rider): the lean from the bike's
+	# roll, the braking from how fast it's slowing, with the stop lamp.
+	var fwd_speed := Vector3(sa[7], sa[8], sa[9]).lerp(Vector3(sb[7], sb[8], sb[9]), f).dot(-global_transform.basis.z)
+	if delta > 0.0 and _speed_was != INF:
+		_decel = RiderStyle.ease_to(_decel, (_speed_was - fwd_speed) / delta, 0.15, delta)
+	_speed_was = fwd_speed
+	model.update_rider(RiderStyle.lean_of(global_transform.basis), lerpf(sa[10], sb[10], f), fwd_speed,
+		RiderStyle.brake_from(_decel, sb.size() > 25 and sb[25] > 0.5), delta)
 	model.set_rider_visible(sb[17] < 0.5 and not pushed)
 	# Their left foot down as their bike comes to rest, by its speed as their snapshots have it.
 	model.update_foot(Vector3(sb[7], sb[8], sb[9]).length(), delta, sb[17] < 0.5)

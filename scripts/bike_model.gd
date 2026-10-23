@@ -70,6 +70,37 @@ var _rider: Node3D
 var _rider_head: Node3D
 var _arm_left: Node3D
 var _arm_rest := Vector3.ZERO     # the left arm's line at rest, shoulder to grip, in the rider's space
+## The rider's riding style (see RiderStyle), from their gear, its numbers for this bike's
+## seating, and whether it's cruiser or chopper seating (feet forward: see RiderStyle.LAID_BACK).
+var _style := RiderStyle.DEFAULT
+var _style_n := {}
+var _laid_back := false
+## The rider's rig for the riding pose (see update_rider), in the rider's space: the hips the
+## body tips about; the torso on a pivot at the hips that turns the shoulders about the line up
+## the back; the right arm on its own shoulder pivot like the left; each arm's shoulder and grip
+## (steering space) by side; and each leg on its peg by side: {node (turned about the hip), hip,
+## knee, ankle, peg (model space), shin (a pivot at the knee), hinge (the knee's axis: turning
+## the shin about it straightens the leg), slider (the outside of the knee)}.
+var _hips := Vector3.ZERO
+var _torso: Node3D
+var _torso_axis := Vector3.UP
+var _arm_right: Node3D
+var _arm_rest_r := Vector3.ZERO
+var _arm_at := {}
+var _legs := {}
+var _arm_follow := Quaternion.IDENTITY   # the left arm turned to stay on its grip (see _pose_limbs)
+## The lean input and weight shift as update_pose_from last had them.
+var _lean_in := 0.0
+var _body_shift := 0.0
+## The riding pose now, eased (see update_rider): hang (m, + to the right), roll (rad, + tipped
+## right), look (the head's turn into the corner, rad, + to the left), tilt (the head held
+## nearer level, rad), knee by side (rad out), leg_out (0..1) and the side it's on, and the
+## bike's lean (rad).
+var _pose := {"hang": 0.0, "roll": 0.0, "look": 0.0, "tilt": 0.0, "knee": {-1.0: 0.0, 1.0: 0.0}, "leg_out": 0.0,
+	"leg_side": -1.0, "lean": 0.0}
+## Whether the scratcher's knee slider is on the road now, and the sparks it throws.
+var knee_down := false
+var _sparks: CPUParticles3D
 ## The gesture under way on the bike (see Emotes.RIDING) and how far into it, in seconds.
 var _gesture := ""
 var _gesture_t := 0.0
@@ -5726,12 +5757,24 @@ func eye_layers() -> int:
 func _build_rider() -> void:
 	_rider = Node3D.new()
 	add_child(_rider)
+	# Sat in their riding style, sitting up more on cruiser and chopper seating.
+	_style = RiderGear.style_of(rider_gear)
+	_laid_back = _peg.z < _pivot.z - 0.2 or (_build != null and ["chopper", "cruiser"].has(str(_build.part("frame").get("style", ""))))
+	_style_n = RiderStyle.numbers(_style, _laid_back)
+	_legs = {}
+	_arm_at = {}
+	_torso = null
+	_arm_right = null
 	if rider_color.a > 0.0 or not rider_gear.is_empty():
 		_build_dressed_rider()
 	else:
 		_build_plain_rider()
+	_add_slider()
 	if foot_down > 0.0:
 		_pose_foot()   # built again with the foot down (redressed at a standstill)
+	_apply_body()
+	_pose_limbs()
+	_pose_head()
 
 
 ## The rider in plain colours (no gear chosen): overalls, lid and boots.
@@ -5745,12 +5788,13 @@ func _build_plain_rider() -> void:
 	var visor := _mat(Color(0.02, 0.02, 0.03), 0.9, 0.05)
 	var gloves := _mat(Color(0.04, 0.04, 0.04), 0.0, 0.6)
 	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
-	var shoulders := hips + Vector3(0.0, 0.5, -0.3)
+	var shoulders := hips + (_style_n["torso"] as Vector3)
 	var torso := _tube(hips, shoulders, 0.15, suit, Vector3(1.25, 1.0, 0.8), _rider)
 	var lid := _mesh_instance(_sphere(0.15), helmet, shoulders + Vector3(0.0, 0.2, -0.08), _rider)
 	var v := _mesh_instance(_sphere(0.1), visor, shoulders + Vector3(0.0, 0.2, -0.17), _rider)
 	v.scale = Vector3(1.1, 0.6, 0.5)
 	_rider_head = _make_pivot(shoulders + NECK, [lid, v], "Head")
+	_rig_torso(hips, shoulders, [torso])
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
 	# The first-person eye is the rider's own, inside the helmet, looking down the road over the
@@ -5762,15 +5806,13 @@ func _build_plain_rider() -> void:
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
-		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
+		var elbow := _elbow(sh, grip, side)
 		var arm_from := _rider.get_child_count()
 		var upper := _tube(sh, elbow, 0.05, suit, Vector3.ONE, _rider)
 		upper.layers = hidden
 		_tube(elbow, grip, 0.045, suit, Vector3.ONE, _rider)
 		_mesh_instance(_sphere(0.045), gloves, grip, _rider)
-		if side < 0.0:
-			_arm_left = _make_pivot(sh, _rider.get_children().slice(arm_from), "ArmL")
-			_arm_rest = (grip - sh).normalized()
+		_rig_arm(side, sh, grip, arm_from)
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
 		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
@@ -5780,6 +5822,7 @@ func _build_plain_rider() -> void:
 			_tube(hip, leg[1], 0.075, pants, Vector3.ONE, leg[0])
 			_tube(leg[1], leg[2], 0.06, pants, Vector3.ONE, leg[0])
 			_box(leg[2] + (Vector3(0.0, -0.02, -0.06) if k == 0 else Vector3(0.0, -0.03, -0.07)), Vector3(0.09, 0.08, 0.22), gloves, leg[0])
+		_rig_leg(side, legs[0][0], hip, knee, peg)
 
 
 ## The rider in their own gear (see RiderGear and RiderFigure), sat the same way as the plain
@@ -5797,52 +5840,58 @@ func _build_dressed_rider() -> void:
 	var hidden := eye_layers()   # kept out of your own first-person eye, as in _build_rider
 	var seat_y := _seat_y
 	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
-	var shoulders := hips + Vector3(0.0, 0.5, -0.3)
+	var shoulders := hips + (_style_n["torso"] as Vector3)
 	var torso := RiderFigure.limb(_rider, hips, shoulders, 0.15, jm, hidden)
 	torso.basis = torso.basis * Basis.from_scale(Vector3(1.25, 1.0, 0.8))
 	var head_from := _rider.get_child_count()
 	RiderFigure.helmet(_rider, shoulders + Vector3(0.0, 0.2, -0.08), 0.15, str(worn["helmet"]), tint, hidden, true, worn)
 	_rider_head = _make_pivot(shoulders + NECK, _rider.get_children().slice(head_from), "Head")
 	var back := (shoulders - hips).normalized().cross(Vector3.RIGHT)
+	var body: Array = [torso]
 	if jx.has("hump"):
 		var hump := RiderFigure.mesh(_rider, RiderFigure.sphere(0.5), jm, shoulders.lerp(hips, 0.15) - back * 0.13, hidden)
 		hump.scale = Vector3(0.24, 0.18, 0.14)
+		body.append(hump)
 	if jx.has("collar"):
-		RiderFigure.tube(_rider, shoulders + Vector3(0.0, 0.04, -0.02), shoulders + Vector3(0.0, 0.09, -0.04), 0.08,
-			RiderFigure.material(jacket, tint, "trim"), hidden)
+		body.append(RiderFigure.tube(_rider, shoulders + Vector3(0.0, 0.04, -0.02), shoulders + Vector3(0.0, 0.09, -0.04), 0.08,
+			RiderFigure.material(jacket, tint, "trim"), hidden))
+	_rig_torso(hips, shoulders, body)
 	_eye = _eye_point()
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
-		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
+		var elbow := _elbow(sh, grip, side)
 		var arm_from := _rider.get_child_count()
 		RiderFigure.limb(_rider, sh, elbow, 0.05, jm, hidden)
 		RiderFigure.limb(_rider, elbow, grip, 0.045, jm)
 		RiderFigure.glove(_rider, grip, elbow, 0.045, str(worn["gloves"]), tint)
-		if side < 0.0:
-			_arm_left = _make_pivot(sh, _rider.get_children().slice(arm_from), "ArmL")
-			_arm_rest = (grip - sh).normalized()
+		_rig_arm(side, sh, grip, arm_from)
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
 		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
-		for leg: Array in _rider_legs(side, hip, knee, peg):
+		var legs := _rider_legs(side, hip, knee, peg)
+		for leg: Array in legs:
 			var at: Node3D = leg[0]
 			RiderFigure.limb(at, hip, leg[1], 0.075, tm)
 			RiderFigure.limb(at, leg[1], leg[2], 0.06, tm)
 			if tx.has("knees"):
 				RiderFigure.knee_guard(at, leg[1], hip, leg[2], 0.065, trousers, tint)
 			RiderFigure.boot(at, leg[2] + Vector3(0.0, -0.06, 0.0), leg[1], Vector3.FORWARD, str(worn["boots"]), tint)
+		_rig_leg(side, legs[0][0], hip, knee, peg)
 
 
 ## Where the rider's leg on `side` goes, from `hip` through `knee` to the ankle at `peg`, as
-## [[node to build it under, knee, ankle], ...]: the right leg once, on its peg; the left twice,
+## [[node to build it under, knee, ankle], ...]: the right leg once, on its peg ("LegR"); the left twice,
 ## on its peg ("LegLPeg") and put down on the ground beside the bike ("LegLDown", hidden till the
 ## bike comes to rest: see update_foot), the knee bent forward and out to reach it.
 func _rider_legs(side: float, hip: Vector3, knee: Vector3, peg: Vector3) -> Array:
 	if side > 0.0:
-		return [[_rider, knee, peg]]
+		var right := Node3D.new()
+		right.name = "LegR"
+		_rider.add_child(right)
+		return [[right, knee, peg]]
 	var on_peg := Node3D.new()
 	on_peg.name = "LegLPeg"
 	_rider.add_child(on_peg)
@@ -5928,6 +5977,286 @@ func _make_pivot(at: Vector3, nodes: Array, pivot_name: String) -> Node3D:
 	return pivot
 
 
+# ---------------------------------------------------------------------------- the riding pose
+
+## How far the elbow goes out between shoulder `sh` and `grip` on `side`, as the riding style
+## has it: a little bent down and out, the naked's well out and up.
+func _elbow(sh: Vector3, grip: Vector3, side: float) -> Vector3:
+	var out := float(_style_n.get("elbow_out", 0.08))
+	return sh.lerp(grip, 0.5) + Vector3(out * side, -0.06 + maxf(out - 0.1, 0.0) * 0.6, 0.04)
+
+
+## The torso (`nodes`, from the hips up to the shoulders) onto a pivot at the hips, so the
+## shoulders can turn about the line up the back.
+func _rig_torso(hips: Vector3, shoulders: Vector3, nodes: Array) -> void:
+	_hips = hips
+	_torso_axis = (shoulders - hips).normalized()
+	_torso = _make_pivot(hips, nodes, "Torso")
+
+
+## An arm (the rider's children from `from` on) onto a pivot at its shoulder `sh`, so it can
+## follow its grip as the body moves and the bars turn (and the left one wave).
+func _rig_arm(side: float, sh: Vector3, grip: Vector3, from: int) -> void:
+	var pivot := _make_pivot(sh, _rider.get_children().slice(from), "ArmL" if side < 0.0 else "ArmR")
+	var rest := (grip - sh).normalized()
+	_arm_at[side] = {"node": pivot, "sh": sh, "grip": _grip_l if side < 0.0 else _grip_r, "rest": rest}
+	if side < 0.0:
+		_arm_left = pivot
+		_arm_rest = rest
+	else:
+		_arm_right = pivot
+		_arm_rest_r = rest
+
+
+## The leg on the peg on `side`, built under `node` (the thigh first), rigged: the shin and boot
+## onto a pivot at the knee, and where it all is kept for _pose_limbs.
+func _rig_leg(side: float, node: Node3D, hip: Vector3, knee: Vector3, ankle: Vector3) -> void:
+	var kids := node.get_children()
+	var shin := Node3D.new()
+	shin.name = "Shin"
+	shin.position = knee
+	node.add_child(shin)
+	for i in range(1, kids.size()):
+		var n3 := kids[i] as Node3D
+		if n3 == null:
+			continue
+		var xf := n3.transform
+		node.remove_child(n3)
+		shin.add_child(n3)
+		n3.transform = Transform3D(Basis(), -knee) * xf
+	# The knee's axis, the way round that straightens the leg.
+	var hinge := (hip - knee).cross(ankle - knee).normalized()
+	if (knee + Basis(hinge, 0.2) * (ankle - knee)).distance_to(hip) < ankle.distance_to(hip):
+		hinge = -hinge
+	_legs[side] = {"node": node, "hip": hip, "knee": knee, "ankle": ankle, "peg": ankle, "shin": shin, "hinge": hinge,
+		"slider": knee + Vector3(0.085 * side, -0.02, 0.0)}
+
+
+## The scratcher's knee sliders: a hard puck on the outside of each knee.
+func _add_slider() -> void:
+	if _style != "scratcher":
+		return
+	var puck := _mat(Color(0.1, 0.1, 0.11), 0.0, 0.35)
+	for side in _legs:
+		var leg: Dictionary = _legs[side]
+		_box(leg["slider"], Vector3(0.025, 0.07, 0.09), puck, leg["node"]).name = "KneeSlider"
+
+
+## Poses the rider for the riding now (each physics step, after update_pose): `lean` (rad, the
+## bike's roll, + to the right), `steer` (rad, + right), `speed` (m/s) and `brake` (0..1, how
+## hard they're braking). In their riding style (see RiderStyle) the body hangs off into a corner
+## and the inside knee goes out (the scratcher's right down onto the road, throwing sparks off its
+## slider), or the Rossi leg comes off its peg braking hard into one; and with
+## Settings.look_into_corner on, the head (and a little the shoulders) turn to look through it.
+## The hands stay on the grips and the feet on the pegs. Only looks: the riding's the same.
+func update_rider(lean: float, steer: float, speed: float, brake: float, delta: float) -> void:
+	if _rider == null or _build == null:
+		return
+	_posed = true
+	var still := foot_down > 0.0
+	var want := {"hang": 0.0, "roll": 0.0, "knee": 0.0, "side": 1.0} if still else RiderStyle.body_target(_style, lean, speed, _laid_back)
+	_pose["hang"] = RiderStyle.ease_to(float(_pose["hang"]), float(want["hang"]), RiderStyle.BODY_TIME, delta)
+	_pose["roll"] = RiderStyle.ease_to(float(_pose["roll"]), float(want["roll"]), RiderStyle.BODY_TIME, delta)
+	var knees: Dictionary = _pose["knee"]
+	for side in [-1.0, 1.0]:
+		var k := float(want["knee"]) if side == float(want["side"]) else 0.0
+		knees[side] = RiderStyle.ease_to(float(knees[side]), k, RiderStyle.BODY_TIME, delta)
+	# The Rossi leg goes out on the side the corner's coming (the way the bike's starting to
+	# lean, or the rider's asking it to), and doesn't swap sides while it's out.
+	var hint := lean + _lean_in * 0.15
+	if absf(hint) > 0.03 and float(_pose["leg_out"]) < 0.05:
+		_pose["leg_side"] = signf(hint)
+	var out := 0.0 if still else RiderStyle.leg_out_target(_style, lean, speed, brake, _laid_back)
+	var now := float(_pose["leg_out"])
+	_pose["leg_out"] = RiderStyle.ease_to(now, out, RiderStyle.LEG_OUT_TIME if out > now else RiderStyle.LEG_BACK_TIME, delta)
+	# Looking into the corner, the head held a little nearer level than the bike.
+	var looking := Settings.look_into_corner and not still
+	var look := RiderStyle.look_yaw(lean, steer, speed) if looking else 0.0
+	_pose["look"] = RiderStyle.ease_to(float(_pose["look"]), look, RiderStyle.LOOK_TIME, delta)
+	var tilt := (0.35 * lean + float(_pose["roll"])) * smoothstep(3.0, 10.0, absf(speed)) if looking else 0.0
+	_pose["tilt"] = RiderStyle.ease_to(float(_pose["tilt"]), tilt, RiderStyle.LOOK_TIME, delta)
+	_pose["lean"] = lean
+	_apply_body()
+	_pose_limbs()
+	_pose_head()
+	_update_sparks(speed)
+
+
+## Whether update_rider has posed the rider (bikes only ever posed by update_pose_from, ridden
+## by the townsfolk and other bikers, keep the plain lean they always had).
+var _posed := false
+## How far off the road the knee slider stops (m), and where it touched last (model space).
+const SLIDER_GAP := 0.008
+var _knee_at := Vector3.ZERO
+
+
+## The body on the seat: the old lean and weight shift (the lean less for a sit-up rider), then
+## the style's hanging off and tip into the corner, about the hips.
+func _apply_body() -> void:
+	if _rider == null:
+		return
+	var k := _lean_in * (float(_style_n.get("lean_in", 1.0)) if _posed else 1.0)
+	var base := Transform3D(Basis.from_euler(Vector3(-_body_shift * 0.12, 0.0, -k * 0.12)), Vector3(k * 0.05, 0.0, -_body_shift * 0.1))
+	var r := Basis(Vector3.BACK, -float(_pose["roll"]))
+	_rider.transform = base * Transform3D(r, _hips - r * _hips + Vector3(float(_pose["hang"]), 0.0, 0.0))
+
+
+## The arms turned to keep the hands on the grips (as the body moves and the bars turn), and
+## the legs to keep the feet on the pegs, each knee out as far as the pose has it (kept off the
+## road), and the Rossi leg off its peg, forward and out, its knee straightening.
+func _pose_limbs() -> void:
+	if _rider == null:
+		return
+	var inv := _rider.transform.affine_inverse()
+	var bars := _steer_node.transform if _steer_node else Transform3D(Basis(), _head)
+	for side in _arm_at:
+		var a: Dictionary = _arm_at[side]
+		var to: Vector3 = inv * (bars * (a["grip"] as Vector3)) - (a["sh"] as Vector3)
+		var q := Quaternion(a["rest"] as Vector3, to.normalized()) if to.length() > 0.01 else Quaternion.IDENTITY
+		if side < 0.0:
+			_arm_follow = q
+			if _gesture != "":
+				continue   # waving: _process has the arm
+		# A touch longer or shorter to reach, as an arm's bend gives.
+		var reach := to.length() / maxf((_head + (a["grip"] as Vector3) - (a["sh"] as Vector3)).length(), 0.01)
+		(a["node"] as Node3D).basis = Basis(q) * _stretch(a["rest"], clampf(reach, 0.85, 1.15))
+	knee_down = false
+	var lean := float(_pose["lean"])
+	for side in _legs:
+		var leg: Dictionary = _legs[side]
+		var hip: Vector3 = leg["hip"]
+		var knee: Vector3 = leg["knee"]
+		var w := smoothstep(0.0, 1.0, float(_pose["leg_out"])) if side == float(_pose["leg_side"]) else 0.0
+		var target: Vector3 = inv * (leg["peg"] as Vector3)
+		if w > 0.0:
+			target = target.lerp(target + Vector3(side * 0.27, -0.06, -0.42) * (0.5 if _laid_back else 1.0), w)
+		var shin := Basis(leg["hinge"] as Vector3, (0.3 if _laid_back else 0.8) * w)
+		var ankle := knee + shin * ((leg["ankle"] as Vector3) - knee)
+		var axis := (target - hip).normalized()
+		# On the peg the leg gives a little to reach it, as a knee's bend does; out, it just swings.
+		var reach := lerpf((target - hip).length() / maxf((ankle - hip).length(), 0.01), 1.0, w)
+		var b1 := Basis(Quaternion((ankle - hip).normalized(), axis)) * _stretch((ankle - hip).normalized(), clampf(reach, 0.85, 1.15))
+		# Which way about the hip-to-foot line takes this knee out, away from the bike.
+		var k1 := b1 * (knee - hip)
+		var out := 1.0 if side * ((Basis(axis, 0.1) * k1).x - k1.x) >= 0.0 else -1.0
+		var roll := float((_pose["knee"] as Dictionary)[side]) + 0.4 * w
+		if roll > 0.02 and _slider_height(leg, Basis(axis, roll * out) * b1, lean) < SLIDER_GAP:
+			# Down on the road: as far out as it goes without going through it.
+			var lo := 0.0
+			var hi := roll
+			for i in 7:
+				var mid := (lo + hi) * 0.5
+				if _slider_height(leg, Basis(axis, mid * out) * b1, lean) < SLIDER_GAP:
+					hi = mid
+				else:
+					lo = mid
+			roll = lo
+			knee_down = _style == "scratcher"
+			_knee_at = _rider.transform * _leg_xf(leg, Basis(axis, roll * out) * b1) * (leg["slider"] as Vector3)
+		var b := Basis(axis, roll * out) * b1
+		(leg["node"] as Node3D).transform = _leg_xf(leg, b)
+		(leg["shin"] as Node3D).basis = shin
+
+
+## A stretch by `k` along direction `d` (a unit vector), nothing across it.
+static func _stretch(d: Vector3, k: float) -> Basis:
+	var e := k - 1.0
+	return Basis(Vector3.RIGHT + d * (d.x * e), Vector3.UP + d * (d.y * e), Vector3.BACK + d * (d.z * e))
+
+
+## A leg's node turned by `b` about its hip.
+static func _leg_xf(leg: Dictionary, b: Basis) -> Transform3D:
+	var hip: Vector3 = leg["hip"]
+	return Transform3D(b, hip - b * hip)
+
+
+## How high a leg's knee slider is off the road (m), with the leg turned by `b` and the bike
+## leaned over `lean` (rad, + right) about its tyres' contact line.
+func _slider_height(leg: Dictionary, b: Basis, lean: float) -> float:
+	var p := _rider.transform * _leg_xf(leg, b) * (leg["slider"] as Vector3)
+	return (p.y - foot_ground_y()) * cos(lean) - p.x * sin(lean)
+
+
+## The head: looking back over the shoulder, into the corner (held a little nearer level), and
+## nodding; the shoulders turned a little with the look.
+func _pose_head() -> void:
+	if _rider_head:
+		var yaw := LOOK_BACK_YAW * smoothstep(0.0, 1.0, _look_shown) + float(_pose["look"])
+		_rider_head.basis = Basis(Vector3.UP, yaw) * Basis(Vector3.BACK, float(_pose["tilt"])) * Basis(Vector3.RIGHT, -_nod)
+	if _torso:
+		_torso.basis = Basis(_torso_axis, float(_pose["look"]) * RiderStyle.SHOULDER_SHARE)
+
+
+## How far the head's turned into the corner now (rad, + to the left; for the tests).
+func corner_look() -> float:
+	return float(_pose["look"])
+
+
+## The riding pose now (a copy; for the tests and screenshots): see _pose.
+func rider_pose() -> Dictionary:
+	return _pose.duplicate(true)
+
+
+## The riding style the rider's sat in (see RiderStyle).
+func rider_style() -> String:
+	return _style
+
+
+## Sparks off the scratcher's knee slider while it's on the road at speed.
+func _update_sparks(speed: float) -> void:
+	var on := knee_down and absf(speed) > 4.0
+	if on and _sparks == null:
+		_sparks = _make_sparks()
+		add_child(_sparks)
+	if _sparks:
+		if on:
+			_sparks.position = _knee_at
+		_sparks.emitting = on
+
+
+## Whether the knee slider's throwing sparks.
+func sparks_flying() -> bool:
+	return _sparks != null and _sparks.emitting
+
+
+## Hot little sparks, spat back and up off the road and falling, bright yellow to a red fade.
+static func _make_sparks() -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.name = "KneeSparks"
+	p.amount = 90
+	p.lifetime = 0.4
+	p.emitting = false
+	p.local_coords = false
+	p.randomness = 0.5
+	p.lifetime_randomness = 0.5
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.02
+	p.direction = Vector3(0.0, 0.35, 1.0)
+	p.spread = 28.0
+	p.initial_velocity_min = 1.5
+	p.initial_velocity_max = 4.5
+	p.gravity = Vector3(0.0, -9.8, 0.0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.2
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.3, 1.0])
+	fade.colors = PackedColorArray([Color(1.0, 0.97, 0.75, 1.0), Color(1.0, 0.7, 0.2, 1.0), Color(0.9, 0.2, 0.02, 0.0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.035, 0.035)
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = BikeEffects.soft_spot_texture()
+	m.disable_receive_shadows = true
+	quad.material = m
+	p.mesh = quad
+	return p
+
+
 ## The rider does a gesture on the bike: "nod" or "ride_wave" (see Emotes.RIDING). A new one
 ## takes over from one under way.
 func gesture(e: String) -> void:
@@ -5964,15 +6293,14 @@ func _process(delta: float) -> void:
 			_gesture = ""
 	_nod = float(p["nod"])
 	_look_shown = move_toward(_look_shown, look_back, delta * 5.0)
-	if _rider_head:
-		var yaw := LOOK_BACK_YAW * smoothstep(0.0, 1.0, _look_shown)
-		_rider_head.basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -_nod)
+	_pose_head()
 	if _arm_left:
 		var arm: Vector3 = p["arm"]
 		var turn := Quaternion.IDENTITY
 		if arm != Vector3.ZERO and _arm_rest.dot(arm.normalized()) > -0.999:
 			turn = Quaternion(_arm_rest, arm.normalized())
-		_arm_left.basis = Basis(Quaternion.IDENTITY.slerp(turn, float(p["w"])))
+		# From on its grip (see _pose_limbs) up into the wave and back.
+		_arm_left.basis = Basis(_arm_follow.slerp(turn, float(p["w"])))
 	if _gesture == "" and look_back == 0.0 and _look_shown == 0.0:
 		set_process(false)
 
@@ -6032,9 +6360,9 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	var to_axle := rear_axle - _pivot
 	_swingarm.rotation.x = -atan2(to_axle.y, to_axle.z)
 	_update_struts()
-	if _rider:
-		_rider.position = Vector3(lean_in * 0.05, 0.0, -body_shift * 0.1)
-		_rider.rotation = Vector3(-body_shift * 0.12, 0.0, -lean_in * 0.12)
+	_lean_in = lean_in
+	_body_shift = body_shift
+	_apply_body()
 	if not geometry.is_empty():
 		_update_geometry()
 
@@ -6042,6 +6370,10 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
 func eye_transform() -> Transform3D:
 	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-21.0)), _eye)
+	var look := float(_pose["look"])
+	if look != 0.0:
+		# Looking into a corner, the view turns most of the way with the head.
+		at.basis = Basis(Vector3.UP, look * 0.6) * at.basis
 	if _rider_head and _nod != 0.0:
 		# Nodding, the eye dips with the head (looking back is the camera's own turn).
 		var neck := _rider_head.position

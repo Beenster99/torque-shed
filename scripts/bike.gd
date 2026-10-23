@@ -632,6 +632,8 @@ func _physics_process_body(delta: float) -> void:
 
 	if model:
 		model.update_pose(self)
+		# The rider in their riding style, looking into the corner (see BikeModel.update_rider).
+		model.update_rider(lean_angle, steer, speed, maxf(front_brake, rear_brake * 0.6) if controls_enabled else 0.0, delta)
 		# Coming to rest the rider puts their left foot down (not crashed, airborne or in a burnout).
 		model.update_foot(speed, delta, not is_crashed and burnout <= 0.0 and (wheels[0]["contact"] or wheels[1]["contact"]))
 		if heat:

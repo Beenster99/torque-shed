@@ -694,6 +694,14 @@ func _run_all() -> void:
 	await _test_lamps_self_cancel()
 	_test_lamps_bindings()
 	await _test_lamps_remote()
+	print("Simon's v0.22.0 round: rider styles, and looking into the corner")
+	await _test_rider_style_styles()
+	await _test_rider_style_corner()
+	await _test_rider_style_leg_out()
+	await _test_rider_style_look()
+	await _test_rider_style_toggle()
+	await _test_rider_style_save_sync()
+	await _test_rider_style_all_bikes()
 	print("Simon's v0.21.0 round: smooth roads on adventures")
 	_test_smooth_fair()
 	_test_smooth_real()
@@ -9726,8 +9734,10 @@ func _test_gear_seen_by_others() -> void:
 	dressed.rider_gear = RiderGear.clean_worn({"helmet": "helmet_kestrel", "jacket": "jacket_kestrel", "boots": "boots_mx", "trousers": "trousers_kestrel"})
 	add_child(dressed)
 	dressed.build_from(BikeBuild.new())
-	check(dressed._rider != null and dressed._rider.get_child_count() > plain._rider.get_child_count(),
-		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [dressed._rider.get_child_count(), plain._rider.get_child_count()])
+	# (The rider's meshes hang from the pivots of their riding pose, so count them all.)
+	var rider_meshes := func(m: BikeModel) -> int: return m._rider.find_children("*", "MeshInstance3D", true, false).size()
+	check(dressed._rider != null and int(rider_meshes.call(dressed)) > int(rider_meshes.call(plain)),
+		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [rider_meshes.call(dressed), rider_meshes.call(plain)])
 	var helmeted := 0
 	# The helmet and the left arm sit on pivots of their own (to nod and wave), so look all the way down.
 	for c in dressed._rider.find_children("*", "VisualInstance3D", true, false):
@@ -22958,6 +22968,40 @@ func _test_headlight_builds() -> void:
 
 func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- rider styles (tests/rider_style_tests.gd)
+
+func _rider_styles() -> RefCounted:
+	return load("res://tests/rider_style_tests.gd").new(self)
+
+
+func _test_rider_style_styles() -> void:
+	await _rider_styles().test_styles()
+
+
+func _test_rider_style_corner() -> void:
+	await _rider_styles().test_corner_pose()
+
+
+func _test_rider_style_leg_out() -> void:
+	await _rider_styles().test_leg_out()
+
+
+func _test_rider_style_look() -> void:
+	await _rider_styles().test_look()
+
+
+func _test_rider_style_toggle() -> void:
+	await _rider_styles().test_toggle()
+
+
+func _test_rider_style_save_sync() -> void:
+	await _rider_styles().test_save_and_sync()
+
+
+func _test_rider_style_all_bikes() -> void:
+	await _rider_styles().test_all_bikes()
 
 
 # ---------------------------------------------------------------------------- helmets (tests/helmet_tests.gd)
