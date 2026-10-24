@@ -32,14 +32,15 @@ func _ready() -> void:
 	await _frames(20)
 	await _look_from(c + Vector3(2.0, 0.0, 4.0), tv, "01_route_tv_from_the_door")
 	await _tv_shot(close, tv, dash, "02_the_world")
-	# Further out than the roads: the sketch of the main roads, northern England and then Shikoku.
-	for at: Array in [[54.2, -2.0, "02a_main_roads_england"], [33.9, 133.6, "02b_main_roads_shikoku"]]:
-		board.ask({"lat": at[0], "lon": at[1], "span": 400000.0})
+	# Further out than the roads: the sketch of the main roads, northern England (motorways and trunk roads) and then
+	# Shikoku closer (the A roads too).
+	for at: Array in [[54.2, -2.0, 400000.0, "02a_main_roads_england"], [33.9, 133.6, 200000.0, "02b_main_roads_shikoku"]]:
+		board.ask({"lat": at[0], "lon": at[1], "span": at[2]})
 		end = Time.get_ticks_msec() + 120000
 		while Time.get_ticks_msec() < end and (board.view.busy() or board.view._sketch.is_empty()):
 			await _frames(10)
 		await _frames(20)
-		await _tv_shot(close, tv, dash, at[2])
+		await _tv_shot(close, tv, dash, at[3])
 	# Shodoshima, close in: its cells come from the world's store.
 	var r := RealRegion.get_region("shodoshima")
 	var geo := func(lat: float, lon: float) -> Vector2: return Vector2(lat, lon)

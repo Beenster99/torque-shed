@@ -39,7 +39,9 @@ const SKETCH_SPAN := 1500000.0
 ## The most 5 degree blocks of sketch fetched for a view.
 const SKETCH_BLOCKS := 12
 ## The sketch's look by class (motorway, trunk, A road): colour and width (px).
-const SKETCH_LOOK := [[Color(0.8, 0.35, 0.2), 2.4], [Color(0.82, 0.42, 0.2), 2.0], [Color(0.88, 0.58, 0.25), 1.4]]
+const SKETCH_LOOK := [[Color(0.8, 0.35, 0.2), 2.4], [Color(0.82, 0.42, 0.2), 2.0], [Color(0.9, 0.62, 0.32), 1.2]]
+## Further out than this (metres across), the sketch leaves out the A roads: only the motorways and trunk roads.
+const SKETCH_A_SPAN := 250000.0
 ## Closer in than this, the finer coast (1:10m, else 1:50m) and the rivers.
 const DETAIL_SPAN := 4000000.0
 ## The most town names on the map at once.
@@ -401,6 +403,8 @@ func _poll_sketch() -> bool:
 
 func _draw_sketch(view_m: Rect2, k: float, m0: Vector2) -> void:
 	for cls in [2, 1, 0]:   # (A roads first, so the motorways lie over them)
+		if cls == 2 and span > SKETCH_A_SPAN:
+			continue
 		var look: Array = SKETCH_LOOK[cls]
 		for b in sketch_blocks():
 			var lines: Array = _sketch.get(b, [])
