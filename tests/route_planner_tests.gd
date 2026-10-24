@@ -600,6 +600,62 @@ func test_tv_shared() -> void:
 
 
 ## The world's map (WorldMap): read, the land in triangles, mercator there and back, the search and the nearest place.
+## The main roads' sketch: further out than the roads, the world's index names each 5 degree block's sketch by its hash,
+## and the TV fetches the blocks in view (kept on disk) and draws their motorways, trunk roads and A roads.
+func test_sketch() -> void:
+	var host := CellsTests.FakeHost.new()
+	check(host.start(), "a stand-in for GitHub listens on this machine")
+	var store := "user://test_sketch_cells"
+	RegionStore._remove_tree(store)
+	# A motorway and an A road in the Dales' cell (degrees x 1e5, each point after the first a step from the one before).
+	var block := JSON.stringify({"format": 1, "cells": {"577_711": [[0, [5430000, -220000, 1000, 2000, 500, 3000]], [2, [5435000, -210000, -800, 900]]]}})
+	host.files["/sketch/b28_35.json"] = (block + "\n").to_utf8_buffer()
+	var index := {"format": 1, "release": "2026-10-24.0", "cells": {}, "sketches": {"28_35": block.sha1_text().left(12)}}
+	host.files["/index.json"] = JSON.stringify(index).to_utf8_buffer()
+	CellStore.index_url = "http://127.0.0.1:%d/index.json" % host.port
+	CellStore.dir = store
+	CellStore.offline = false
+	CellStore.forget_index()
+	var view := WorldView.new()
+	view.size = Vector2(800, 450)
+	t.add_child(view)
+	var pump := func(cond: Callable, seconds: float) -> bool:
+		var end := Time.get_ticks_msec() + int(seconds * 1000.0)
+		while not cond.call() and Time.get_ticks_msec() < end:
+			host.serve()
+			view.poll()
+			await t.get_tree().process_frame
+		return cond.call()
+	view.show_view(54.3, -2.1, 300000.0)
+	var came: bool = await pump.call(func(): return not view.busy() and (view._sketch.get("28_35", []) as Array).size() == 2, 20.0)
+	var first: PackedVector2Array = view._sketch.get("28_35", [[0, PackedVector2Array()]])[0][1] if came else PackedVector2Array()
+	check(came and view.sketch_shown() and not view.roads_shown() and view.sketch_blocks().has("28_35")
+		and first.size() == 3 and WorldMap.geo_of(first[2]).distance_to(Vector2(54.315, -2.15)) < 1e-3,
+		"300 km across, the TV fetches the sketch of the main roads in view and reads its lines (%s)" % str(view._sketch.keys()))
+	check(FileAccess.file_exists(store.path_join("sketch/b28_35.json")) and host.asked.has("/sketch/b28_35.json"), "and keeps it on disk")
+	# Kept: not fetched again while the index names the same one.
+	host.asked.clear()
+	check(CellStore.sketch("28_35", index).has("577_711") and not host.asked.has("/sketch/b28_35.json"), "the copy on disk is used while it is the one the index names")
+	# A sketch that isn't the one the index names is not taken.
+	var changed := index.duplicate(true)
+	changed["sketches"]["28_35"] = "000000000000"
+	CellStore.offline = true   # (it would be fetched again, from this thread: offline says no instead)
+	check(CellStore.sketch("28_35", changed).is_empty() and CellStore.sketch("30_35", index).is_empty(),
+		"a sketch the index doesn't name (or doesn't have) is not drawn")
+	CellStore.offline = false
+	view.show_view(54.3, -2.1, 20000.0)
+	check(not view.sketch_shown() and view.sketch_blocks().is_empty(), "close in, the roads instead of the sketch")
+	view.show_view(30.0, 0.0, 9000000.0)
+	check(view.sketch_blocks().is_empty(), "too far out, no sketch")
+	host.stop()
+	view.queue_free()
+	await t.get_tree().process_frame
+	RegionStore._remove_tree(store)
+	CellStore.index_url = CellStore.INDEX_URL
+	CellStore.dir = "user://cells"
+	CellStore.forget_index()
+
+
 func test_world_map() -> void:
 	var ms := Time.get_ticks_msec()
 	check(WorldMap.load_world() and WorldMap.mesh("land") != null and WorldMap.mesh("land_low") != null and WorldMap.lines("borders").size() > 1000
