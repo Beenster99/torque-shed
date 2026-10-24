@@ -42,6 +42,9 @@ const SKETCH_BLOCKS := 12
 const SKETCH_LOOK := [[Color(0.8, 0.35, 0.2), 2.4], [Color(0.82, 0.42, 0.2), 2.0], [Color(0.9, 0.62, 0.32), 1.2]]
 ## Further out than this (metres across), the sketch leaves out the A roads: only the motorways and trunk roads.
 const SKETCH_A_SPAN := 250000.0
+## Closer in than this (metres across), the coast is the cells' own (tools/coast_bake.py, in the sketch's blocks)
+## where the world's store has it, not Natural Earth's, a kilometre or more out beside the roads.
+const COAST_SPAN := 300000.0
 ## Closer in than this, the finer coast (1:10m, else 1:50m) and the rivers.
 const DETAIL_SPAN := 4000000.0
 ## The most town names on the map at once.
@@ -76,6 +79,9 @@ var _look_at := -1000000
 ## The sketch of the main roads: block ("R_C") -> [[class, PackedVector2Array (mercator)], ...], and each line's box.
 var _sketch := {}
 var _sketch_boxes := {}
+## The coast close in: block -> [corner (mercator, the block's north-west), sea (the cells it knows, as triangles),
+## land, holes (sea inside the land)], meshes in mercator units from the corner (so they're exact close in).
+var _coast := {}
 var _sketch_task := -1
 var _sketch_got := {}           # what the worker read: block -> [lines, boxes]
 var _sketch_lock := Mutex.new()
@@ -318,7 +324,8 @@ func shown_note() -> String:
 	return note
 
 
-## Whether the view is waiting for anything (the world's map, the roads, the world's index, the main roads' sketch).
+## Whether the view is waiting for anything (the world's map, the roads, the world's index, the main roads' sketch and
+## the coast).
 func busy() -> bool:
 	return _world_task >= 0 or _task >= 0 or _look_task >= 0 or _sketch_task >= 0
 
@@ -330,10 +337,15 @@ func sketch_shown() -> bool:
 	return span > ROADS_SPAN and span <= SKETCH_SPAN
 
 
-## The 5 degree blocks ("R_C") under the view, when the sketch is shown: [] too far out (or too many).
+## Whether the view is close enough in for the cells' own coast.
+func coast_shown() -> bool:
+	return span <= COAST_SPAN
+
+
+## The 5 degree blocks ("R_C") under the view, for the sketch or the coast: [] too far out (or too many).
 func sketch_blocks() -> Array[String]:
 	var out: Array[String] = []
-	if not sketch_shown() or size.x < 10.0:
+	if span > SKETCH_SPAN or size.x < 10.0:
 		return out
 	var box := _box()
 	var lo := RealRegion.cell_of(box[0], box[1])
@@ -360,7 +372,8 @@ func _want_sketch() -> void:
 		var idx := CellStore.index()
 		var got := {}
 		for b in want:
-			var cells := CellStore.sketch(b, idx)
+			var sketch := CellStore.sketch(b, idx)
+			var cells: Dictionary = sketch.get("cells", {})
 			var lines: Array = []
 			var boxes := PackedFloat32Array()
 			for cell in cells:
@@ -378,7 +391,7 @@ func _want_sketch() -> void:
 						r = r.expand(p)
 					lines.append([int(line[0]), pts])
 					boxes.append_array([r.position.x, r.position.y, r.end.x, r.end.y])
-			got[b] = [lines, boxes]
+			got[b] = [lines, boxes, coast_meshes(b, sketch.get("land", {}))]
 		_sketch_lock.lock()
 		_sketch_got = got
 		_sketch_lock.unlock())
@@ -397,8 +410,91 @@ func _poll_sketch() -> bool:
 	for b in got:
 		_sketch[b] = got[b][0]
 		_sketch_boxes[b] = got[b][1]
+		_coast[b] = got[b][2]
 	_want_sketch()   # (the view may have moved on meanwhile)
 	return not got.is_empty()
+
+
+## Block `block`'s coast meshes (see _coast) from its cells' coasts `land` ({"ROW_COL": "all", "none" or {rings, holes}},
+## tools/coast_bake.py): [] when it has none. Made on a worker.
+static func coast_meshes(block: String, land: Dictionary) -> Array:
+	if land.is_empty():
+		return []
+	var rc := block.split("_")
+	var corner := WorldMap.mercator(int(rc[0]) * 5.0 - 85.0, int(rc[1]) * 5.0 - 180.0)
+	var sea := PackedVector2Array()
+	var ground := PackedVector2Array()
+	var holes := PackedVector2Array()
+	for cell: String in land:
+		var c := cell.split("_")
+		var s := int(c[0]) * RealRegion.CELL_DEG - 90.0
+		var w := int(c[1]) * RealRegion.CELL_DEG - 180.0
+		var a := WorldMap.mercator(s + RealRegion.CELL_DEG, w) - corner
+		var d := WorldMap.mercator(s, w + RealRegion.CELL_DEG) - corner
+		var quad := PackedVector2Array([a, Vector2(d.x, a.y), d, a, d, Vector2(a.x, d.y)])
+		sea.append_array(quad)
+		var v = land[cell]
+		if v is String:
+			if v == "all":
+				ground.append_array(quad)
+			continue
+		if not v is Dictionary:
+			continue
+		for ring in v.get("rings", []):
+			ground.append_array(_triangles(ring, corner))
+		for ring in v.get("holes", []):
+			holes.append_array(_triangles(ring, corner))
+	return [corner, _mesh_of(sea), _mesh_of(ground), _mesh_of(holes)]
+
+
+## Ring [lat, lon, dlat, dlon, ...] (1e-5 degrees, steps after the first) as triangles in mercator units from `corner`.
+static func _triangles(flat: Array, corner: Vector2) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var la := 0.0
+	var lo := 0.0
+	for i in range(0, flat.size() - 1, 2):
+		la = float(flat[i]) if i == 0 else la + float(flat[i])
+		lo = float(flat[i + 1]) if i == 0 else lo + float(flat[i + 1])
+		var p := WorldMap.mercator(la * 1e-5, lo * 1e-5) - corner
+		if pts.is_empty() or not p.is_equal_approx(pts[pts.size() - 1]):
+			pts.append(p)
+	var out := PackedVector2Array()
+	if pts.size() < 3:
+		return out
+	var corners := Geometry2D.triangulate_polygon(pts)
+	if corners.is_empty():
+		# (a ring the triangulator won't take, cut along the cell's edge: its convex pieces instead)
+		for part in Geometry2D.decompose_polygon_in_convex(pts):
+			for k in range(1, part.size() - 1):
+				out.append_array([part[0], part[k], part[k + 1]])
+		return out
+	for k in corners:
+		out.append(pts[k])
+	return out
+
+
+static func _mesh_of(tris: PackedVector2Array) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	if tris.is_empty():
+		return mesh
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = tris
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## The cells' own coast over the world's land, where the blocks in view have it: each cell's box the sea, then its land.
+func _draw_coast(k: float, m0: Vector2) -> void:
+	for b in sketch_blocks():
+		var coast: Array = _coast.get(b, [])
+		if coast.is_empty():
+			continue
+		draw_set_transform(size * 0.5 + (coast[0] - m0) * k, 0.0, Vector2(k, k))
+		draw_mesh(coast[1], null, Transform2D(), SEA)
+		draw_mesh(coast[2], null, Transform2D(), LAND)
+		draw_mesh(coast[3], null, Transform2D(), SEA)
+	draw_set_transform(Vector2.ZERO)
 
 
 func _draw_sketch(view_m: Rect2, k: float, m0: Vector2) -> void:
@@ -485,6 +581,11 @@ func _draw() -> void:
 	var land := WorldMap.mesh("land" if detail else "land_low")
 	if land != null:
 		draw_mesh(land, null, Transform2D(), LAND)
+	# Close in, the cells' own coast over it where the world's store has it (then the lakes over that).
+	if coast_shown():
+		_draw_coast(k, m0)
+		draw_set_transform(size * 0.5 - m0 * k, 0.0, Vector2(k, k))
+	if land != null:
 		var lakes := WorldMap.mesh("lakes")
 		if lakes != null:
 			draw_mesh(lakes, null, Transform2D(), SEA)

@@ -728,7 +728,10 @@ func test_sketch() -> void:
 	var store := "user://test_sketch_cells"
 	RegionStore._remove_tree(store)
 	# A motorway and an A road in the Dales' cell (degrees x 1e5, each point after the first a step from the one before).
-	var block := JSON.stringify({"format": 1, "cells": {"577_711": [[0, [5430000, -220000, 1000, 2000, 500, 3000]], [2, [5435000, -210000, -800, 900]]]}})
+	# Its coast: the Dales cell all land, the one east of it half sea (land to the west of a line down its middle).
+	var half := [5450000, -200000, 0, 12500, -25000, 0, 0, -12500]
+	var block := JSON.stringify({"format": 1, "cells": {"577_711": [[0, [5430000, -220000, 1000, 2000, 500, 3000]], [2, [5435000, -210000, -800, 900]]]},
+		"land": {"577_711": "all", "577_712": {"rings": [half], "holes": []}}})
 	host.files["/sketch/b28_35.json"] = (block + "\n").to_utf8_buffer()
 	var index := {"format": 1, "release": "2026-10-24.0", "cells": {}, "sketches": {"28_35": block.sha1_text().left(12)}}
 	host.files["/index.json"] = JSON.stringify(index).to_utf8_buffer()
@@ -755,7 +758,7 @@ func test_sketch() -> void:
 	check(FileAccess.file_exists(store.path_join("sketch/b28_35.json")) and host.asked.has("/sketch/b28_35.json"), "and keeps it on disk")
 	# Kept: not fetched again while the index names the same one.
 	host.asked.clear()
-	check(CellStore.sketch("28_35", index).has("577_711") and not host.asked.has("/sketch/b28_35.json"), "the copy on disk is used while it is the one the index names")
+	check((CellStore.sketch("28_35", index).get("cells", {}) as Dictionary).has("577_711") and not host.asked.has("/sketch/b28_35.json"), "the copy on disk is used while it is the one the index names")
 	# A sketch that isn't the one the index names is not taken.
 	var changed := index.duplicate(true)
 	changed["sketches"]["28_35"] = "000000000000"
@@ -763,8 +766,14 @@ func test_sketch() -> void:
 	check(CellStore.sketch("28_35", changed).is_empty() and CellStore.sketch("30_35", index).is_empty(),
 		"a sketch the index doesn't name (or doesn't have) is not drawn")
 	CellStore.offline = false
+	var coast: Array = view._coast.get("28_35", [])
+	check(coast.size() == 4 and (coast[1] as ArrayMesh).get_surface_count() == 1 and (coast[2] as ArrayMesh).get_surface_count() == 1
+		and (coast[3] as ArrayMesh).get_surface_count() == 0 and view.coast_shown(),
+		"the blocks bring the cells' own coast too: their sea and land, drawn from 300 km across in")
+	var land_tris: PackedVector2Array = (coast[2] as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX] if coast.size() == 4 else PackedVector2Array()
+	check(land_tris.size() == 6 + 6, "the all-land cell is its box, the half-land one its land's two triangles (%d corners)" % land_tris.size())
 	view.show_view(54.3, -2.1, 20000.0)
-	check(not view.sketch_shown() and view.sketch_blocks().is_empty(), "close in, the roads instead of the sketch")
+	check(not view.sketch_shown() and view.coast_shown() and view.sketch_blocks().has("28_35"), "close in, the roads instead of the sketch, and the cells' coast")
 	view.show_view(30.0, 0.0, 9000000.0)
 	check(view.sketch_blocks().is_empty(), "too far out, no sketch")
 	host.stop()

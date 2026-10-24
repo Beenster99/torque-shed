@@ -57,6 +57,18 @@ class SketchTests(unittest.TestCase):
                 block = json.load(f)
         self.assertEqual(sorted(block["cells"]), ["577_711", "577_712"])
         self.assertNotEqual(h1, h2)
+        self.assertNotIn("land", block)
+
+    def test_a_coast_goes_in_beside_the_lines(self):
+        s = sb.cell_sketch(CELL)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "b28_35.json")
+            sb.merge_block(path, [s])
+            sb.merge_block(path, [{"cell": "577_711", "land": "all"}, {"cell": "577_717", "land": {"rings": [[1, 2, 3, 4, 5, 6]], "holes": []}}])
+            with open(path) as f:
+                block = json.load(f)
+        self.assertEqual(block["cells"]["577_711"], s["lines"])
+        self.assertEqual(block["land"], {"577_711": "all", "577_717": {"rings": [[1, 2, 3, 4, 5, 6]], "holes": []}})
         self.assertEqual(sb.block_of("577_711"), "28_35")
 
 

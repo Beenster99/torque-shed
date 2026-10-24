@@ -90,9 +90,10 @@ static func sketch_url(block: String) -> String:
 	return index_url.get_base_dir().path_join("sketch/b%s.json" % block)
 
 
-## The sketch of the main roads of 5 degree block `block` ("R_C"): {"ROW_COL": [[class, [lat, lon, dlat, dlon, ...]],
-## ...]} (see tools/sketch_bake.py), from the copy kept on disk if it is the one index `idx` names, else fetched (and
-## kept). {} when the index has none for it, or it can't be had. Blocks while it fetches: a worker's job.
+## The sketch of 5 degree block `block` ("R_C"): {cells: {"ROW_COL": its main roads, [[class, [lat, lon, dlat, dlon,
+## ...]], ...]}, land: {"ROW_COL": its coast (tools/coast_bake.py)}} (see tools/sketch_bake.py), from the copy kept on
+## disk if it is the one index `idx` names, else fetched (and kept). {} when the index has none for it, or it can't be
+## had. Blocks while it fetches: a worker's job.
 static func sketch(block: String, idx: Dictionary) -> Dictionary:
 	var want := str((idx.get("sketches", {}) as Dictionary).get(block, ""))
 	if want == "":
@@ -114,7 +115,9 @@ static func sketch(block: String, idx: Dictionary) -> Dictionary:
 			f.store_string(text)
 			f.close()
 	var v = JSON.parse_string(text)
-	return v["cells"] if v is Dictionary and v.get("cells") is Dictionary else {}
+	if not v is Dictionary or not v.get("cells") is Dictionary:
+		return {}
+	return {"cells": v["cells"], "land": v["land"] if v.get("land") is Dictionary else {}}
 
 
 ## The cells of a box (degrees) the game hasn't got but the index has baked (empty ones, the sea, aren't wanted).
