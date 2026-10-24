@@ -294,12 +294,16 @@ func test_verge_edges() -> void:
 			await t.get_tree().process_frame
 		await t.get_tree().physics_frame
 		surfs[surf] = true
+		var here := []
 		for k in 6:
 			var s := s0 + k * 12.0
+			if w.route.deck[clampi(int(s / AdventureRoute.STEP), 0, w.route.deck.size() - 1)] > 0.0:
+				continue   # (on a bridge the land is left below the deck: no verge to run on to)
 			var e := w.route.width_at_s(s) * 0.5
 			for sgn: float in [-1.0, 1.0]:
-				aedges.append([w.transform_at(s, sgn * (e - 0.4)).origin, w.transform_at(s, sgn * (e + 0.6)).origin, surf])
-		var abad := _edges_ok(w.get_world_3d().direct_space_state, aedges.slice(aedges.size() - 12),
+				here.append([w.transform_at(s, sgn * (e - 0.4)).origin, w.transform_at(s, sgn * (e + 0.6)).origin, surf])
+		aedges.append_array(here)
+		var abad := _edges_ok(w.get_world_3d().direct_space_state, here,
 			func(_p: Vector3) -> String: return surf)
 		check(abad.size() <= 1, "the adventure road's %s runs flush on to its %s, which grips less %s"
 			% [surf, AdventureSurface.LAND[surf], str(abad)])
