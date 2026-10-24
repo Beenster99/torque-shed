@@ -4,12 +4,14 @@ trunk roads and A roads (the classes "motorway", "trunk", "primary"), simplified
 12 KB a cell on average: a country's worth can be fetched at once.
 
     python3 tools/sketch_bake.py CELL_DIR [--out FILE]            # one cell's sketch: {"cell", "lines"}
+    python3 tools/sketch_bake.py CELL_DIR --coast COAST.json      # with the cell's coast (coast_bake.py) as "land"
     python3 tools/sketch_bake.py --block OUT SKETCH.json ...       # merged into a 5 degree block's file
 
 A cell's sketch: {"cell": "ROW_COL", "lines": [[class, [lat, lon, dlat, dlon, dlat, dlon, ...]], ...]}, class 0
 motorway, 1 trunk, 2 primary; the first point in 1e-5 degrees, each after it as the step from the one
-before. A road is joined up through its junctions into lines as long as they go, so a city's are few. A block's file: {"format": 1, "cells": {"ROW_COL": lines, ...}} with
-the cells of one release block (cells-RELEASE-bR_C: rows R*20.., columns C*20..), each replaced as it is baked again.
+before. A road is joined up through its junctions into lines as long as they go, so a city's are few. A block's file: {"format": 1, "cells": {"ROW_COL": lines, ...}, "land": {"ROW_COL":
+the cell's coast (coast_bake.py), ...}} with the cells of one release block (cells-RELEASE-bR_C: rows R*20.., columns
+C*20..), each replaced as it is baked again. A sketch with only "lines" or only "land" changes just that.
 """
 import argparse
 import hashlib
@@ -146,8 +148,13 @@ def merge_block(path, sketches):
         with open(path) as f:
             block = json.load(f)
     for s in sketches:
-        block["cells"][s["cell"]] = s["lines"]
+        if "lines" in s:
+            block["cells"][s["cell"]] = s["lines"]
+        if "land" in s:
+            block.setdefault("land", {})[s["cell"]] = s["land"]
     block["cells"] = dict(sorted(block["cells"].items()))
+    if "land" in block:
+        block["land"] = dict(sorted(block["land"].items()))
     text = json.dumps(block, separators=(",", ":"))
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
@@ -159,6 +166,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("cell_dir", nargs="?")
     ap.add_argument("--out")
+    ap.add_argument("--coast", help="the cell's coast (coast_bake.py), put in as its \"land\"")
     ap.add_argument("--block", nargs="+", metavar=("OUT", "SKETCH"), help="merge cell sketches into a block's file")
     args = ap.parse_args(argv)
     if args.block:
@@ -172,6 +180,9 @@ def main(argv=None):
     if not args.cell_dir:
         ap.error("a cell's folder, or --block")
     sketch = cell_sketch(args.cell_dir)
+    if args.coast:
+        with open(args.coast) as f:
+            sketch["land"] = json.load(f)["land"]
     text = json.dumps(sketch, separators=(",", ":"))
     if args.out:
         with open(args.out, "w") as f:
