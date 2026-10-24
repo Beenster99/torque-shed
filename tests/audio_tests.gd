@@ -128,6 +128,8 @@ func test_routing() -> void:
 	await _ticks(10)
 	var at: Vector3 = main.walker.global_position
 	var shots := [Sfx.play_at("clink", at), Sfx.impact("metal", "concrete", 0.8, at), Sfx.play_at("wash_ding", at)]
+	# (read now: a short variant can have played out and gone by the time of the check)
+	var shot_buses: Array = shots.map(func(s): return slider_bus(s.bus) if s != null else "")
 	Sfx.play_ui("wash_ding")
 	Sfx.set_loop(main.walker._work_sound, "jet")
 	var faithful: int = t._bike_named("Old Faithful")
@@ -165,7 +167,7 @@ func test_routing() -> void:
 		var players: Array = main.audio.find_children("*", "AudioStreamPlayer3D", true, false)
 		eng_bus = str(players[0].bus) if not players.is_empty() else ""
 	check(eng_bus.begins_with("Engine"), "the bike's engine is on the engines bus (%s)" % eng_bus)
-	check(shots.all(func(s): return s != null and slider_bus(s.bus) == "SFX"), "a knock, a part landing and a ding are on the effects bus")
+	check(shot_buses.all(func(b): return b == "SFX"), "a knock, a part landing and a ding are on the effects bus %s" % str(shot_buses))
 	main._leave()
 	main.queue_free()
 	await _ticks(2)
@@ -275,7 +277,10 @@ func test_rattle() -> void:
 	main.bike.fuel_litres = main.bike.build.fuel_capacity
 	Shed.request({"a": "roadside_fault", "kind": "rattle", "slot": "exhaust"})
 	await _ticks(3)
-	var before := Sfx.oneshots_alive()
+	# (the world's one-shots: a sat nav or menu blip isn't the rattle pinging)
+	var in_world := func() -> Array:
+		return t.get_tree().get_nodes_in_group(Sfx.ONESHOT_GROUP).filter(func(p): return p is AudioStreamPlayer3D and not p.is_queued_for_deletion())
+	var before: int = in_world.call().size()
 	var r: AudioStreamPlayer3D = main._rattle
 	check(r != null and r.playing and str(r.get_meta("loop", "")) == "rattle" and r.get_parent() == main.bike,
 		"the loose exhaust rattles on the bike (%s)" % (str(r.get_meta("loop", "")) if r else "nothing"))
@@ -300,7 +305,8 @@ func test_rattle() -> void:
 	check(revved[0] > idle[0] + 4.0 and revved[1] > idle[1], "it rattles louder and quicker with the revs (%.0f dB x%.2f idling, %.0f dB x%.2f revved)" % [idle[0], idle[1], revved[0], revved[1]])
 	check(rough[0] > revved[0] and rough[1] >= revved[1], "and more on rough ground (%.0f dB x%.2f on gravel)" % [rough[0], rough[1]])
 	await _ticks(120)
-	check(Sfx.oneshots_alive() <= before, "no pinging one-shots on top (%d, was %d)" % [Sfx.oneshots_alive(), before])
+	var sounding: Array = in_world.call().map(func(p): return str(p.get_meta("sound", p.name)))
+	check(sounding.size() <= before, "no pinging one-shots on top (%d, was %d: %s)" % [sounding.size(), before, str(sounding)])
 	main.bike.engine_on = false
 	main.bike.linear_velocity = Vector3.ZERO
 	main.bike.speed = 0.0

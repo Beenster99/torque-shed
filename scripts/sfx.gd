@@ -273,6 +273,7 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null,
 	if s == null:
 		return null
 	var p := AudioStreamPlayer3D.new()
+	p.set_meta("sound", sound)
 	p.stream = once(s)
 	p.volume_db = volume_db + _rng.randf_range(-1.2, 1.2) + occlusion_db(pos)
 	p.pitch_scale = _rng.randf_range(0.95, 1.05)
@@ -523,6 +524,7 @@ func play_ui(sound: String, volume_db := 0.0) -> void:
 	if st == null:
 		return
 	var p := AudioStreamPlayer.new()
+	p.set_meta("sound", sound)
 	p.stream = once(st)
 	p.bus = "SFX"
 	p.volume_db = volume_db

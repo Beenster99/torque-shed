@@ -28,15 +28,20 @@ A Godot 4.6 (GDScript) co-op motorbike restoration game. See README.md for the g
 
 ## Tests
 
-CI (`.github/workflows/ci.yml`) runs on every pull request and push to main, with Godot 4.6.2:
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to main, with Godot 4.6.2: the suite spread over eight
+machines and the multiplayer pairs over three, all at once (about six minutes):
 
 ```
 godot --headless --path . --import
-godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn
-tests/mp_test.sh
+godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn -- --shard=K/8
+tests/mp_test.sh [pair ...]
 ```
 
-Run the tests before pushing, and add or update tests when behaviour changes.
+Before pushing, run the tests the change touches (`-- --only=_test_a,_test_b`) and the multiplayer pairs it could
+affect (`tests/mp_test.sh mp_journey`); the whole suite runs on the pull request, and runs locally only for a change
+that reaches across the game. The suite lists its slowest tests at the end; `tests/test_times.json` (each test's time,
+from CI's `test-times-*` artifacts) is what the shards are dealt out by, so refresh it when tests are added or slow
+down. Add or update tests when behaviour changes.
 
 ## Style
 
