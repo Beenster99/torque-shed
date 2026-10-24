@@ -69,6 +69,12 @@ class SketchTests(unittest.TestCase):
                 block = json.load(f)
         self.assertEqual(block["cells"]["577_711"], s["lines"])
         self.assertEqual(block["land"], {"577_711": "all", "577_717": {"rings": [[1, 2, 3, 4, 5, 6]], "holes": []}})
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "b28_35.json")
+            sb.merge_block(path, [s, {"cell": "577_711", "spans": [[0, 5430000, -210000, 5430010, -210020]]}])
+            with open(path) as f:
+                block = json.load(f)
+        self.assertEqual((block["cells"]["577_711"], block["spans"]["577_711"]), (s["lines"], [[0, 5430000, -210000, 5430010, -210020]]))
         self.assertEqual(sb.block_of("577_711"), "28_35")
 
 
