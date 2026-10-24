@@ -8,7 +8,9 @@ extends Control
 ## closer there, and the search has a keyboard of its own.
 ##
 ## What the crew does goes through Shed requests: adventure_pin (anywhere there are roads), adventure_unpin,
-## adventure_mode, adventure_clear and adventure_start. What the screen shows (where, how far in, the tab, what is typed
+## adventure_mode, adventure_in (each rider's "I'm in" to the ride as it stands: the host's Start waits for the crew,
+## see AdventureJourney.start_reason), adventure_load (a past ride, from this machine's diaries, or a journey code
+## pasted: pinned again for the crew), adventure_clear and adventure_start. What the screen shows (where, how far in, the tab, what is typed
 ## in the search) is the crew's too (Shed.route_tv, changed by adventure_view): every Route planner TV in the shed, on
 ## every player's machine, shows the same, and a button pressed asks the host rather than moving this screen alone.
 
@@ -26,11 +28,15 @@ const WORLD := [30.0, 10.0, 30000000.0]
 const FOUND_SPAN := 30000.0
 const KEYS := ["ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ "]
 const RESULTS := 5
+## The most past rides listed.
+const PAST := 5
 
 var view: WorldView
 var _pins: VBoxContainer
 var _plan_box: VBoxContainer
 var _find_box: VBoxContainer
+var _rides_box: VBoxContainer
+var _past: VBoxContainer
 var _query: Label
 var _results: VBoxContainer
 var _facts: Label
@@ -38,6 +44,8 @@ var _credits: Label
 var _paste_task := -1
 var _pasted := [Vector2.INF]   # where the link pasted points (a worker sets it), see paste_link
 var _note: Label
+var _crew: Label
+var _in: Button
 var _start: Button
 var _survey: Button
 var _mode_buttons := {}
@@ -104,7 +112,7 @@ func _ready() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 6)
 	panel.add_child(tabs)
-	for t in [["plan", "The ride"], ["find", "Find a place"]]:
+	for t in [["plan", "The ride"], ["find", "Find a place"], ["rides", "Past rides"]]:
 		var b := _button(str(t[1]), 0.0, 20)
 		b.toggle_mode = true
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -135,12 +143,18 @@ func _ready() -> void:
 	_plan_box.add_child(_credits)
 	_note = _label("", 16, Color(1.0, 0.82, 0.4))
 	_plan_box.add_child(_note)
+	_crew = _label("", 16, INK)
+	_plan_box.add_child(_crew)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	_plan_box.add_child(row)
 	var clear := _button("Clear", 0.0, 20)
 	clear.pressed.connect(func(): Shed.request({"a": "adventure_clear"}))
 	row.add_child(clear)
+	_in = _button("I'm in", 0.0, 20)
+	_in.toggle_mode = true
+	_in.pressed.connect(im_in)
+	row.add_child(_in)
 	_start = _button("Start the ride", 0.0, 22)
 	_start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_start.pressed.connect(start)
@@ -177,6 +191,25 @@ func _ready() -> void:
 	_results.add_theme_constant_override("separation", 3)
 	_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_find_box.add_child(_results)
+	# Past rides: this machine's diaries, to pin again; a journey's code to send a mate, or one to paste.
+	_rides_box = VBoxContainer.new()
+	_rides_box.add_theme_constant_override("separation", 4)
+	_rides_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(_rides_box)
+	_rides_box.add_child(_label("Ride one again: a touch pins it for the crew.", 17, DIM))
+	_past = VBoxContainer.new()
+	_past.add_theme_constant_override("separation", 3)
+	_past.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_rides_box.add_child(_past)
+	var codes := HBoxContainer.new()
+	codes.add_theme_constant_override("separation", 4)
+	_rides_box.add_child(codes)
+	for spec in [["Copy its code", copy_code], ["Paste a code", func(): paste_code(DisplayServer.clipboard_get())]]:
+		var b := _button(str(spec[0]), 0.0, 18)
+		b.custom_minimum_size = Vector2(0.0, 34.0)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(spec[1])
+		codes.add_child(b)
 	refresh()
 
 
@@ -240,11 +273,17 @@ func _view() -> Array:
 
 ## [lat, lon, span] showing all of the crew's pins (and room round them), else the world.
 func _fit_view() -> Array:
-	var pins: Array = Shed.journey.get("pins", [])
+	var geo: Array = []
+	for i in (Shed.journey.get("pins", []) as Array).size():
+		geo.append(AdventureJourney.pin_geo(Shed.journey, i))
+	return _fit_geo(geo)
+
+
+## [lat, lon, span] showing all of `geo` ((lat, lon) each; Vector2.INF ones left out), else the world.
+static func _fit_geo(geo: Array) -> Array:
 	var box := Rect2()
 	var n := 0
-	for i in pins.size():
-		var g := AdventureJourney.pin_geo(Shed.journey, i)
+	for g: Vector2 in geo:
 		if g == Vector2.INF:
 			continue
 		box = Rect2(g, Vector2.ZERO) if n == 0 else box.expand(g)
@@ -266,9 +305,13 @@ func survey() -> void:
 		_timer = 0.0
 
 
-## Takes the crew's view to where map link `text` points (a short link is followed on a worker, see MapLink).
+## Takes the crew's view to where map link `text` points (a short link is followed on a worker, see MapLink). A
+## journey code is pinned instead (paste_code).
 func paste_link(text: String) -> void:
 	if _paste_task >= 0:
+		return
+	if text.contains(AdventureJourney.CODE_PREFIX):
+		paste_code(text)
 		return
 	var at := MapLink.parse(text)
 	if at != Vector2.INF or not MapLink.needs_following(text):
@@ -284,6 +327,32 @@ func _go_to_pasted(at: Vector2) -> void:
 		Shed.feedback.emit("Copy a map link (or a place's lat, lon) first: that one doesn't say where.", false)
 		return
 	ask({"lat": at.x, "lon": at.y, "span": FOUND_SPAN, "tab": "plan", "q": ""})
+
+
+## Copies the code of the journey on the board (AdventureJourney.code_of), to send a mate.
+func copy_code() -> void:
+	var code := AdventureJourney.code_of(AdventureJourney.kept_of(Shed.journey))
+	if code == "":
+		Shed.feedback.emit("Pin a start and somewhere to get to first: then there's a journey to copy.", false)
+		return
+	DisplayServer.clipboard_set(code)
+	Shed.feedback.emit("Copied the journey's code: paste it to your mates, and they paste it on their Route planner.", true)
+
+
+## Pins the journey in code `text` (AdventureJourney.from_code) for the crew.
+func paste_code(text: String) -> void:
+	var kept := AdventureJourney.from_code(text)
+	if kept.is_empty():
+		Shed.feedback.emit("Copy a journey's code (it starts %s) first." % AdventureJourney.CODE_PREFIX, false)
+		return
+	pin_again(kept)
+
+
+## Pins kept journey `kept` again, for the crew (in place of what's on the board), and shows it.
+func pin_again(kept: Dictionary) -> void:
+	Shed.request({"a": "adventure_load", "journey": kept})
+	var v := _fit_geo((kept["pins"] as Array).map(func(p): return Vector2(float(p[0]), float(p[1]))))
+	ask({"lat": v[0], "lon": v[1], "span": v[2], "tab": "plan"})
 
 
 ## The data a planned road is drawn from, said short: [credit...] -> one line.
@@ -343,7 +412,11 @@ func _process(delta: float) -> void:
 func _signature() -> String:
 	var plan := AdventureJourney.plan_of(Shed.journey)
 	var res := AdventurePlans.result(plan) if not plan.is_empty() else {}
-	return "%s|%s|%s|%s|%s" % [JSON.stringify(Shed.journey), JSON.stringify(Shed.route_tv), str(not res.is_empty()), str(Shed.is_authority()), str(Adventure.active())]
+	var crew := PackedStringArray()
+	for peer in Shed.crew:
+		crew.append("%d:%s" % [peer, Shed.crew[peer].get("name", "")])
+	return "%s|%s|%s|%s|%s|%s" % [JSON.stringify(Shed.journey), JSON.stringify(Shed.route_tv), str(not res.is_empty()), str(Shed.is_authority()),
+		str(Adventure.active()), ",".join(crew)]
 
 
 ## Brings the panel and the map up to date with the crew's view, the board and the plan, and says the TV should be
@@ -357,9 +430,12 @@ func refresh() -> void:
 		(_tab_buttons[t] as Button).set_pressed_no_signal(t == tab)
 	_plan_box.visible = tab == "plan"
 	_find_box.visible = tab == "find"
+	_rides_box.visible = tab == "rides"
 	_refresh_plan()
 	if tab == "find":
 		_refresh_find()
+	if tab == "rides":
+		_refresh_rides()
 	changed.emit()
 
 
@@ -412,6 +488,15 @@ func _refresh_plan() -> void:
 	var why := AdventureJourney.start_reason(journey)
 	_start.disabled = why != "" or plan.is_empty() or not JourneyMap.plan_ok(plan)
 	_note.text = why if why != "" and pins.size() >= 2 else ""
+	# Who's in: each rider's say-so, when there's a crew to agree.
+	var marked := AdventureJourney.riders_in(journey)
+	_in.visible = AdventureJourney.needs_crew()
+	_in.disabled = pins.size() < 2 or Adventure.active()
+	_in.set_pressed_no_signal(marked.has(Shed.me()))
+	_crew.visible = AdventureJourney.needs_crew() and pins.size() >= 2
+	_crew.text = AdventureJourney.crew_line(journey)
+	_start.text = "Start the ride" if not AdventureJourney.needs_crew() or marked.size() == Shed.crew.size() \
+		else "Start (%d of %d in)" % [marked.size(), Shed.crew.size()]
 	view.queue_redraw()
 
 
@@ -453,6 +538,39 @@ func _refresh_find() -> void:
 		_results.add_child(b)
 	if hits.is_empty():
 		_results.add_child(_label("Type the start of a town's name." if _q() == "" else "Nowhere by that name.", 17, DIM))
+
+
+## Says this rider is in on the ride as it stands, or isn't after all.
+func im_in() -> void:
+	Shed.request({"a": "adventure_in", "in": not AdventureJourney.riders_in(Shed.journey).has(Shed.me())})
+	_timer = 0.0
+
+
+## The rides this machine's diaries keep journeys of, newest first: [{title, km, date, journey}], PAST at most.
+static func past_rides() -> Array:
+	var out: Array = []
+	for d: Dictionary in AdventureDiary.list():
+		if out.size() >= PAST:
+			break
+		if not (d.get("journey", {}) as Dictionary).is_empty():
+			out.append(d)
+	return out
+
+
+func _refresh_rides() -> void:
+	for c in _past.get_children():
+		c.queue_free()
+	var rides := past_rides()
+	for d: Dictionary in rides:
+		var b := _button("%s  (%d km, %s)" % [str(d["title"]), roundi(float(d["km"])), str(d["date"])], 0.0, 17)
+		b.custom_minimum_size = Vector2(0.0, 34.0)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.clip_text = true
+		var kept: Dictionary = d["journey"]
+		b.pressed.connect(func(): pin_again(kept))
+		_past.add_child(b)
+	if rides.is_empty():
+		_past.add_child(_label("No rides in your diaries yet: the ones you ride are kept here.", 17, DIM))
 
 
 ## Host: starts the ride along the pinned journey, for the whole crew.

@@ -130,6 +130,126 @@ func test_ride() -> void:
 
 
 ## The crew's pins on the shared board: anyone adds, moves along, removes; the plan comes out; the host starts it.
+## "I'm in": each rider says so for the journey as it stands; a pin moved or the style changed clears them, and the
+## host's Start waits for everyone in the shed (or most of them). On their own, a rider just starts.
+func test_im_in() -> void:
+	var saved_adventure = Shed.adventure
+	var saved_crew: Dictionary = Shed.crew.duplicate(true)
+	Shed.adventure = {}
+	Shed.journey = {}
+	var me := Shed.me()
+	Shed.crew = {me: {"name": "Sam"}}
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": a.x, "z": a.y})
+	Shed.request({"a": "adventure_in", "in": true})
+	check(AdventureJourney.riders_in(Shed.journey).is_empty(), "one pin is nothing to be in on")
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	check(not AdventureJourney.needs_crew() and AdventureJourney.start_reason(Shed.journey) == "" and AdventureJourney.crew_line(Shed.journey) == "",
+		"on your own, nobody need say they're in: you just start")
+	# A crew of three: the host (this game), Jo and Kit.
+	Shed.crew[2] = {"name": "Jo"}
+	Shed.crew[3] = {"name": "Kit"}
+	check(AdventureJourney.start_reason(Shed.journey).begins_with("Waiting for the crew: 0 of 3"),
+		"with a crew, the host waits for them (%s)" % AdventureJourney.start_reason(Shed.journey))
+	Shed.request({"a": "adventure_in", "in": true})
+	Shed._apply(2, {"a": "adventure_in", "in": true})
+	check(AdventureJourney.riders_in(Shed.journey) == ([me, 2] as Array[int]) and AdventureJourney.start_reason(Shed.journey) == ""
+		and AdventureJourney.crew_line(Shed.journey).ends_with("in; waiting for Kit."),
+		"two of three in: the host can start without the one who wandered off (%s)" % AdventureJourney.crew_line(Shed.journey))
+	check(AdventureJourney.sanitize(Shed.journey) == Shed.journey, "who's in goes to the crew with the board")
+	Shed._apply(3, {"a": "adventure_in", "in": true})
+	check(AdventureJourney.crew_line(Shed.journey) == "Everyone's in.", "then everyone's in")
+	Shed._apply(2, {"a": "adventure_in", "in": false})
+	check(AdventureJourney.riders_in(Shed.journey) == ([me, 3] as Array[int]), "a rider can change their mind")
+	Shed.request({"a": "adventure_view", "view": {"span": 20000.0}})
+	check(AdventureJourney.riders_in(Shed.journey).size() == 2, "looking about the map changes nobody's say-so")
+	Shed.request({"a": "adventure_mode", "mode": "scenic"})
+	check(AdventureJourney.riders_in(Shed.journey).is_empty() and AdventureJourney.start_reason(Shed.journey) != "",
+		"another style of ride is another journey: everyone's in is cleared")
+	for p in [me, 2]:
+		Shed._apply(p, {"a": "adventure_in", "in": true})
+	Shed._apply(3, {"a": "adventure_unpin", "i": 1})
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	check(AdventureJourney.riders_in(Shed.journey).is_empty(), "and so is a pin moved")
+	# One who's left the shed doesn't count either way.
+	Shed._apply(2, {"a": "adventure_in", "in": true})
+	Shed.crew.erase(3)
+	check(AdventureJourney.riders_in(Shed.journey) == ([2] as Array[int]) and AdventureJourney.start_reason(Shed.journey).begins_with("Waiting for the crew: 1 of 2"),
+		"only the riders in the shed count (%s)" % AdventureJourney.start_reason(Shed.journey))
+	Shed.request({"a": "adventure_in", "in": true})
+	Shed.request({"a": "adventure_start", "plan": AdventureJourney.plan_of(Shed.journey), "seed": 7, "title": "Over the tops"})
+	check(Adventure.active() and not Shed.journey.has("in"), "once the ride starts, the next is to be agreed afresh")
+	Shed.adventure = saved_adventure
+	Shed.journey = {}
+	Shed.crew = saved_crew
+
+
+## Journeys kept: a ride's pins and style kept in each rider's diary, listed on the TV's Past rides to pin again with
+## a touch, and a journey's code to paste to a mate.
+func test_journeys_kept() -> void:
+	var saved_adventure = Shed.adventure
+	Shed.adventure = {}
+	Shed.journey = {}
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": a.x, "z": a.y})
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	Shed.request({"a": "adventure_mode", "mode": "scenic"})
+	var board: Dictionary = Shed.journey.duplicate(true)
+	var kept := AdventureJourney.kept_of(board)
+	var code := AdventureJourney.code_of(kept)
+	check(code.begins_with("TS1.") and code.length() < 200 and AdventureJourney.from_code("Ride this: %s !" % code) == kept,
+		"a journey is a code (%d characters) that comes back the same, wherever it's pasted" % code.length())
+	check(AdventureJourney.from_code("TS1.bm9wZQ").is_empty() and AdventureJourney.from_code("nothing here").is_empty()
+		and AdventureJourney.sanitize_kept({"pins": [[95.0, 0.0, ""], [0.0, 0.0, ""]]}).is_empty(), "a code that isn't a journey is no journey")
+	var from_plan := AdventureJourney.kept_of_plan(AdventureJourney.plan_of(board))
+	var near := true
+	for i in 2:
+		near = near and Vector2(from_plan["pins"][i][0], from_plan["pins"][i][1]).distance_to(Vector2(kept["pins"][i][0], kept["pins"][i][1])) < 1e-4
+	check(near and from_plan["mode"] == "scenic" and from_plan["pins"][1][2] == kept["pins"][1][2], "a ride's plan keeps the same journey")
+	# Pinned again (a past ride, or a code pasted): the same pins on the same map, the same style.
+	Shed.request({"a": "adventure_clear"})
+	Shed.request({"a": "adventure_load", "journey": kept})
+	var back := (Shed.journey.get("pins", []) as Array)
+	check(back.size() == 2 and str(Shed.journey["region"]) == str(board["region"]) and str(Shed.journey["mode"]) == "scenic"
+		and Vector2(back[1]["x"], back[1]["z"]).distance_to(Vector2(board["pins"][1]["x"], board["pins"][1]["z"])) < 1.0
+		and AdventurePlans.key(AdventureJourney.plan_of(Shed.journey)) == AdventurePlans.key(AdventureJourney.plan_of(board)),
+		"pinned again, it's the same journey, planned the same (%s on %s, against %s on %s)" % [str(back.map(func(p): return Vector2(p["x"], p["z"]))),
+			Shed.journey.get("region", ""), str((board["pins"] as Array).map(func(p): return Vector2(p["x"], p["z"]))), board["region"]])
+	check(AdventureJourney.check(1, {"a": "adventure_load", "journey": {"pins": [[1.0, 2.0, ""]]}}) != "", "one pin isn't a journey to load")
+	# The diary keeps it, and the TV lists it.
+	var root := "user://test_kept_diaries"
+	RegionStore._remove_tree(root)
+	AdventureDiary.root = root
+	AdventureDiary.save_diary({"id": "ride1", "title": "Over the tops", "km": 31.0, "date": "2026-10-24", "journey": from_plan, "saved_at": 5})
+	AdventureDiary.save_diary({"id": "ride0", "title": "No pins kept", "km": 12.0, "date": "2026-10-01", "saved_at": 2})
+	var rides := RouteTv.past_rides()
+	check(rides.size() == 1 and str(rides[0]["title"]) == "Over the tops" and AdventureJourney.sanitize_kept(rides[0]["journey"]) == from_plan,
+		"each rider's diary keeps the ride's journey, and the TV's Past rides lists it")
+	var dash := Dashboard.new("route", 3.4)
+	t.add_child(dash)
+	dash.show_page("route", {})
+	var tv: RouteTv = dash._route
+	Shed.request({"a": "adventure_clear"})
+	tv.ask({"tab": "rides"})
+	await _settle(func(): return tv._rides_box.visible and tv._past.get_child_count() == 1 and tv._past.get_child(0) is Button)
+	var row: Button = tv._past.get_child(0) if tv._past.get_child_count() > 0 else null
+	check(row != null and row.text.begins_with("Over the tops  (31 km"), "Past rides on the TV (%s)" % (row.text if row else "nothing"))
+	if row != null:
+		row.pressed.emit()
+	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 2 and tv._plan_box.visible)
+	check((Shed.journey.get("pins", []) as Array).size() == 2 and str(Shed.route_tv.get("tab", "")) == "plan" and float(Shed.route_tv.get("span", 0.0)) < 100000.0,
+		"a touch pins it for the crew and shows it on the map")
+	dash.queue_free()
+	await t.get_tree().process_frame
+	RegionStore._remove_tree(root)
+	AdventureDiary.root = "user://diaries"
+	Shed.adventure = saved_adventure
+	Shed.journey = {}
+	Shed.route_tv = {}
+
+
 func test_board() -> void:
 	var r := RealRegion.get_region(REGION)
 	var saved_adventure = Shed.adventure

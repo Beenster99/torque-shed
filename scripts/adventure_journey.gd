@@ -5,8 +5,10 @@ extends RefCounted
 ## the adventure starts along it.
 ##
 ## Shed.journey: {} when nothing is pinned, else {region (a RealRegion id), pins: [{x, z, name, by, and lat, lon for a
-## pin anywhere}], mode ("main", "scenic" or "tracks")}. The planner takes each pin to the road nearest it, so the same
-## pins plan the same road.
+## pin anywhere}], mode ("main", "scenic" or "tracks"), in: [peer, ...] (who has said "I'm in" to the journey as it
+## stands: a pin moved or the style changed clears them)}. The planner takes each pin to the road nearest it, so the
+## same pins plan the same road. The host's Start (start_reason) waits until everyone in the shed is in, or most of them
+## (someone may have wandered off); on their own, a rider just starts.
 ##
 ## A journey anywhere in the world is on the cells it needs (cells_for: those along the line from pin to pin, and a cell
 ## either side), an area of listed cells (RealRegion.CELLS_PREFIX) worked out again, with each pin's x and z, whenever
@@ -20,17 +22,20 @@ extends RefCounted
 ##
 ## Actions (Shed.request, from any player): adventure_pin {lat, lon, name, at (where in the list, default the end)} for a
 ## pin anywhere, or {region, x, z, at} on a region's own map; adventure_unpin {i}, adventure_mode {mode},
-## adventure_clear, adventure_view {view: the fields to change}, adventure_survey {cells} (see Survey).
+## adventure_in {in: true or false}, adventure_load {journey: a kept journey} (pins it all again: a past ride or a
+## journey code), adventure_clear, adventure_view {view: the fields to change}, adventure_survey {cells} (see Survey).
 
 const MAX_PINS := AdventurePlans.MAX_PINS
 ## A pin is put on the nearest junction within this (m); a place's name is taken from within NAME_REACH of it.
 const SNAP_M := 800.0
 const NAME_REACH := 350.0
 ## The TV's tabs, the most metres it can show across or the fewest, and the longest search.
-const TV_TABS := ["plan", "find"]
+const TV_TABS := ["plan", "find", "rides"]
 const SPAN_MIN := 300.0
 const SPAN_MAX := 40000000.0
 const MAX_QUERY := 24
+## How a journey code (code_of) starts.
+const CODE_PREFIX := "TS1."
 
 
 static func sanitize(v: Variant) -> Dictionary:
@@ -51,7 +56,136 @@ static func sanitize(v: Variant) -> Dictionary:
 					pin["lon"] = snappedf(float(p["lon"]), 1e-6)
 				pins.append(pin)
 	var mode := str(v.get("mode", "main"))
-	return {"region": region_id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	var out := {"region": region_id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	var who_in: Array = []
+	if v.get("in") is Array:
+		for peer in v["in"]:
+			if (peer is int or peer is float) and not who_in.has(int(peer)) and who_in.size() < 16:
+				who_in.append(int(peer))
+	if not who_in.is_empty():
+		out["in"] = who_in
+	return out
+
+
+## A journey kept (in a diary, or as a code to send a mate): {pins: [[lat, lon, name], ...], mode, map (the bundled
+## region it was planned on, if it was: pinned there again where the game has it, so it plans the same)}, where on
+## Earth its pins are and the style of ride. {} when it isn't one.
+static func sanitize_kept(v: Variant) -> Dictionary:
+	if not v is Dictionary or not v.get("pins") is Array:
+		return {}
+	var pins: Array = []
+	for p in v["pins"]:
+		if not p is Array or (p as Array).size() < 2 or pins.size() >= MAX_PINS:
+			return {}
+		var lat := float(p[0])
+		var lon := float(p[1])
+		if not is_finite(lat) or not is_finite(lon) or absf(lat) > 80.0 or absf(lon) > 180.0:
+			return {}
+		pins.append([snappedf(lat, 1e-5), snappedf(lon, 1e-5), str(p[2] if (p as Array).size() > 2 else "").left(AdventurePlans.MAX_NAME)])
+	if pins.size() < 2:
+		return {}
+	var mode := str(v.get("mode", "main"))
+	var out := {"pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	var map := str(v.get("map", ""))
+	if map != "" and not map.begins_with(RealRegion.AREA_PREFIX) and map.is_valid_filename():
+		out["map"] = map.left(48)
+	return out
+
+
+## The journey kept of plan `plan` (see AdventurePlans: a started adventure's), or {}.
+static func kept_of_plan(plan: Dictionary) -> Dictionary:
+	var frame := RealRegion.frame_of(str(plan.get("region", "")))
+	if frame == Vector2.INF:
+		return {}
+	var pins: Array = []
+	var names: Array = plan.get("names", [])
+	for i in (plan.get("pins", []) as Array).size():
+		var xz: Array = plan["pins"][i]
+		var g := RealRegion.from_frame(frame, float(xz[0]), float(xz[1]))
+		pins.append([g.x, g.y, str(names[i]) if i < names.size() else ""])
+	return sanitize_kept({"pins": pins, "mode": plan.get("mode", "main"), "map": plan.get("region", "")})
+
+
+## The journey kept of the crew's board `journey` (Shed.journey), or {}.
+static func kept_of(journey: Dictionary) -> Dictionary:
+	var pins: Array = []
+	for i in (journey.get("pins", []) as Array).size():
+		var g := pin_geo(journey, i)
+		if g == Vector2.INF:
+			return {}
+		pins.append([g.x, g.y, str(journey["pins"][i].get("name", ""))])
+	return sanitize_kept({"pins": pins, "mode": journey.get("mode", "main"), "map": journey.get("region", "")})
+
+
+## A journey kept, as a code to paste to a mate: "TS1." and the journey, short (base64 of its JSON).
+static func code_of(kept: Dictionary) -> String:
+	if kept.is_empty():
+		return ""
+	var flat: Array = []
+	for p: Array in kept["pins"]:
+		flat.append([int(round(float(p[0]) * 1e5)), int(round(float(p[1]) * 1e5)), p[2]])
+	var text := JSON.stringify({"p": flat, "m": kept["mode"], "r": kept.get("map", "")})
+	return CODE_PREFIX + Marshalls.utf8_to_base64(text).replace("+", "-").replace("/", "_").trim_suffix("=").trim_suffix("=")
+
+
+## The journey in a code (code_of) found anywhere in `text`, or {}.
+static func from_code(text: String) -> Dictionary:
+	var m := RegEx.create_from_string("TS1\\.([A-Za-z0-9_-]+)").search(text)
+	if m == null:
+		return {}
+	var b64 := m.get_string(1).replace("-", "+").replace("_", "/")
+	while b64.length() % 4 != 0:
+		b64 += "="
+	var v = JSON.parse_string(Marshalls.base64_to_utf8(b64))
+	if not v is Dictionary or not v.get("p") is Array:
+		return {}
+	var pins: Array = []
+	for p in v["p"]:
+		if not p is Array or (p as Array).size() < 3:
+			return {}
+		pins.append([float(p[0]) / 1e5, float(p[1]) / 1e5, str(p[2])])
+	return sanitize_kept({"pins": pins, "mode": v.get("m", "main"), "map": v.get("r", "")})
+
+
+## The riders in the shed who are in on `journey` (see Shed.journey), in the crew's order.
+static func riders_in(journey: Dictionary) -> Array[int]:
+	var out: Array[int] = []
+	var marked: Array = journey.get("in", [])
+	for peer in Shed.crew:
+		if marked.has(int(peer)):
+			out.append(int(peer))
+	return out
+
+
+## Whether `journey` needs the crew's say-so before the host starts it: when there's more than one in the shed.
+static func needs_crew() -> bool:
+	return Shed.crew.size() > 1
+
+
+## Who is in and who isn't yet, said short ("Sam and Jo are in; waiting for Kit."), or "" on your own.
+static func crew_line(journey: Dictionary) -> String:
+	if not needs_crew():
+		return ""
+	var yes := PackedStringArray()
+	var not_yet := PackedStringArray()
+	var marked := riders_in(journey)
+	for peer in Shed.crew:
+		var name := str(Shed.crew[peer].get("name", "Someone"))
+		if marked.has(int(peer)):
+			yes.append(name)
+		else:
+			not_yet.append(name)
+	if not_yet.is_empty():
+		return "Everyone's in."
+	if yes.is_empty():
+		return "Nobody's in yet: say I'm in when the ride suits you."
+	return "%s %s in; waiting for %s." % [_and(yes), "is" if yes.size() == 1 else "are", _and(not_yet)]
+
+
+static func _and(names: PackedStringArray) -> String:
+	if names.size() <= 1:
+		return "".join(names)
+	return ", ".join(names.slice(0, names.size() - 1)) + " and " + names[names.size() - 1]
 
 
 ## A Route planner TV view (see Shed.route_tv) made safe: {} when it is no good.
@@ -199,6 +333,16 @@ static func check(peer: int, action: Dictionary) -> String:
 		"adventure_mode":
 			if not RoutePlanner.CLASS_COST.has(str(action.get("mode", ""))):
 				return "There's no style of ride like that."
+		"adventure_in":
+			if (journey.get("pins", []) as Array).size() < 2:
+				return "Pin a start and somewhere to get to first."
+			if Adventure.active():
+				return "There's an adventure on already."
+		"adventure_load":
+			if sanitize_kept(action.get("journey")).is_empty():
+				return "That's not a journey the game can pin."
+			if Adventure.active():
+				return "There's an adventure on already."
 		"adventure_clear":
 			pass
 		"adventure_view":
@@ -211,6 +355,20 @@ static func check(peer: int, action: Dictionary) -> String:
 
 
 static func apply(peer: int, action: Dictionary, who: String) -> String:
+	var before := _say_so_of(Shed.journey)
+	var said := _apply(peer, action, who)
+	# The journey changed under them: everyone's "I'm in" is for a journey that isn't there now.
+	if not Shed.journey.is_empty() and _say_so_of(Shed.journey) != before:
+		Shed.journey.erase("in")
+	return said
+
+
+## What a rider says they're in on: the pins and the style of ride.
+static func _say_so_of(journey: Dictionary) -> String:
+	return JSON.stringify([journey.get("region", ""), journey.get("pins", []), journey.get("mode", "")])
+
+
+static func _apply(peer: int, action: Dictionary, who: String) -> String:
 	match str(action.get("a", "")):
 		"adventure_pin":
 			if action.has("lat") and action.has("lon"):
@@ -231,6 +389,14 @@ static func apply(peer: int, action: Dictionary, who: String) -> String:
 		"adventure_mode":
 			if not Shed.journey.is_empty():
 				Shed.journey["mode"] = str(action["mode"])
+		"adventure_in":
+			var marked: Array = Shed.journey.get("in", [])
+			marked.erase(peer)
+			if bool(action.get("in", true)):
+				marked.append(peer)
+			Shed.journey["in"] = marked
+		"adventure_load":
+			return _load(sanitize_kept(action["journey"]), who)
 		"adventure_clear":
 			Shed.journey = {}
 		"adventure_view":
@@ -247,6 +413,31 @@ static func apply(peer: int, action: Dictionary, who: String) -> String:
 	return ""
 
 
+## Pins kept journey `kept` again (checked), in place of the board's: each pin as if put down, by `who`. What to tell
+## the crew ("*..."), or why some of it couldn't go down.
+static func _load(kept: Dictionary, who: String) -> String:
+	Shed.journey = {}
+	var missed := 0
+	var map := RealRegion.get_region(str(kept.get("map", "")))
+	for p: Array in kept["pins"]:
+		var pin := {"a": "adventure_pin", "lat": float(p[0]), "lon": float(p[1]), "name": str(p[2])}
+		if map != null:
+			# On the bundled map it was planned on, as it was.
+			var xz := map.geo_to_xz(float(p[0]), float(p[1]))
+			pin = {"a": "adventure_pin", "region": map.id, "x": xz.x, "z": xz.y, "at": 99}
+		if check(0, pin) != "":
+			missed += 1
+			continue
+		_apply(0, pin, who)
+	if not Shed.journey.is_empty():
+		Shed.journey["mode"] = str(kept["mode"])
+	if missed == (kept["pins"] as Array).size():
+		return "None of that journey's pins could go down here: nobody has mapped its roads in this game."
+	if missed > 0:
+		return "*%s pinned a journey again, but %d of its pins couldn't go down (their roads aren't mapped here)." % [who, missed]
+	return "*%s pinned a journey again: %d pins, %s." % [who, (kept["pins"] as Array).size(), str(JourneyMap.MODE_TEXT[kept["mode"]][0]).to_lower()]
+
+
 ## Puts down a pin anywhere ({lat, lon, name, at}, checked): on the bundled region the journey is on (or the one there,
 ## for a first pin where the game has no cells), else on the cells the pins need.
 static func _pin_anywhere(action: Dictionary, who: String) -> void:
@@ -258,7 +449,7 @@ static func _pin_anywhere(action: Dictionary, who: String) -> void:
 	if (not journey.is_empty() and not anywhere(journey)) or bundled != "":
 		var r := RealRegion.get_region(bundled if bundled != "" else str(journey["region"]))
 		var xz := r.geo_to_xz(lat, lon)
-		apply(0, {"a": "adventure_pin", "region": r.id, "x": xz.x, "z": xz.y, "at": action.get("at", 99)}, who)
+		_apply(0, {"a": "adventure_pin", "region": r.id, "x": xz.x, "z": xz.y, "at": action.get("at", 99)}, who)
 		return
 	var pins: Array = (journey.get("pins", []) as Array).duplicate(true)
 	var at := clampi(int(action.get("at", pins.size())), 0, pins.size())
@@ -339,6 +530,10 @@ static func start_reason(journey: Dictionary) -> String:
 		return "There's an adventure on already."
 	if (journey.get("pins", []) as Array).size() < 2:
 		return "Pin a start and somewhere to get to."
+	if needs_crew():
+		var n := riders_in(journey).size()
+		if n * 2 <= Shed.crew.size():
+			return "Waiting for the crew: %d of %d in." % [n, Shed.crew.size()]
 	return ""
 
 

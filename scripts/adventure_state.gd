@@ -75,7 +75,7 @@ static func _is_host(peer: int) -> bool:
 
 static func check(peer: int, action: Dictionary) -> String:
 	match str(action.get("a", "")):
-		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear", "adventure_view", "adventure_survey":
+		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_in", "adventure_load", "adventure_clear", "adventure_view", "adventure_survey":
 			return AdventureJourney.check(peer, action)
 		"adventure_start":
 			if not _is_host(peer):
@@ -118,7 +118,7 @@ static func check(peer: int, action: Dictionary) -> String:
 static func apply(peer: int, action: Dictionary) -> String:
 	var who := str(Shed.crew.get(peer, {}).get("name", "Someone"))
 	match str(action.get("a", "")):
-		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear", "adventure_view", "adventure_survey":
+		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_in", "adventure_load", "adventure_clear", "adventure_view", "adventure_survey":
 			return AdventureJourney.apply(peer, action, who)
 		"adventure_start":
 			var planned: Dictionary = AdventureJourney.start_info(action)
@@ -130,6 +130,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				"plan": planned["plan"], "real": planned["real"], "real_hash": planned["real_hash"],
 				"by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
+			Shed.journey.erase("in")   # (said for this ride: the next is to be agreed afresh)
 			AdventureDiary.started(true)
 			return "*%s is off on an adventure ride: %s, %d km to %s. Everyone to the start!" % [who, str(Shed.adventure["title"]),
 				roundi(km), dest]

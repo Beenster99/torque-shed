@@ -235,6 +235,13 @@ cells baked before were sketched by its "Sketch the main roads" workflow. Still 
 
 **Size.** About a week.
 
+**Status.** Built. `claude/journeys-kept`: the "I'm in" marks (`Shed.journey["in"]`, `adventure_in`, cleared when a
+pin moves or the style changes, and when a ride starts), the TV's line of who is in, and the host's Start waiting for
+everyone in the shed or a majority. The ready-check was already the trip's "Getting the road ready". Journeys kept: each
+diary keeps its ride's pins and style (and the bundled map it was planned on), the TV's Past rides pins one again for
+the crew (`adventure_load`), and a journey on the board copies as a code (`TS1.` and the journey, base64) to paste on
+another crew's TV.
+
 ### Step 6: real roads that look right
 
 The polish the old plan left in stages 2 and 3, now that there is one renderer to polish, interleaved with the steps

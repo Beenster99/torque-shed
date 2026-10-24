@@ -334,11 +334,13 @@ static func sanitize(v: Dictionary, id: String) -> Dictionary:
 		out["stats"] = v["stats"]
 	if v.get("route") is Dictionary:
 		out["route"] = v["route"]
+	out["journey"] = AdventureJourney.sanitize_kept(v.get("journey"))
 	return out
 
 
 ## This machine's diaries, newest first: [{id, title, dest, date, done, photo (key), cover (a
-## photo's file path, or "")}] (just enough for the shelf).
+## photo's file path, or ""), journey (the ride's pins and style, to ride again: see AdventureJourney.sanitize_kept)}]
+## (just enough for the shelf and the Route planner's past rides).
 static func list() -> Array:
 	var out := []
 	var dir := DirAccess.open(root)
@@ -355,7 +357,7 @@ static func list() -> Array:
 				break
 		out.append({"id": sub, "title": d["title"], "dest": d["dest"], "date": d["date"], "done": d["done"], "km": d["km"],
 			"photo": str((d["photo"] as Dictionary).get("key", "")), "cover": cover, "photos": (d["photos"] as Array).size(),
-			"highlights": (d["log"] as Array).size(), "saved_at": int(d["saved_at"])})
+			"highlights": (d["log"] as Array).size(), "saved_at": int(d["saved_at"]), "journey": d["journey"]})
 	out.sort_custom(func(a, b): return int(a["saved_at"]) > int(b["saved_at"]))
 	return out
 
