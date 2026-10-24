@@ -130,6 +130,61 @@ func test_ride() -> void:
 
 
 ## The crew's pins on the shared board: anyone adds, moves along, removes; the plan comes out; the host starts it.
+## "I'm in": each rider says so for the journey as it stands; a pin moved or the style changed clears them, and the
+## host's Start waits for everyone in the shed (or most of them). On their own, a rider just starts.
+func test_im_in() -> void:
+	var saved_adventure = Shed.adventure
+	var saved_crew: Dictionary = Shed.crew.duplicate(true)
+	Shed.adventure = {}
+	Shed.journey = {}
+	var me := Shed.me()
+	Shed.crew = {me: {"name": "Sam"}}
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": a.x, "z": a.y})
+	Shed.request({"a": "adventure_in", "in": true})
+	check(AdventureJourney.riders_in(Shed.journey).is_empty(), "one pin is nothing to be in on")
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	check(not AdventureJourney.needs_crew() and AdventureJourney.start_reason(Shed.journey) == "" and AdventureJourney.crew_line(Shed.journey) == "",
+		"on your own, nobody need say they're in: you just start")
+	# A crew of three: the host (this game), Jo and Kit.
+	Shed.crew[2] = {"name": "Jo"}
+	Shed.crew[3] = {"name": "Kit"}
+	check(AdventureJourney.start_reason(Shed.journey).begins_with("Waiting for the crew: 0 of 3"),
+		"with a crew, the host waits for them (%s)" % AdventureJourney.start_reason(Shed.journey))
+	Shed.request({"a": "adventure_in", "in": true})
+	Shed._apply(2, {"a": "adventure_in", "in": true})
+	check(AdventureJourney.riders_in(Shed.journey) == ([me, 2] as Array[int]) and AdventureJourney.start_reason(Shed.journey) == ""
+		and AdventureJourney.crew_line(Shed.journey).ends_with("in; waiting for Kit."),
+		"two of three in: the host can start without the one who wandered off (%s)" % AdventureJourney.crew_line(Shed.journey))
+	check(AdventureJourney.sanitize(Shed.journey) == Shed.journey, "who's in goes to the crew with the board")
+	Shed._apply(3, {"a": "adventure_in", "in": true})
+	check(AdventureJourney.crew_line(Shed.journey) == "Everyone's in.", "then everyone's in")
+	Shed._apply(2, {"a": "adventure_in", "in": false})
+	check(AdventureJourney.riders_in(Shed.journey) == ([me, 3] as Array[int]), "a rider can change their mind")
+	Shed.request({"a": "adventure_view", "view": {"span": 20000.0}})
+	check(AdventureJourney.riders_in(Shed.journey).size() == 2, "looking about the map changes nobody's say-so")
+	Shed.request({"a": "adventure_mode", "mode": "scenic"})
+	check(AdventureJourney.riders_in(Shed.journey).is_empty() and AdventureJourney.start_reason(Shed.journey) != "",
+		"another style of ride is another journey: everyone's in is cleared")
+	for p in [me, 2]:
+		Shed._apply(p, {"a": "adventure_in", "in": true})
+	Shed._apply(3, {"a": "adventure_unpin", "i": 1})
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	check(AdventureJourney.riders_in(Shed.journey).is_empty(), "and so is a pin moved")
+	# One who's left the shed doesn't count either way.
+	Shed._apply(2, {"a": "adventure_in", "in": true})
+	Shed.crew.erase(3)
+	check(AdventureJourney.riders_in(Shed.journey) == ([2] as Array[int]) and AdventureJourney.start_reason(Shed.journey).begins_with("Waiting for the crew: 1 of 2"),
+		"only the riders in the shed count (%s)" % AdventureJourney.start_reason(Shed.journey))
+	Shed.request({"a": "adventure_in", "in": true})
+	Shed.request({"a": "adventure_start", "plan": AdventureJourney.plan_of(Shed.journey), "seed": 7, "title": "Over the tops"})
+	check(Adventure.active() and not Shed.journey.has("in"), "once the ride starts, the next is to be agreed afresh")
+	Shed.adventure = saved_adventure
+	Shed.journey = {}
+	Shed.crew = saved_crew
+
+
 func test_board() -> void:
 	var r := RealRegion.get_region(REGION)
 	var saved_adventure = Shed.adventure

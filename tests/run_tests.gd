@@ -460,6 +460,7 @@ func _run_all() -> void:
 	_test_planner_places()
 	_test_planner_forks()
 	_test_planner_board()
+	_test_planner_im_in()
 	await _test_planner_map()
 	await _test_planner_map_links()
 	await _test_planner_tv()
@@ -22223,6 +22224,10 @@ func _test_planner_dales() -> void:
 
 func _test_planner_via() -> void:
 	_planner().test_via()
+
+
+func _test_planner_im_in() -> void:
+	_planner().test_im_in()
 
 
 func _test_planner_board() -> void:

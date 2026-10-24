@@ -8,7 +8,8 @@ extends Control
 ## closer there, and the search has a keyboard of its own.
 ##
 ## What the crew does goes through Shed requests: adventure_pin (anywhere there are roads), adventure_unpin,
-## adventure_mode, adventure_clear and adventure_start. What the screen shows (where, how far in, the tab, what is typed
+## adventure_mode, adventure_in (each rider's "I'm in" to the ride as it stands: the host's Start waits for the crew,
+## see AdventureJourney.start_reason), adventure_clear and adventure_start. What the screen shows (where, how far in, the tab, what is typed
 ## in the search) is the crew's too (Shed.route_tv, changed by adventure_view): every Route planner TV in the shed, on
 ## every player's machine, shows the same, and a button pressed asks the host rather than moving this screen alone.
 
@@ -38,6 +39,8 @@ var _credits: Label
 var _paste_task := -1
 var _pasted := [Vector2.INF]   # where the link pasted points (a worker sets it), see paste_link
 var _note: Label
+var _crew: Label
+var _in: Button
 var _start: Button
 var _survey: Button
 var _mode_buttons := {}
@@ -135,12 +138,18 @@ func _ready() -> void:
 	_plan_box.add_child(_credits)
 	_note = _label("", 16, Color(1.0, 0.82, 0.4))
 	_plan_box.add_child(_note)
+	_crew = _label("", 16, INK)
+	_plan_box.add_child(_crew)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	_plan_box.add_child(row)
 	var clear := _button("Clear", 0.0, 20)
 	clear.pressed.connect(func(): Shed.request({"a": "adventure_clear"}))
 	row.add_child(clear)
+	_in = _button("I'm in", 0.0, 20)
+	_in.toggle_mode = true
+	_in.pressed.connect(im_in)
+	row.add_child(_in)
 	_start = _button("Start the ride", 0.0, 22)
 	_start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_start.pressed.connect(start)
@@ -343,7 +352,11 @@ func _process(delta: float) -> void:
 func _signature() -> String:
 	var plan := AdventureJourney.plan_of(Shed.journey)
 	var res := AdventurePlans.result(plan) if not plan.is_empty() else {}
-	return "%s|%s|%s|%s|%s" % [JSON.stringify(Shed.journey), JSON.stringify(Shed.route_tv), str(not res.is_empty()), str(Shed.is_authority()), str(Adventure.active())]
+	var crew := PackedStringArray()
+	for peer in Shed.crew:
+		crew.append("%d:%s" % [peer, Shed.crew[peer].get("name", "")])
+	return "%s|%s|%s|%s|%s|%s" % [JSON.stringify(Shed.journey), JSON.stringify(Shed.route_tv), str(not res.is_empty()), str(Shed.is_authority()),
+		str(Adventure.active()), ",".join(crew)]
 
 
 ## Brings the panel and the map up to date with the crew's view, the board and the plan, and says the TV should be
@@ -412,6 +425,15 @@ func _refresh_plan() -> void:
 	var why := AdventureJourney.start_reason(journey)
 	_start.disabled = why != "" or plan.is_empty() or not JourneyMap.plan_ok(plan)
 	_note.text = why if why != "" and pins.size() >= 2 else ""
+	# Who's in: each rider's say-so, when there's a crew to agree.
+	var marked := AdventureJourney.riders_in(journey)
+	_in.visible = AdventureJourney.needs_crew()
+	_in.disabled = pins.size() < 2 or Adventure.active()
+	_in.set_pressed_no_signal(marked.has(Shed.me()))
+	_crew.visible = AdventureJourney.needs_crew() and pins.size() >= 2
+	_crew.text = AdventureJourney.crew_line(journey)
+	_start.text = "Start the ride" if not AdventureJourney.needs_crew() or marked.size() == Shed.crew.size() \
+		else "Start (%d of %d in)" % [marked.size(), Shed.crew.size()]
 	view.queue_redraw()
 
 
@@ -453,6 +475,12 @@ func _refresh_find() -> void:
 		_results.add_child(b)
 	if hits.is_empty():
 		_results.add_child(_label("Type the start of a town's name." if _q() == "" else "Nowhere by that name.", 17, DIM))
+
+
+## Says this rider is in on the ride as it stands, or isn't after all.
+func im_in() -> void:
+	Shed.request({"a": "adventure_in", "in": not AdventureJourney.riders_in(Shed.journey).has(Shed.me())})
+	_timer = 0.0
 
 
 ## Host: starts the ride along the pinned journey, for the whole crew.

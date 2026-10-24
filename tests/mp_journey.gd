@@ -4,7 +4,8 @@ extends Node
 ## both must see all of them, and the style of ride the client picks. Each game plans the same journey itself; the host
 ## starts the ride and both must be riding the same planned road (the same hash, checked by AdventureTrip.real_mismatch),
 ## each seen by the other at the right spot on it. The host ends it. On the way, the Route planner TVs: the client
-## moves the world's map on the Dyno Room's wall TV and the host types in its search, and both must show the same.
+## moves the world's map on the Dyno Room's wall TV and the host types in its search, and both must show the same; then
+## each says "I'm in", the host's Start waiting for the client's, and the host starts the ride from the TV.
 
 const REGION := "shodoshima"
 
@@ -80,10 +81,28 @@ func _ready() -> void:
 	var res := AdventurePlans.result(plan, true)
 	var hash := (res["pack"] as RealPack).hash if bool(res.get("ok", false)) else ""
 	print("MP journey note %s: planned %s km, hash %s" % [role, "%.1f" % (res["pack"] as RealPack).max_km() if hash != "" else "?", hash])
-	# The host starts it.
+	# "I'm in": the host first, and its Start waits for the client; then the client, and the host starts it from the TV.
+	var in_ok := false
+	if view_ok and role == "host":
+		board.im_in()
+		var waits := await _until(func(): return AdventureJourney.riders_in(Shed.journey).size() == 1 and board._sig == board._signature(), 20.0)
+		in_ok = waits and board._start.disabled and board._crew.text == "Plan host is in; waiting for Plan client."
+		print("MP journey note host: on its own say-so, Start %s (%s)" % ["waits" if board._start.disabled else "is lit", board._crew.text])
+	if view_ok and role == "client":
+		await _until(func(): return AdventureJourney.riders_in(Shed.journey).size() == 1, 20.0)
+		board.im_in()
+	var all_in := view_ok and await _until(func(): return AdventureJourney.riders_in(Shed.journey).size() == 2 and board._sig == board._signature(), 20.0)
+	if role == "host":
+		in_ok = in_ok and all_in and not board._start.disabled and board._start.text == "Start the ride"
+	else:
+		in_ok = all_in and board._crew.text == "Everyone's in." and board._in.button_pressed
+		board.ask({"q": "in"})   # (the client's screen has caught up: the host may start, which clears the marks)
+	if role == "host" and in_ok:
+		in_ok = await _until(func(): return board._q() == "in", 20.0)
+	print("MP journey note %s: everyone in %s (%s), Start %s" % [role, all_in, board._crew.text if board else "?", board._start.text if board else "?"])
 	var started := await _until(func():
 		if role == "host" and not Adventure.active() and not trip.on_trip():
-			Shed.request({"a": "adventure_start", "plan": plan, "seed": 5, "title": "Across the island"})
+			board.start()
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 60.0)
 	var same_road := started and hash != "" and str(Shed.adventure.get("real_hash", "")) == hash and trip.world != null \
 		and trip.world.route.real != null and trip.world.route.real.hash == hash and AdventureTrip.real_mismatch(Shed.adventure) == ""
@@ -114,14 +133,14 @@ func _ready() -> void:
 			asked[0] = true
 			Shed.request({"a": "adventure_end"})
 		return not trip.on_trip() and main.bike == null and not Adventure.active(), 30.0)
-	var ok := first and pinned and by_ok and mode_ok and view_ok and hash != "" and started and same_road and seen_ok and home
+	var ok := first and pinned and by_ok and mode_ok and view_ok and in_ok and hash != "" and started and same_road and seen_ok and home
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP journey %s %s: pins shared=%s (by whom=%s), style of ride shared=%s, the TV's view shared=%s, planned=%s, riding=%s on the same road=%s, each seen by the other=%s, home=%s" % [
-		"PASS" if ok else "FAIL", role, pinned, by_ok, mode_ok, view_ok, hash != "", started, same_road, seen_ok, home])
+	print("MP journey %s %s: pins shared=%s (by whom=%s), style of ride shared=%s, the TV's view shared=%s, everyone in=%s, planned=%s, riding=%s on the same road=%s, each seen by the other=%s, home=%s" % [
+		"PASS" if ok else "FAIL", role, pinned, by_ok, mode_ok, view_ok, in_ok, hash != "", started, same_road, seen_ok, home])
 	get_tree().quit(0 if ok else 1)
 
 
