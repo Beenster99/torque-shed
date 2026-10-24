@@ -33,6 +33,10 @@ const COLLIDE_COLS := 8
 ## the road along the way: route.land_reach keeps it well short of them.
 const SHARED_COL := 13
 const CROWN := 0.04
+## A bridge's stone, its parapets' height over the deck (m), and how far apart its piers are at most (m).
+const BRIDGE_STONE := Color(0.62, 0.58, 0.5)
+const PARAPET := 0.95
+const PIER_GAP := 14.0
 ## How far a chunk's road collision runs on past each end, under the next chunk's (m, see _overlapped).
 const SEAM_OVERLAP := 0.05
 ## The most vertices of real buildings a chunk draws (a town's busiest stretch would be several times this).
@@ -41,7 +45,8 @@ const BUILDING_VERTS := 18000
 const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0, "dry_bush": 260.0, "rock": 320.0,
 	"post": 220.0, "snow_pole": 260.0, "km_post": 200.0, "buildings": 1100.0, "lines": 380.0,
 	"cactus": 420.0, "red_rock": 320.0, "gorse": 260.0, "dune_grass": 200.0, "oak": 650.0, "sheep": 220.0,
-	"mesa": 3400.0, "crag": 2400.0, "lighthouse": 2600.0, "walls": 420.0}
+	"mesa": 3400.0, "crag": 2400.0, "lighthouse": 2600.0, "walls": 420.0,
+	"bridge": 1600.0}
 ## Small things that may stand close to the road's edge (the rest keep 6 m off it).
 const NEAR_KINDS := ["rock", "bush", "dry_bush", "red_rock", "gorse", "dune_grass", "sheep"]
 ## The far scenery (AdventureTheme "far"): how far out from the road it stands (m), and how
@@ -116,6 +121,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 			road_c.append(rc * wear)
 	out["road"] = _grid(road_v, rows, 5, road_uv, road_c)
 	out["road_faces"] = _faces(_overlapped(road_v, rows, 5), rows, 5, 5)
+	out["bridge"] = _bridge(route, i0, i1, ax, az)
 	# The land either side, out to the skyline: left from its far edge in, right from the verge out.
 	var cols := land_cols(route)
 	var land := {}
@@ -607,6 +613,73 @@ static func _cliff_top(route: AdventureRoute, i: int, ax: float, az: float) -> T
 	return Transform3D()
 
 
+## The bridges between knots i0 and i1 (AdventureRoute.deck): a stone parapet each side of the deck, the deck's sides
+## and underside BRIDGE_DEPTH down, and a pier every PIER_GAP metres or so where the ground is well below. Relative to
+## the anchor (ax, az).
+static func _bridge(route: AdventureRoute, i0: int, i1: int, ax: float, az: float) -> Dictionary:
+	var arr := AdventureProps.new_arrays()
+	if route.deck.is_empty():
+		return arr
+	var stone: Color = BRIDGE_STONE
+	var depth := AdventureRoute.BRIDGE_DEPTH
+	var at := func(i: int, lat: float, y: float) -> Vector3:
+		var h := route.hd[i]
+		return Vector3(route.px[i] + cos(h) * lat - ax, y, route.pz[i] + sin(h) * lat - az)
+	var since := 999
+	for i in range(i0, mini(i1, route.deck.size() - 1)):
+		if route.deck[i] <= 0.0 or route.deck[i + 1] <= 0.0:
+			since = 999
+			continue
+		var e0 := route.width[i] * 0.5
+		var e1 := route.width[i + 1] * 0.5
+		var y0 := route.ph[i]
+		var y1 := route.ph[i + 1]
+		for side: int in [-1, 1]:
+			var s := float(side)
+			# The parapet: its inside, top and outside, then the deck's side on down.
+			var in0: Vector3 = at.call(i, s * (e0 + 0.15), y0 - 0.05)
+			var in1: Vector3 = at.call(i + 1, s * (e1 + 0.15), y1 - 0.05)
+			var out0: Vector3 = at.call(i, s * (e0 + 0.6), y0 - depth)
+			var out1: Vector3 = at.call(i + 1, s * (e1 + 0.6), y1 - depth)
+			var top := Vector3.UP * (PARAPET + 0.05)
+			var outer0: Vector3 = at.call(i, s * (e0 + 0.6), y0)
+			var outer1: Vector3 = at.call(i + 1, s * (e1 + 0.6), y1)
+			if side < 0:
+				AdventureProps._quad(arr, in1, in0, in0 + top, in1 + top, stone.darkened(0.06))
+				AdventureProps._quad(arr, in1 + top, in0 + top, outer0 + top, outer1 + top, stone.lightened(0.08))
+				AdventureProps._quad(arr, outer0 + top, outer1 + top, out1, out0, stone)
+			else:
+				AdventureProps._quad(arr, in0, in1, in1 + top, in0 + top, stone.darkened(0.06))
+				AdventureProps._quad(arr, in0 + top, in1 + top, outer1 + top, outer0 + top, stone.lightened(0.08))
+				AdventureProps._quad(arr, outer1 + top, outer0 + top, out0, out1, stone)
+		# The underside, seen from the river.
+		var ul0: Vector3 = at.call(i, -(e0 + 0.6), y0 - depth)
+		var ur0: Vector3 = at.call(i, e0 + 0.6, y0 - depth)
+		var ul1: Vector3 = at.call(i + 1, -(e1 + 0.6), y1 - depth)
+		var ur1: Vector3 = at.call(i + 1, e1 + 0.6, y1 - depth)
+		AdventureProps._quad(arr, ul0, ur0, ur1, ul1, stone.darkened(0.25))
+		# A pier where the ground is well below and the last is far enough back.
+		since += 1
+		var mid: Vector3 = at.call(i, 0.0, y0 - depth)
+		var ground := route.natural_height(i, mid.x + ax, mid.z + az)
+		if since * AdventureRoute.STEP >= PIER_GAP and route.deck[i] >= 1.0 and y0 - depth - ground > 1.5:
+			since = 0
+			var xf := Transform3D(Basis(Vector3.UP, -route.hd[i]), Vector3(mid.x, ground - 0.5, mid.z))
+			AdventureProps.box(arr, xf, Vector3(e0 * 2.0 + 0.8, y0 - depth - ground + 0.5, 1.6), stone.darkened(0.12), false)
+	return arr
+
+
+static var _bridge_mat: BaseMaterial3D
+
+
+## The props' vertex-colour material, seen from both sides (a bridge is looked at from the road and from the river).
+static func _bridge_material() -> BaseMaterial3D:
+	if _bridge_mat == null:
+		_bridge_mat = (AdventureProps.vc_material() as BaseMaterial3D).duplicate()
+		_bridge_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _bridge_mat
+
+
 ## A dry-stone wall or a hedge from `a` to `b` (on the ground), `h` high and `t` thick: its
 ## two sides and its top.
 static func _wall(arr: Dictionary, a: Vector3, b: Vector3, h: float, t: float, col: Color) -> void:
@@ -745,6 +818,14 @@ static func _commit_ground(data: Dictionary, node: Node3D, scale: float) -> void
 	lmesh.mesh = land
 	lmesh.material_override = AdventureSurface.land_material()
 	node.add_child(lmesh)
+	var bridge: Dictionary = data.get("bridge", {})
+	if not bridge.is_empty() and not (bridge["v"] as PackedVector3Array).is_empty():
+		var bmi := MeshInstance3D.new()
+		bmi.name = "Bridge"
+		bmi.mesh = AdventureProps.to_mesh(bridge)
+		bmi.material_override = _bridge_material()
+		_range(bmi, RANGES["bridge"] * scale)
+		node.add_child(bmi)
 
 
 ## The collision: the road (its surface for the tyres) and the land near it.

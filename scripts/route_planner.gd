@@ -23,7 +23,9 @@ const MAX_ROUNDS := 3000
 ## An out-and-back this long (m each way) or shorter, to a pin on a dead-end street, is left out of the route.
 const SPUR_M := 300.0
 ## The version of the planner, in every plan's hash: a change to how routes are made changes the hash.
-const VERSION := 3
+const VERSION := 4
+## A bridge's ends are matched to the road within this (m) of them.
+const BRIDGE_REACH := 10.0
 
 ## What a metre of each class of road costs, by the style of ride ("main": the quick way, "scenic": quiet back roads,
 ## "tracks": gravel and tracks where there are any).
@@ -193,7 +195,8 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 		parts["fetch"] = Time.get_ticks_msec() - t0
 		if missing > 0:
 			return _fail("Couldn't get the lie of the land for that journey (%d map tiles): are you online?" % missing)
-	var elev := _heights(terrain, xs, zs)
+	var bridges := bridges_along(region, xs, zs)
+	var elev := _heights(terrain, xs, zs, bridges)
 	parts["heights"] = Time.get_ticks_msec() - t0
 	# Where the pins' route ends and the run-out begins.
 	var ends_at := _length_of_steps(region, steps, run_start)
@@ -223,6 +226,7 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	pack.x = xs
 	pack.z = zs
 	pack.e = elev
+	pack.bridges = bridges
 	pack.chunks = rows
 	pack.names = names
 	var end_k := n - 1
@@ -247,7 +251,7 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	pack.fork_count = pack.forks.size()
 	parts["forks"] = Time.get_ticks_msec() - t0
 	pack.summary = _summary(rows, names, elev, request)
-	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array())
+	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), bridges)
 	pack.hash = hash
 	pack.id = "plan_" + hash
 	parts["junctions"] = Time.get_ticks_msec() - t0
@@ -271,7 +275,8 @@ static func _fail(why: String) -> Dictionary:
 ## The hash of a plan: the region's, the style, the pins' junctions and the roads taken (the same on every machine
 ## that plans the same journey, and different if any of them planned another); and with live heights the road's
 ## heights too, to the 10 cm (two machines could have been given different map tiles of the land).
-static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i], elev := PackedFloat32Array()) -> String:
+static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i], elev := PackedFloat32Array(),
+		bridges := PackedInt32Array()) -> String:
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	var text := "%d|%s|%s|%s" % [VERSION, region.hash, str(request.get("mode", "main")), str(request.get("seed", 0))]
@@ -286,6 +291,8 @@ static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i
 		for h in elev:
 			tenths.append(roundi(h * 10.0))
 		ctx.update(tenths.to_byte_array())
+	if not bridges.is_empty():
+		ctx.update(bridges.to_byte_array())   # (a machine without the bridges plans another road)
 	return ctx.finish().hex_encode().substr(0, 16)
 
 
@@ -708,8 +715,74 @@ static func _relax(px: PackedFloat64Array, pz: PackedFloat64Array, limit: float,
 			from = maxi(from, hi + 1)
 
 
-## The ground under the road, averaged over 9 knots (the road rides over bumps), no steeper than MAX_GRADE.
-static func _heights(terrain: RealTerrain, xs: PackedFloat64Array, zs: PackedFloat64Array) -> PackedFloat32Array:
+## The road's bridges (the region's spans of kind 0 whose two ends it passes, BRIDGE_REACH or nearer, as far apart
+## along it as the bridge is long, near enough): [first knot, last knot, ...], in order, none overlapping.
+static func bridges_along(region: RealRegion, xs: PackedFloat64Array, zs: PackedFloat64Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if region == null or region.spans.is_empty() or xs.size() < 2:
+		return out
+	var cell := 32.0
+	var grid := {}
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for i in xs.size():
+		var g := Vector2i(floori(xs[i] / cell), floori(zs[i] / cell))
+		var at: PackedInt32Array = grid.get(g, PackedInt32Array())
+		at.append(i)
+		grid[g] = at   # (a packed array is copied out of the dictionary: put back)
+		lo = Vector2(minf(lo.x, xs[i]), minf(lo.y, zs[i]))
+		hi = Vector2(maxf(hi.x, xs[i]), maxf(hi.y, zs[i]))
+	var near := func(p: Vector2) -> PackedInt32Array:
+		var found := PackedInt32Array()
+		var g := Vector2i(floori(p.x / cell), floori(p.y / cell))
+		for dz in [-1, 0, 1]:
+			for dx in [-1, 0, 1]:
+				for i in grid.get(g + Vector2i(dx, dz), PackedInt32Array()):
+					if Vector2(xs[i], zs[i]).distance_to(p) <= BRIDGE_REACH:
+						found.append(i)
+		return found
+	var found: Array[Vector2i] = []
+	for sp: Array in region.spans:
+		if int(sp[0]) != 0:
+			continue
+		var a := Vector2(float(sp[1]), float(sp[2]))
+		var b := Vector2(float(sp[3]), float(sp[4]))
+		if minf(a.x, b.x) > hi.x + BRIDGE_REACH or maxf(a.x, b.x) < lo.x - BRIDGE_REACH \
+				or minf(a.y, b.y) > hi.y + BRIDGE_REACH or maxf(a.y, b.y) < lo.y - BRIDGE_REACH:
+			continue
+		var at_a: PackedInt32Array = near.call(a)
+		if at_a.is_empty():
+			continue
+		var at_b: PackedInt32Array = near.call(b)
+		var long := a.distance_to(b)
+		var best := Vector2i(-1, -1)
+		var best_off := INF
+		for ia in at_a:
+			for ib in at_b:
+				var along := absi(ib - ia) * STEP
+				if along < long * 0.5 - STEP or along > long * 1.5 + STEP * 2.0:
+					continue   # (the road passes both ends, but not across the bridge between them)
+				var off := absf(along - long)
+				if off < best_off:
+					best_off = off
+					best = Vector2i(mini(ia, ib), maxi(ia, ib))
+		if best.x >= 0 and best.y > best.x:
+			found.append(best)
+	found.sort()
+	for f in found:
+		var n := out.size()
+		if n >= 2 and f.x <= out[n - 1] + 1:
+			out[n - 1] = maxi(out[n - 1], f.y)   # (overlapping, or end to end: one bridge)
+		else:
+			out.append(f.x)
+			out.append(f.y)
+	return out
+
+
+## The ground under the road, averaged over 9 knots (the road rides over bumps), no steeper than MAX_GRADE; across a
+## bridge (`bridges`, see bridges_along) a straight line from one end to the other, not down into what it crosses.
+static func _heights(terrain: RealTerrain, xs: PackedFloat64Array, zs: PackedFloat64Array,
+		bridges := PackedInt32Array()) -> PackedFloat32Array:
 	var n := xs.size()
 	var ground := PackedFloat64Array()
 	ground.resize(n)
@@ -720,6 +793,11 @@ static func _heights(terrain: RealTerrain, xs: PackedFloat64Array, zs: PackedFlo
 			h = last
 		last = h
 		ground[i] = maxf(h, 0.0)
+	for k in range(0, bridges.size() - 1, 2):
+		var i0 := bridges[k]
+		var i1 := bridges[k + 1]
+		for i in range(i0 + 1, i1):
+			ground[i] = lerpf(ground[i0], ground[i1], float(i - i0) / float(i1 - i0))
 	var smooth := smooth_heights(ground, 9)
 	var graded := grade_limit(smooth)
 	var out := PackedFloat32Array()

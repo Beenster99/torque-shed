@@ -92,6 +92,13 @@ var curv := PackedFloat32Array()
 var width := PackedFloat32Array()
 ## The road's height smoothed over a few hundred metres: the lie of the land round it.
 var base := PackedFloat32Array()
+## How much each knot is on a bridge (RealPack.bridges): 1 out over what it crosses, easing from 0 over its first and
+## last few knots (the abutments), 0 on the ground. The land under a bridge is left as it is (land_height).
+var deck := PackedFloat32Array()
+## Knots each end of a bridge the land eases from the road's bank to the ground under it.
+const DECK_EASE := 3
+## How far under the road a bridge's deck goes (m): its sides go down to here, and the land stays below it.
+const BRIDGE_DEPTH := 1.1
 ## [{s0, s1, kind, width}] in order.
 var sections: Array = []
 ## [{s0, s1, surface}] in order, each on chunk boundaries.
@@ -175,6 +182,7 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	for i in n:
 		ph[i] = pack.e[i]
 	ph = fair_heights(ph)
+	deck = deck_of(pack.bridges, n)
 	hd.resize(n)
 	curv.resize(n)
 	for i in n - 1:
@@ -846,11 +854,36 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 
 # ---------------------------------------------------------------------------- the land
 
+## Each of `n` knots' deck weight (see deck) from bridges [first knot, last knot, ...].
+static func deck_of(bridges: PackedInt32Array, n: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for k in range(0, bridges.size() - 1, 2):
+		var i0 := bridges[k]
+		var i1 := mini(bridges[k + 1], n - 1)
+		var ease := mini(DECK_EASE, (i1 - i0) / 2)
+		for i in range(i0, i1 + 1):
+			var w := 1.0 if ease <= 0 else clampf(float(mini(i - i0, i1 - i)) / ease, 0.0, 1.0)
+			out[i] = maxf(out[i], w)
+	return out
+
+
 ## The height of the land at route-frame (x, z) beside knot `i`, `lat` metres off the centre line
 ## (+ right): the road's own height on the road and verge, easing out to the real land, kept below
 ## any other stretch of the road close by so the land never covers a bend that doubles back.
 func land_height(i: int, lat: float, x: float, z: float) -> float:
 	i = clampi(i, 0, ph.size() - 1)
+	var w := deck[i] if i < deck.size() else 0.0
+	if w > 0.0:
+		# On a bridge: the land under it and round it as it is, below the deck, eased in from the bank at its ends.
+		var bank := _bank_height(i, lat, x, z)
+		var under := minf(natural_height(i, x, z, absf(lat)), ph[i] - BRIDGE_DEPTH - 0.4)
+		return lerpf(bank, minf(under, _other_road_limit(i, x, z, absf(lat))), w)
+	return _bank_height(i, lat, x, z)
+
+
+## land_height without a bridge: the road's own height on the road and verge, then the bank out to the land.
+func _bank_height(i: int, lat: float, x: float, z: float) -> float:
 	var e := width[i] * 0.5
 	var a := absf(lat)
 	var road_h := ph[i]

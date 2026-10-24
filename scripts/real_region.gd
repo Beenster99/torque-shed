@@ -61,6 +61,9 @@ var adjacent: Array[PackedInt32Array] = []
 var buildings: Array = []
 var pois: Array = []
 var landmarks: Array = []
+## Its bridges and tunnels (tools/span_bake.py): [[kind (0 a bridge, 1 a tunnel), x0, z0, x1, z1], ...] in the
+## region's frame, end to end. A bundled region's from its spans.json, an area's from its cells' sketch blocks.
+var spans: Array = []
 var counts := {}
 ## For each node the connected piece of road it is in (numbered in order of the lowest node), and how many junctions that has.
 var component := PackedInt32Array()
@@ -136,7 +139,10 @@ static func _load(region_id: String) -> RealRegion:
 			if d != "":
 				dirs.append(d)
 		var mid := cell_middle(cells[0])
-		return stitch(region_id, title_of(region_id), dirs, mid.x, mid.y)
+		var stitched := stitch(region_id, title_of(region_id), dirs, mid.x, mid.y)
+		if stitched != null:
+			stitched.spans = _cell_spans(cells, mid)
+		return stitched
 	if region_id.begins_with(AREA_PREFIX):
 		var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
 		if a.is_empty():
@@ -181,6 +187,9 @@ static func _load(region_id: String) -> RealRegion:
 	var rows_t = _json(dir.path_join("places.json"))
 	if rows_t is Array:
 		r.places = rows_t
+	var rows_s = _json(dir.path_join("spans.json"))
+	if rows_s is Dictionary and rows_s.get("spans") is Array:
+		r.spans = _spans_in(rows_s["spans"], Vector2(r.frame_lat, r.frame_lon))
 	r.terrain = RealTerrain.new(dir, meta)
 	if r.terrain.live:
 		r.terrain.set_buildings(r.buildings)   # (live heights level the ground under them; baked ones were levelled by the baker)
@@ -486,6 +495,35 @@ static func stitch(region_id: String, title: String, dirs: Array[String], lat0: 
 		r.terrain.add_cover_cell(str(m[0]), m[1])
 	r.terrain.set_buildings(buildings)
 	return r
+
+
+## Spans [[kind, lat0, lon0, lat1, lon1] in 1e-5 degrees] (tools/span_bake.py) in the frame at `frame` (lat, lon).
+static func _spans_in(rows: Array, frame: Vector2) -> Array:
+	var out: Array = []
+	for row in rows:
+		if not row is Array or (row as Array).size() < 5:
+			continue
+		var a := to_frame(frame, float(row[1]) * 1e-5, float(row[2]) * 1e-5)
+		var b := to_frame(frame, float(row[3]) * 1e-5, float(row[4]) * 1e-5)
+		out.append([int(row[0]), a.x, a.y, b.x, b.y])
+	return out
+
+
+## The bridges and tunnels of `cells` (from their sketch blocks, CellStore.sketch, fetched if this game hasn't the one
+## the world's index names) in the frame at `frame`. Blocks while it fetches: a worker's job.
+static func _cell_spans(cells: Array[Vector2i], frame: Vector2) -> Array:
+	var idx := CellStore.saved_index()
+	var blocks := {}
+	for c in cells:
+		var b := "%d_%d" % [c.x / 20, c.y / 20]
+		if not blocks.has(b):
+			blocks[b] = CellStore.sketch(b, idx).get("spans", {})
+	var out: Array = []
+	for c in cells:
+		var rows = (blocks["%d_%d" % [c.x / 20, c.y / 20]] as Dictionary).get("%d_%d" % [c.x, c.y], [])
+		if rows is Array:
+			out.append_array(_spans_in(rows, frame))
+	return out
 
 
 ## Whether a building of `w` by `d` metres stands within half a metre of `p` already (two cells that both have it
