@@ -9,16 +9,16 @@ env:
   GODOT_VERSION: 4.6.2-stable
 
 jobs:
-  # The suite spread over six machines (tests/run_tests.gd --shard: each test dealt out by its time in
-  # tests/test_times.json), and the multiplayer pairs over three, all at once: about ten minutes where it was fifty.
+  # The suite spread over eight machines (tests/run_tests.gd --shard: each test dealt out by its time in
+  # tests/test_times.json), and the multiplayer pairs over three, all at once: about six minutes where it was fifty.
   test:
-    name: test (${{ matrix.shard }} of 6)
+    name: test (${{ matrix.shard }} of 8)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - name: Install Godot
@@ -29,7 +29,7 @@ jobs:
       - name: Import project
         run: godot --headless --path . --import || true
       - name: Run tests
-        run: stdbuf -oL -eL godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn -- --shard=${{ matrix.shard }}/6 --times-out="$PWD/times-${{ matrix.shard }}.json"
+        run: stdbuf -oL -eL godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn -- --shard=${{ matrix.shard }}/8 --times-out="$PWD/times-${{ matrix.shard }}.json"
       - name: Keep the tests' times
         if: always()
         uses: actions/upload-artifact@v4

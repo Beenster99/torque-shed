@@ -8,17 +8,22 @@ const Rides := preload("res://tests/rides.gd")
 var failures := 0
 var checks := 0
 var verbose := OS.get_cmdline_user_args().has("--verbose")
-## --shard=K/N runs only shard K (0..N-1) of the suite: CI spreads it over N machines. Each test goes to the shard with
-## the least time so far, by the times in TIMES (a test it hasn't, GUESS ms), so every shard deals them out alike.
+## --shard=K/N runs only shard K (0..N-1) of the suite: CI spreads it over N machines. The tests in TIMES are dealt out
+## the longest first, each to the shard with the least time so far; one it hasn't (a new test) goes, as it comes, to
+## the shard with the least then, at GUESS ms. Every shard deals them out alike.
 const TIMES := "res://tests/test_times.json"
 const GUESS := 3000.0
 var _shard := 0
 var _shards := 1
 var _expected := {}
 var _dealt: Array[float] = []
+var _shard_of := {}
 ## How long each test run took (ms): the slowest are listed at the end, and --times-out=PATH writes them all.
 var _took := {}
 var _times_out := ""
+## --list prints the tests a run (or a --shard) would run, in order, and runs none: to run a shard's tests here with
+## --only=..., or those up to one that failed on CI.
+var _list := false
 
 
 func _ready() -> void:
@@ -35,8 +40,16 @@ func _ready() -> void:
 			_expected = v if v is Dictionary else {}
 			_dealt.resize(_shards)
 			_dealt.fill(0.0)
+			var longest := _expected.keys()
+			longest.sort_custom(func(a, b): return float(_expected[a]) > float(_expected[b]) or (float(_expected[a]) == float(_expected[b]) and a < b))
+			for test in longest:
+				var least := _least_dealt()
+				_dealt[least] += float(_expected[test])
+				_shard_of[test] = least
 		elif a.begins_with("--times-out="):
 			_times_out = a.trim_prefix("--times-out=")
+		elif a == "--list":
+			_list = true
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):
 			# Run a single test method, e.g. --only=_test_acceleration
@@ -54,16 +67,27 @@ func _ready() -> void:
 ## Runs test `test` if it is this shard's (see --shard), timing it.
 func _t(test: StringName) -> void:
 	if _shards > 1:
-		var least := 0
-		for i in _shards:
-			if _dealt[i] < _dealt[least]:
-				least = i
-		_dealt[least] += float(_expected.get(String(test), GUESS))
-		if least != _shard:
+		if not _shard_of.has(String(test)):
+			var least := _least_dealt()
+			_dealt[least] += GUESS
+			_shard_of[String(test)] = least
+		if int(_shard_of[String(test)]) != _shard:
 			return
+	if _list:
+		print(test)
+		return
 	var t0 := Time.get_ticks_msec()
 	await call(test)
 	_took[String(test)] = Time.get_ticks_msec() - t0
+
+
+## The shard dealt the least time so far (see --shard).
+func _least_dealt() -> int:
+	var least := 0
+	for i in _shards:
+		if _dealt[i] < _dealt[least]:
+			least = i
+	return least
 
 
 ## Lists the slowest tests, and writes every test's time to --times-out.

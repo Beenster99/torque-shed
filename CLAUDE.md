@@ -28,12 +28,12 @@ A Godot 4.6 (GDScript) co-op motorbike restoration game. See README.md for the g
 
 ## Tests
 
-CI (`.github/workflows/ci.yml`) runs on every pull request and push to main, with Godot 4.6.2: the suite spread over six
-machines and the multiplayer pairs over three, all at once (about ten minutes):
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to main, with Godot 4.6.2: the suite spread over eight
+machines and the multiplayer pairs over three, all at once (about six minutes):
 
 ```
 godot --headless --path . --import
-godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn -- --shard=K/6
+godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn -- --shard=K/8
 tests/mp_test.sh [pair ...]
 ```
 
