@@ -3725,8 +3725,12 @@ func _test_profiler() -> void:
 				faded += 1
 	check(lamps > 10 and faded == lamps, "the shed's lamps fade out from far off (%d of %d)" % [faded, lamps])
 	perf.toggle(true)
-	for i in 90:
+	# (its figures come every half second of frames at the frame rate it's running at: a fast machine, headless, can
+	# run hundreds a second, so wait for them, not a set number of frames)
+	var until := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < until and not (Perf.shown.has("workshop") and Perf.shown.has("walker") and Perf.shown.has("hud")):
 		await get_tree().process_frame
+	await get_tree().process_frame
 	var names := {}
 	for r in Perf.ranked():
 		names[r[0]] = r
