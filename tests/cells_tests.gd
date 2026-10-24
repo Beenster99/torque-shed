@@ -197,6 +197,7 @@ class FakeHost:
 	var files := {}        # path -> PackedByteArray
 	var asked: Array[String] = []
 	var bodies := {}       # path -> the body last sent to it (a POST's)
+	var redirects := {}    # path -> where it sends you (a short link's)
 	var _peers: Array = []
 
 	func start() -> bool:
@@ -236,7 +237,9 @@ class FakeHost:
 			if length > 0:
 				bodies[path] = body_text
 			var reply := PackedByteArray()
-			if path.begins_with("/dl/"):
+			if redirects.has(path):
+				reply = ("HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\n\r\n" % str(redirects[path])).to_utf8_buffer()
+			elif path.begins_with("/dl/"):
 				reply = ("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:%d/zips/%s.zip\r\nContent-Length: 0\r\n\r\n" % [port, path.trim_prefix("/dl/")]).to_utf8_buffer()
 			elif files.has(path):
 				var body: PackedByteArray = files[path]

@@ -19,9 +19,19 @@ const RIVER := Color(0.42, 0.6, 0.8)
 const BORDER := Color(0.6, 0.4, 0.45)
 const INK := Color(0.2, 0.17, 0.13)
 const NOTE := Color(0.1, 0.1, 0.12, 0.8)
-const ROUTE := JourneyView.ROUTE
-const PIN := JourneyView.PIN
-const PIN_FIRST := JourneyView.PIN_FIRST
+const ROUTE := Color(0.82, 0.1, 0.55)
+const PIN := Color(0.78, 0.1, 0.1)
+const PIN_FIRST := Color(0.15, 0.55, 0.25)
+## The look of each class of road: colour, width (px), and the scale (px per metre) it first shows at.
+const ROAD_LOOK := {
+	"motorway": [Color(0.8, 0.35, 0.2), 3.2, 0.0], "trunk": [Color(0.82, 0.42, 0.2), 3.0, 0.0],
+	"primary": [Color(0.88, 0.58, 0.25), 2.6, 0.0], "secondary": [Color(0.93, 0.78, 0.4), 2.2, 0.0],
+	"tertiary": [Color(1, 1, 1, 0.92), 1.7, 0.0], "unclassified": [Color(1, 1, 1, 0.8), 1.4, 0.012],
+	"residential": [Color(1, 1, 1, 0.55), 1.0, 0.04], "living_street": [Color(1, 1, 1, 0.5), 1.0, 0.06],
+	"track": [Color(0.5, 0.35, 0.2, 0.85), 1.0, 0.04],
+}
+## How much one turn of the mouse wheel zooms (the Esc menu's full-screen planner).
+const WHEEL_ZOOM := 1.5
 ## Closer in than this (metres across), the roads of the cells in view are fetched and drawn.
 const ROADS_SPAN := 60000.0
 ## Closer in than this, the finer coast (1:10m, else 1:50m) and the rivers.
@@ -307,6 +317,15 @@ func _gui_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			click(mb.position)
+		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			# Closer or further out about the pointer: the point under it stays put.
+			var k := WHEEL_ZOOM if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / WHEEL_ZOOM
+			var under := to_geo(mb.position)
+			var to_span := clampf(span / k, AdventureJourney.SPAN_MIN, AdventureJourney.SPAN_MAX)
+			var m := WorldMap.mercator(under.x, under.y) - (mb.position - size * 0.5) / (size.x / (to_span / WorldMap.metres_per_unit(lat)))
+			var mid := WorldMap.geo_of(m)
+			asked_view.emit(mid.x, mid.y, to_span)
+			accept_event()
 
 
 ## A touch at screen point `s`: takes the pin there off, or pins the road there, or looks closer.
@@ -400,10 +419,10 @@ func _draw_roads() -> void:
 	var b := inv * size
 	var view := Rect2(a, Vector2.ZERO).expand(b)
 	var scale := xf.x.x   # pixels per metre
-	var order: Array = JourneyView.ROAD_LOOK.keys()
+	var order: Array = ROAD_LOOK.keys()
 	order.reverse()
 	for cls: String in order:
-		var look: Array = JourneyView.ROAD_LOOK[cls]
+		var look: Array = ROAD_LOOK[cls]
 		if scale < float(look[2]):
 			continue
 		var ci := roads.classes.find(cls)

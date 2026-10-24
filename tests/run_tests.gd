@@ -461,6 +461,7 @@ func _run_all() -> void:
 	_test_planner_forks()
 	_test_planner_board()
 	await _test_planner_map()
+	await _test_planner_map_links()
 	await _test_planner_tv()
 	await _test_planner_tv_shared()
 	_test_planner_anywhere()
@@ -22245,6 +22246,10 @@ func _test_planner_world_map() -> void:
 
 func _test_planner_tv_shared() -> void:
 	await _planner().test_tv_shared()
+
+
+func _test_planner_map_links() -> void:
+	await _planner().test_map_links()
 
 
 func _test_planner_map() -> void:
