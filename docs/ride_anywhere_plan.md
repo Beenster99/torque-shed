@@ -226,8 +226,11 @@ planner the TVs' planner full screen (the region-by-region map gone). `claude/ma
 roads (motorways, trunk and A roads, joined through their junctions and simplified to 40 m by `tools/sketch_bake.py`,
 about 12 KB a cell) made as each cell is baked and merged into a file per 5 degree block in the world's repo
 (`sketch/bR_C.json`, named by its hash in `index.json`), drawn between 60 km and 1,500 km across and kept on disk; the
-cells baked before were sketched by its "Sketch the main roads" workflow. Still to do: a better coast close in
-(Natural Earth's is coarse beside the roads). Pins still go down only where the roads are fetched, not on the sketch.
+cells baked before were sketched by its "Sketch the main roads" workflow. `claude/coastline`: the coast close in, each
+cell's land (Overture's coastline land, OpenStreetMap's, clipped to the cell and simplified to 15 m by
+`tools/coast_bake.py`, about a kilobyte a coastal cell) in its sketch block, drawn over Natural Earth's from 300 km
+across in; the cells baked before mapped by the world's "Map the coast" workflow (920 coastal cells, 832 all land).
+Pins still go down only where the roads are fetched, not on the sketch.
 
 ### Step 5: consensus, and journeys kept
 
