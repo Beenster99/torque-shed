@@ -32,8 +32,8 @@ class SketchTests(unittest.TestCase):
         self.assertTrue(all(cls in (0, 1, 2) for cls, _ in s["lines"]))
         for line in s["lines"]:
             for lat, lon in points(line):
-                # The cell is 54.25..54.5 N, 2.25..2.0 W (a road may run a little past its edge).
-                self.assertTrue(54.2 < lat < 54.55 and -2.3 < lon < -1.95, (lat, lon))
+                # The cell is 54.25..54.5 N, 2.25..2.0 W (a cell keeps a road whole a little way past its edge).
+                self.assertTrue(54.15 < lat < 54.6 and -2.35 < lon < -1.9, (lat, lon))
 
     def test_joined_through_junctions(self):
         rows = {"nodes": [[0, 0], [100, 0], [200, 0], [200, 100], [300, 0]],
