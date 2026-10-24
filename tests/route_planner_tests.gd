@@ -807,6 +807,60 @@ func _settle(cond: Callable) -> void:
 		await t.get_tree().process_frame
 
 
+## Bridges (tools/span_bake.py's spans): Hawes to Leyburn crosses becks and the Ure on stone bridges. The planner finds
+## the road's bridges, lays each straight from end to end over what it crosses, and they're in the plan's hash; the ride
+## leaves the land under a deck as it is and builds the bridge, parapets and all.
+func test_bridges() -> void:
+	var r := RealRegion.get_region("dales")
+	check(r != null and r.spans.size() > 50 and r.spans.all(func(sp): return int(sp[0]) in [0, 1]),
+		"the Dales has its bridges and tunnels (%d)" % (r.spans.size() if r else 0))
+	if r == null:
+		return
+	var req := {"pins": [r.geo_to_xz(54.3037, -2.1990), r.geo_to_xz(54.3103, -1.8296)], "mode": "main", "seed": 2}
+	var res := RoutePlanner.plan(r, req)
+	check(bool(res["ok"]), "Hawes to Leyburn plans (%s)" % str(res["error"]))
+	if not bool(res["ok"]):
+		return
+	var p: RealPack = res["pack"]
+	var b := p.bridges
+	check(b.size() >= 4 and b.size() % 2 == 0, "the road's bridges are found along it (%d)" % (b.size() / 2))
+	# Each straight from end to end (the road's own smoothing aside), and none of them a road over nothing.
+	var straight := true
+	var deepest := 0.0
+	for k in range(0, b.size() - 1, 2):
+		var i0 := b[k]
+		var i1 := b[k + 1]
+		straight = straight and i1 > i0 and i1 - i0 < 120
+		for i in range(i0 + 1, i1):
+			var under := r.terrain.height(p.x[i], p.z[i]) if r.terrain else NAN
+			if not is_nan(under):
+				deepest = maxf(deepest, p.e[i] - under)
+	check(straight and deepest > 2.0, "each a span of the road, over land up to %.1f m below it" % deepest)
+	# Without the bridges it's another road, and the hash says so (co-op machines without them won't ride together).
+	var kept := r.spans
+	r.spans = []
+	var flat := RoutePlanner.plan(r, req)
+	r.spans = kept
+	check(bool(flat["ok"]) and (flat["pack"] as RealPack).hash != p.hash and (flat["pack"] as RealPack).bridges.is_empty(),
+		"without them it plans another road, with another hash")
+	# The ride: the land under a deck is left as it is, below it; a bridge is built there.
+	RealPack.register(p)
+	var route := AdventureRoute.new()
+	route.plan_real(p, 3, p.max_km(), [])
+	var mid := (b[0] + b[1]) / 2
+	var hx := route.px[mid]
+	var hz := route.pz[mid]
+	var below := route.land_height(mid, 0.0, hx, hz)
+	check(route.deck[mid] == 1.0 and below <= route.ph[mid] - AdventureRoute.BRIDGE_DEPTH, "the land under the first bridge is under its deck (%.1f m below)" % (route.ph[mid] - below))
+	var away := (b[1] + 60) if b.size() < 4 or b[2] > b[1] + 100 else b[b.size() - 1] + 60
+	check(away < route.deck.size() and route.deck[away] == 0.0 and is_equal_approx(route.land_height(away, 0.0, route.px[away], route.pz[away]), route.ph[away]),
+		"off it, the land meets the road as before")
+	var c := mid / AdventureRoute.CHUNK_KNOTS
+	var built := AdventureChunk.build(route, c)
+	var bridge: Dictionary = built.get("bridge", {})
+	check(not bridge.is_empty() and (bridge["v"] as PackedVector3Array).size() > 60, "and the chunk builds the bridge (%d corners)" % ((bridge["v"] as PackedVector3Array).size() if not bridge.is_empty() else 0))
+
+
 ## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
 func test_dales() -> void:
 	var r := RealRegion.get_region("dales")

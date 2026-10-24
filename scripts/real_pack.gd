@@ -30,6 +30,9 @@ var x := PackedFloat64Array()
 var z := PackedFloat64Array()
 ## Height of the road's surface at each knot, metres above sea level (graded, see the baker).
 var e := PackedFloat32Array()
+## The road's bridges, as knot ranges: [first knot, last knot, ...] (RoutePlanner.bridges_along). Their heights run
+## straight from end to end, over the land rather than on a bank of it.
+var bridges := PackedInt32Array()
 ## Per 128 m chunk: [surface, width, class, name index, speed limit (km/h)].
 var chunks: Array = []
 var names: Array = []
