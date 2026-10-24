@@ -85,6 +85,38 @@ static func _save_areas(idx: Dictionary) -> void:
 		f.close()
 
 
+## Where 5 degree block `block`'s sketch of the main roads is ("R_C": see tools/sketch_bake.py), beside the index.
+static func sketch_url(block: String) -> String:
+	return index_url.get_base_dir().path_join("sketch/b%s.json" % block)
+
+
+## The sketch of the main roads of 5 degree block `block` ("R_C"): {"ROW_COL": [[class, [lat, lon, dlat, dlon, ...]],
+## ...]} (see tools/sketch_bake.py), from the copy kept on disk if it is the one index `idx` names, else fetched (and
+## kept). {} when the index has none for it, or it can't be had. Blocks while it fetches: a worker's job.
+static func sketch(block: String, idx: Dictionary) -> Dictionary:
+	var want := str((idx.get("sketches", {}) as Dictionary).get(block, ""))
+	if want == "":
+		return {}
+	var path := dir.path_join("sketch").path_join("b%s.json" % block)
+	var text := FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
+	if text.trim_suffix("\n").sha1_text().left(12) != want:
+		if offline:
+			return {}
+		var res := http_get(sketch_url(block))
+		if int(res["code"]) != 200:
+			return {}
+		text = (res["body"] as PackedByteArray).get_string_from_utf8()
+		if text.trim_suffix("\n").sha1_text().left(12) != want:
+			return {}   # (not the one the index names: it may have changed since; next time)
+		DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f != null:
+			f.store_string(text)
+			f.close()
+	var v = JSON.parse_string(text)
+	return v["cells"] if v is Dictionary and v.get("cells") is Dictionary else {}
+
+
 ## The cells of a box (degrees) the game hasn't got but the index has baked (empty ones, the sea, aren't wanted).
 static func missing(south: float, west: float, north: float, east: float, idx: Dictionary) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []

@@ -466,6 +466,7 @@ func _run_all() -> void:
 	await _test_planner_tv_shared()
 	_test_planner_anywhere()
 	await _test_planner_survey()
+	await _test_planner_sketch()
 	_test_planner_world_map()
 	_test_real_pack()
 	_test_real_levels()
@@ -22234,6 +22235,10 @@ func _test_planner_tv() -> void:
 
 func _test_planner_survey() -> void:
 	await _planner().test_survey()
+
+
+func _test_planner_sketch() -> void:
+	await _planner().test_sketch()
 
 
 func _test_planner_anywhere() -> void:
