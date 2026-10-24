@@ -59,8 +59,8 @@ jobs:
       - name: Multiplayer test
         run: tests/mp_test.sh ${{ matrix.pairs }}
 
+  # The Windows build alongside the tests rather than after them (a build of a red head is just not used).
   windows-build:
-    needs: [test, multiplayer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
