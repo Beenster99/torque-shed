@@ -2,7 +2,7 @@ extends "res://tests/screenshots.gd"
 ## Pictures of the route planner TV in the shed:
 ##   xvfb-run -a godot --path . res://tests/route_tv_shots.tscn -- --out=/tmp/shots
 ## The shed from the doorway with the world on the TV, then (each as the room sees it and as the TV's page) the world
-## close up, the main roads further out (northern England and Shikoku), Shodoshima close in with its roads (its cells fetched from the world's store), a road planned there, the
+## close up, the main roads further out (northern England and Shikoku), the coast close in (Whitby, Seto), Shodoshima close in with its roads (its cells fetched from the world's store), a road planned there, the
 ## search, and the Dyno Room's wall TV, which shows the same.
 
 
@@ -33,8 +33,9 @@ func _ready() -> void:
 	await _look_from(c + Vector3(2.0, 0.0, 4.0), tv, "01_route_tv_from_the_door")
 	await _tv_shot(close, tv, dash, "02_the_world")
 	# Further out than the roads: the sketch of the main roads, northern England (motorways and trunk roads) and then
-	# Shikoku closer (the A roads too).
-	for at: Array in [[54.2, -2.0, 400000.0, "02a_main_roads_england"], [33.9, 133.6, 200000.0, "02b_main_roads_shikoku"]]:
+	# Shikoku closer (the A roads too); then the cells' own coast close in, at Whitby and among the Seto islands.
+	for at: Array in [[54.2, -2.0, 400000.0, "02a_main_roads_england"], [33.9, 133.6, 200000.0, "02b_main_roads_shikoku"],
+			[54.47, -0.63, 16000.0, "02c_coast_whitby"], [34.45, 134.1, 60000.0, "02d_coast_seto"]]:
 		board.ask({"lat": at[0], "lon": at[1], "span": at[2]})
 		end = Time.get_ticks_msec() + 120000
 		while Time.get_ticks_msec() < end and (board.view.busy() or board.view._sketch.is_empty()):
