@@ -67,8 +67,9 @@ static func sanitize(v: Variant) -> Dictionary:
 	return out
 
 
-## A journey kept (in a diary, or as a code to send a mate): {pins: [[lat, lon, name], ...], mode}, where on Earth
-## its pins are and the style of ride, whatever map it was planned on. {} when it isn't one.
+## A journey kept (in a diary, or as a code to send a mate): {pins: [[lat, lon, name], ...], mode, map (the bundled
+## region it was planned on, if it was: pinned there again where the game has it, so it plans the same)}, where on
+## Earth its pins are and the style of ride. {} when it isn't one.
 static func sanitize_kept(v: Variant) -> Dictionary:
 	if not v is Dictionary or not v.get("pins") is Array:
 		return {}
@@ -84,7 +85,11 @@ static func sanitize_kept(v: Variant) -> Dictionary:
 	if pins.size() < 2:
 		return {}
 	var mode := str(v.get("mode", "main"))
-	return {"pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	var out := {"pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	var map := str(v.get("map", ""))
+	if map != "" and not map.begins_with(RealRegion.AREA_PREFIX) and map.is_valid_filename():
+		out["map"] = map.left(48)
+	return out
 
 
 ## The journey kept of plan `plan` (see AdventurePlans: a started adventure's), or {}.
@@ -98,7 +103,7 @@ static func kept_of_plan(plan: Dictionary) -> Dictionary:
 		var xz: Array = plan["pins"][i]
 		var g := RealRegion.from_frame(frame, float(xz[0]), float(xz[1]))
 		pins.append([g.x, g.y, str(names[i]) if i < names.size() else ""])
-	return sanitize_kept({"pins": pins, "mode": plan.get("mode", "main")})
+	return sanitize_kept({"pins": pins, "mode": plan.get("mode", "main"), "map": plan.get("region", "")})
 
 
 ## The journey kept of the crew's board `journey` (Shed.journey), or {}.
@@ -109,7 +114,7 @@ static func kept_of(journey: Dictionary) -> Dictionary:
 		if g == Vector2.INF:
 			return {}
 		pins.append([g.x, g.y, str(journey["pins"][i].get("name", ""))])
-	return sanitize_kept({"pins": pins, "mode": journey.get("mode", "main")})
+	return sanitize_kept({"pins": pins, "mode": journey.get("mode", "main"), "map": journey.get("region", "")})
 
 
 ## A journey kept, as a code to paste to a mate: "TS1." and the journey, short (base64 of its JSON).
@@ -119,7 +124,7 @@ static func code_of(kept: Dictionary) -> String:
 	var flat: Array = []
 	for p: Array in kept["pins"]:
 		flat.append([int(round(float(p[0]) * 1e5)), int(round(float(p[1]) * 1e5)), p[2]])
-	var text := JSON.stringify({"p": flat, "m": kept["mode"]})
+	var text := JSON.stringify({"p": flat, "m": kept["mode"], "r": kept.get("map", "")})
 	return CODE_PREFIX + Marshalls.utf8_to_base64(text).replace("+", "-").replace("/", "_").trim_suffix("=").trim_suffix("=")
 
 
@@ -139,7 +144,7 @@ static func from_code(text: String) -> Dictionary:
 		if not p is Array or (p as Array).size() < 3:
 			return {}
 		pins.append([float(p[0]) / 1e5, float(p[1]) / 1e5, str(p[2])])
-	return sanitize_kept({"pins": pins, "mode": v.get("m", "main")})
+	return sanitize_kept({"pins": pins, "mode": v.get("m", "main"), "map": v.get("r", "")})
 
 
 ## The riders in the shed who are in on `journey` (see Shed.journey), in the crew's order.
@@ -413,12 +418,17 @@ static func _apply(peer: int, action: Dictionary, who: String) -> String:
 static func _load(kept: Dictionary, who: String) -> String:
 	Shed.journey = {}
 	var missed := 0
+	var map := RealRegion.get_region(str(kept.get("map", "")))
 	for p: Array in kept["pins"]:
 		var pin := {"a": "adventure_pin", "lat": float(p[0]), "lon": float(p[1]), "name": str(p[2])}
-		if _check_anywhere(pin) != "":
+		if map != null:
+			# On the bundled map it was planned on, as it was.
+			var xz := map.geo_to_xz(float(p[0]), float(p[1]))
+			pin = {"a": "adventure_pin", "region": map.id, "x": xz.x, "z": xz.y, "at": 99}
+		if check(0, pin) != "":
 			missed += 1
 			continue
-		_pin_anywhere(pin, who)
+		_apply(0, pin, who)
 	if not Shed.journey.is_empty():
 		Shed.journey["mode"] = str(kept["mode"])
 	if missed == (kept["pins"] as Array).size():

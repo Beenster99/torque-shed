@@ -215,7 +215,8 @@ func test_journeys_kept() -> void:
 	check(back.size() == 2 and str(Shed.journey["region"]) == str(board["region"]) and str(Shed.journey["mode"]) == "scenic"
 		and Vector2(back[1]["x"], back[1]["z"]).distance_to(Vector2(board["pins"][1]["x"], board["pins"][1]["z"])) < 1.0
 		and AdventurePlans.key(AdventureJourney.plan_of(Shed.journey)) == AdventurePlans.key(AdventureJourney.plan_of(board)),
-		"pinned again, it's the same journey, planned the same")
+		"pinned again, it's the same journey, planned the same (%s on %s, against %s on %s)" % [str(back.map(func(p): return Vector2(p["x"], p["z"]))),
+			Shed.journey.get("region", ""), str((board["pins"] as Array).map(func(p): return Vector2(p["x"], p["z"]))), board["region"]])
 	check(AdventureJourney.check(1, {"a": "adventure_load", "journey": {"pins": [[1.0, 2.0, ""]]}}) != "", "one pin isn't a journey to load")
 	# The diary keeps it, and the TV lists it.
 	var root := "user://test_kept_diaries"
