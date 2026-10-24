@@ -244,15 +244,16 @@ func _ghost_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 		_hold(trip, s, lat)
 		rb = _remote_bike() as RemoteBike
 		return rb != null and rb.is_ghost() and BikeGhost.drawn(rb.model) > 0.3, 3.0)
-	var t0 := Time.get_ticks_msec()
+	# (how long in this game's own time: a fast machine gets through the client's 5 s of game time in about a second)
+	var f0 := Engine.get_physics_frames()
 	var passes: bool = seen and main.bike != null and main.bike.passes(rb)
 	var solid := await _until(func():
 		_hold(trip, s, lat)
 		rb = _remote_bike() as RemoteBike
 		return rb != null and not rb.is_ghost() and BikeGhost.drawn(rb.model) == 0.0, 8.0)
-	var lasted := (Time.get_ticks_msec() - t0) / 1000.0
+	var lasted := (Engine.get_physics_frames() - f0) / float(Engine.physics_ticks_per_second)
 	var ok := seen and passes and solid and lasted > 1.0
-	_ghost_note = "seen ghosted %s (my bike passing through it %s), solid again %.1f s later %s" % [seen, passes, lasted, solid]
+	_ghost_note = "seen ghosted %s (my bike passing through it %s), solid again %.1f s of game time later %s" % [seen, passes, lasted, solid]
 	print("MP adv note %s: the client's respawn %s" % [role, _ghost_note])
 	_ghost_verdict_from.rpc(1 if ok else 0, _ghost_note)
 	return ok

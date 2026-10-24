@@ -53,7 +53,9 @@ func _ready() -> void:
 		main._host()
 	else:
 		main._join(" 127.0.0.1:24680 ")
-	var deadline := Time.get_ticks_msec() + 90000   # a ceiling: the pair stops as soon as every step is seen
+	# A ceiling: the pair stops as soon as every step is seen. The steps follow one another, and on a slow machine 90 s
+	# ran out before the last (the collection offer).
+	var deadline := Time.get_ticks_msec() + 240000
 	var moved := false
 	var shed_ok := false
 	var start := Vector3.ZERO
