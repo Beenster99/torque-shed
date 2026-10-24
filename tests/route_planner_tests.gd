@@ -185,6 +185,70 @@ func test_im_in() -> void:
 	Shed.crew = saved_crew
 
 
+## Journeys kept: a ride's pins and style kept in each rider's diary, listed on the TV's Past rides to pin again with
+## a touch, and a journey's code to paste to a mate.
+func test_journeys_kept() -> void:
+	var saved_adventure = Shed.adventure
+	Shed.adventure = {}
+	Shed.journey = {}
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": a.x, "z": a.y})
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	Shed.request({"a": "adventure_mode", "mode": "scenic"})
+	var board: Dictionary = Shed.journey.duplicate(true)
+	var kept := AdventureJourney.kept_of(board)
+	var code := AdventureJourney.code_of(kept)
+	check(code.begins_with("TS1.") and code.length() < 200 and AdventureJourney.from_code("Ride this: %s !" % code) == kept,
+		"a journey is a code (%d characters) that comes back the same, wherever it's pasted" % code.length())
+	check(AdventureJourney.from_code("TS1.bm9wZQ").is_empty() and AdventureJourney.from_code("nothing here").is_empty()
+		and AdventureJourney.sanitize_kept({"pins": [[95.0, 0.0, ""], [0.0, 0.0, ""]]}).is_empty(), "a code that isn't a journey is no journey")
+	var from_plan := AdventureJourney.kept_of_plan(AdventureJourney.plan_of(board))
+	var near := true
+	for i in 2:
+		near = near and Vector2(from_plan["pins"][i][0], from_plan["pins"][i][1]).distance_to(Vector2(kept["pins"][i][0], kept["pins"][i][1])) < 1e-4
+	check(near and from_plan["mode"] == "scenic" and from_plan["pins"][1][2] == kept["pins"][1][2], "a ride's plan keeps the same journey")
+	# Pinned again (a past ride, or a code pasted): the same pins on the same map, the same style.
+	Shed.request({"a": "adventure_clear"})
+	Shed.request({"a": "adventure_load", "journey": kept})
+	var back := (Shed.journey.get("pins", []) as Array)
+	check(back.size() == 2 and str(Shed.journey["region"]) == str(board["region"]) and str(Shed.journey["mode"]) == "scenic"
+		and Vector2(back[1]["x"], back[1]["z"]).distance_to(Vector2(board["pins"][1]["x"], board["pins"][1]["z"])) < 1.0
+		and AdventurePlans.key(AdventureJourney.plan_of(Shed.journey)) == AdventurePlans.key(AdventureJourney.plan_of(board)),
+		"pinned again, it's the same journey, planned the same")
+	check(AdventureJourney.check(1, {"a": "adventure_load", "journey": {"pins": [[1.0, 2.0, ""]]}}) != "", "one pin isn't a journey to load")
+	# The diary keeps it, and the TV lists it.
+	var root := "user://test_kept_diaries"
+	RegionStore._remove_tree(root)
+	AdventureDiary.root = root
+	AdventureDiary.save_diary({"id": "ride1", "title": "Over the tops", "km": 31.0, "date": "2026-10-24", "journey": from_plan, "saved_at": 5})
+	AdventureDiary.save_diary({"id": "ride0", "title": "No pins kept", "km": 12.0, "date": "2026-10-01", "saved_at": 2})
+	var rides := RouteTv.past_rides()
+	check(rides.size() == 1 and str(rides[0]["title"]) == "Over the tops" and AdventureJourney.sanitize_kept(rides[0]["journey"]) == from_plan,
+		"each rider's diary keeps the ride's journey, and the TV's Past rides lists it")
+	var dash := Dashboard.new("route", 3.4)
+	t.add_child(dash)
+	dash.show_page("route", {})
+	var tv: RouteTv = dash._route
+	Shed.request({"a": "adventure_clear"})
+	tv.ask({"tab": "rides"})
+	await _settle(func(): return tv._rides_box.visible and tv._past.get_child_count() == 1 and tv._past.get_child(0) is Button)
+	var row: Button = tv._past.get_child(0) if tv._past.get_child_count() > 0 else null
+	check(row != null and row.text.begins_with("Over the tops  (31 km"), "Past rides on the TV (%s)" % (row.text if row else "nothing"))
+	if row != null:
+		row.pressed.emit()
+	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 2 and tv._plan_box.visible)
+	check((Shed.journey.get("pins", []) as Array).size() == 2 and str(Shed.route_tv.get("tab", "")) == "plan" and float(Shed.route_tv.get("span", 0.0)) < 100000.0,
+		"a touch pins it for the crew and shows it on the map")
+	dash.queue_free()
+	await t.get_tree().process_frame
+	RegionStore._remove_tree(root)
+	AdventureDiary.root = "user://diaries"
+	Shed.adventure = saved_adventure
+	Shed.journey = {}
+	Shed.route_tv = {}
+
+
 func test_board() -> void:
 	var r := RealRegion.get_region(REGION)
 	var saved_adventure = Shed.adventure

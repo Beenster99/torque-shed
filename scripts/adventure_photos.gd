@@ -658,6 +658,7 @@ func compile(done := false) -> Dictionary:
 		"date": str(old.get("date", "")) if str(old.get("date", "")) != "" else Time.get_date_string_from_system(),
 		"crew": crew, "me": _me(), "log": AdventureDiary.log_entries(adv), "photos": photos.duplicate(true), "stats": stats,
 		"route": _route if not _route.is_empty() else old.get("route", {}),
+		"journey": AdventureJourney.kept_of_plan(adv.get("plan", {})) if adv.get("plan") is Dictionary else old.get("journey", {}),
 		"photo": adv.get("photo", old.get("photo", {})), "done": done or _done or bool(old.get("done", false)),
 		"saved_at": int(Time.get_unix_time_from_system())}
 
