@@ -538,6 +538,7 @@ func _run_all() -> void:
 	await _t(&"_test_planner_via")
 	await _t(&"_test_planner_dales")
 	await _t(&"_test_planner_bridges")
+	await _t(&"_test_planner_tunnels")
 	await _t(&"_test_planner_places")
 	await _t(&"_test_planner_forks")
 	await _t(&"_test_planner_board")
@@ -22304,6 +22305,10 @@ func _test_planner_places() -> void:
 
 func _test_planner_bridges() -> void:
 	_planner().test_bridges()
+
+
+func _test_planner_tunnels() -> void:
+	_planner().test_tunnels()
 
 
 func _test_planner_dales() -> void:

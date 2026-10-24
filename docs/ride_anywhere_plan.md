@@ -254,12 +254,17 @@ height from the cover and canopy data.
 
 **Size.** About three weeks in all.
 
-**Status.** Started. `claude/bridges`: each cell's bridges and tunnels as spans from end to end
+**Status.** Started. Bridges (merged): each cell's bridges and tunnels as spans from end to end
 (`tools/span_bake.py`, Overture's `road_flags`, 10 m and longer), in its sketch block and backfilled by the world's
 "Map the coast, or the bridges and tunnels" workflow; the bundled regions' in their `spans.json`. The planner finds a
 road's bridges, lays them straight from end to end and puts them in the plan's hash; the ride leaves the land under a
-deck as it is and builds the bridge (stone parapets, deck sides, piers). Still to do: tunnels (the road goes over the
-hill for now), rivers and lakes beside the road, the cusp at a pin, trees.
+deck as it is and builds the bridge (stone parapets, deck sides, piers). `claude/tunnels`: the planner finds the
+road's tunnels the same way and lays the road straight through; the ride keeps the hill over it (at least 9 m of rock),
+cuts steeply into the hill up to each portal, and builds the tube, portals with a board giving the length, and lamps
+(the old made-up tunnels' builder, `AdventureTunnels`, back on real roads); inside, the sky's light and the rain are
+shut out. The bridges and tunnels now follow the path when the crew takes the other way at a fork (a second way has
+none of its own yet). Still to do: bridges and tunnels on a fork's second way, rivers and lakes beside the road, the
+cusp at a pin, trees.
 
 ## What is dropped from the old plan
 

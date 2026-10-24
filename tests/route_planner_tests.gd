@@ -859,6 +859,88 @@ func test_bridges() -> void:
 	var built := AdventureChunk.build(route, c)
 	var bridge: Dictionary = built.get("bridge", {})
 	check(not bridge.is_empty() and (bridge["v"] as PackedVector3Array).size() > 60, "and the chunk builds the bridge (%d corners)" % ((bridge["v"] as PackedVector3Array).size() if not bridge.is_empty() else 0))
+	# The other way at a fork: the bridges past where it rejoins are still where the road crosses them.
+	if route.forks.is_empty() or route.forks[0]["ways"].size() < 2:
+		return
+	var alt := route.path_copy({0: 1})
+	alt._assemble_path()
+	var shift := alt.px.size() - route.px.size()
+	var past := -1
+	for k in range(0, b.size() - 1, 2):
+		if b[k] > int(route.forks[0]["i1"]) and b[k + 1] - b[k] > 2 * AdventureRoute.DECK_EASE:
+			past = (b[k] + b[k + 1]) / 2
+			break
+	check(alt.deck.size() == alt.px.size() and alt.bore.size() == alt.px.size() and (past < 0 or alt.deck[past + shift] == 1.0),
+		"on the other way at a fork the bridges past it are still under the road (%d knots on)" % shift)
+
+
+## Tunnels (tools/span_bake.py's spans of kind 1): on Shodoshima's east coast the road goes 640 m under a hill. The
+## planner finds it and lays the road straight through, under the hill rather than over it, and it's in the hash; the
+## ride keeps the hill over the road, cuts into it up to the portals and builds the tube, portals, lamps and boards.
+func test_tunnels() -> void:
+	var r := RealRegion.get_region(REGION)
+	var req := {"pins": [r.geo_to_xz(34.48875, 134.34511), r.geo_to_xz(34.47647, 134.33166)], "mode": "main", "seed": 2}
+	var res := RoutePlanner.plan(r, req)
+	check(bool(res["ok"]), "the road through the hill plans (%s)" % str(res["error"]))
+	if not bool(res["ok"]):
+		return
+	var p: RealPack = res["pack"]
+	var t := p.tunnels
+	check(t.size() == 2 and (t[1] - t[0]) * RoutePlanner.STEP > 560.0 and (t[1] - t[0]) * RoutePlanner.STEP < 720.0,
+		"the tunnel is found along it (%s knots)" % str(t))
+	if t.size() != 2:
+		return
+	# Straight through (the road's own smoothing aside), well under the hill.
+	var bent := 0.0
+	var over := 0.0
+	var a0 := t[0] + 6
+	var a1 := t[1] - 6
+	for i in range(a0, a1 + 1):
+		bent = maxf(bent, absf(p.e[i] - lerpf(p.e[a0], p.e[a1], float(i - a0) / (a1 - a0))))
+		var hill := r.terrain.height(p.x[i], p.z[i]) if r.terrain else NAN
+		if not is_nan(hill):
+			over = maxf(over, hill - p.e[i])
+	check(bent < 1.0 and over > 25.0, "straight through (%.2f m off at most), up to %.0f m under the hill" % [bent, over])
+	var kept := r.spans
+	r.spans = []
+	var flat := RoutePlanner.plan(r, req)
+	r.spans = kept
+	check(bool(flat["ok"]) and (flat["pack"] as RealPack).hash != p.hash and (flat["pack"] as RealPack).tunnels.is_empty(),
+		"without it it plans another road, with another hash")
+	# The ride: the hill is kept over the road, a cutting runs up to each portal, and the land is as before away from it.
+	RealPack.register(p)
+	var route := AdventureRoute.new()
+	route.plan_real(p, 3, p.max_km(), [])
+	check(route.bore.size() == route.px.size() and route.deck.size() == route.px.size() and route.cutting.size() == route.px.size(),
+		"each knot knows whether it's on a bridge or in a tunnel")
+	var mid := (t[0] + t[1]) / 2
+	var e := route.width[mid] * 0.5
+	var edge := route.land_height(mid, e + 0.5, route.px[mid] + cos(route.hd[mid]) * (e + 0.5), route.pz[mid] + sin(route.hd[mid]) * (e + 0.5))
+	check(route.in_tunnel(mid) and route.tunnel_span(mid) == Vector2i(t[0], t[1]) and edge >= route.ph[mid] + AdventureRoute.TUNNEL_COVER - 0.01,
+		"in the tunnel the hill stands over the road (%.1f m over it at the kerb)" % (edge - route.ph[mid]))
+	var before := t[0] - 2
+	check(not route.in_tunnel(before) and route.cutting[before] > 0.8 and route.cutting[t[0] - AdventureRoute.TUNNEL_APPROACH - 2] == 0.0,
+		"up to the portal it's a cutting (%.2f), easing off further out" % route.cutting[before])
+	check(not route._fit_for_stop(t[0] - 3) and not route._fit_for_stop(mid), "no stop goes in a tunnel or its cutting")
+	# The chunks with it in are built with its tube, the rock over it, and a portal with its board at each end.
+	var tubes := 0
+	var portals := 0
+	var lamps := 0
+	var boards: Array = []
+	for c in range(t[0] / AdventureRoute.CHUNK_KNOTS, t[1] / AdventureRoute.CHUNK_KNOTS + 1):
+		var built := AdventureChunk.build(route, c)
+		var tn: Dictionary = built.get("tunnel", {})
+		if tn.is_empty():
+			continue
+		tubes += (tn["tube"]["v"] as PackedVector3Array).size()
+		portals += (tn["portals"]["v"] as PackedVector3Array).size()
+		lamps += (tn["lights"] as Array).size()
+		for bd: Dictionary in tn["boards"]:
+			boards.append(str(bd["text"]))
+	check(tubes > 1000 and portals > 0 and lamps >= (t[1] - t[0]) / AdventureTunnels.LAMP_EVERY and boards.size() == 2 and boards[0].begins_with("Tunnel"),
+		"its chunks build the tube (%d corners), %d lamps, and a portal at each end with its board (%s)" % [tubes, lamps, ", ".join(boards)])
+	# Inside, your eyes open up to its lamps.
+	check(Lighting.eye_target("", false, 0.0, 1.0) > 1.1 and Lighting.eye_target("", false, 0.0, 0.0) == 1.0, "your eyes open up in a tunnel")
 
 
 ## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
