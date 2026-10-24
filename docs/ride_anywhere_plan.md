@@ -220,10 +220,14 @@ the pins' line and one either side, the frame at the first pin's cell), worked o
 and longitude. `claude/survey`: the Survey button over cells nobody has baked, the host asking the survey worker
 (`torque-shed-world/worker/survey.js`, a Cloudflare Worker on the free plan, with the only secret: a token that can run
 the bake workflow and nothing else; "busy" while three bake runs are going), the crew's survey in the shared view, and
-the TVs looking at the index every minute until the cells come. Still to do: the main-roads sketch, the paste box,
-credits from the cells used,
-the Esc menu's full-screen map on the world too, and a better coast close in (Natural Earth's is coarse beside the
-roads).
+the TVs looking at the index every minute until the cells come. `claude/map-links`: Paste a map link (Google, Apple,
+OpenStreetMap, short links followed, plain lat, lon), the map data credited under a planned road, and the Esc menu's
+planner the TVs' planner full screen (the region-by-region map gone). `claude/main-roads`: the sketch of the main
+roads (motorways, trunk and A roads, joined through their junctions and simplified to 40 m by `tools/sketch_bake.py`,
+about 12 KB a cell) made as each cell is baked and merged into a file per 5 degree block in the world's repo
+(`sketch/bR_C.json`, named by its hash in `index.json`), drawn between 60 km and 1,500 km across and kept on disk; the
+cells baked before were sketched by its "Sketch the main roads" workflow. Still to do: a better coast close in
+(Natural Earth's is coarse beside the roads). Pins still go down only where the roads are fetched, not on the sketch.
 
 ### Step 5: consensus, and journeys kept
 

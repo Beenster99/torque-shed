@@ -19,11 +19,29 @@ const RIVER := Color(0.42, 0.6, 0.8)
 const BORDER := Color(0.6, 0.4, 0.45)
 const INK := Color(0.2, 0.17, 0.13)
 const NOTE := Color(0.1, 0.1, 0.12, 0.8)
-const ROUTE := JourneyView.ROUTE
-const PIN := JourneyView.PIN
-const PIN_FIRST := JourneyView.PIN_FIRST
+const ROUTE := Color(0.82, 0.1, 0.55)
+const PIN := Color(0.78, 0.1, 0.1)
+const PIN_FIRST := Color(0.15, 0.55, 0.25)
+## The look of each class of road: colour, width (px), and the scale (px per metre) it first shows at.
+const ROAD_LOOK := {
+	"motorway": [Color(0.8, 0.35, 0.2), 3.2, 0.0], "trunk": [Color(0.82, 0.42, 0.2), 3.0, 0.0],
+	"primary": [Color(0.88, 0.58, 0.25), 2.6, 0.0], "secondary": [Color(0.93, 0.78, 0.4), 2.2, 0.0],
+	"tertiary": [Color(1, 1, 1, 0.92), 1.7, 0.0], "unclassified": [Color(1, 1, 1, 0.8), 1.4, 0.012],
+	"residential": [Color(1, 1, 1, 0.55), 1.0, 0.04], "living_street": [Color(1, 1, 1, 0.5), 1.0, 0.06],
+	"track": [Color(0.5, 0.35, 0.2, 0.85), 1.0, 0.04],
+}
+## How much one turn of the mouse wheel zooms (the Esc menu's full-screen planner).
+const WHEEL_ZOOM := 1.5
 ## Closer in than this (metres across), the roads of the cells in view are fetched and drawn.
 const ROADS_SPAN := 60000.0
+## Between ROADS_SPAN and this (metres across), the sketch of the main roads of the baked parts of the world in view.
+const SKETCH_SPAN := 1500000.0
+## The most 5 degree blocks of sketch fetched for a view.
+const SKETCH_BLOCKS := 12
+## The sketch's look by class (motorway, trunk, A road): colour and width (px).
+const SKETCH_LOOK := [[Color(0.8, 0.35, 0.2), 2.4], [Color(0.82, 0.42, 0.2), 2.0], [Color(0.9, 0.62, 0.32), 1.2]]
+## Further out than this (metres across), the sketch leaves out the A roads: only the motorways and trunk roads.
+const SKETCH_A_SPAN := 250000.0
 ## Closer in than this, the finer coast (1:10m, else 1:50m) and the rivers.
 const DETAIL_SPAN := 4000000.0
 ## The most town names on the map at once.
@@ -55,6 +73,12 @@ var unmapped: Array[Vector2i] = []
 var _stale := false            # the roads in view are to be fetched again (a survey's cells came)
 var _look_task := -1           # looking at the world's index while a survey is on
 var _look_at := -1000000
+## The sketch of the main roads: block ("R_C") -> [[class, PackedVector2Array (mercator)], ...], and each line's box.
+var _sketch := {}
+var _sketch_boxes := {}
+var _sketch_task := -1
+var _sketch_got := {}           # what the worker read: block -> [lines, boxes]
+var _sketch_lock := Mutex.new()
 
 
 func _init() -> void:
@@ -69,12 +93,13 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for t in [_task, _world_task, _look_task]:
+	for t in [_task, _world_task, _look_task, _sketch_task]:
 		if t >= 0:
 			WorkerThreadPool.wait_for_task_completion(t)
 	_task = -1
 	_world_task = -1
 	_look_task = -1
+	_sketch_task = -1
 
 
 ## Shows `span_m` metres across, about (`at_lat`, `at_lon`).
@@ -85,6 +110,7 @@ func show_view(at_lat: float, at_lon: float, span_m: float) -> void:
 	lon = at_lon
 	span = span_m
 	_want_roads()
+	_want_sketch()
 	queue_redraw()
 
 
@@ -213,7 +239,7 @@ static func _edge_boxes(r: RealRegion) -> PackedFloat32Array:
 
 ## Takes in what the workers have done (call it every frame or so). True when the map should be drawn again.
 func poll() -> bool:
-	var again := false
+	var again := _poll_sketch()
 	if _world_task >= 0 and WorkerThreadPool.is_task_completed(_world_task):
 		WorkerThreadPool.wait_for_task_completion(_world_task)
 		_world_task = -1
@@ -256,8 +282,10 @@ func _poll_survey() -> bool:
 		var idx := CellStore.saved_index()
 		for c in surveying():
 			if CellStore.state_of(c, idx) != "unknown":
-				_stale = true   # (its cells came: fetch the roads here again)
+				_stale = true   # (its cells came: fetch the roads here again, and its block's sketch)
 				_start_task()
+				_sketch.erase("%d_%d" % [c.x / 20, c.y / 20])
+				_want_sketch()
 				return true
 		return false
 	if not surveying().is_empty() and Time.get_ticks_msec() - _look_at >= int(Survey.look_every * 1000.0):
@@ -290,9 +318,109 @@ func shown_note() -> String:
 	return note
 
 
-## Whether the view is waiting for anything (the world's map, the roads, the world's index).
+## Whether the view is waiting for anything (the world's map, the roads, the world's index, the main roads' sketch).
 func busy() -> bool:
-	return _world_task >= 0 or _task >= 0 or _look_task >= 0
+	return _world_task >= 0 or _task >= 0 or _look_task >= 0 or _sketch_task >= 0
+
+
+# ---------------------------------------------------------------------------- the main roads' sketch
+
+## Whether the view is far enough out (but not too far) for the sketch of the main roads.
+func sketch_shown() -> bool:
+	return span > ROADS_SPAN and span <= SKETCH_SPAN
+
+
+## The 5 degree blocks ("R_C") under the view, when the sketch is shown: [] too far out (or too many).
+func sketch_blocks() -> Array[String]:
+	var out: Array[String] = []
+	if not sketch_shown() or size.x < 10.0:
+		return out
+	var box := _box()
+	var lo := RealRegion.cell_of(box[0], box[1])
+	var hi := RealRegion.cell_of(box[2], box[3])
+	for i in range(lo.x / 20, hi.x / 20 + 1):
+		for j in range(lo.y / 20, hi.y / 20 + 1):
+			out.append("%d_%d" % [i, j])
+	return out if out.size() <= SKETCH_BLOCKS else ([] as Array[String])
+
+
+## Starts fetching (on a worker) the sketch blocks in view the view hasn't got.
+func _want_sketch() -> void:
+	if _sketch_task >= 0:
+		return
+	var want: Array[String] = []
+	for b in sketch_blocks():
+		if not _sketch.has(b):
+			want.append(b)
+	if want.is_empty():
+		return
+	for b in want:
+		_sketch[b] = []   # (asked for: not again while this view lasts)
+	_sketch_task = WorkerThreadPool.add_task(func():
+		var idx := CellStore.index()
+		var got := {}
+		for b in want:
+			var cells := CellStore.sketch(b, idx)
+			var lines: Array = []
+			var boxes := PackedFloat32Array()
+			for cell in cells:
+				for line in cells[cell]:
+					var flat: Array = line[1]
+					var pts := PackedVector2Array()
+					var la := 0.0
+					var lo := 0.0
+					for i in range(0, flat.size() - 1, 2):
+						la = float(flat[i]) if i == 0 else la + float(flat[i])
+						lo = float(flat[i + 1]) if i == 0 else lo + float(flat[i + 1])
+						pts.append(WorldMap.mercator(la * 1e-5, lo * 1e-5))
+					var r := Rect2(pts[0], Vector2.ZERO)
+					for p in pts:
+						r = r.expand(p)
+					lines.append([int(line[0]), pts])
+					boxes.append_array([r.position.x, r.position.y, r.end.x, r.end.y])
+			got[b] = [lines, boxes]
+		_sketch_lock.lock()
+		_sketch_got = got
+		_sketch_lock.unlock())
+
+
+## Takes in the sketch blocks the worker read. True when the map should be drawn again.
+func _poll_sketch() -> bool:
+	if _sketch_task < 0 or not WorkerThreadPool.is_task_completed(_sketch_task):
+		return false
+	WorkerThreadPool.wait_for_task_completion(_sketch_task)
+	_sketch_task = -1
+	_sketch_lock.lock()
+	var got := _sketch_got
+	_sketch_got = {}
+	_sketch_lock.unlock()
+	for b in got:
+		_sketch[b] = got[b][0]
+		_sketch_boxes[b] = got[b][1]
+	_want_sketch()   # (the view may have moved on meanwhile)
+	return not got.is_empty()
+
+
+func _draw_sketch(view_m: Rect2, k: float, m0: Vector2) -> void:
+	for cls in [2, 1, 0]:   # (A roads first, so the motorways lie over them)
+		if cls == 2 and span > SKETCH_A_SPAN:
+			continue
+		var look: Array = SKETCH_LOOK[cls]
+		for b in sketch_blocks():
+			var lines: Array = _sketch.get(b, [])
+			var boxes: PackedFloat32Array = _sketch_boxes.get(b, PackedFloat32Array())
+			for i in lines.size():
+				if int(lines[i][0]) != cls:
+					continue
+				var e := i * 4
+				if boxes[e + 2] < view_m.position.x or boxes[e] > view_m.end.x or boxes[e + 3] < view_m.position.y or boxes[e + 1] > view_m.end.y:
+					continue
+				var line: PackedVector2Array = lines[i][1]
+				var pts := PackedVector2Array()
+				pts.resize(line.size())
+				for j in line.size():
+					pts[j] = (line[j] - m0) * k + size * 0.5
+				draw_polyline(pts, look[0], float(look[1]) * (1.3 if big else 1.0), true)
 
 
 ## Whether the roads in view are drawn, so a touch there pins.
@@ -307,6 +435,15 @@ func _gui_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			click(mb.position)
+		elif mb.pressed and (mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			# Closer or further out about the pointer: the point under it stays put.
+			var k := WHEEL_ZOOM if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / WHEEL_ZOOM
+			var under := to_geo(mb.position)
+			var to_span := clampf(span / k, AdventureJourney.SPAN_MIN, AdventureJourney.SPAN_MAX)
+			var m := WorldMap.mercator(under.x, under.y) - (mb.position - size * 0.5) / (size.x / (to_span / WorldMap.metres_per_unit(lat)))
+			var mid := WorldMap.geo_of(m)
+			asked_view.emit(mid.x, mid.y, to_span)
+			accept_event()
 
 
 ## A touch at screen point `s`: takes the pin there off, or pins the road there, or looks closer.
@@ -356,9 +493,11 @@ func _draw() -> void:
 	if detail:
 		_draw_lines("rivers", view_m, k, m0, RIVER, 1.5)
 	_draw_lines("borders", view_m, k, m0, BORDER, 1.5)
-	# The roads in view, the small ones first so the big ones lie over them.
+	# The roads in view, the small ones first so the big ones lie over them; further out, the main roads' sketch.
 	if roads_shown():
 		_draw_roads()
+	elif sketch_shown():
+		_draw_sketch(view_m, k, m0)
 	# The planned road.
 	if route_geo.size() > 1:
 		var pts := PackedVector2Array()
@@ -400,10 +539,10 @@ func _draw_roads() -> void:
 	var b := inv * size
 	var view := Rect2(a, Vector2.ZERO).expand(b)
 	var scale := xf.x.x   # pixels per metre
-	var order: Array = JourneyView.ROAD_LOOK.keys()
+	var order: Array = ROAD_LOOK.keys()
 	order.reverse()
 	for cls: String in order:
-		var look: Array = JourneyView.ROAD_LOOK[cls]
+		var look: Array = ROAD_LOOK[cls]
 		if scale < float(look[2]):
 			continue
 		var ci := roads.classes.find(cls)
