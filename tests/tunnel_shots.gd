@@ -57,10 +57,11 @@ func _ready() -> void:
 				var end := Time.get_ticks_msec() + 90000
 				var frames := 0
 				while Time.get_ticks_msec() < end:
+					w.follow(w.to_local(cam.global_position))   # (as the ride has the land follow the rider)
 					await get_tree().process_frame
 					frames += 1
 					var wanted: Array = w.wanted_chunks()
-					if frames > 30 and not wanted.is_empty() and wanted.all(func(c): return w.chunks.has(c)):
+					if frames > 30 and not wanted.is_empty() and wanted.all(func(c): return w.chunks.has(c)) and not w.land.busy():
 						break
 				for i in 12:
 					await get_tree().process_frame

@@ -8,6 +8,8 @@ extends RefCounted
 
 ## What covers the land (RealTerrain.cover), by id: the baker's list (tools/land_bake.py COVER).
 const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
+## COVER's id for rivers and lakes (the sea isn't cover: it's shaped into the heights).
+const WATER := 8
 ## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
 const BUILDING_KINDS: Array[String] = ["house", "shed", "barn", "shop", "block", "industrial", "worship", "civic"]
 

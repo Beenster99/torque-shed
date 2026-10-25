@@ -106,6 +106,8 @@ var bore := PackedFloat32Array()
 ## either side rises steeply from the road there, a cutting into the hill rather than a long bank.
 var cutting := PackedFloat32Array()
 const TUNNEL_APPROACH := 12
+## How far a river's or lake's bed lies below its water (m).
+const WATER_DEPTH := 1.2
 ## The least rock over the road in a tunnel (m above it): the hill is raised to this where the real land is lower.
 const TUNNEL_COVER := 9.0
 ## [{s0, s1, kind, width}] in order.
@@ -976,11 +978,20 @@ func cover_at(x: float, z: float) -> String:
 	return RealPack.COVER[id] if id >= 0 and id < RealPack.COVER.size() else ""
 
 
-## The lie of the land at (x, z), `a` metres from the road beside knot `i`: the real terrain's, or
+## The lie of the land at (x, z), `a` metres from the road beside knot `i`: the real terrain's (ground_at), or
 ## the road's own lie of the land beyond what the pack holds.
 func natural_height(i: int, x: float, z: float, _a := 0.0) -> float:
-	var rh := real.terrain.height(x, z)
+	var rh := ground_at(x, z)
 	return base[i] if is_nan(rh) else rh
+
+
+## The real ground at (x, z), NAN beyond what the pack holds: under a river or a lake (RealPack.WATER cover) its bed,
+## WATER_DEPTH below the water (the heights are the water's surface there), so the water lies in it (RealLand draws it).
+func ground_at(x: float, z: float) -> float:
+	var rh := real.terrain.height(x, z)
+	if not is_nan(rh) and real.terrain.cover(x, z) == RealPack.WATER:
+		rh -= WATER_DEPTH
+	return rh
 
 
 ## Keeps the land under the road where another stretch of it (a bend that doubles back, more
