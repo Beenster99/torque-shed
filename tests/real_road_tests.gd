@@ -626,6 +626,53 @@ func test_real_land() -> void:
 				if nv[j * n + i].y < w.route.land_height(int(hit["i"]), float(hit["lat"]), x, z) - 1.0:
 					hidden += 1
 	check(under == 0 or hidden * 10 >= under * 9, "and within %d m of it they lie below it (%d of %d)" % [int(RealLand.BAND_NEAR), hidden, under])
+	# Rivers and lakes (RealPack.WATER cover): a block beside the road with water in it draws it at the water's height,
+	# over a bed WATER_DEPTH down, and none of it on the road.
+	var wkey := Vector2i(1 << 30, 0)
+	var water = null
+	for k in range(0, w.route.px.size(), 64):
+		var bk := Vector2i(floori(w.route.px[k] / RealLand.BLOCK), floori(w.route.pz[k] / RealLand.BLOCK))
+		water = land._water_arrays(bk, 0)
+		if water != null:
+			wkey = bk
+			break
+	check(water != null, "a block beside the road has water in it (%s)" % str(wkey))
+	if water != null:
+		var wv: PackedVector3Array = water[Mesh.ARRAY_VERTEX]
+		var sp := RealLand.BLOCK / RealLand.CELLS[0]
+		var terr := w.route.real.terrain
+		var by_water := 0
+		var wet := 0
+		var bed := 0
+		var not_up := 0
+		var on_road := 0
+		for q in range(0, wv.size(), 4):
+			var cx := wkey.x * RealLand.BLOCK + wv[q].x + sp * 0.5
+			var cz := wkey.y * RealLand.BLOCK + wv[q].z + sp * 0.5
+			# Within a cell of mapped water, and no higher than the highest water round it.
+			var top := -INF
+			for dz: float in [-sp, 0.0, sp]:
+				for dx: float in [-sp, 0.0, sp]:
+					if terr.cover(cx + dx, cz + dz) == RealPack.WATER:
+						top = maxf(top, terr.height(cx + dx, cz + dz))
+			if top > -INF:
+				by_water += 1
+				if wv[q].y <= top + 0.01 and wv[q + 2].y <= top + 0.01:
+					not_up += 1
+			if terr.cover(cx, cz) == RealPack.WATER:
+				wet += 1
+				if is_equal_approx(w.route.ground_at(cx, cz), terr.height(cx, cz) - AdventureRoute.WATER_DEPTH):
+					bed += 1
+			var hit := w.route.locate(cx, cz)
+			if not hit.is_empty() and float(hit["d"]) < w.route.width[int(hit["i"])] * 0.5 + 2.0 and w.route.deck[int(hit["i"])] <= 0.0:
+				on_road += 1
+		var cells := wv.size() / 4
+		check(cells > 0 and by_water == cells and not_up == cells and wet * 2 > cells and bed == wet and on_road == 0,
+			"its %d cells of water are on or beside the water (%d, %d on it), never up a bank (%d), over a bed below it (%d), none on the road (%d)" % [cells, by_water, wet, not_up, bed, on_road])
+		var mi := land._make_mesh(wkey, land._block_arrays(wkey, 0), water)
+		check(mi.mesh.get_surface_count() == 2 and mi.mesh.surface_get_material(1) == land._water_material, "and the block's mesh has it as water")
+		mi.free()
+	check(land._water_arrays(wkey, RealLand.WATER_LODS) == null, "the far level draws no water")
 	# Levels by distance, with a margin for the block on the line.
 	check(RealLand._lod_for(100.0, -1) == 0 and RealLand._lod_for(1000.0, -1) == 1 and RealLand._lod_for(3000.0, -1) == 2 and RealLand._lod_for(9000.0, -1) == -1,
 		"blocks are near, middle or far by their distance, and none past the far range")

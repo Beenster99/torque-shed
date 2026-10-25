@@ -63,11 +63,12 @@ const BUILDING_ODDS := {"tarmac": 0.2, "gravel": 0.07, "sand": 0.06, "snow": 0.0
 const FENCE_ODDS := {"tarmac": 0.55, "gravel": 0.3, "sand": 0.0, "snow": 0.0}
 ## A beach's sand, along a coastal sea.
 const BEACH := Color(0.86, 0.8, 0.62)
-## On a real road the land is tinted by what covers it (RealPack.COVER): colour and how far it takes over the theme's.
+## On a real road the land is tinted by what covers it (RealPack.COVER): colour and how far it takes over the theme's
+## (under a river or a lake, its muddy bed: RealLand draws the water over it).
 const COVER_TINT := {
 	"forest": [Color(0.09, 0.22, 0.1), 0.85], "crop": [Color(0.62, 0.66, 0.3), 0.7], "shrub": [Color(0.34, 0.4, 0.2), 0.55],
 	"urban": [Color(0.52, 0.5, 0.46), 0.65], "sand": [BEACH, 0.8], "barren": [Color(0.5, 0.45, 0.38), 0.6],
-	"rock": [Color(0.45, 0.43, 0.4), 0.8], "water": [Color(0.18, 0.34, 0.5), 0.85], "wetland": [Color(0.3, 0.4, 0.28), 0.6],
+	"rock": [Color(0.45, 0.43, 0.4), 0.8], "water": [Color(0.24, 0.25, 0.19), 0.8], "wetland": [Color(0.3, 0.4, 0.28), 0.6],
 }
 ## How much of each thing's scenery a real road's cover takes (0 to 1), by what covers the ground: trees, bushes,
 ## rocks, and anything else (sheep and the like). A cover left out takes OTHER_ODDS of it.

@@ -261,8 +261,13 @@ road's bridges and tunnels, lays the road straight from end to end over or throu
 hash; the ride leaves the land under a deck as it is and builds the bridge (stone parapets, deck sides, piers), and
 keeps the hill over a tunnel, cuts into it up to each portal and builds the tube, portals and lamps (inside, the sky's
 light and the rain are shut out). They follow the path when the crew takes the other way at a fork. `claude/fork-spans`:
-a fork's other way has its own bridges and tunnels too, found and laid along it as the main road's are. Still to do:
-rivers and lakes beside the road, the cusp at a pin, trees.
+a fork's other way has its own bridges and tunnels too, found and laid along it as the main road's are (merged).
+`claude/rivers-lakes`: the rivers and lakes the cover already holds (Overture's water polygons, 16 m) are drawn as water
+by the land blocks near and middle (`RealLand._water_arrays`), one surface sloping down a river, a cell wider than the
+water so its banks rise through it; the land under it is its bed, 1.2 m down (`AdventureRoute.ground_at`), and it runs on
+under a bridge but never over the road. Still to do: the narrow rivers and becks, which the map has only as lines (a
+bake of Overture's water lines into the cells' sketch blocks, and a backfill, as for the spans), the cusp at a pin,
+trees.
 
 ## What is dropped from the old plan
 

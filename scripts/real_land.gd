@@ -36,6 +36,16 @@ const SKIRT_MIN := 4.0
 ## land covers it and the land lies hidden under it) to BAND_FAR, where the ground is the bare real height.
 const BAND_NEAR := 96.0
 const BAND_FAR := 150.0
+## Water (rivers and lakes: RealPack.WATER cover) is drawn on the near and middle levels' blocks, a cell wherever its
+## middle is water, at the water's height (the real heights there; the land is its bed, AdventureRoute.ground_at). It's
+## kept this far off the road (m, from the nearest of every fourth knot) but where the road is on a bridge.
+const WATER_LODS := 2
+const WATER_ROAD := 14.0
+## How far the water's outer edge dips below the water (m): into the bank, where flat ground would show its cells' squares.
+const WATER_SHORE := 0.8
+const WATER_COLOUR := Color(0.08, 0.17, 0.22)
+## A lake's or river's colour on the far level's land (no water is drawn there).
+const FAR_WATER := Color(0.18, 0.34, 0.5)
 ## How many blocks are laid out at once, and put in the tree a frame.
 const AT_ONCE := 3
 const PUT_PER_FRAME := 2
@@ -49,6 +59,7 @@ var _queue: Array = [] # [{key, lod}] to lay out, nearest first
 var _done := {}        # Vector2i -> {lod, arrays}
 var _lock := Mutex.new()
 var _material: StandardMaterial3D
+var _water_material: StandardMaterial3D
 var _at := Vector2(INF, INF)
 var _epoch := 0        # changes when the road does (a way picked at a fork): older work is thrown away
 var _touch := {}       # Vector2i -> true for the blocks the road is near (worked out once a road, see _near_road)
@@ -66,6 +77,32 @@ func setup(w: AdventureWorld, r: AdventureRoute) -> void:
 	_material = StandardMaterial3D.new()
 	_material.vertex_color_use_as_albedo = true
 	_material.roughness = 1.0
+	_water_material = water_material()
+
+
+static var _water_mat: StandardMaterial3D
+
+
+## The water's material: dark and glassy, catching the sky, with ripples on it.
+static func water_material() -> StandardMaterial3D:
+	if _water_mat == null:
+		_water_mat = StandardMaterial3D.new()
+		_water_mat.albedo_color = WATER_COLOUR
+		_water_mat.roughness = 0.06
+		_water_mat.metallic = 0.25
+		_water_mat.metallic_specular = 1.0
+		var ripples := NoiseTexture2D.new()
+		ripples.seamless = true
+		ripples.as_normal_map = true
+		ripples.bump_strength = 1.5
+		ripples.noise = FastNoiseLite.new()
+		ripples.noise.frequency = 0.05
+		_water_mat.normal_enabled = true
+		_water_mat.normal_texture = ripples
+		_water_mat.normal_scale = 0.35
+		_water_mat.uv1_triplanar = true
+		_water_mat.uv1_scale = Vector3(0.12, 0.12, 0.12)
+	return _water_mat
 
 
 func _exit_tree() -> void:
@@ -168,9 +205,10 @@ func _process(_delta: float) -> void:
 		var epoch := _epoch
 		_tasks[key] = {"lod": lod, "id": WorkerThreadPool.add_task(func():
 			var arrays = _block_arrays(key, lod)
+			var water = _water_arrays(key, lod) if arrays != null else null
 			_lock.lock()
 			if epoch == _epoch:
-				_done[key] = {"lod": lod, "arrays": arrays}
+				_done[key] = {"lod": lod, "arrays": arrays, "water": water}
 			_lock.unlock())}
 	if _tasks.is_empty():
 		return
@@ -189,7 +227,7 @@ func _process(_delta: float) -> void:
 		var old: MeshInstance3D = _blocks[key]["mi"] if _blocks.has(key) else null
 		var mi: MeshInstance3D = null
 		if got["arrays"] != null:
-			mi = _make_mesh(key, got["arrays"])
+			mi = _make_mesh(key, got["arrays"], got.get("water"))
 			add_child(mi)
 			_place(key, mi)
 			put += 1
@@ -232,12 +270,15 @@ func _place(key: Vector2i, mi: MeshInstance3D) -> void:
 	mi.position = Vector3(key.x * BLOCK - world.origin.x, 0.0, key.y * BLOCK - world.origin.z)
 
 
-func _make_mesh(key: Vector2i, arrays: Array) -> MeshInstance3D:
+func _make_mesh(key: Vector2i, arrays: Array, water = null) -> MeshInstance3D:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, _material)
+	if water != null:
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, water)
+		mesh.surface_set_material(1, _water_material)
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
-	mi.material_override = _material
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.name = "Land_%d_%d" % [key.x, key.y]
 	return mi
@@ -337,7 +378,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			dist[g] = d
 			knot[g] = k
 			lats[g] = 0.0
-			var bare := terrain.height(x, z)
+			var bare := route.ground_at(x, z)
 			if is_nan(bare):
 				bare = route.base[k]
 			if d >= BAND_FAR:
@@ -361,7 +402,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			var h := grid[g]
 			verts[j * n + i] = Vector3(i * sp, h, j * sp)
 			norms[j * n + i] = Vector3(grid[g - 1] - grid[g + 1], 2.0 * sp, grid[g - m] - grid[g + m]).normalized()
-			cols[j * n + i] = _colour(knot[g], lats[g], ox + i * sp, oz + j * sp, h, norms[j * n + i])
+			cols[j * n + i] = _colour(knot[g], lats[g], ox + i * sp, oz + j * sp, h, norms[j * n + i], lod < WATER_LODS)
 	# Cells wholly under the chunks' own land are left out.
 	var idx := PackedInt32Array()
 	var any := false
@@ -417,6 +458,94 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	return arrays
 
 
+## The water of block `key` at level `lod` (see WATER_LODS), or null when it has none. Any thread. A cell is water where
+## its middle is, and one either side of it too, at the water's height: the banks rise through it, so the shore follows
+## the land rather than the cells' squares.
+func _water_arrays(key: Vector2i, lod: int) -> Variant:
+	if lod >= WATER_LODS:
+		return null
+	var cells: int = CELLS[lod]
+	var sp := BLOCK / cells
+	var ox := key.x * BLOCK
+	var oz := key.y * BLOCK
+	# Each cell's middle, a cell's border round the block: water there, and its height.
+	var m := cells + 2
+	var wet := PackedByteArray()
+	var level := PackedFloat32Array()
+	wet.resize(m * m)
+	level.resize(m * m)
+	var any := false
+	for j in m:
+		for i in m:
+			var cx := ox + (i - 0.5) * sp
+			var cz := oz + (j - 0.5) * sp
+			var h := terrain.height(cx, cz)
+			if not is_nan(h) and terrain.cover(cx, cz) == RealPack.WATER:
+				wet[j * m + i] = 1
+				level[j * m + i] = h
+				any = true
+	if not any:
+		return null
+	var near := PackedInt32Array()
+	for k in range(0, route.px.size(), 4):
+		if route.px[k] >= ox - WATER_ROAD - sp and route.px[k] <= ox + BLOCK + WATER_ROAD + sp \
+				and route.pz[k] >= oz - WATER_ROAD - sp and route.pz[k] <= oz + BLOCK + WATER_ROAD + sp:
+			near.append(k)
+	# Each corner of the cells: the lowest water among the cells it's a corner of, or failing that among those round them
+	# (a corner on the shore, a little lower), so the water slopes down a river as it goes and is one surface, no steps.
+	var n := cells + 1
+	var corner := PackedFloat32Array()
+	corner.resize(n * n)
+	for vj in n:
+		for vi in n:
+			var h := INF
+			for reach: int in [1, 2]:
+				for cj in range(vj + 1 - reach, vj + 1 + reach):
+					for ci in range(vi + 1 - reach, vi + 1 + reach):
+						if ci >= 0 and cj >= 0 and ci < m and cj < m and wet[cj * m + ci] == 1:
+							h = minf(h, level[cj * m + ci])
+				if h != INF:
+					if reach == 2:
+						h -= WATER_SHORE   # (on the shore: dipping into the bank, so the edge follows the land)
+					break
+			corner[vj * n + vi] = h
+	var verts := PackedVector3Array()
+	var idx := PackedInt32Array()
+	for j in cells:
+		for i in cells:
+			var dry := true
+			for dj in 3:
+				for di in 3:
+					if wet[(j + dj) * m + (i + di)] == 1:
+						dry = false
+			if dry:
+				continue
+			if not near.is_empty():
+				var nr := _nearest_of(route, near, ox + (i + 0.5) * sp, oz + (j + 0.5) * sp)
+				var k := int(nr[1])
+				# (off the road, unless it's crossing on a bridge: the water runs on under the deck)
+				if float(nr[0]) < WATER_ROAD + sp * 0.5 and k >= 0 and (k >= route.deck.size() or route.deck[k] <= 0.0):
+					continue
+			var c := [corner[j * n + i], corner[j * n + i + 1], corner[(j + 1) * n + i + 1], corner[(j + 1) * n + i]]
+			if c.has(INF):
+				continue
+			var v := verts.size()
+			verts.append_array([Vector3(i * sp, c[0], j * sp), Vector3((i + 1) * sp, c[1], j * sp),
+				Vector3((i + 1) * sp, c[2], (j + 1) * sp), Vector3(i * sp, c[3], (j + 1) * sp)])
+			idx.append_array([v, v + 1, v + 2, v, v + 2, v + 3])
+	if verts.is_empty():
+		return null
+	var norms := PackedVector3Array()
+	norms.resize(verts.size())
+	norms.fill(Vector3.UP)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_INDEX] = idx
+	return arrays
+
+
 ## How far (m) the real ground part-way between a block's edge samples lies from the line between them, the most along
 ## edge `e` (0 north, 1 south, 2 west, 3 east): the crack a neighbour at another level could show.
 func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int) -> float:
@@ -465,9 +594,12 @@ func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: Packe
 
 ## The ground's colour: what the road's own land is there (its surface's, patched, tinted by what covers it), so the two
 ## meet without a line; rock where the ground itself is steep (by its normal: far from the road, how far it has risen
-## from the road means nothing), and a beach by the sea.
-func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3) -> Color:
+## from the road means nothing), and a beach by the sea. Under water it's the bed's, where the water is drawn (`wet`), and
+## the water's own blue where it isn't (the far level).
+func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, wet := true) -> Color:
 	var col := AdventureChunk._land_color(route, i, 3, lat, x, z, y)
+	if not wet and terrain.cover(x, z) == RealPack.WATER:
+		return col.lerp(FAR_WATER, 0.85)
 	if route.cover_at(x, z) == "":
 		col = col.lerp(RealRidges.WOODS, 0.5)   # past the baked cover: about what the island is mostly
 	col = col.lerp(Color(0.45, 0.43, 0.4), smoothstep(0.32, 0.62, 1.0 - normal.y) * 0.7)
