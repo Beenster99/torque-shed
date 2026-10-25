@@ -23,7 +23,9 @@ const MAX_ROUNDS := 3000
 ## An out-and-back this long (m each way) or shorter, to a pin on a dead-end street, is left out of the route.
 const SPUR_M := 300.0
 ## The version of the planner, in every plan's hash: a change to how routes are made changes the hash.
-const VERSION := 6
+const VERSION := 7
+## Rivers and streams this near the road (m, about) go into the pack.
+const STREAM_NEAR := 700.0
 ## A bridge's or a tunnel's ends are matched to the road within this (m) of them.
 const BRIDGE_REACH := 10.0
 
@@ -244,6 +246,8 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 		(pack.buildings[c] as Array).append(b)
 	pack.building_count = buildings.size()
 	pack.landmarks = _landmarks(region, xs, zs)
+	pack.streams = streams_near(region, xs, zs)
+	pack.index_streams()
 	pack.pois = _pois(region, xs, zs)
 	parts["places"] = Time.get_ticks_msec() - t0
 	pack.junctions = thin_junctions(junctions_along(region, steps, xs, zs))
@@ -259,7 +263,8 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	for fk: Dictionary in pack.forks:
 		all_bridges.append_array(fk["way"].get("bridges", PackedInt32Array()))
 		all_tunnels.append_array(fk["way"].get("tunnels", PackedInt32Array()))
-	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), all_bridges, all_tunnels)
+	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), all_bridges, all_tunnels,
+		pack.streams)
 	pack.hash = hash
 	pack.id = "plan_" + hash
 	parts["junctions"] = Time.get_ticks_msec() - t0
@@ -284,7 +289,7 @@ static func _fail(why: String) -> Dictionary:
 ## that plans the same journey, and different if any of them planned another); and with live heights the road's
 ## heights too, to the 10 cm (two machines could have been given different map tiles of the land).
 static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i], elev := PackedFloat32Array(),
-		bridges := PackedInt32Array(), tunnels := PackedInt32Array()) -> String:
+		bridges := PackedInt32Array(), tunnels := PackedInt32Array(), streams: Array = []) -> String:
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	var text := "%d|%s|%s|%s" % [VERSION, region.hash, str(request.get("mode", "main")), str(request.get("seed", 0))]
@@ -304,6 +309,15 @@ static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i
 	if not tunnels.is_empty():
 		ctx.update("|tunnels".to_utf8_buffer())
 		ctx.update(tunnels.to_byte_array())
+	if not streams.is_empty():
+		# (the streams lower the land beside the road: a machine without them has other land under the riders)
+		var dm := PackedInt32Array()
+		for line: Array in streams:
+			dm.append(int(line[0]))
+			for p: Vector2 in (line[1] as PackedVector2Array):
+				dm.append_array([roundi(p.x * 10.0), roundi(p.y * 10.0)])
+		ctx.update("|streams".to_utf8_buffer())
+		ctx.update(dm.to_byte_array())
 	return ctx.finish().hex_encode().substr(0, 16)
 
 
@@ -1015,6 +1029,26 @@ static func _pois(region: RealRegion, xs: PackedFloat64Array, zs: PackedFloat64A
 		if str(a["kind"]) != str(c["kind"]):
 			return str(a["kind"]) < str(c["kind"])
 		return float(a["x"]) < float(c["x"]))
+	return out
+
+
+## The region's rivers and streams with any of them within STREAM_NEAR of the road (RealPack.streams).
+static func streams_near(region: RealRegion, xs: PackedFloat64Array, zs: PackedFloat64Array) -> Array:
+	var out: Array = []
+	if region == null or region.streams.is_empty():
+		return out
+	var cell := STREAM_NEAR
+	var near := {}
+	for k in range(0, xs.size(), 8):
+		var g := Vector2i(floori(xs[k] / cell), floori(zs[k] / cell))
+		for dz in [-1, 0, 1]:
+			for dx in [-1, 0, 1]:
+				near[g + Vector2i(dx, dz)] = true
+	for line: Array in region.streams:
+		for p: Vector2 in (line[1] as PackedVector2Array):
+			if near.has(Vector2i(floori(p.x / cell), floori(p.y / cell))):
+				out.append(line)
+				break
 	return out
 
 

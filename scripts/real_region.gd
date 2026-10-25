@@ -64,6 +64,10 @@ var landmarks: Array = []
 ## Its bridges and tunnels (tools/span_bake.py): [[kind (0 a bridge, 1 a tunnel), x0, z0, x1, z1], ...] in the
 ## region's frame, end to end. A bundled region's from its spans.json, an area's from its cells' sketch blocks.
 var spans: Array = []
+## Its rivers and streams as lines (tools/stream_bake.py: the becks the land cover's water polygons don't hold), near its
+## roads: [[kind (0 a river, 1 a stream, 2 a canal), PackedVector2Array of points], ...] in the region's frame. A bundled
+## region's from its streams.json, an area's from its cells' own files (CellStore.streams).
+var streams: Array = []
 var counts := {}
 ## For each node the connected piece of road it is in (numbered in order of the lowest node), and how many junctions that has.
 var component := PackedInt32Array()
@@ -142,6 +146,7 @@ static func _load(region_id: String) -> RealRegion:
 		var stitched := stitch(region_id, title_of(region_id), dirs, mid.x, mid.y)
 		if stitched != null:
 			stitched.spans = _cell_spans(cells, mid)
+			stitched.streams = _cell_streams(cells, mid)
 		return stitched
 	if region_id.begins_with(AREA_PREFIX):
 		var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
@@ -190,6 +195,9 @@ static func _load(region_id: String) -> RealRegion:
 	var rows_s = _json(dir.path_join("spans.json"))
 	if rows_s is Dictionary and rows_s.get("spans") is Array:
 		r.spans = _spans_in(rows_s["spans"], Vector2(r.frame_lat, r.frame_lon))
+	var rows_w = _json(dir.path_join("streams.json"))
+	if rows_w is Dictionary and rows_w.get("streams") is Array:
+		r.streams = _streams_in(rows_w["streams"], Vector2(r.frame_lat, r.frame_lon))
 	r.terrain = RealTerrain.new(dir, meta)
 	if r.terrain.live:
 		r.terrain.set_buildings(r.buildings)   # (live heights level the ground under them; baked ones were levelled by the baker)
@@ -506,6 +514,35 @@ static func _spans_in(rows: Array, frame: Vector2) -> Array:
 		var a := to_frame(frame, float(row[1]) * 1e-5, float(row[2]) * 1e-5)
 		var b := to_frame(frame, float(row[3]) * 1e-5, float(row[4]) * 1e-5)
 		out.append([int(row[0]), a.x, a.y, b.x, b.y])
+	return out
+
+
+## Streams [[kind, lat, lon, dlat, dlon, ...] in 1e-5 degrees] (tools/stream_bake.py) in the frame at `frame` (lat, lon):
+## [[kind, PackedVector2Array], ...].
+static func _streams_in(rows: Array, frame: Vector2) -> Array:
+	var out: Array = []
+	for row in rows:
+		if not row is Array or (row as Array).size() < 5:
+			continue
+		var pts := PackedVector2Array()
+		var lat := int(row[1])
+		var lon := int(row[2])
+		pts.append(to_frame(frame, lat * 1e-5, lon * 1e-5))
+		for k in range(3, (row as Array).size() - 1, 2):
+			lat += int(row[k])
+			lon += int(row[k + 1])
+			pts.append(to_frame(frame, lat * 1e-5, lon * 1e-5))
+		out.append([int(row[0]), pts])
+	return out
+
+
+## The rivers and streams of `cells` (their own files, CellStore.streams, fetched if this game hasn't the ones the world's
+## index names) in the frame at `frame`. Blocks while it fetches: a worker's job.
+static func _cell_streams(cells: Array[Vector2i], frame: Vector2) -> Array:
+	var idx := CellStore.saved_index()
+	var out: Array = []
+	for c in cells:
+		out.append_array(_streams_in(CellStore.streams("%d_%d" % [c.x, c.y], idx), frame))
 	return out
 
 

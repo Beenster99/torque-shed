@@ -106,8 +106,11 @@ var bore := PackedFloat32Array()
 ## either side rises steeply from the road there, a cutting into the hill rather than a long bank.
 var cutting := PackedFloat32Array()
 const TUNNEL_APPROACH := 12
-## How far a river's or lake's bed lies below its water (m).
+## How far a river's or lake's bed lies below its water (m), and a beck's trough below the ground at its middle, out to
+## this far past its banks (m: the land's mesh is 8 m squares out from the road, so there's always some of it in there).
 const WATER_DEPTH := 1.2
+const STREAM_DEPTH := 0.9
+const STREAM_TROUGH := 6.0
 ## The least rock over the road in a tunnel (m above it): the hill is raised to this where the real land is lower.
 const TUNNEL_COVER := 9.0
 ## [{s0, s1, kind, width}] in order.
@@ -986,11 +989,17 @@ func natural_height(i: int, x: float, z: float, _a := 0.0) -> float:
 
 
 ## The real ground at (x, z), NAN beyond what the pack holds: under a river or a lake (RealPack.WATER cover) its bed,
-## WATER_DEPTH below the water (the heights are the water's surface there), so the water lies in it (RealLand draws it).
+## WATER_DEPTH below the water (the heights are the water's surface there), and by a beck (RealPack.streams) a trough
+## STREAM_DEPTH deep at its middle line, out to STREAM_TROUGH past its banks, so the water lies in it (RealLand draws it).
 func ground_at(x: float, z: float) -> float:
 	var rh := real.terrain.height(x, z)
-	if not is_nan(rh) and real.terrain.cover(x, z) == RealPack.WATER:
-		rh -= WATER_DEPTH
+	if is_nan(rh):
+		return rh
+	if real.terrain.cover(x, z) == RealPack.WATER:
+		return rh - WATER_DEPTH
+	var near := real.stream_at(x, z)
+	if near.x < near.y + STREAM_TROUGH:
+		rh -= STREAM_DEPTH * (1.0 - smoothstep(near.y, near.y + STREAM_TROUGH, near.x))
 	return rh
 
 

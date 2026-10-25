@@ -43,6 +43,8 @@ const WATER_LODS := 2
 const WATER_ROAD := 14.0
 ## How far the water's outer edge dips below the water (m): into the bank, where flat ground would show its cells' squares.
 const WATER_SHORE := 0.8
+## A ribbon of a beck is at least this wide (m), the width the land's trough along it shows (AdventureRoute.ground_at).
+const STREAM_MIN_W := 4.0
 const WATER_COLOUR := Color(0.08, 0.17, 0.22)
 ## A lake's or river's colour on the far level's land (no water is drawn there).
 const FAR_WATER := Color(0.18, 0.34, 0.5)
@@ -65,7 +67,8 @@ var _epoch := 0        # changes when the road does (a way picked at a fork): ol
 var _touch := {}       # Vector2i -> true for the blocks the road is near (worked out once a road, see _near_road)
 var _touch_done := false
 ## No new blocks are started while this is set (a fork's way is being put together, and the road is about to change
-## under them: see AdventureWorld.apply_picks_soon), so the road can be swapped without waiting on any.
+## under them: see AdventureWorld.apply_picks_soon), and those being laid out stop where they are (the swap lays every
+## block out again: reset), so the road can be swapped without waiting on any. Read by the workers.
 var hold := false
 
 
@@ -365,6 +368,8 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	knot.resize(m * m)
 	lats.resize(m * m)
 	for j in m:
+		if hold:
+			return null   # (the road's being swapped: what's laid out now is thrown away, see hold)
 		for i in m:
 			var x := ox + (i - 1) * sp
 			var z := oz + (j - 1) * sp
@@ -476,6 +481,8 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 	level.resize(m * m)
 	var any := false
 	for j in m:
+		if hold:
+			return null
 		for i in m:
 			var cx := ox + (i - 0.5) * sp
 			var cz := oz + (j - 0.5) * sp
@@ -486,13 +493,22 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 				wet[j * m + i] = 1
 				level[j * m + i] = h
 				any = true
-	if not any:
+	var streams := lod == 0 and not route.real.streams.is_empty()
+	if not any and not streams:
 		return null
 	var near := PackedInt32Array()
 	for k in range(0, route.px.size(), 4):
 		if route.px[k] >= ox - WATER_ROAD - sp and route.px[k] <= ox + BLOCK + WATER_ROAD + sp \
 				and route.pz[k] >= oz - WATER_ROAD - sp and route.pz[k] <= oz + BLOCK + WATER_ROAD + sp:
 			near.append(k)
+	var verts := PackedVector3Array()
+	var idx := PackedInt32Array()
+	if streams:
+		_stream_ribbons(ox, oz, near, verts, idx)
+	if hold:
+		return null
+	if not any:
+		return _water_mesh(verts, idx)
 	# Each corner of the cells: the lowest water among the cells it's a corner of, or failing that among those round them
 	# (a corner on the shore, a little lower), so the water slopes down a river as it goes and is one surface, no steps.
 	var n := cells + 1
@@ -511,8 +527,6 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 						h -= WATER_SHORE   # (on the shore: dipping into the bank, so the edge follows the land)
 					break
 			corner[vj * n + vi] = h
-	var verts := PackedVector3Array()
-	var idx := PackedInt32Array()
 	for j in cells:
 		for i in cells:
 			var dry := true
@@ -522,12 +536,9 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 						dry = false
 			if dry:
 				continue
-			if not near.is_empty():
-				var nr := _nearest_of(route, near, ox + (i + 0.5) * sp, oz + (j + 0.5) * sp)
-				var k := int(nr[1])
-				# (off the road, unless it's crossing on a bridge: the water runs on under the deck)
-				if float(nr[0]) < WATER_ROAD + sp * 0.5 and k >= 0 and (k >= route.deck.size() or route.deck[k] <= 0.0):
-					continue
+			# (off the road, unless it's crossing on a bridge: the water runs on under the deck)
+			if _on_road(near, ox + (i + 0.5) * sp, oz + (j + 0.5) * sp, WATER_ROAD + sp * 0.5):
+				continue
 			var c := [corner[j * n + i], corner[j * n + i + 1], corner[(j + 1) * n + i + 1], corner[(j + 1) * n + i]]
 			if c.has(INF):
 				continue
@@ -535,6 +546,92 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 			verts.append_array([Vector3(i * sp, c[0], j * sp), Vector3((i + 1) * sp, c[1], j * sp),
 				Vector3((i + 1) * sp, c[2], (j + 1) * sp), Vector3(i * sp, c[3], (j + 1) * sp)])
 			idx.append_array([v, v + 1, v + 2, v, v + 2, v + 3])
+	return _water_mesh(verts, idx)
+
+
+## The rivers and streams (RealPack.streams) of the block at (ox, oz) into `verts` and `idx`: a ribbon of water down each,
+## its own width or STREAM_MIN_W if narrower, on the water at each point (the real heights there, never up a bank: the
+## lowest of them a point either way), over the trough the land has along it (AdventureRoute.ground_at). Each segment is
+## the block's that its middle is in; none on the road (`near`: its knots by the block) but under a bridge, nor where the
+## land cover has the water already.
+func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: PackedVector3Array, idx: PackedInt32Array) -> void:
+	var box := Rect2(ox, oz, BLOCK, BLOCK)
+	for line: Array in route.real.streams:
+		if hold:
+			return
+		var pts: PackedVector2Array = line[1]
+		var half: float = maxf(RealPack.STREAM_HALF[clampi(int(line[0]), 0, 2)], STREAM_MIN_W * 0.5)
+		var mine := PackedInt32Array()
+		for k in pts.size() - 1:
+			if box.has_point((pts[k] + pts[k + 1]) * 0.5):
+				mine.append(k)
+		if mine.is_empty():
+			continue
+		var raw := PackedFloat32Array()
+		raw.resize(pts.size())
+		for k in pts.size():
+			raw[k] = terrain.height(pts[k].x, pts[k].y)
+		for k in mine:
+			var a := pts[k]
+			var b := pts[k + 1]
+			var mid := (a + b) * 0.5
+			if terrain.cover(mid.x, mid.y) == RealPack.WATER:
+				continue   # (a river mapped as water too: it's drawn as that)
+			if _on_road(near, mid.x, mid.y, WATER_ROAD):
+				continue
+			var ha := _lowest(raw, k)
+			var hb := _lowest(raw, k + 1)
+			if is_nan(ha) or is_nan(hb):
+				continue
+			var along := (b - a).normalized()
+			var side := Vector2(-along.y, along.x) * half
+			# (a little past each end, so the next segment's ribbon overlaps it at a bend)
+			var a2 := a - along * half
+			var b2 := b + along * half
+			var v := verts.size()
+			verts.append_array([Vector3(a2.x - side.x - ox, ha, a2.y - side.y - oz), Vector3(a2.x + side.x - ox, ha, a2.y + side.y - oz),
+				Vector3(b2.x + side.x - ox, hb, b2.y + side.y - oz), Vector3(b2.x - side.x - ox, hb, b2.y - side.y - oz)])
+			idx.append_array([v, v + 1, v + 2, v, v + 2, v + 3, v, v + 2, v + 1, v, v + 3, v + 2])
+
+
+## Whether (x, z) is within `reach` of the road (`near`: every fourth of its knots by the block) where it isn't on a bridge:
+## no water's drawn there (it would lie over the road, or a bank of it). The deck is the nearest knot's, not the nearest
+## of every fourth (at a bridge's end that may be on the deck while the road there isn't).
+func _on_road(near: PackedInt32Array, x: float, z: float, reach: float) -> bool:
+	if near.is_empty():
+		return false
+	var nr := _nearest_of(route, near, x, z)
+	var k := int(nr[1])
+	if float(nr[0]) >= reach or k < 0:
+		return false
+	var best := INF
+	for i in range(maxi(0, k - 4), mini(route.px.size(), k + 5)):
+		var d := Vector2(route.px[i] - x, route.pz[i] - z).length_squared()
+		if d < best:
+			best = d
+			k = i
+	return not near_deck(route, k)
+
+
+## Whether knot `i` of `r` is on a bridge or just at its end (a deck eases in over its first and last knots).
+static func near_deck(r: AdventureRoute, i: int) -> bool:
+	for j in range(maxi(0, i - 2), mini(r.deck.size(), i + 3)):
+		if r.deck[j] > 0.0:
+			return true
+	return false
+
+
+## The lowest of `h` at k and the points either side of it (NAN when there's no height there).
+static func _lowest(h: PackedFloat32Array, k: int) -> float:
+	var out := h[k]
+	for j: int in [k - 1, k + 1]:
+		if j >= 0 and j < h.size() and not is_nan(h[j]) and (is_nan(out) or h[j] < out):
+			out = h[j]
+	return out
+
+
+## Water arrays from `verts` and `idx`, or null when there are none.
+static func _water_mesh(verts: PackedVector3Array, idx: PackedInt32Array) -> Variant:
 	if verts.is_empty():
 		return null
 	var norms := PackedVector3Array()
