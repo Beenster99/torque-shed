@@ -65,6 +65,9 @@ var _ridge_tiles := {}         # Vector2i -> PackedFloat32Array: the live ridge 
 ## A region stitched from cells (RealRegion.stitch) reads its cover from each cell's own tiles, in the cell's own frame:
 ## [{levels, lat, lon, m (metres per degree there), south, west, north, east}].
 var _cover_cells: Array = []
+## The trees of the cells it covers (tools/tree_bake.py, add_trees): [{south, west, north, east, rows, cols, trees, leaf}],
+## the last two PackedByteArrays of rows x cols, from the north-west corner.
+var _tree_cells: Array = []
 
 
 func _init(pack_dir := "", meta: Dictionary = {}) -> void:
@@ -287,6 +290,7 @@ func for_road(road: PackedVector2Array) -> RealTerrain:
 	t._pads = _pads
 	t._pad_grid = _pad_grid
 	t._cover_cells = _cover_cells
+	t._tree_cells = _tree_cells
 	for li in zooms.size():
 		var set := {}
 		for k in HeightTiles.keys_near(road, LIVE_REACH[li], zooms[li], lat0, lon0):
@@ -358,6 +362,52 @@ func add_cover_cell(cell_dir: String, meta: Dictionary) -> void:
 	var lat := float(meta["frame"]["lat"])
 	_cover_cells.append({"levels": lvls, "lat": lat, "lon": float(meta["frame"]["lon"]), "m": metres_per_degree(lat),
 		"south": float(geo["south"]), "west": float(geo["west"]), "north": float(geo["north"]), "east": float(geo["east"])})
+
+
+## Takes in a cell's trees (tools/tree_bake.py: {cell: "ROW_COL", rows, cols, trees, leaf}, the last two base64 of
+## zlib'd bytes). One that won't read is left out.
+func add_trees(row: Dictionary) -> void:
+	var name := str(row.get("cell", "")).split("_")
+	var rows := int(row.get("rows", 0))
+	var cols := int(row.get("cols", 0))
+	if name.size() != 2 or rows <= 0 or cols <= 0:
+		return
+	var trees := Marshalls.base64_to_raw(str(row.get("trees", ""))).decompress(rows * cols, FileAccess.COMPRESSION_DEFLATE)
+	var leaf := Marshalls.base64_to_raw(str(row.get("leaf", ""))).decompress(rows * cols, FileAccess.COMPRESSION_DEFLATE)
+	if trees.size() != rows * cols:
+		return
+	if leaf.size() != rows * cols:
+		leaf = PackedByteArray()
+	var south := int(name[0]) * RealRegion.CELL_DEG - 90.0
+	var west := int(name[1]) * RealRegion.CELL_DEG - 180.0
+	_tree_cells.append({"south": south, "west": west, "north": south + RealRegion.CELL_DEG, "east": west + RealRegion.CELL_DEG,
+		"rows": rows, "cols": cols, "trees": trees, "leaf": leaf})
+
+
+## Whether it has any cell's trees (add_trees).
+func has_trees() -> bool:
+	return not _tree_cells.is_empty()
+
+
+## The trees at route-frame (x, z) (tools/tree_bake.py): the trees byte (its low 5 bits the canopy's height in
+## tree_bake's HEIGHT_STEP, its top 3 how much of the square is under trees in eighths) with the leaf's id over it
+## (times 256: RealPack.LEAVES), or -1 where no cell's trees have the point.
+func trees_at(x: float, z: float) -> int:
+	if _tree_cells.is_empty():
+		return -1
+	var lat := lat0 - z / _m.x
+	var lon := lon0 + x / _m.y
+	for c: Dictionary in _tree_cells:
+		var s: float = c["south"]
+		var w: float = c["west"]
+		if lat >= s and lat < float(c["north"]) and lon >= w and lon < float(c["east"]):
+			var rows: int = c["rows"]
+			var cols: int = c["cols"]
+			var r := clampi(int((float(c["north"]) - lat) / RealRegion.CELL_DEG * rows), 0, rows - 1)
+			var k := r * cols + clampi(int((lon - w) / RealRegion.CELL_DEG * cols), 0, cols - 1)
+			var leaf: PackedByteArray = c["leaf"]
+			return int((c["trees"] as PackedByteArray)[k]) + (int(leaf[k]) * 256 if not leaf.is_empty() else 0)
+	return -1
 
 
 ## The buildings whose ground the live heights level (RealRegion.buildings rows: [x, z, w, d, yaw, ...]).

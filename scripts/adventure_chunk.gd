@@ -86,6 +86,26 @@ const OTHER_ODDS := 0.3
 const REAL_TRIES := {"tree": 240, "pine": 70, "bush": 70, "rock": 24}
 ## How far out from a real road scenery is scattered (m): woods run well up the hillsides.
 const REAL_REACH := 260.0
+## On a real road whose cells have their trees (RealTerrain.trees_at, tools/tree_bake.py) the trees stand where the
+## canopy map has them: a look every CANOPY_STEP m along the road and out from it to REAL_REACH, and as many trees
+## planted round each look as the share of it under trees and the size of their crowns say (CANOPY_MOST at most),
+## each as tall as the canopy there or a little under.
+const CANOPY_STEP := 16.0
+const CANOPY_MOST := 2
+## The canopy's height step (m: tools/tree_bake.py HEIGHT_STEP).
+const CANOPY_HEIGHT_STEP := 2.0
+## Past this far out (m) only this share of the trees are planted: the far woods look as thick with fewer.
+const CANOPY_THIN := [70.0, 0.4]
+## Each tree's height and its crown's width (m) as AdventureProps draws it, to scale it to the real tree's.
+const TREE_SIZE := {"tree": [6.6, 5.2], "oak": [8.1, 7.6], "pine": [8.0, 4.4], "snow_pine": [8.0, 4.4]}
+## A real tree's crown is this wide for its height (m per m, and m), a broadleaf's and a conifer's.
+const CROWN_BROAD := [0.35, 3.0]
+const CROWN_NEEDLE := [0.22, 2.0]
+## Where the map doesn't say what leaves a wood has (RealPack.LEAVES 0), how likely it is a conifer's: as a rule, in
+## the far north, a thick wood of tall trees (as often as not a plantation), high up and in the mountains, more so.
+const NEEDLE_ODDS := {"base": 0.2, "north": 0.6, "north_lat": 58.0, "plantation": 0.4, "high": 0.2, "high_y": 350.0, "alpine": 0.4}
+## The ground a guess holds over (m): a wood is one kind across, not tree by tree.
+const NEEDLE_PATCH := 128.0
 
 
 ## Lays out chunk `c` of `route`. Safe to run on a worker thread: it only reads the route.
@@ -357,11 +377,16 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	var theme := route.theme
 	var counts: Dictionary = (AdventureTheme.get_value(theme, "scenery", {}) as Dictionary).get(surf, SCENERY.get(surf, {}))
 	var real := route.real != null
+	var canopy := real and _has_canopy(route, i0, i1)
 	if real:
 		counts = counts.duplicate()
 		for kind in REAL_TRIES:
 			counts[kind] = REAL_TRIES[kind]
+	if canopy:
+		mm = _canopy_trees(route, c, i0, i1, ax, az, surf)
 	for kind in counts:
+		if canopy and kind in TREES:
+			continue
 		var list := []
 		var tries := int(REAL_TRIES.get(kind, counts[kind])) if real else int(counts[kind])
 		for k in tries:
@@ -475,6 +500,93 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 			var basis := Basis(r, Vector3.UP, -fwd) if across else Basis(r * side, Vector3.UP, -fwd * side)
 			here.append({"site": st, "xf": Transform3D(basis, origin), "width": route.width[si]})
 	out["sites"] = here
+
+
+## Whether the trees of the cells under chunk i0..i1 are to hand (RealTerrain.trees_at), at its middle.
+static func _has_canopy(route: AdventureRoute, i0: int, i1: int) -> bool:
+	var t := route.real.terrain
+	if t == null or not t.has_trees():
+		return false
+	var i := (i0 + i1) / 2
+	return t.trees_at(route.px[i], route.pz[i]) >= 0
+
+
+## The trees of chunk c (knots i0..i1) where the canopy map has them (see CANOPY_STEP): kind -> [Transform3D].
+static func _canopy_trees(route: AdventureRoute, c: int, i0: int, i1: int, ax: float, az: float, surf: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([route.seed_value, "canopy", c])
+	var t := route.real.terrain
+	var out := {}
+	var broad := "oak" if AdventureTheme.get_value(route.theme, "scenery", {}).get("tarmac", {}).has("oak") else "tree"
+	var needle := "snow_pine" if surf == "snow" else "pine"
+	var along := int(CANOPY_STEP / AdventureRoute.STEP)
+	for i in range(i0, i1, along):
+		var h := route.hd[i]
+		for side: float in [-1.0, 1.0]:
+			var lat0 := route.width[i] * 0.5 + 6.0
+			var lat := lat0 + CANOPY_STEP * 0.5
+			while lat < lat0 + REAL_REACH:
+				var wx := route.px[i] + cos(h) * lat * side
+				var wz := route.pz[i] + sin(h) * lat * side
+				var v := t.trees_at(wx, wz)
+				lat += CANOPY_STEP
+				var share := float((v >> 5) & 7) / 7.0 if v > 0 else 0.0
+				if share <= 0.0:
+					continue
+				var tallest := float(v & 31) * CANOPY_HEIGHT_STEP
+				var leaf := (v >> 8) & 3
+				var conifer_odds := 1.0 if leaf == 2 else (0.0 if leaf == 1 else (0.5 if leaf == 3 else
+					_needle_odds(route, t, wx, wz, share, tallest)))
+				var conifer := float(absi(hash([floori(wx / NEEDLE_PATCH), floori(wz / NEEDLE_PATCH)])) % 1000) / 1000.0 < conifer_odds
+				var crown: Array = CROWN_NEEDLE if conifer else CROWN_BROAD
+				var wide := float(crown[0]) * tallest + float(crown[1])
+				var many := minf(float(CANOPY_MOST), share * CANOPY_STEP * CANOPY_STEP / (wide * wide))
+				if lat - CANOPY_STEP > float(CANOPY_THIN[0]):
+					many *= float(CANOPY_THIN[1])
+				var n := int(many + rng.randf())
+				for k in n:
+					var kind := needle if (conifer if leaf != 3 else rng.randf() < 0.5) else (broad if share < 0.5 or rng.randf() < 0.4 else "tree")
+					var ii := clampi(i + rng.randi_range(-along / 2, along / 2), i0, i1)
+					var lj := maxf(lat0, lat - CANOPY_STEP * 1.5 + rng.randf() * CANOPY_STEP)
+					var xf := _on_land(route, ii, lj * side, ax, az, rng.randf() * TAU, 1.0)
+					if xf == Transform3D():
+						continue
+					# Only on ground the map has trees on itself (round a bend the look's square is further off), and
+					# as tall as they are there; and never in the water (the canopy hangs over a river: the tree
+					# stands on its bank).
+					var here := t.trees_at(ax + xf.origin.x, az + xf.origin.z)
+					if (here >> 5) & 7 == 0 or _in_water(route, ax + xf.origin.x, az + xf.origin.z):
+						continue
+					var top := float(here & 31) * CANOPY_HEIGHT_STEP
+					var tall := maxf(3.0, top * (rng.randf_range(0.85, 1.0) if n == 1 else rng.randf_range(0.65, 1.0)))
+					var size: Array = TREE_SIZE[kind]
+					var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1])
+					xf.basis = xf.basis.scaled(Vector3(across, tall / float(size[0]), across))
+					if not out.has(kind):
+						out[kind] = []
+					(out[kind] as Array).append(xf)
+	return out
+
+
+## Whether world (x, z) is in a river, a lake or a beck (RealPack.WATER cover, RealPack.stream_at).
+static func _in_water(route: AdventureRoute, x: float, z: float) -> bool:
+	if route.real.terrain.cover(x, z) == RealPack.WATER:
+		return true
+	var st := route.real.stream_at(x, z)
+	return st.x < st.y + 1.0
+
+
+## How likely trees the map doesn't give the leaves of are a conifer's (NEEDLE_ODDS), at world (x, z).
+static func _needle_odds(route: AdventureRoute, t: RealTerrain, x: float, z: float, share: float, tallest: float) -> float:
+	var p := float(NEEDLE_ODDS["north"]) if absf(t.lat0) > float(NEEDLE_ODDS["north_lat"]) else float(NEEDLE_ODDS["base"])
+	if share >= 0.85 and tallest >= 14.0:
+		p += float(NEEDLE_ODDS["plantation"])
+	var y := t.height(x, z)
+	if not is_nan(y) and y > float(NEEDLE_ODDS["high_y"]):
+		p += float(NEEDLE_ODDS["high"])
+	if route.theme == "alpine":
+		p += float(NEEDLE_ODDS["alpine"])
+	return p
 
 
 ## How much of `kind`'s scenery the cover at world (x, z) takes on a real road (see ODDS), 0 to 1.

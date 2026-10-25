@@ -363,6 +363,8 @@ static func credits_line(credits: Array) -> String:
 		said.append("roads © OpenStreetMap contributors and Overture Maps (ODbL)")
 	if all.contains("Mapterhorn"):
 		said.append("heights Mapterhorn")
+	if all.contains("Canopy Height"):
+		said.append("trees Meta and WRI (CC BY 4.0)")
 	return ("Map data: " + "; ".join(said) + ".") if not said.is_empty() else ""
 
 

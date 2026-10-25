@@ -249,7 +249,7 @@ another crew's TV.
 
 The polish the old plan left in stages 2 and 3, now that there is one renderer to polish, interleaved with the steps
 above as rides turn up the ugliest cases: bridges and tunnels from the road flags (a river valley gets a bridge, not
-a cutting); water for rivers and lakes beside the road; the planner's cusp at a pin (queued); trees with species and
+a cutting); water for rivers and lakes beside the road; the planner's cusp at a pin (left for now: not essential); trees with species and
 height from the cover and canopy data.
 
 **Size.** About three weeks in all.
@@ -270,7 +270,17 @@ under a bridge but never over the road. `claude/streams`: the becks and narrow r
 sketch's blocks, so a file a cell, `stream/cROW_COL.json`, fetched for a journey and backfilled by the world's
 workflow; the bundled regions' in their `streams.json`). The planner puts those near the road in the pack and its hash;
 the land is a trough along each (0.9 m), and the land blocks near the road draw a ribbon of water down it, under the
-bridges (nine of the ten on Hawes to Leyburn now cross water). Still to do: the cusp at a pin, trees.
+bridges (nine of the ten on Hawes to Leyburn now cross water). Trees (`claude/trees`): from Meta and the World
+Resources Institute's canopy height map (1 m, CC BY 4.0, read from its open bucket's z9 tiles by `tools/tree_bake.py`):
+each cell's on a grid of about 16 m squares within 300 m of a ridable road, a byte a square (the tallest tree, in 2 m,
+and how much of it is under trees, in eighths), with OpenStreetMap's leaf_type where its woods have one, about 100 to
+300 KB a cell in a file of its own (`tree/cROW_COL.json`, its hash in the index's "trees", `CellStore.trees`), made as
+each cell is baked and backfilled by the world's "Map the trees" workflow a 5 degree block a job; the bundled regions'
+in their `trees.json`. The ride plants its trees where the map has them (`AdventureChunk._canopy_trees`: a look every
+16 m along and out to 260 m, as many trees as the share under trees and the crowns' size say, each as tall as the
+canopy there, never in the water), conifers or broadleaves as the map says, else guessed a wood at a time from the
+place (thick, tall woods, high ground, the far north and the mountains lean to conifers); where a cell has none yet,
+the land cover scatters them as before. The cusp at a pin is left for now.
 
 ## What is dropped from the old plan
 

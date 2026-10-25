@@ -209,6 +209,67 @@ func test_building_shapes() -> void:
 	check(b["v"] == c["v"] and b["c"] == c["c"], "and the same one every time")
 
 
+## The trees stand where the canopy map has them (tools/tree_bake.py, RealTerrain.trees_at, AdventureChunk._canopy_trees):
+## a cell's grid read the right way round, the bundled region's trees under the road's sides, and each chunk's trees on
+## ground the map has trees on, never in the water, and as tall as the map says.
+func test_trees() -> void:
+	var g := RealTerrain.new("", {"frame": {"lat": 54.375, "lon": -2.125}})
+	# Cell 577_711 (54.25 to 54.5 N, 2.25 to 2 W) as two rows of three: thick conifers 20 m tall in the north row's
+	# middle, a few broadleaves 6 m tall at the south row's west end (as tools/tree_bake.py writes them).
+	g.add_trees({"cell": "577_711", "rows": 2, "cols": 3, "trees": "eNpjeMWgzMAAAAUBAQ4=", "leaf": "eNpjYGJgZGAAAAATAAQ="})
+	var m := RealTerrain.metres_per_degree(54.375)
+	var at := func(lat: float, lon: float) -> int: return g.trees_at((lon + 2.125) * m.y, -(lat - 54.375) * m.x)
+	var north_middle: int = at.call(54.45, -2.125)
+	var south_west: int = at.call(54.3, -2.2)
+	check(g.has_trees() and north_middle == (7 << 5 | 10) + 2 * 256 and south_west == (1 << 5 | 3) + 256 and at.call(54.45, -2.2) == 0,
+		"a cell's trees read north to south, west to east: %d %d" % [north_middle, south_west])
+	check(at.call(54.6, -2.125) == -1 and RealTerrain.new().trees_at(0.0, 0.0) == -1, "and none known beyond its cells")
+	var p := Rides.tour_pack(PACK)
+	check(p.terrain.has_trees(), "the bundled region has its trees")
+	var region := RealRegion.get_region(PACK)
+	check(region.credits.has(RealRegion.TREES_CREDIT) and RouteTv.credits_line(region.credits).contains("Meta"),
+		"and the canopy map is credited")
+	var r := AdventureRoute.new()
+	r.plan_real(p, 7, 1000.0)
+	var planted := 0
+	var stray := 0
+	var wet := 0
+	var tall := 0
+	var kinds := {}
+	var chunks := 0
+	for c in mini(r.chunk_count(), 150):
+		var d := AdventureChunk.build(r, c)
+		var i0: int = d["i0"]
+		if not AdventureChunk._has_canopy(r, i0, d["i1"]):
+			continue
+		chunks += 1
+		for kind in AdventureChunk.TREES:
+			for xf: Transform3D in d["mm"].get(kind, []):
+				planted += 1
+				kinds[kind] = true
+				var x: float = float(d["ax"]) + xf.origin.x
+				var z: float = float(d["az"]) + xf.origin.z
+				var v := p.terrain.trees_at(x, z)
+				var most := float(v & 31) * AdventureChunk.CANOPY_HEIGHT_STEP if v > 0 else 0.0
+				stray += int(most == 0.0)
+				wet += int(AdventureChunk._in_water(r, x, z))
+				var high := xf.basis.y.length() * float(AdventureChunk.TREE_SIZE[kind][0])
+				tall += int(most > 0.0 and (high < 2.9 or high > most + 0.1))
+	check(chunks > 10 and planted > chunks * 20, "trees planted from the canopy map in %d chunks (%d of them)" % [chunks, planted])
+	check(stray == 0 and wet == 0 and tall == 0,
+		"each where the map has trees (%d not), none in the water (%d), as tall as the map says (%d not)" % [stray, wet, tall])
+	check(kinds.has("pine") and (kinds.has("tree") or kinds.has("oak")), "conifers and broadleaves both (%s)" % [kinds.keys()])
+	# Without the canopy map, the trees are scattered by the land cover as before.
+	var cells: Array = p.terrain._tree_cells
+	p.terrain._tree_cells = []
+	var d0 := AdventureChunk.build(r, 3)
+	p.terrain._tree_cells = cells
+	var n0 := 0
+	for kind in AdventureChunk.TREES:
+		n0 += (d0["mm"].get(kind, []) as Array).size()
+	check(n0 > 0, "and without it the land cover still scatters them (%d in chunk 3)" % n0)
+
+
 ## Every chunk of the whole island road is within its budget: buildings' vertices and scattered things.
 func test_budget() -> void:
 	var r := AdventureRoute.new()
