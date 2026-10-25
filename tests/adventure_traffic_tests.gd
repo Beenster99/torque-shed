@@ -128,6 +128,15 @@ func test_density() -> void:
 	check(int(counts["village"][0]) > int(counts["open"][0]) + 3 and float(counts["village"][1]) > float(counts["open"][1]) * 1.4,
 		"more traffic round you in a village than on the open road (wanted %d to %d; %.1f to %.1f within 600 m)" % [counts["village"][0],
 		counts["open"][0], counts["village"][1], counts["open"][1]])
+	# Lorries and coaches are on the main road only (a side road's traffic is cars and vans), and only ten or so of the
+	# vehicles above come along it: spawn enough there to tell the mix (one at a time, cleared after each).
+	tr.stream.clear()
+	_at(tr, spot, [open_s])
+	for k in 300:
+		var d := tr.stream.spawn_one()
+		if not d.is_empty():
+			kinds[str(d["kind"])] = true
+			tr.stream.clear()
 	check(dirs.has(1) and dirs.has(-1) and (kinds.has("lorry") or kinds.has("coach")) and kinds.size() >= 5,
 		"going both ways, cars, vans, and lorries or coaches (%s; the buses at the stops: test_bus)" % str(kinds.keys()))
 	paces.sort()

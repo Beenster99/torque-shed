@@ -37,6 +37,8 @@ const COMMIT_BUDGET_MS := 2.0
 const NET_TAG := -77777.0
 ## The sea's colour on a coastal ride (the far ground there: see _follow_horizon).
 const SEA_COLOR := Color(0.09, 0.27, 0.36)
+## Inside a tunnel the sky is shut out this far from a portal (m), easing in from the mouth.
+const SHELTER_IN := 30.0
 
 ## Emitted after the origin moves: everything placed in the local frame moves by -delta.
 signal origin_shifted(delta: Vector3)
@@ -107,6 +109,7 @@ func _exit_tree() -> void:
 	_stop_committing()
 	if current == self:
 		current = null
+		Daylight.shelter = 0.0
 
 
 ## Lays out the ride along the real road `pack` (planned from the crew's pins, see AdventurePlans) and puts its start
@@ -259,6 +262,32 @@ func locate_local(p: Vector3, who := "") -> Dictionary:
 	if who != "" and not hit.is_empty():
 		_hints[who] = int(hit["i"])
 	return hit
+
+
+## How far local `p` is under a tunnel's roof: 0 out under the sky, 1 well inside (easing in over SHELTER_IN from each
+## portal), for the daylight, the rain and your eyes.
+func shelter_local(p: Vector3) -> float:
+	if route == null or route.bore.is_empty():
+		return 0.0
+	var hit := locate_local(p, "shelter")
+	if hit.is_empty():
+		return 0.0
+	var i := int(hit["i"])
+	var span := route.tunnel_span(i)
+	if span.x < 0:
+		return 0.0
+	var s := float(hit["s"])
+	if absf(float(hit["lat"])) > route.width[i] * 0.5 + AdventureTunnels.SIDE + 1.0 \
+			or p.y > route.height_at_s(s) + AdventureTunnels.WALL + AdventureTunnels.ARCH + 1.0:
+		return 0.0
+	return smoothstep(0.0, SHELTER_IN, minf(s - span.x * AdventureRoute.STEP, span.y * AdventureRoute.STEP - s))
+
+
+## shelter_local at global `pos` in the current adventure (0 when there's none).
+static func shelter_at(pos: Vector3) -> float:
+	if current == null or current.route == null or not current.is_inside_tree():
+		return 0.0
+	return current.shelter_local(current.to_local(pos))
 
 
 ## How far along the road local `p` is (m), or -1 off it.
@@ -414,13 +443,17 @@ static func untag(state: PackedFloat32Array, mine: Vector3) -> PackedFloat32Arra
 
 # ---------------------------------------------------------------------------- streaming
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if route == null:
 		return
 	var pt := Perf.t0()
 	var t0 := Time.get_ticks_usec()
 	stream()
 	stats["stream_ms_max"] = maxf(float(stats["stream_ms_max"]), (Time.get_ticks_usec() - t0) / 1000.0)
+	# The tunnel roof over the camera, eased so the light doesn't snap at a portal.
+	var cam := get_viewport().get_camera_3d() if get_viewport() else null
+	var cover := shelter_local(to_local(cam.global_position)) if cam else 0.0
+	Daylight.shelter = move_toward(Daylight.shelter, cover, delta * 2.5)
 	Perf.add("adventure_stream", pt)
 
 

@@ -99,6 +99,15 @@ var deck := PackedFloat32Array()
 const DECK_EASE := 3
 ## How far under the road a bridge's deck goes (m): its sides go down to here, and the land stays below it.
 const BRIDGE_DEPTH := 1.1
+## Each knot in a tunnel (RealPack.tunnels): 1 under the hill, 0 out under the sky. The hill is kept over it (land_height)
+## and AdventureTunnels builds its tube.
+var bore := PackedFloat32Array()
+## How near each knot is to a tunnel's portal: 1 at it, easing to 0 TUNNEL_APPROACH knots off (and 0 in it). The land
+## either side rises steeply from the road there, a cutting into the hill rather than a long bank.
+var cutting := PackedFloat32Array()
+const TUNNEL_APPROACH := 12
+## The least rock over the road in a tunnel (m above it): the hill is raised to this where the real land is lower.
+const TUNNEL_COVER := 9.0
 ## [{s0, s1, kind, width}] in order.
 var sections: Array = []
 ## [{s0, s1, surface}] in order, each on chunk boundaries.
@@ -183,6 +192,8 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 		ph[i] = pack.e[i]
 	ph = fair_heights(ph)
 	deck = deck_of(pack.bridges, n)
+	bore = deck_of(pack.tunnels, n, 0)
+	cutting = cutting_of(bore)
 	hd.resize(n)
 	curv.resize(n)
 	for i in n - 1:
@@ -623,6 +634,9 @@ func _near_fork(s: float) -> bool:
 func _fit_for_stop(i: int) -> bool:
 	var a := clampi(i - 15, 0, px.size() - 1)
 	var b := clampi(i + 15, 0, px.size() - 1)
+	for j in range(a, b + 1):
+		if (j < deck.size() and deck[j] > 0.0) or (j < cutting.size() and (bore[j] > 0.0 or cutting[j] > 0.0)):
+			return false   # (not on a bridge, nor in a tunnel or its cutting)
 	return absf(hd[b] - hd[a]) < deg_to_rad(8.0) and absf(ph[b] - ph[a]) < STOP_GRADE * float(b - a) * STEP
 
 
@@ -854,25 +868,63 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 
 # ---------------------------------------------------------------------------- the land
 
-## Each of `n` knots' deck weight (see deck) from bridges [first knot, last knot, ...].
-static func deck_of(bridges: PackedInt32Array, n: int) -> PackedFloat32Array:
+## Each of `n` knots' deck weight (see deck) from bridges [first knot, last knot, ...], eased over `ease_knots` at each
+## end (0 for none: a tunnel's bore).
+static func deck_of(bridges: PackedInt32Array, n: int, ease_knots := DECK_EASE) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(n)
 	for k in range(0, bridges.size() - 1, 2):
 		var i0 := bridges[k]
 		var i1 := mini(bridges[k + 1], n - 1)
-		var ease := mini(DECK_EASE, (i1 - i0) / 2)
+		var ease := mini(ease_knots, (i1 - i0) / 2)
 		for i in range(i0, i1 + 1):
 			var w := 1.0 if ease <= 0 else clampf(float(mini(i - i0, i1 - i)) / ease, 0.0, 1.0)
 			out[i] = maxf(out[i], w)
 	return out
 
 
+## Each knot's cutting weight (see cutting) from its `bore`.
+static func cutting_of(bores: PackedFloat32Array) -> PackedFloat32Array:
+	var n := bores.size()
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		if bores[i] <= 0.0 or (i > 0 and bores[i - 1] > 0.0 and i < n - 1 and bores[i + 1] > 0.0):
+			continue
+		# A portal: the knots out from it, either way that's under the sky.
+		for d in range(1, TUNNEL_APPROACH + 1):
+			for j: int in [i - d, i + d]:
+				if j >= 0 and j < n and bores[j] <= 0.0:
+					out[j] = maxf(out[j], 1.0 - float(d - 1) / TUNNEL_APPROACH)
+	return out
+
+
+## Whether knot `i` is in a tunnel.
+func in_tunnel(i: int) -> bool:
+	return i >= 0 and i < bore.size() and bore[i] > 0.0
+
+
+## The tunnel knot `i` is in, as its first and last knots along the path (Vector2i(-1, -1) when it's in none).
+func tunnel_span(i: int) -> Vector2i:
+	if not in_tunnel(i):
+		return Vector2i(-1, -1)
+	var a := i
+	var b := i
+	while a > 0 and bore[a - 1] > 0.0:
+		a -= 1
+	while b < bore.size() - 1 and bore[b + 1] > 0.0:
+		b += 1
+	return Vector2i(a, b)
+
+
 ## The height of the land at route-frame (x, z) beside knot `i`, `lat` metres off the centre line
 ## (+ right): the road's own height on the road and verge, easing out to the real land, kept below
-## any other stretch of the road close by so the land never covers a bend that doubles back.
+## any other stretch of the road close by so the land never covers a bend that doubles back; over
+## a tunnel the hill, at least TUNNEL_COVER over the road.
 func land_height(i: int, lat: float, x: float, z: float) -> float:
 	i = clampi(i, 0, ph.size() - 1)
+	if in_tunnel(i):
+		return _hill_height(i, lat, x, z)
 	var w := deck[i] if i < deck.size() else 0.0
 	if w > 0.0:
 		# On a bridge: the land under it and round it as it is, below the deck, eased in from the bank at its ends.
@@ -895,8 +947,24 @@ func _bank_height(i: int, lat: float, x: float, z: float) -> float:
 	# bank runs (no sheer walls).
 	var widen := clampf(absf(nat - road_h) * 0.9, 0.0, 60.0)
 	var t := smoothstep(e + 1.5 + flat, e + 14.0 + flat * 1.4 + widen, a)
+	var cut := cutting[i] if i < cutting.size() else 0.0
+	if cut > 0.0:
+		# Up to a tunnel's portal: the hill comes steeply down to the road's edge, a cutting.
+		t = lerpf(t, smoothstep(e + 1.2, e + 5.0, a), cut)
 	var h := lerpf(road_h - 0.12, nat, t)
 	return minf(h, _other_road_limit(i, x, z, a))
+
+
+## The land over a tunnel at knot `i`: the real hill, but never less than TUNNEL_COVER over the road from the road's
+## edge out a few metres (over the tube), easing down onto the real land further out.
+func _hill_height(i: int, lat: float, x: float, z: float) -> float:
+	var e := width[i] * 0.5
+	var a := absf(lat)
+	var nat := natural_height(i, x, z, a)
+	var top := ph[i] + TUNNEL_COVER
+	var h := maxf(nat, lerpf(top, nat, smoothstep(e + 4.0, e + 30.0, a)))
+	# (another stretch of the road nearby keeps it down, but never into the tube)
+	return maxf(minf(h, _other_road_limit(i, x, z, a)), top if a < e + 4.0 else -INF)
 
 
 ## What covers the ground at route-frame (x, z) ("forest", "crop", "urban", ... see RealPack.COVER),
@@ -1148,7 +1216,8 @@ func _stash_default() -> void:
 	cuts.append(px.size() - 1)
 	base = _leg_base(ph, cuts)
 	_def = {"px": px.duplicate(), "pz": pz.duplicate(), "ph": ph.duplicate(), "hd": hd.duplicate(), "curv": curv.duplicate(),
-		"width": width.duplicate(), "base": base.duplicate(), "sections": sections.duplicate(true),
+		"width": width.duplicate(), "base": base.duplicate(), "deck": deck.duplicate(), "bore": bore.duplicate(),
+		"cutting": cutting.duplicate(), "sections": sections.duplicate(true),
 		"chunk_surface": chunk_surface.duplicate(), "chunk_name": chunk_name.duplicate(), "chunk_limit": chunk_limit.duplicate(),
 		"total": total, "n": px.size()}
 	_def_sites = sites.duplicate()
@@ -1342,6 +1411,9 @@ func take_path(r: AdventureRoute, picks: Dictionary) -> void:
 	curv = r.curv
 	width = r.width
 	base = r.base
+	deck = r.deck
+	bore = r.bore
+	cutting = r.cutting
 	eq = r.eq
 	sections = r.sections
 	chunk_surface = r.chunk_surface
@@ -1368,6 +1440,9 @@ func _assemble_path() -> void:
 	curv = PackedFloat32Array()
 	width = PackedFloat32Array()
 	base = PackedFloat32Array()
+	deck = PackedFloat32Array()
+	bore = PackedFloat32Array()
+	cutting = PackedFloat32Array()
 	eq = PackedInt32Array()
 	sections = []
 	chunk_surface = []
@@ -1397,6 +1472,12 @@ func _assemble_path() -> void:
 			curv.append_array((way["curv"] as PackedFloat32Array).slice(1, n))
 			width.append_array((way["width"] as PackedFloat32Array).slice(1, n))
 			base.append_array((way["base"] as PackedFloat32Array).slice(1, n))
+			# (a second way has no bridges or tunnels of its own yet: on the ground all the way)
+			var none := PackedFloat32Array()
+			none.resize(n - 1)
+			deck.append_array(none)
+			bore.append_array(none)
+			cutting.append_array(none)
 			for k in range(1, n):
 				eq.append(_way_eq(fk, way, k))
 			for sec in way["sections"]:
@@ -1437,6 +1518,10 @@ func _take_def(a: int, b: int) -> void:
 	curv.append_array((d["curv"] as PackedFloat32Array).slice(a, b + 1))
 	width.append_array((d["width"] as PackedFloat32Array).slice(a, b + 1))
 	base.append_array((d["base"] as PackedFloat32Array).slice(a, b + 1))
+	for key in ["deck", "bore", "cutting"]:
+		var arr: PackedFloat32Array = get(key)
+		arr.append_array((d.get(key, PackedFloat32Array()) as PackedFloat32Array).slice(a, b + 1))
+		set(key, arr)
 	for j in range(a, b + 1):
 		eq.append(j)
 	var s0 := maxi(a - 1, 0) * STEP

@@ -195,15 +195,16 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 		# Solid out to COLLIDE_COLS: the inner columns (the right's first, the left's last).
 		out["land_faces_%d" % side] = _faces(v, rows, cols, COLLIDE_COLS + 1, side < 0)
 	out["lines"] = _lines(route, i0, i1, ax, az, surf)
-	# The side roads and the paint at the junctions.
+	# The side roads and the paint at the junctions, and any tunnel through here.
 	AdventureJunctions.chunk_parts(route, i0, i1, ax, az, land, out)
+	AdventureTunnels.build(route, i0, i1, ax, az, land, out)
 	_scenery(route, c, i0, i1, ax, az, surf, out)
 	out["ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	return out
 
 
 ## The land's colour at a vertex: its surface's (blended across a change of surface), patched
-## by noise, the verge's beside the road, and greyer where it's steep.
+## by noise, the verge's beside the road (none over a tunnel), and greyer where it's steep.
 static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: float, z: float, y: float) -> Color:
 	var s := i * AdventureRoute.STEP
 	var here := route.surface_at_s(s)
@@ -218,6 +219,8 @@ static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: fl
 			patch = patch.lerp(patches[other], 0.35)
 	var n := route.patches.get_noise_2d(x * 1.7, z * 1.7) * 0.5 + 0.5
 	col = col.lerp(patch, smoothstep(0.35, 0.75, n))
+	if route.in_tunnel(i):
+		k = maxi(k, 3)   # (over a tunnel it's the hillside right in from the road's edge: no verge)
 	if k <= 1:
 		col = route.look["verge"][here]
 	elif k == 2:
@@ -706,6 +709,8 @@ static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: f
 	var h := route.hd[i]
 	if absf(lat) > route.land_reach(i, int(signf(lat))) * 0.95:
 		return Transform3D()
+	if absf(lat) < route.width[i] * 0.5 + 14.0 and route.in_tunnel(i):
+		return Transform3D()   # nothing by the road in a tunnel, nor on the rock just over it
 	var wx := route.px[i] + cos(h) * lat
 	var wz := route.pz[i] + sin(h) * lat
 	if not close and route.clearance(wx, wz) < keep_clear:
@@ -962,6 +967,7 @@ static func _commit_junctions(data: Dictionary, node: Node3D, scale: float) -> v
 		pm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_range(pm, RANGES["lines"] * scale)
 		node.add_child(pm)
+	AdventureTunnels.commit(data, node)
 
 
 static func _range(gi: GeometryInstance3D, end: float) -> void:

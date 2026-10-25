@@ -33,6 +33,8 @@ var e := PackedFloat32Array()
 ## The road's bridges, as knot ranges: [first knot, last knot, ...] (RoutePlanner.bridges_along). Their heights run
 ## straight from end to end, over the land rather than on a bank of it.
 var bridges := PackedInt32Array()
+## Its tunnels, the same way (RoutePlanner.tunnels_along): their heights run straight through the hill.
+var tunnels := PackedInt32Array()
 ## Per 128 m chunk: [surface, width, class, name index, speed limit (km/h)].
 var chunks: Array = []
 var names: Array = []
