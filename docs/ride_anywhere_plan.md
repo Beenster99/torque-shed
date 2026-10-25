@@ -262,12 +262,15 @@ hash; the ride leaves the land under a deck as it is and builds the bridge (ston
 keeps the hill over a tunnel, cuts into it up to each portal and builds the tube, portals and lamps (inside, the sky's
 light and the rain are shut out). They follow the path when the crew takes the other way at a fork. `claude/fork-spans`:
 a fork's other way has its own bridges and tunnels too, found and laid along it as the main road's are (merged).
-`claude/rivers-lakes`: the rivers and lakes the cover already holds (Overture's water polygons, 16 m) are drawn as water
+Rivers and lakes (merged): the rivers and lakes the cover already holds (Overture's water polygons, 16 m) are drawn as water
 by the land blocks near and middle (`RealLand._water_arrays`), one surface sloping down a river, a cell wider than the
 water so its banks rise through it; the land under it is its bed, 1.2 m down (`AdventureRoute.ground_at`), and it runs on
-under a bridge but never over the road. Still to do: the narrow rivers and becks, which the map has only as lines (a
-bake of Overture's water lines into the cells' sketch blocks, and a backfill, as for the spans), the cusp at a pin,
-trees.
+under a bridge but never over the road. `claude/streams`: the becks and narrow rivers the map has only as lines
+(`tools/stream_bake.py`: Overture's water lines within 250 m of a ridable road, about 100 KB a cell, too many for the
+sketch's blocks, so a file a cell, `stream/cROW_COL.json`, fetched for a journey and backfilled by the world's
+workflow; the bundled regions' in their `streams.json`). The planner puts those near the road in the pack and its hash;
+the land is a trough along each (0.9 m), and the land blocks near the road draw a ribbon of water down it, under the
+bridges (nine of the ten on Hawes to Leyburn now cross water). Still to do: the cusp at a pin, trees.
 
 ## What is dropped from the old plan
 

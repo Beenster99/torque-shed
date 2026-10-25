@@ -630,23 +630,31 @@ func test_real_land() -> void:
 	# over a bed WATER_DEPTH down, and none of it on the road.
 	var wkey := Vector2i(1 << 30, 0)
 	var water = null
+	var sp := RealLand.BLOCK / RealLand.CELLS[0]
+	# (a cell of a lake or a river the cover has is square on the grid; the becks' ribbons, RealPack.streams, aren't)
+	var square := func(v: PackedVector3Array, q: int) -> bool:
+		return is_equal_approx(v[q + 1].x - v[q].x, sp) and is_equal_approx(v[q + 1].z, v[q].z) and is_equal_approx(v[q + 3].z - v[q].z, sp)
 	for k in range(0, w.route.px.size(), 64):
 		var bk := Vector2i(floori(w.route.px[k] / RealLand.BLOCK), floori(w.route.pz[k] / RealLand.BLOCK))
-		water = land._water_arrays(bk, 0)
-		if water != null:
+		var got = land._water_arrays(bk, 0)
+		if got != null and range(0, (got[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), 4).any(func(q): return square.call(got[Mesh.ARRAY_VERTEX], q)):
+			water = got
 			wkey = bk
 			break
 	check(water != null, "a block beside the road has water in it (%s)" % str(wkey))
 	if water != null:
 		var wv: PackedVector3Array = water[Mesh.ARRAY_VERTEX]
-		var sp := RealLand.BLOCK / RealLand.CELLS[0]
 		var terr := w.route.real.terrain
 		var by_water := 0
 		var wet := 0
 		var bed := 0
 		var not_up := 0
 		var on_road := 0
+		var cells := 0
 		for q in range(0, wv.size(), 4):
+			if not square.call(wv, q):
+				continue
+			cells += 1
 			var cx := wkey.x * RealLand.BLOCK + wv[q].x + sp * 0.5
 			var cz := wkey.y * RealLand.BLOCK + wv[q].z + sp * 0.5
 			# Within a cell of mapped water, and no higher than the highest water round it.
@@ -664,9 +672,8 @@ func test_real_land() -> void:
 				if is_equal_approx(w.route.ground_at(cx, cz), terr.height(cx, cz) - AdventureRoute.WATER_DEPTH):
 					bed += 1
 			var hit := w.route.locate(cx, cz)
-			if not hit.is_empty() and float(hit["d"]) < w.route.width[int(hit["i"])] * 0.5 + 2.0 and w.route.deck[int(hit["i"])] <= 0.0:
+			if not hit.is_empty() and float(hit["d"]) < w.route.width[int(hit["i"])] * 0.5 + 2.0 and not RealLand.near_deck(w.route, int(hit["i"])):
 				on_road += 1
-		var cells := wv.size() / 4
 		check(cells > 0 and by_water == cells and not_up == cells and wet * 2 > cells and bed == wet and on_road == 0,
 			"its %d cells of water are on or beside the water (%d, %d on it), never up a bank (%d), over a bed below it (%d), none on the road (%d)" % [cells, by_water, wet, not_up, bed, on_road])
 		var mi := land._make_mesh(wkey, land._block_arrays(wkey, 0), water)

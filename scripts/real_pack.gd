@@ -37,6 +37,14 @@ var e := PackedFloat32Array()
 var bridges := PackedInt32Array()
 ## Its tunnels, the same way (RoutePlanner.tunnels_along): their heights run straight through the hill.
 var tunnels := PackedInt32Array()
+## The rivers and streams near the road (RealRegion.streams): [[kind, PackedVector2Array], ...]; see stream_at.
+var streams: Array = []
+## Rivers', streams' and canals' half widths (m), by kind.
+const STREAM_HALF := [4.5, 1.5, 3.5]
+## stream_at's grid: Vector2i (STREAM_CELL m squares) -> PackedInt32Array of [line, segment, ...] near it.
+const STREAM_CELL := 32.0
+const STREAM_REACH := 8.0
+var _stream_grid := {}
 ## Per 128 m chunk: [surface, width, class, name index, speed limit (km/h)].
 var chunks: Array = []
 var names: Array = []
@@ -82,6 +90,39 @@ static func register(pack: RealPack) -> void:
 
 
 ## The speed limit (km/h) at `s` metres along the road.
+## Files the streams' segments for stream_at (once, when the pack is made: it's read-only after).
+func index_streams() -> void:
+	_stream_grid = {}
+	for li in streams.size():
+		var pts: PackedVector2Array = streams[li][1]
+		var reach: float = STREAM_HALF[clampi(int(streams[li][0]), 0, 2)] + STREAM_REACH
+		for k in pts.size() - 1:
+			var lo := pts[k].min(pts[k + 1]) - Vector2(reach, reach)
+			var hi := pts[k].max(pts[k + 1]) + Vector2(reach, reach)
+			for gz in range(floori(lo.y / STREAM_CELL), floori(hi.y / STREAM_CELL) + 1):
+				for gx in range(floori(lo.x / STREAM_CELL), floori(hi.x / STREAM_CELL) + 1):
+					var g := Vector2i(gx, gz)
+					var at: PackedInt32Array = _stream_grid.get(g, PackedInt32Array())
+					at.append_array([li, k])
+					_stream_grid[g] = at   # (a packed array is copied out of the dictionary: put back)
+
+
+## The nearest river or stream to (x, z) within its half width and STREAM_REACH: Vector2(how far from its middle line,
+## its half width), or Vector2(INF, 0) when there's none that near.
+func stream_at(x: float, z: float) -> Vector2:
+	var at: PackedInt32Array = _stream_grid.get(Vector2i(floori(x / STREAM_CELL), floori(z / STREAM_CELL)), PackedInt32Array())
+	var best := Vector2(INF, 0.0)
+	var p := Vector2(x, z)
+	for q in range(0, at.size() - 1, 2):
+		var line: Array = streams[at[q]]
+		var pts: PackedVector2Array = line[1]
+		var d := Geometry2D.get_closest_point_to_segment(p, pts[at[q + 1]], pts[at[q + 1] + 1]).distance_to(p)
+		var hw: float = STREAM_HALF[clampi(int(line[0]), 0, 2)]
+		if d - hw < best.x - best.y:
+			best = Vector2(d, hw)
+	return best if best.x <= best.y + STREAM_REACH else Vector2(INF, 0.0)
+
+
 func limit_at(s: float) -> float:
 	if chunks.is_empty():
 		return 0.0

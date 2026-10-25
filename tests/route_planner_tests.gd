@@ -962,6 +962,108 @@ func test_tunnels() -> void:
 	check(Lighting.eye_target("", false, 0.0, 1.0) > 1.1 and Lighting.eye_target("", false, 0.0, 0.0) == 1.0, "your eyes open up in a tunnel")
 
 
+## Becks and narrow rivers (tools/stream_bake.py: the water the land cover's polygons don't hold, mapped as lines):
+## Hawes to Leyburn's bridges cross becks the cover hasn't, and the pack has them, in its hash; the land is a trough
+## along each, and the land blocks draw a ribbon of water down it, under the bridges.
+func test_streams() -> void:
+	# A cell's own file of them: fetched for a journey on it, kept, and read into the region's frame.
+	var host := CellsTests.FakeHost.new()
+	check(host.start(), "a stand-in for GitHub listens on this machine")
+	var was := [CellStore.index_url, CellStore.dir, CellStore.offline]
+	var store := "user://test_streams_cells"
+	RegionStore._remove_tree(store)
+	var text := JSON.stringify({"streams": [[1, 5430000, -220000, 100, 200, 50, 300]]})
+	host.files["/stream/c577_711.json"] = (text + "\n").to_utf8_buffer()
+	var index := {"format": 1, "release": "2026-10-24.0", "cells": {}, "streams": {"577_711": text.sha1_text().left(12)}}
+	CellStore.index_url = "http://127.0.0.1:%d/index.json" % host.port
+	CellStore.dir = store
+	CellStore.offline = false
+	var got: Array = []
+	var job := WorkerThreadPool.add_task(func(): got.append_array(CellStore.streams("577_711", index)))   # (a lambda can't assign the test's variable)
+	while not WorkerThreadPool.is_task_completed(job):
+		host.serve()
+		await t.get_tree().process_frame
+	WorkerThreadPool.wait_for_task_completion(job)
+	var lines := RealRegion._streams_in(got, Vector2(54.3, -2.2))
+	var pts: PackedVector2Array = lines[0][1] if lines.size() == 1 else PackedVector2Array()
+	check(pts.size() == 3 and pts[0].distance_to(RealRegion.to_frame(Vector2(54.3, -2.2), 54.3, -2.2)) < 0.01
+		and FileAccess.file_exists(store.path_join("stream/c577_711.json")), "a cell's streams are fetched by their hash, kept, and read as lines (%d)" % pts.size())
+	CellStore.offline = true
+	var changed := index.duplicate(true)
+	changed["streams"]["577_711"] = "000000000000"
+	check(CellStore.streams("577_711", index).size() == 1 and CellStore.streams("577_711", changed).is_empty() and CellStore.streams("1_1", index).is_empty(),
+		"the kept copy is used while the index names it, and none that it doesn't")
+	CellStore.index_url = was[0]
+	CellStore.dir = was[1]
+	CellStore.offline = was[2]
+	RegionStore._remove_tree(store)
+	host.stop()
+	var r := RealRegion.get_region("dales")
+	check(r != null and r.streams.size() > 1000 and r.streams.all(func(l): return int(l[0]) in [0, 1, 2] and (l[1] as PackedVector2Array).size() >= 2),
+		"the Dales has its becks and rivers as lines (%d)" % (r.streams.size() if r else 0))
+	if r == null:
+		return
+	var req := {"pins": [r.geo_to_xz(54.3037, -2.1990), r.geo_to_xz(54.3103, -1.8296)], "mode": "main", "seed": 2}
+	var res := RoutePlanner.plan(r, req)
+	var p: RealPack = res["pack"]
+	check(p.streams.size() > 20 and p.streams.size() < r.streams.size(), "the road's pack has those near it (%d of %d)" % [p.streams.size(), r.streams.size()])
+	# Every bridge over water: the cover's, or a beck under it.
+	var dry: Array = []
+	var b := p.bridges
+	for k in range(0, b.size() - 1, 2):
+		var wet := false
+		for i in range(b[k], b[k + 1] + 1):
+			var near := p.stream_at(p.x[i], p.z[i])
+			if p.terrain.cover(p.x[i], p.z[i]) == RealPack.WATER or near.x <= near.y + 2.0:
+				wet = true
+		if not wet:
+			dry.append(b[k])
+	check(dry.size() <= 1, "the road's bridges cross water (%d of %d with none under: %s)" % [dry.size(), b.size() / 2, str(dry)])
+	# Without them it's other land beside the road, and the hash says so.
+	var kept := r.streams
+	r.streams = []
+	var bare := RoutePlanner.plan(r, req)
+	r.streams = kept
+	check(bool(bare["ok"]) and (bare["pack"] as RealPack).hash != p.hash and (bare["pack"] as RealPack).streams.is_empty(), "without them it's another plan, with another hash")
+	# The ride: a trough along a beck under a bridge, and the land block there draws its ribbon of water.
+	RealPack.register(p)
+	var w := AdventureWorld.new()
+	w.setup(p, 3, 0.0)
+	var route := w.route
+	var at := Vector2.INF
+	var bk := -1
+	for k in range(0, b.size() - 1, 2):
+		for i in range(b[k], b[k + 1] + 1):
+			var near := p.stream_at(p.x[i], p.z[i])
+			if near.x <= near.y and p.terrain.cover(p.x[i], p.z[i]) != RealPack.WATER:
+				at = Vector2(p.x[i], p.z[i])
+				bk = i
+		if bk >= 0:
+			break
+	check(bk >= 0, "a bridge over a beck the cover hasn't")
+	if bk < 0:
+		w.free()
+		return
+	var raw := p.terrain.height(at.x, at.y)
+	var bed := route.ground_at(at.x, at.y)
+	check(raw - bed > AdventureRoute.STREAM_DEPTH * 0.5 and raw - bed <= AdventureRoute.STREAM_DEPTH + 0.01,
+		"under it the land's a trough along the beck (%.2f m down)" % (raw - bed))
+	var key := Vector2i(floori(at.x / RealLand.BLOCK), floori(at.y / RealLand.BLOCK))
+	var water = w.land._water_arrays(key, 0)
+	var wv: PackedVector3Array = water[Mesh.ARRAY_VERTEX] if water != null else PackedVector3Array()
+	var under := false
+	var on_road := 0
+	for q in range(0, wv.size(), 4):
+		var mid := Vector2((wv[q].x + wv[q + 2].x) * 0.5 + key.x * RealLand.BLOCK, (wv[q].z + wv[q + 2].z) * 0.5 + key.y * RealLand.BLOCK)
+		if mid.distance_to(at) < 12.0:
+			under = true
+		var hit := route.locate(mid.x, mid.y)
+		if not hit.is_empty() and float(hit["d"]) < route.width[int(hit["i"])] * 0.5 and not RealLand.near_deck(route, int(hit["i"])):
+			on_road += 1
+	check(under and on_road == 0, "and the block draws the beck's water under the bridge (%d pieces), none on the road (%d)" % [wv.size() / 4, on_road])
+	w.free()
+
+
 ## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
 func test_dales() -> void:
 	var r := RealRegion.get_region("dales")

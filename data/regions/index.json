@@ -2,13 +2,13 @@
  "regions": {
   "shodoshima": {
    "title": "Shodoshima",
-   "hash": "d20b04f8ebb3ee94",
+   "hash": "58d870a42bb3034a",
    "bytes": 8586806,
    "bundled": true
   },
   "dales": {
    "title": "The Yorkshire Dales",
-   "hash": "d7c64f77591ceac6",
+   "hash": "8b61183d7cb4b4df",
    "bytes": 22911098,
    "bundled": true
   }

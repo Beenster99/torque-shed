@@ -121,6 +121,38 @@ static func sketch(block: String, idx: Dictionary) -> Dictionary:
 	return {"cells": v["cells"], "land": v["land"] if v.get("land") is Dictionary else {}, "spans": v["spans"] if v.get("spans") is Dictionary else {}}
 
 
+## Where cell "ROW_COL"'s rivers and streams are (tools/stream_bake.py), beside the index.
+static func streams_url(cell: String) -> String:
+	return index_url.get_base_dir().path_join("stream/c%s.json" % cell)
+
+
+## The rivers and streams of cell `cell` ("ROW_COL") as lines near its roads, [[kind, lat, lon, dlat, dlon, ...], ...] (see
+## tools/stream_bake.py), from the copy kept on disk if it is the one index `idx` names, else fetched (and kept). [] when
+## the index has none for it, or it can't be had. Blocks while it fetches: a worker's job.
+static func streams(cell: String, idx: Dictionary) -> Array:
+	var want := str((idx.get("streams", {}) as Dictionary).get(cell, ""))
+	if want == "":
+		return []
+	var path := dir.path_join("stream").path_join("c%s.json" % cell)
+	var text := FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
+	if text.trim_suffix("\n").sha1_text().left(12) != want:
+		if offline:
+			return []
+		var res := http_get(streams_url(cell))
+		if int(res["code"]) != 200:
+			return []
+		text = (res["body"] as PackedByteArray).get_string_from_utf8()
+		if text.trim_suffix("\n").sha1_text().left(12) != want:
+			return []
+		DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f != null:
+			f.store_string(text)
+			f.close()
+	var v = JSON.parse_string(text)
+	return v["streams"] if v is Dictionary and v.get("streams") is Array else []
+
+
 ## The cells of a box (degrees) the game hasn't got but the index has baked (empty ones, the sea, aren't wanted).
 static func missing(south: float, west: float, north: float, east: float, idx: Dictionary) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
