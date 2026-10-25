@@ -67,7 +67,8 @@ var _epoch := 0        # changes when the road does (a way picked at a fork): ol
 var _touch := {}       # Vector2i -> true for the blocks the road is near (worked out once a road, see _near_road)
 var _touch_done := false
 ## No new blocks are started while this is set (a fork's way is being put together, and the road is about to change
-## under them: see AdventureWorld.apply_picks_soon), so the road can be swapped without waiting on any.
+## under them: see AdventureWorld.apply_picks_soon), and those being laid out stop where they are (the swap lays every
+## block out again: reset), so the road can be swapped without waiting on any. Read by the workers.
 var hold := false
 
 
@@ -367,6 +368,8 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	knot.resize(m * m)
 	lats.resize(m * m)
 	for j in m:
+		if hold:
+			return null   # (the road's being swapped: what's laid out now is thrown away, see hold)
 		for i in m:
 			var x := ox + (i - 1) * sp
 			var z := oz + (j - 1) * sp
@@ -478,6 +481,8 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 	level.resize(m * m)
 	var any := false
 	for j in m:
+		if hold:
+			return null
 		for i in m:
 			var cx := ox + (i - 0.5) * sp
 			var cz := oz + (j - 0.5) * sp
@@ -500,6 +505,8 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 	var idx := PackedInt32Array()
 	if streams:
 		_stream_ribbons(ox, oz, near, verts, idx)
+	if hold:
+		return null
 	if not any:
 		return _water_mesh(verts, idx)
 	# Each corner of the cells: the lowest water among the cells it's a corner of, or failing that among those round them
@@ -550,6 +557,8 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: PackedVector3Array, idx: PackedInt32Array) -> void:
 	var box := Rect2(ox, oz, BLOCK, BLOCK)
 	for line: Array in route.real.streams:
+		if hold:
+			return
 		var pts: PackedVector2Array = line[1]
 		var half: float = maxf(RealPack.STREAM_HALF[clampi(int(line[0]), 0, 2)], STREAM_MIN_W * 0.5)
 		var mine := PackedInt32Array()
