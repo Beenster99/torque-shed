@@ -9681,12 +9681,15 @@ func _test_upgrade_session() -> void:
 	var count := ws.upgrades.get_child(0).get_child_count()
 	var lights := ws._shed_lights.size()
 	var nodes_now := ws.get_child_count()
+	var names_before := ws.get_children().map(func(n): return "%s:%s" % [n.name, n.get_class()])
 	ws.upgrades._sig = "?"
 	ws.upgrades.sync()
 	await get_tree().process_frame
 	check(ws.upgrades.get_child_count() == 1 and ws.upgrades.get_child(0).get_child_count() == count and ws._shed_lights.size() == lights
 		and ws._bay_screens.size() == 7, "a rebuild replaces what was there")
-	check(ws.get_child_count() == nodes_now, "nothing is left behind on the workshop")
+	var names_after := ws.get_children().map(func(n): return "%s:%s" % [n.name, n.get_class()])
+	check(ws.get_child_count() == nodes_now, "nothing is left behind on the workshop (gone %s, new %s)" % [
+		str(names_before.filter(func(x): return not names_after.has(x))), str(names_after.filter(func(x): return not names_before.has(x)))])
 	# Gone again in a new shed.
 	Shed.upgrades = {}
 	Shed.changed.emit()
