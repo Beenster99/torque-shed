@@ -479,8 +479,10 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 		for i in m:
 			var cx := ox + (i - 0.5) * sp
 			var cz := oz + (j - 0.5) * sp
+			if terrain.cover(cx, cz) != RealPack.WATER:
+				continue
 			var h := terrain.height(cx, cz)
-			if not is_nan(h) and terrain.cover(cx, cz) == RealPack.WATER:
+			if not is_nan(h):
 				wet[j * m + i] = 1
 				level[j * m + i] = h
 				any = true
