@@ -265,12 +265,16 @@ a fork's other way has its own bridges and tunnels too, found and laid along it 
 Rivers and lakes (merged): the rivers and lakes the cover already holds (Overture's water polygons, 16 m) are drawn as water
 by the land blocks near and middle (`RealLand._water_arrays`), one surface sloping down a river, a cell wider than the
 water so its banks rise through it; the land under it is its bed, 1.2 m down (`AdventureRoute.ground_at`), and it runs on
-under a bridge but never over the road. `claude/streams`: the becks and narrow rivers the map has only as lines
+under a bridge but never over the road. Becks (merged): the becks and narrow rivers the map has only as lines
 (`tools/stream_bake.py`: Overture's water lines within 250 m of a ridable road, about 100 KB a cell, too many for the
 sketch's blocks, so a file a cell, `stream/cROW_COL.json`, fetched for a journey and backfilled by the world's
 workflow; the bundled regions' in their `streams.json`). The planner puts those near the road in the pack and its hash;
 the land is a trough along each (0.9 m), and the land blocks near the road draw a ribbon of water down it, under the
-bridges (nine of the ten on Hawes to Leyburn now cross water). Still to do: the cusp at a pin, trees.
+bridges (nine of the ten on Hawes to Leyburn now cross water) (merged). `claude/pin-cusp`: a pin on a side street or
+at the head of a dead-end road no longer puts a kink in the road: where the line comes back to itself (a fold at a
+dead end, or a little loop, a turning circle or once round a roundabout, and back) the planner makes a balloon loop, a
+turning place, instead of a spike; and a dead-end last pin turns round and runs back the way it came, so there's
+always road past the finish. Still to do: trees.
 
 ## What is dropped from the old plan
 

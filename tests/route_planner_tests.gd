@@ -1064,6 +1064,50 @@ func test_streams() -> void:
 	w.free()
 
 
+## The sharpest a planned road may turn from one knot to the next (rad): a 10 m radius bend at 4 m knots.
+const TURN_MAX := 0.6
+## How near a pin (m, where it snapped to the road) test_pin_cusps looks for a kink.
+const PIN_NEAR := 200.0
+
+
+## A pin on a side street or at the head of a dead-end road: the road goes in and comes back out the way it went, and
+## turns round there without a kink (no two knots by it more than TURN_MAX apart in heading, and knots STEP apart); a dead-end
+## last pin still has a run-out past it. Shodoshima's towns pinned at their middles (Tonosho, Ikeda, Kusakabe), and Keld
+## at the head of Swaledale, then Grinton (and the other way round, Keld last); and test_via's stop.
+func test_pin_cusps() -> void:
+	var cases := [["shodoshima", [Vector2(-5881, 1526), Vector2(-306, 1293), Vector2(4560, 2074)]],
+		["dales", [Vector2(-8223, -7330), Vector2(7187, -4599)]], ["dales", [Vector2(7187, -4599), Vector2(-8223, -7330)]],
+		# (and test_via's stop, which the road goes round a block to and back from)
+		[REGION, [pins()[0], RealRegion.get_region(REGION).geo_to_xz(34.53, 134.22), pins()[1]]]]
+	for c: Array in cases:
+		var r := RealRegion.get_region(str(c[0]))
+		var res := RoutePlanner.plan(r, {"pins": c[1], "mode": "main", "seed": 2})
+		check(bool(res["ok"]), "%s from %s plans (%s)" % [c[0], str(c[1][0]), str(res["error"])])
+		if not bool(res["ok"]):
+			continue
+		var p: RealPack = res["pack"]
+		# (by the pins: where they snapped to the roads, PIN_NEAR or nearer)
+		var at_pins: Array[Vector2] = []
+		for q: Vector2 in c[1]:
+			at_pins.append(r.node_pos[r.nearest_connected(q.x, q.y, RoutePlanner.SNAP_M)])
+		var worst := 0.0
+		var at := 0
+		var gap := INF
+		var prev := 0.0
+		for i in range(1, p.x.size()):
+			var d := Vector2(p.x[i] - p.x[i - 1], p.z[i] - p.z[i - 1])
+			if i < p.x.size() - 1:
+				gap = minf(gap, d.length())
+			var h := atan2(d.x, -d.y)
+			var by_pin := at_pins.any(func(q): return q.distance_to(Vector2(p.x[i], p.z[i])) <= PIN_NEAR)
+			if i > 1 and by_pin and absf(wrapf(h - prev, -PI, PI)) > worst:
+				worst = absf(wrapf(h - prev, -PI, PI))
+				at = i
+			prev = h
+		check(worst <= TURN_MAX and gap > RoutePlanner.STEP * 0.9 and p.run_out_m > 100.0,
+			"%s: no kink at a pin (the sharpest turn between knots %.2f rad, at %.0f m), knots %.2f m apart at least, %.0f m run-out" % [c[0], worst, at * RoutePlanner.STEP, gap, p.run_out_m])
+
+
 ## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
 func test_dales() -> void:
 	var r := RealRegion.get_region("dales")

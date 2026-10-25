@@ -540,6 +540,7 @@ func _run_all() -> void:
 	await _t(&"_test_planner_bridges")
 	await _t(&"_test_planner_tunnels")
 	await _t(&"_test_planner_streams")
+	await _t(&"_test_planner_pin_cusps")
 	await _t(&"_test_planner_places")
 	await _t(&"_test_planner_forks")
 	await _t(&"_test_planner_board")
@@ -22313,6 +22314,10 @@ func _test_planner_bridges() -> void:
 
 func _test_planner_tunnels() -> void:
 	_planner().test_tunnels()
+
+
+func _test_planner_pin_cusps() -> void:
+	_planner().test_pin_cusps()
 
 
 func _test_planner_streams() -> void:

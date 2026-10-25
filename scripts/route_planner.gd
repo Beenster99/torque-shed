@@ -20,10 +20,19 @@ const MAX_GRADE := 0.15
 ## Rounds of smoothing before it gives up on a bend (a needle of a corner may never open to the full radius; the road is
 ## still ridable, and the time spent is bounded).
 const MAX_ROUNDS := 3000
+## Where the line comes back to within RETURN_NEAR (m) of where it was, RETURN_M (m) or less along it, it's turned round
+## there in a turning place (_open_reversals).
+const RETURN_M := 260.0
+const RETURN_NEAR := 4.0
+## A loop longer than this (m) round from where it leaves the way in to where it comes back is ridden as it is (round a
+## block); a shorter one (a turning circle, once round a roundabout) is a turning place.
+const LOOP_MAX := 120.0
+## A turning place's circle is this many times the tightest bend a road may have (MIN_RADIUS).
+const BALLOON := 1.5
 ## An out-and-back this long (m each way) or shorter, to a pin on a dead-end street, is left out of the route.
 const SPUR_M := 300.0
 ## The version of the planner, in every plan's hash: a change to how routes are made changes the hash.
-const VERSION := 7
+const VERSION := 8
 ## Rivers and streams this near the road (m, about) go into the pack.
 const STREAM_NEAR := 700.0
 ## A bridge's or a tunnel's ends are matched to the road within this (m) of them.
@@ -435,7 +444,8 @@ static func strip_spurs(region: RealRegion, steps: Array[Vector3i]) -> Array[Vec
 
 
 ## Steps that carry on RUN_OUT metres past the end of `steps`, along the biggest road that goes on (never back the way
-## it came); fewer where the road ends.
+## it came); where the road ends (a pin at the head of a dead-end road) it turns round once and runs back the way it came
+## (_open_reversals makes it a turning place), so the ride always has road past the finish.
 static func _run_out(region: RealRegion, steps: Array[Vector3i], costs: PackedFloat64Array) -> Array[Vector3i]:
 	var out: Array[Vector3i] = []
 	var at := steps[steps.size() - 1].z
@@ -444,6 +454,7 @@ static func _run_out(region: RealRegion, steps: Array[Vector3i], costs: PackedFl
 	var run := 0.0
 	var heading_pts := region.line_from(came, steps[steps.size() - 1].x)
 	var h := _bearing(heading_pts[heading_pts.size() - 1] - heading_pts[maxi(heading_pts.size() - 2, 0)])
+	var turned := false
 	while run < RUN_OUT + 50.0:
 		var best := -1
 		var best_key := Vector2(INF, INF)
@@ -456,6 +467,11 @@ static func _run_out(region: RealRegion, steps: Array[Vector3i], costs: PackedFl
 			if key.x < best_key.x - 1e-9 or (absf(key.x - best_key.x) <= 1e-9 and key.y < best_key.y):
 				best_key = key
 				best = ei
+		if best < 0 and not turned and came >= 0 and region.passable(came, at):
+			# The end of the road: back the way it came.
+			turned = true
+			best = came
+			h = wrapf(h + PI, -PI, PI)
 		if best < 0:
 			break
 		seen[best] = true
@@ -643,52 +659,126 @@ static func smooth_line(pts: PackedVector2Array, min_radius := MIN_RADIUS) -> Pa
 	return out
 
 
-## Where the line goes out along a road and comes back the same way (a pin up a long dead-end road: its two halves lie on
-## one another, and smoothing would only shorten the tip back), a turning place is made: a half circle of radius
-## `radius` round the tip, and the way back lies alongside the way out (`2 * radius` to its right) and eases back onto
-## the road over the next 80 m. `px`, `pz` are 2 m apart; returns [xs, zs].
+## Where the line goes out and comes back to where it was (a pin up a dead-end road, where its two halves lie on one
+## another; or round a little loop at its end, a turning circle, a block or a roundabout, and back: smoothing only
+## squeezes these into a spike), a turning place is made (_balloon): at the tip of a fold, or where a loop of LOOP_MAX or
+## less starts (where the line comes back to itself, RETURN_M or less along it, and stops lying on its way back). `px`, `pz` are 2 m apart; returns [xs, zs].
 static func _open_reversals(px: PackedFloat64Array, pz: PackedFloat64Array, radius: float) -> Array:
 	var n := px.size()
 	var ox := PackedFloat64Array()
 	var oz := PackedFloat64Array()
-	var i := 0
 	var lead := maxi(int(ceil(radius / 2.0)), 2)
-	var ease_pts := 40
+	var span := int(RETURN_M / 2.0)
+	var i := 0
 	while i < n:
-		var tip := false
+		var at := -1
+		var back := -1
 		if i >= 6 and i < n - 7:
+			# Folded back on itself here (the tip of an out-and-back): turned round `lead` points before the tip.
 			var v1 := Vector2(px[i] - px[i - 5], pz[i] - pz[i - 5])
 			var v2 := Vector2(px[i + 5] - px[i], pz[i + 5] - pz[i])
 			var fold := Vector2(px[i + 5] - px[i - 5], pz[i + 5] - pz[i - 5]).length()
-			tip = fold < 4.0 and v1.length() > 1.0 and v2.length() > 1.0 and _angle(v1, v2) > 2.5
-		if not tip:
+			if fold < 4.0 and v1.length() > 1.0 and v2.length() > 1.0 and _angle(v1, v2) > 2.5:
+				at = i - lead
+				back = i + lead
+				ox.resize(ox.size() - lead)   # (the way in's last `lead` points were already written: take them back off)
+				oz.resize(oz.size() - lead)
+		if at < 0 and i >= 4:
+			# Or coming back to here further on, round a loop (not a fold, where the two halves meet in the middle: those are
+			# turned round at their tip, above).
+			var j := _returns(px, pz, i, lead, span)
+			var mid := (i + j) / 2
+			if j >= 0 and Vector2(px[mid + 3] - px[mid - 3], pz[mid + 3] - pz[mid - 3]).length() > RETURN_NEAR:
+				# On along the stem to the loop, while the way back still lies on it: turned round where the loop starts.
+				at = i
+				back = j
+				while at + 3 < back - 3 and Vector2(px[at + 2] - px[back - 2], pz[at + 2] - pz[back - 2]).length() < RETURN_NEAR:
+					ox.append(px[at])
+					oz.append(pz[at])
+					at += 1
+					back -= 1
+				if back - at > int(LOOP_MAX / 2.0):
+					# (round a block: a road of its own, smoothed like any other)
+					ox.append(px[at])
+					oz.append(pz[at])
+					i = at + 1
+					continue
+		if at < 0:
 			ox.append(px[i])
 			oz.append(pz[i])
 			i += 1
 			continue
-		# The way in ends `lead` points before the tip (those were already written: take them back off).
-		var a := i - lead
-		ox.resize(ox.size() - lead)
-		oz.resize(oz.size() - lead)
-		var d := Vector2(px[a] - px[a - 4], pz[a] - pz[a - 4]).normalized()
-		var right := Vector2(-d.y, d.x)
-		var centre := Vector2(px[a], pz[a]) + right * radius
-		var from := Vector2(px[a], pz[a]) - centre
-		for q in range(0, 13):
-			var ang := PI * q / 12.0
-			var at := centre + from.rotated(ang)
-			ox.append(at.x)
-			oz.append(at.y)
-		# The way back, alongside, easing onto the road.
-		var back := i + lead
-		var shift := right * 2.0 * radius
-		for j in range(back, mini(back + ease_pts + 1, n)):
-			var t := smoothstep(0.0, 1.0, float(j - back) / ease_pts)
-			var off := shift * (1.0 - t)
-			ox.append(px[j] + off.x)
-			oz.append(pz[j] + off.y)
-		i = mini(back + ease_pts + 1, n)
+		var a := Vector2(px[at], pz[at])
+		var b := Vector2(px[back], pz[back])
+		var d_in := (a - Vector2(px[at - 4], pz[at - 4])).normalized()
+		var d_out := (Vector2(px[mini(back + 4, n - 1)], pz[mini(back + 4, n - 1)]) - b).normalized()
+		ox.append(a.x)
+		oz.append(a.y)
+		for q: Vector2 in _balloon(a, d_in, b, d_out, radius * BALLOON):
+			ox.append(q.x)
+			oz.append(q.y)
+		i = back + 1
 	return [ox, oz]
+
+
+## A turning place from `a` (going `d_in`) back to `b` (going on `d_out`), points about 2 m apart after `a` up to `b`: out
+## along a tangent onto a circle of radius `r` ahead, round its far side, and back along a tangent (a balloon loop).
+static func _balloon(a: Vector2, d_in: Vector2, b: Vector2, d_out: Vector2, r: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var mid := (a + b) * 0.5
+	var ahead := (d_in - d_out).normalized() if (d_in - d_out).length() > 0.1 else d_in
+	var half := a.distance_to(b) * 0.5
+	var reach := r * 1.6
+	var c := mid + ahead * sqrt(maxf(reach * reach - half * half, r * r * 0.25))
+	# The tangent points: going round anticlockwise (the far side of the circle from a and b).
+	var p1 := _tangent(c, r, a, true)
+	var p2 := _tangent(c, r, b, false)
+	var t1 := atan2(p1.y - c.y, p1.x - c.x)
+	var t2 := atan2(p2.y - c.y, p2.x - c.x)
+	var arc := fposmod(t2 - t1, TAU)
+	if arc < PI:
+		# (the short way round would be the near side: go round the other way)
+		p1 = _tangent(c, r, a, false)
+		p2 = _tangent(c, r, b, true)
+		t1 = atan2(p1.y - c.y, p1.x - c.x)
+		t2 = atan2(p2.y - c.y, p2.x - c.x)
+		arc = -fposmod(t1 - t2, TAU)
+	for seg: Array in [[a, p1], [null, null], [p2, b]]:
+		if seg[0] == null:
+			var steps := maxi(4, int(absf(arc) * r / 2.0))
+			for k in range(0, steps + 1):
+				var t := t1 + arc * k / steps
+				out.append(c + Vector2(cos(t), sin(t)) * r)
+			continue
+		var from: Vector2 = seg[0]
+		var to: Vector2 = seg[1]
+		var steps := maxi(1, int(from.distance_to(to) / 2.0))
+		for k in range(1, steps):
+			out.append(from.lerp(to, float(k) / steps))
+	out.append(b)
+	return out
+
+
+## Where the line from `p` touches the circle at `c` of radius `r`: on the anticlockwise side of c to p or the other.
+static func _tangent(c: Vector2, r: float, p: Vector2, anticlockwise: bool) -> Vector2:
+	var to := p - c
+	var dist := maxf(to.length(), r * 1.001)
+	var t := atan2(to.y, to.x) + acos(r / dist) * (1.0 if anticlockwise else -1.0)
+	return c + Vector2(cos(t), sin(t)) * r
+
+
+## Where the line, from point `i`, comes back to within RETURN_NEAR of it between `lead * 2` and `span` points on (the
+## last such point), or -1. Most of a road never does: a quick look `span` points on (it's got well away) says so.
+static func _returns(px: PackedFloat64Array, pz: PackedFloat64Array, i: int, lead: int, span: int) -> int:
+	var n := px.size()
+	var far := mini(i + span, n - 1)
+	if far - i < lead * 2 or Vector2(px[far] - px[i], pz[far] - pz[i]).length() > span:   # (span points: twice as many metres)
+		return -1
+	var p := Vector2(px[i], pz[i])
+	for j in range(far, i + lead * 2 - 1, -1):
+		if Vector2(px[j], pz[j]).distance_to(p) < RETURN_NEAR:
+			return j
+	return -1
 
 
 ## Rounds of pulling the points of any bend tighter than `limit` (1 / radius), and `reach * 3` points either side, towards
