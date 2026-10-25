@@ -23,7 +23,7 @@ const MAX_ROUNDS := 3000
 ## An out-and-back this long (m each way) or shorter, to a pin on a dead-end street, is left out of the route.
 const SPUR_M := 300.0
 ## The version of the planner, in every plan's hash: a change to how routes are made changes the hash.
-const VERSION := 5
+const VERSION := 6
 ## A bridge's or a tunnel's ends are matched to the road within this (m) of them.
 const BRIDGE_REACH := 10.0
 
@@ -253,7 +253,13 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	pack.fork_count = pack.forks.size()
 	parts["forks"] = Time.get_ticks_msec() - t0
 	pack.summary = _summary(rows, names, elev, request)
-	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), bridges, tunnels)
+	# (the forks' ways' bridges and tunnels with the main road's: a machine without them has other ways)
+	var all_bridges := bridges.duplicate()
+	var all_tunnels := tunnels.duplicate()
+	for fk: Dictionary in pack.forks:
+		all_bridges.append_array(fk["way"].get("bridges", PackedInt32Array()))
+		all_tunnels.append_array(fk["way"].get("tunnels", PackedInt32Array()))
+	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), all_bridges, all_tunnels)
 	pack.hash = hash
 	pack.id = "plan_" + hash
 	parts["junctions"] = Time.get_ticks_msec() - t0
@@ -810,12 +816,7 @@ static func _heights(terrain: RealTerrain, xs: PackedFloat64Array, zs: PackedFlo
 			h = last
 		last = h
 		ground[i] = maxf(h, 0.0)
-	var spans := bridges + tunnels
-	for k in range(0, spans.size() - 1, 2):
-		var i0 := spans[k]
-		var i1 := spans[k + 1]
-		for i in range(i0 + 1, i1):
-			ground[i] = lerpf(ground[i0], ground[i1], float(i - i0) / float(i1 - i0))
+	_level_spans(ground, bridges + tunnels)
 	var smooth := smooth_heights(ground, 9)
 	var graded := grade_limit(smooth)
 	var out := PackedFloat32Array()
@@ -823,6 +824,16 @@ static func _heights(terrain: RealTerrain, xs: PackedFloat64Array, zs: PackedFlo
 	for i in n:
 		out[i] = graded[i]
 	return out
+
+
+## The ground `ground` straight from end to end of each of `spans` ([first knot, last knot, ...]): over a bridge, or
+## through a tunnel.
+static func _level_spans(ground: PackedFloat64Array, spans: PackedInt32Array) -> void:
+	for k in range(0, spans.size() - 1, 2):
+		var i0 := spans[k]
+		var i1 := mini(spans[k + 1], ground.size() - 1)
+		for i in range(i0 + 1, i1):
+			ground[i] = lerpf(ground[i0], ground[i1], float(i - i0) / float(i1 - i0))
 
 
 static func smooth_heights(h: PackedFloat64Array, window := 9) -> PackedFloat64Array:
@@ -1502,6 +1513,10 @@ static func _fork_row(region: RealRegion, fork: Dictionary, steps: Array[Vector3
 			h = last
 		last = h
 		ground[k] = maxf(h, 0.0)
+	# Its own bridges and tunnels, laid straight from end to end as the main road's are.
+	var bridges := bridges_along(region, wx, wz)
+	var tunnels := tunnels_along(region, wx, wz)
+	_level_spans(ground, bridges + tunnels)
 	var e := grade_limit(pin_ends(grade_limit(smooth_heights(ground, 9)), elev[i0], elev[i1]))
 	e[0] = elev[i0]
 	e[n - 1] = elev[i1]
@@ -1525,7 +1540,7 @@ static func _fork_row(region: RealRegion, fork: Dictionary, steps: Array[Vector3
 	for k in n:
 		ex[k] = e[k]
 	return {"i0": i0, "i1": i1, "kinds": ["main", other[0]], "names": {"main": main_kn[1], other[0]: name},
-		"way": {"n": n, "x": wx, "z": wz, "e": ex, "chunks": rows}}
+		"way": {"n": n, "x": wx, "z": wz, "e": ex, "chunks": rows, "bridges": bridges, "tunnels": tunnels}}
 
 
 ## ["gravel" when most of the way is unpaved, else "scenic"; the road name most of it has].

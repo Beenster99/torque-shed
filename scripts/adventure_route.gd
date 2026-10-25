@@ -465,8 +465,10 @@ func _plan_ways_real(f: int) -> void:
 		names.append(str(r[3]))
 		limits.append(int(r[4]))
 	var kind := str((row["kinds"] as Array)[1])
+	var wbore := deck_of(wr.get("tunnels", PackedInt32Array()), n, 0)
 	var way := {"kind": kind, "n": n, "px": xs, "pz": zs, "ph": hs, "hd": whd, "curv": wcv, "sites": [], "miss": 0.0,
-		"rise": 0.0, "chunk_surface": cs, "chunk_name": names, "chunk_limit": limits}
+		"rise": 0.0, "chunk_surface": cs, "chunk_name": names, "chunk_limit": limits,
+		"deck": deck_of(wr.get("bridges", PackedInt32Array()), n), "bore": wbore, "cutting": cutting_of(wbore)}
 	way["sections"] = _real_sections(wcv, n, rows)
 	_way_widths(way, width[i0], width[i1])
 	way["base"] = _leg_base(hs, [0, n - 1])
@@ -1472,12 +1474,9 @@ func _assemble_path() -> void:
 			curv.append_array((way["curv"] as PackedFloat32Array).slice(1, n))
 			width.append_array((way["width"] as PackedFloat32Array).slice(1, n))
 			base.append_array((way["base"] as PackedFloat32Array).slice(1, n))
-			# (a second way has no bridges or tunnels of its own yet: on the ground all the way)
-			var none := PackedFloat32Array()
-			none.resize(n - 1)
-			deck.append_array(none)
-			bore.append_array(none)
-			cutting.append_array(none)
+			deck.append_array((way["deck"] as PackedFloat32Array).slice(1, n))
+			bore.append_array((way["bore"] as PackedFloat32Array).slice(1, n))
+			cutting.append_array((way["cutting"] as PackedFloat32Array).slice(1, n))
 			for k in range(1, n):
 				eq.append(_way_eq(fk, way, k))
 			for sec in way["sections"]:

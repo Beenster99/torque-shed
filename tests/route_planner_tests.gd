@@ -872,6 +872,25 @@ func test_bridges() -> void:
 			break
 	check(alt.deck.size() == alt.px.size() and alt.bore.size() == alt.px.size() and (past < 0 or alt.deck[past + shift] == 1.0),
 		"on the other way at a fork the bridges past it are still under the road (%d knots on)" % shift)
+	# And the other way's own bridges: found along it, laid straight across, and under the road when it's taken.
+	var wr: Dictionary = p.forks[0]["way"]
+	var wb: PackedInt32Array = wr.get("bridges", PackedInt32Array())
+	check(wb.size() >= 2, "the other way at the fork has its own bridges (%d)" % (wb.size() / 2))
+	if wb.size() < 2:
+		return
+	var longest := 0
+	for k in range(0, wb.size() - 1, 2):
+		if wb[k + 1] - wb[k] > wb[longest + 1] - wb[longest]:
+			longest = k
+	var w0 := wb[longest]
+	var w1 := wb[longest + 1]
+	var we: PackedFloat32Array = wr["e"]
+	var off := 0.0
+	for k in range(w0 + 3, w1 - 2):
+		off = maxf(off, absf(we[k] - lerpf(we[w0 + 3], we[w1 - 3], float(k - w0 - 3) / maxf(w1 - w0 - 6, 1))))
+	var at := int(route.forks[0]["i0"]) + (w0 + w1) / 2
+	check(off < 0.5 and alt.deck[at] == 1.0,
+		"its longest (%d m) laid straight across (%.2f m off at most), and under the road on that way (%.1f)" % [(w1 - w0) * 4, off, alt.deck[at]])
 
 
 ## Tunnels (tools/span_bake.py's spans of kind 1): on Shodoshima's east coast the road goes 640 m under a hill. The
