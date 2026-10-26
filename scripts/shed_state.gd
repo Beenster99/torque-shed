@@ -5173,11 +5173,12 @@ func ready_bike_place():
 
 ## Host: a new bike built to `plan` (as BikeCopy.plan_of gives it: its parts in their colours, its
 ## paint and fit), ready to ride (_ready_to_ride), left at `place` (ready_bike_place) on its
-## stand, with what was paid for it (for Sales) and who ordered it. Returns its id.
-func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: String) -> int:
+## stand, with what was paid for it (for Sales) and who ordered it; `age` (0..1) wears it in, for a
+## second-hand one (see BikeCopy.used_age). Returns its id.
+func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: String, age := 0.0) -> int:
 	var bay := int(place.get("bay", -1))
 	var paint = plan.get("paint") if plan.get("paint") is Color else null
-	var id := _new_bike(plan.get("parts", {}), maxi(bay, 0), str(plan.get("name", "Bike")), 0.0, paint)
+	var id := _new_bike(plan.get("parts", {}), maxi(bay, 0), str(plan.get("name", "Bike")), clampf(age, 0.0, 1.0), paint)
 	var bike: Dictionary = bikes[id]
 	var colors: Dictionary = plan.get("colors", {}) if plan.get("colors") is Dictionary else {}
 	for slot in colors:

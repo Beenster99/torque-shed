@@ -97,6 +97,7 @@ var _satnav_sliders := []   # [HSlider, Settings key]
 var money: MoneyTab
 var staff: StaffTab
 var shop: ShopTab
+var bike_shop: BikeShopTab   # whole bikes: second hand or new
 ## Gameplay: riders look into the corner (Settings.look_into_corner).
 var look_corner: CheckBox
 ## Profile: your riding style (see RiderStyle), and what it's like.
@@ -366,7 +367,7 @@ func _build_garage() -> void:
 	shop_floor.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
 
 
-## Your panel (the profile picture, top right): who you are, your Character, and the Shop.
+## Your panel (the profile picture, top right): who you are, your Character, the Shop and the Bike shop.
 func _build_profile() -> void:
 	_profile_tabs = _panel_tabs("Profile")
 	var me := _scroll_tab("Profile", _profile_tabs)
@@ -381,6 +382,7 @@ func _build_profile() -> void:
 	buttons.add_theme_constant_override("separation", 10)
 	buttons.add_child(_button("Character: level, tools and skills", func(): _profile_tabs.current_tab = 1))
 	buttons.add_child(_button("Shop: improve your rider's gear", func(): _profile_tabs.current_tab = 2))
+	buttons.add_child(_button("Bike shop: buy a bike", func(): _profile_tabs.current_tab = 3))
 	me.add_child(buttons)
 	_build_style_choice(me)
 	me.add_child(_profile_note())
@@ -389,6 +391,9 @@ func _build_profile() -> void:
 	# Rider gear and shed trinkets bought with your own money (see ShopTab).
 	shop = ShopTab.new()
 	_profile_tabs.add_child(shop)
+	# Whole bikes bought with your own money: second hand, or new from the configurator (see BikeShop).
+	bike_shop = BikeShopTab.new()
+	_profile_tabs.add_child(bike_shop)
 
 
 ## The Rider style choice on the Profile tab: how you sit on the bike and move on it through a

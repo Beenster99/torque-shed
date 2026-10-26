@@ -673,6 +673,9 @@ func _run_all() -> void:
 	await _t(&"_test_bike_copy_quality")
 	await _t(&"_test_bike_copy_quality_card")
 	await _t(&"_test_bike_copy_built")
+	await _t(&"_test_bike_shop_for_sale")
+	await _t(&"_test_bike_shop_buy_used")
+	await _t(&"_test_bike_shop_configurator")
 	await _t(&"_test_bike_copy_project_card")
 	print("Bike collections: your own bikes on show at your house, bought, ridden out, offered for and sold back")
 	await _t(&"_test_collection_slots")
@@ -22955,6 +22958,22 @@ func _test_bike_copy_quality() -> void:
 
 func _test_bike_copy_quality_card() -> void:
 	await _bike_copy().test_quality_card()
+
+
+func _bike_shop() -> RefCounted:
+	return load("res://tests/bike_shop_tests.gd").new(self)
+
+
+func _test_bike_shop_for_sale() -> void:
+	_bike_shop().test_for_sale()
+
+
+func _test_bike_shop_buy_used() -> void:
+	_bike_shop().test_buy_used()
+
+
+func _test_bike_shop_configurator() -> void:
+	await _bike_shop().test_configurator()
 
 
 func _test_bike_copy_built() -> void:

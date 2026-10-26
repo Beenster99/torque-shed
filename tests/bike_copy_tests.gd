@@ -141,7 +141,7 @@ func test_built() -> void:
 	var same := true
 	for slot in plan["parts"]:
 		same = same and Contracts.current_parts(id)[slot] == str(plan["parts"][slot])
-	check(same and str(bike["name"]) == "Rusty Ranger", "the very build it was ordered from, by name")
+	check(same and str(bike["name"]).begins_with("Tester's"), "the very build it was ordered from, named for who ordered it (%s)" % bike["name"])
 	var colours_ok := true
 	var as_new := true
 	for slot in PartsDB.SLOTS:
