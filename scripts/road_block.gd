@@ -30,9 +30,6 @@ const ISLAND_H := 0.15
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
-## The debug ground's cells (m): a plain grid of the land, roads cut in, under each block until the terrain's own land
-## follows the network (T5).
-const GROUND_CELL := 8.0
 
 var key := Vector2i.ZERO
 var rect := Rect2()
@@ -197,7 +194,7 @@ func anchor() -> Vector3:
 
 ## Lays the block's meshes and collision out into `arrays`: {deck: {surface: grid arrays}, verge, lines, island,
 ## buildings (AdventureProps arrays; the buildings as the single-line ride draws them until T8's kits), faces: {surface:
-## collision triangles}, and with the net's debug_ground its ground}.
+## collision triangles}}. The land under them is RealLand's (RoadNet.ground_at).
 func _lay_out() -> void:
 	arrays = {"deck": {}, "verge": AdventureProps.new_arrays(), "lines": AdventureProps.new_arrays(),
 		"island": AdventureProps.new_arrays(), "faces": {}}
@@ -212,8 +209,6 @@ func _lay_out() -> void:
 		AdventureProps.real_building(houses, Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o, float(row[2]),
 			float(row[3]), float(row[4]), float(row[5]), RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)])
 	arrays["buildings"] = houses
-	if net.debug_ground:
-		_ground_mesh()
 	for surf in arrays["deck"]:
 		_finish_grid(arrays["deck"][surf])
 
@@ -504,29 +499,3 @@ func _join_caps() -> void:
 			var t := TAU * k / 12.0
 			ring.append(c + Vector3(sin(t), 0.0, -cos(t)) * w * 0.5 - o)
 		_fan(_deck_of(surf), surf, col, c - o, ring, true)
-
-
-## The debug ground: the land of the whole block on a GROUND_CELL grid, the roads cut in (RoadNet.ground_at).
-func _ground_mesh() -> void:
-	var cells := int(SIZE / GROUND_CELL)
-	var g := _grid_arrays()
-	var land: Color = AdventureSurface.LAND_COLOR["tarmac"]
-	for iz in cells + 1:
-		for ix in cells + 1:
-			var x := rect.position.x + ix * GROUND_CELL
-			var z := rect.position.y + iz * GROUND_CELL
-			var bare := float(net.height.call(x, z))
-			var y := net.ground_at(x, z, bare)
-			g["v"].append(Vector3(ix * GROUND_CELL, y, iz * GROUND_CELL))
-			g["uv"].append(Vector2(x, z) * 0.1)
-			g["c"].append(land.lerp(AdventureSurface.LAND_PATCH["tarmac"], 0.5 + 0.5 * sin(x * 0.013 + z * 0.021)))
-	var v: PackedVector3Array = g["v"]
-	for iz in cells:
-		for ix in cells:
-			var bl := iz * (cells + 1) + ix
-			_grid_tri(g, v, bl, bl + 1, bl + cells + 2)
-			_grid_tri(g, v, bl, bl + cells + 2, bl + cells + 1)
-			_face("grass", v[bl], v[bl + 1], v[bl + cells + 2])
-			_face("grass", v[bl], v[bl + cells + 2], v[bl + cells + 1])
-	_finish_grid(g)
-	arrays["ground"] = g

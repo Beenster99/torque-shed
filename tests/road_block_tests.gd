@@ -280,7 +280,7 @@ func test_cell() -> void:
 
 
 ## The block's meshes: the deck and junctions facing up, indexed within bounds, with collision; lines on tarmac; a
-## roundabout's island; the debug ground when asked for.
+## roundabout's island.
 func test_meshes() -> void:
 	var net := RoadNet.new(tee(), flat)
 	var b := net.block(Vector2i(0, 0))
@@ -313,10 +313,6 @@ func test_meshes() -> void:
 	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
 	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
 	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
-	check(not b.arrays.has("ground"), "no ground of its own unless asked")
-	net.debug_ground = true
-	var gb := net.block(Vector2i(0, 0))
-	check(gb.arrays.has("ground") and (gb.arrays["ground"]["v"] as PackedVector3Array).size() == 65 * 65, "the debug ground: a grid of 8 m cells over the block")
 
 
 ## The height of the first collision triangle of block `b` straight under local `p` (NAN if none).
@@ -343,9 +339,8 @@ func test_ride() -> void:
 	w.roads_region = region
 	w.setup(AdventurePlans.pack_for(plan), 1, 20.0)
 	AdventureWorld.network = was
-	var follows := RealLand.new().has_method("set_roads")
-	check(w.roads != null and (w.land != null) == follows and w.roads.net.debug_ground != follows,
-		"the network ride streams road blocks, on the land following the network (or a ground of their own till it can)")
+	check(w.roads != null and w.land != null and w.land.roads == w.roads.net and RealLand.roam,
+		"the network ride streams road blocks, on land that follows the network, free to roam")
 	if w.roads == null:
 		w.free()
 		return
@@ -396,4 +391,5 @@ func test_ride() -> void:
 	check(ridden > 15.0, "and goes (%.0f m in 4 s)" % ridden)
 	check(w.roads.blocks.size() >= 1 and w.chunks.is_empty(), "blocks, and none of the planned road's chunks (%d blocks)" % w.roads.blocks.size())
 	w.queue_free()
+	RealLand.roam = false
 	await t.get_tree().process_frame

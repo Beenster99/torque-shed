@@ -190,12 +190,6 @@ func commit(b: RoadBlock) -> Node3D:
 		lmi.material_override = AdventureSurface.line_material()
 		lmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(lmi)
-	if b.arrays.has("ground"):
-		var gmi := MeshInstance3D.new()
-		gmi.name = "Ground"
-		gmi.mesh = grid_mesh(b.arrays["ground"])
-		gmi.material_override = AdventureSurface.land_material()
-		node.add_child(gmi)
 	if b.arrays.has("buildings") and not (b.arrays["buildings"]["v"] as PackedVector3Array).is_empty():
 		var bmi := MeshInstance3D.new()
 		bmi.name = "Buildings"

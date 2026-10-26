@@ -54,8 +54,6 @@ var height: Callable
 var ready: Callable
 ## 12 hex of the block builder's version and the region's hash.
 var version_hash := ""
-## Blocks lay out a plain ground of their own under their roads (the debug ride, until T5's land follows the network).
-var debug_ground := false
 
 var _lock := Mutex.new()
 var _edges_by_block := {}   # Vector2i -> PackedInt32Array: the edges whose line's box (with GROUND_REACH) meets it
