@@ -38,6 +38,9 @@ var label := ""
 ## The graphics preset (Graphics.PRESETS) the views are drawn at: medium is what a machine without a graphics card
 ## can draw a frame of in half a second.
 var preset := "medium"
+## The renderer the views must be drawn with ("" any): CI asks for forward_plus, so a machine whose Vulkan didn't come
+## up fails rather than quietly drawing its share with OpenGL.
+var renderer := ""
 var stats := {"places": []}
 
 
@@ -57,6 +60,8 @@ func _ready() -> void:
 			size = Vector2i(int(wh[0]), int(wh[1]))
 		elif a.begins_with("--preset="):
 			preset = a.trim_prefix("--preset=")
+		elif a.begins_with("--renderer="):
+			renderer = a.trim_prefix("--renderer=")
 		elif a.begins_with("--merge="):
 			merge = Array(a.trim_prefix("--merge=").split(",", false))
 		elif a == "--fetch":
@@ -85,6 +90,11 @@ func _ready() -> void:
 
 
 func _run(spec: Dictionary) -> void:
+	if renderer != "" and not fetch and RenderingServer.get_current_rendering_method() != renderer:
+		stats["places"].append({"id": "renderer", "error": "Drawn with %s, not %s: is the Vulkan driver there?" % [
+			RenderingServer.get_current_rendering_method(), renderer]})
+		push_error(stats["places"][0]["error"])
+		return
 	use_own_world(fetch)
 	get_window().size = size
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)

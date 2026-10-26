@@ -56,20 +56,23 @@ jobs:
         group: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+      - id: mesa
+        run: echo "version=$(dpkg-query -W -f='${Version}' libgl1-mesa-dri)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/lavapipe
+          key: lavapipe-${{ runner.os }}-${{ steps.mesa.outputs.version }}
       - name: Install Godot, and Vulkan drawn on the processor (no graphics card here)
         run: |
-          # (usually ten seconds; a slow mirror once took ten minutes, so each try is cut off at two and tried again)
-          for try in 1 2 3; do
-            dpkg -s mesa-vulkan-drivers xvfb > /dev/null 2>&1 && break
-            timeout 120 sh -c "sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers xvfb > /dev/null" || true
-          done
+          tests/postcards/lavapipe.sh ~/lavapipe
+          command -v xvfb-run > /dev/null || sudo apt-get install -y -qq --no-install-recommends xvfb > /dev/null
           curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
           unzip -q godot.zip
           sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
       - name: Import project
         run: godot --headless --path . --import > /dev/null 2>&1 || true
       - name: Draw this machine's places
-        run: tests/postcards/postcards.sh --group=${{ matrix.group }}/4 --out="$PWD/part"
+        run: tests/postcards/postcards.sh --group=${{ matrix.group }}/4 --renderer=forward_plus --out="$PWD/part"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -91,11 +94,8 @@ jobs:
           path: parts
       - name: Install Godot
         run: |
-          # (usually ten seconds; a slow mirror once took ten minutes, so each try is cut off at two and tried again)
-          for try in 1 2 3; do
-            dpkg -s mesa-vulkan-drivers xvfb > /dev/null 2>&1 && break
-            timeout 120 sh -c "sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers xvfb > /dev/null" || true
-          done
+          # (the sheet is only 2D: OpenGL drawn on the processor is enough)
+          command -v xvfb-run > /dev/null || sudo apt-get install -y -qq --no-install-recommends xvfb > /dev/null
           curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
           unzip -q godot.zip
           sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
