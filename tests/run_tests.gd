@@ -17944,6 +17944,9 @@ func _test_shop_buy_in_view() -> void:
 	var menu := MainMenu.new()
 	add_child(menu)
 	await get_tree().process_frame
+	var version := menu.find_child("Version", true, false) as Label
+	check(version != null and version.text == "v" + str(ProjectSettings.get_setting("application/config/version")) and version.text.count(".") == 2,
+		"the start screen says which build this is (%s)" % (version.text if version else "none"))
 	menu.show_pause()
 	menu.open_tab(menu.shop)
 	var screen := get_viewport().get_visible_rect()
