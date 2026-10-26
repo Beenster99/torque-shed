@@ -11374,8 +11374,8 @@ func _test_recorded_sounds() -> void:
 	es._process(1.0 / 60.0)
 	es.gear = 3
 	es._process(1.0 / 60.0)
-	check(es.lever_sounds == 1 and Sfx.recordings("shift_slick").has(es._lever.stream) and es._lever.pitch_scale > 1.1,
-		"a quickshift adds the recorded lever's slick tick, pitched up")
+	check(es.lever_sounds == 1 and Sfx.recordings("shift_slick").has(es._lever.stream) and Sfx.recordings("shift_clunk").size() == 8,
+		"a quickshift plays the slick take of the recorded gear change (eight clunks for the others)")
 	es.queue_free()
 	# The phone: a few rings, from the reception and the extension in the shed.
 	var calls := Sfx.phone_calls
