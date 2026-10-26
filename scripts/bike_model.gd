@@ -848,8 +848,9 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 				_tube(_pivot + Vector3(0.12 * side, 0.1, 0.0), _pivot + Vector3(0.12 * side, -0.12, 0.02), 0.04, frame_mat)
 				_tube(_seat_front + Vector3(0.08 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.016, frame_mat)
 				_tube(_pivot + Vector3(0.1 * side, 0.12, 0.0), _tail + Vector3(0.06 * side, -0.02, -0.05), 0.014, frame_mat)
-		"trellis", "adv":
-			var adv := style == "adv"
+		"adv":
+			# A tall steel tubular frame: twin top rails and twin cradle rails round the engine,
+			# an upright and one brace a side, and a bolt-on rack out past the tail.
 			for side in [-1.0, 1.0]:
 				var top := []
 				var bottom := []
@@ -857,21 +858,19 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 					var f := i / 4.0
 					top.append(hb.lerp(_pivot + Vector3(0.0, 0.18, 0.0), f) + Vector3(0.1 * side, 0.08, 0.0))
 					bottom.append(hb.lerp(_pivot, f) + Vector3(0.11 * side, -0.12 * sin(f * PI), 0.0))
-				for i in 4:
-					_tube(top[i], top[i + 1], 0.013 if adv else 0.012, frame_mat)
-					_tube(bottom[i], bottom[i + 1], 0.013 if adv else 0.012, frame_mat)
-					_tube(top[i], bottom[i + 1], 0.01, frame_mat)
-				_tube(top[4], bottom[4], 0.012, frame_mat)
+				_bend(top, 0.014, frame_mat)
+				_bend(bottom, 0.014, frame_mat)
+				_tube(top[1], bottom[2], 0.011, frame_mat)
+				_tube(top[4], bottom[4], 0.013, frame_mat)
 				_tube(_seat_front + Vector3(0.07 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.012, frame_mat)
 				_tube(top[3], _tail + Vector3(0.06 * side, -0.03, -0.05), 0.01, frame_mat)
-				if adv:
-					# A bolt-on luggage rack: rails out past the tail and a hoop over the back.
-					var rail := _rack_mat()
-					_bend([_tail + Vector3(0.09 * side, 0.02, -0.25), _tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.08 * side, 0.03, 0.22),
-						_tail + Vector3(0.0, 0.03, 0.26)], 0.009, rail)
-					_tube(_tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.12 * side, -0.16, 0.0), 0.008, rail)
-			if adv:
-				_box(_tail + Vector3(0.0, 0.035, 0.1), Vector3(0.16, 0.008, 0.2), _rack_mat())
+				var rail := _rack_mat()
+				_bend([_tail + Vector3(0.09 * side, 0.02, -0.25), _tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.08 * side, 0.03, 0.22),
+					_tail + Vector3(0.0, 0.03, 0.26)], 0.009, rail)
+				_tube(_tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.12 * side, -0.16, 0.0), 0.008, rail)
+			_box(_tail + Vector3(0.0, 0.035, 0.1), Vector3(0.16, 0.008, 0.2), _rack_mat())
+		"trestle":
+			_draw_trestle(frame_mat)
 		"backbone":
 			_tube(_head, _pivot + Vector3(0.0, 0.22, 0.0), 0.045, frame_mat)
 			_tube(_pivot + Vector3(0.0, 0.22, 0.0), _pivot, 0.035, frame_mat)
@@ -978,6 +977,61 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			# Rearsets: a hanger plate from the frame by the pivot down to the peg.
 			_box((peg + Vector3(0.12 * side, _pivot.y, _pivot.z - 0.02)) * 0.5, Vector3(0.012, absf(_peg.y - _pivot.y) + 0.06, 0.06), frame_mat)
 	_draw_swingarm(build, zr, frame_mat)
+
+
+## A trestle frame: no frame round the engine at all, the engine is the frame. A short trestle
+## bolts the head stock to the cylinder heads, the swingarm pivots in plates bolted to the back
+## of the crankcase, and the subframe bolts on behind the engine, the way a Ducati Monster or a
+## Panigale is built. A little lattice of tubes a side, or (its look "cast") one deep cast beam.
+func _draw_trestle(frame_mat: Material) -> void:
+	var s := _eng_s
+	var hb := _head_bottom
+	# Where it bolts on: the front of the top of the engine and the back of it.
+	var fwd := _engine_c + Vector3(0.0, 0.2 * s, -0.1 * s)
+	var aft := _engine_c + Vector3(0.0, 0.17 * s, 0.13 * s)
+	if _build.layout != "boxer" and not _cyls.is_empty():
+		var tops := []
+		for c in _cyls:
+			tops.append((c["base"] as Vector3) + (c["up"] as Vector3) * 0.17 * s)
+		tops.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.z < b.z)
+		var first: Vector3 = tops[0]
+		var last: Vector3 = tops[tops.size() - 1]
+		fwd = Vector3(0.0, first.y, first.z - 0.03)
+		# One head (or a row of them across the bike): the back mount is on the back of it.
+		aft = Vector3(0.0, last.y - 0.03, last.z + 0.1 * s) if last.z - first.z < 0.1 else Vector3(0.0, last.y, last.z)
+	var x := clampf(_block_w * 0.32, 0.06, 0.12)
+	var case_back := _engine_c + Vector3(0.0, 0.02, 0.17 * s)
+	var cast := bool(_look().get("cast", false))
+	var lug := _mat(Color(0.12, 0.12, 0.13), 0.8, 0.35)
+	for side in [-1.0, 1.0]:
+		var u0 := _head + Vector3(0.045 * side, -0.02, 0.03)
+		var l0 := hb + Vector3(0.045 * side, 0.01, 0.02)
+		var f := fwd + Vector3(x * side, 0.0, 0.0)
+		var a := aft + Vector3(x * side, 0.0, 0.0)
+		var u1 := u0.lerp(a, 0.5) + Vector3(0.012 * side, 0.025, 0.0)
+		if cast:
+			var secs := []
+			for k in 6:
+				var t := k / 5.0
+				var c := u0.lerp(u1, t * 2.0) if t < 0.5 else u1.lerp(a, t * 2.0 - 1.0)
+				secs.append({"c": c, "w": 0.018, "up": 0.03, "down": lerpf(0.07, 0.035, t), "n": 6.0})
+			_shell(secs, frame_mat).name = "Trestle"
+			_shell([{"c": l0.lerp(u0, 0.3), "w": 0.016, "up": 0.02, "down": 0.02, "n": 6.0}, {"c": f + Vector3(0.0, 0.02, 0.0), "w": 0.016, "up": 0.025, "down": 0.02, "n": 6.0}], frame_mat)
+		else:
+			for t in [[u0, u1], [u1, a], [l0, f], [l0, u1], [f, u1], [f, a]]:
+				_tube(t[0], t[1], 0.012, frame_mat)
+		# The lugs it bolts to the engine by.
+		for at in [f, a]:
+			var b := _mesh_instance(_cylinder(0.016, 0.03), lug, at + Vector3(0.006 * side, 0.0, 0.0), self)
+			b.rotation.z = PI * 0.5
+		# Pivot plates on the back of the crankcase, carrying the swingarm.
+		var px: float = 0.11 * side
+		_shell([{"c": case_back + Vector3(px, 0.06, -0.02), "w": 0.012, "up": 0.03, "down": 0.03, "n": 6.0},
+			{"c": _pivot + Vector3(px, 0.07, -0.03), "w": 0.012, "up": 0.04, "down": 0.04, "n": 6.0},
+			{"c": _pivot + Vector3(px, -0.02, 0.0), "w": 0.012, "up": 0.03, "down": 0.03, "n": 6.0}], frame_mat).name = "PivotPlate"
+		# The subframe, bolted to the back of the engine, out to the tail.
+		_bend([a + Vector3(0.0, 0.01, 0.01), _seat_front + Vector3(0.075 * side, -0.02, 0.02), _tail + Vector3(0.055 * side, -0.01, 0.0)], 0.012, frame_mat)
+		_tube(_pivot + Vector3(px, 0.1, -0.03), _tail + Vector3(0.05 * side, -0.05, -0.08), 0.011, frame_mat)
 
 
 ## Which swingarm the bike has: its own (a swingarm part, see SWINGARM_TYPES) if one's fitted,
@@ -1175,48 +1229,33 @@ func _rack_mat() -> StandardMaterial3D:
 
 
 ## Tanks are lofted along the frame's top tube: their underside sits on the line from the head
-## stock back to the front of the seat, they butt up against the seat, and each style has its
-## own shape (knee dents on a café tank, the airbox hump on a sport tank, a teardrop peanut).
+## stock back to the front of the seat, they butt up against the seat, and each of the ten has its
+## own shape (its look's "shape"): a 50s teardrop, a long café tank with deep knee cut-outs, a
+## slim peanut, a square coffin, a big split fat bob, an angular sport tank, a low race tank cut
+## away at the back for tucking in, a broad touring tank, a tall creased adventure tank and a
+## narrow enduro tank. They come in one colour, the part's own, for spraying as you like.
 ## Profiles: [share of the length, half-width, rise above, drop below] from nose to tail.
 const TANK_SHAPES := {
-	"cafe": {"len": 0.62, "n": 2.6, "bw": 0.8, "keys": [[0.0, 0.07, 0.05, 0.04], [0.12, 0.13, 0.11, 0.06], [0.35, 0.155, 0.13, 0.07],
-		[0.6, 0.14, 0.12, 0.07], [0.8, 0.115, 0.1, 0.065], [0.95, 0.1, 0.07, 0.05], [1.0, 0.06, 0.03, 0.03]]},
-	"peanut": {"len": 0.44, "n": 2.2, "bw": 0.75, "keys": [[0.0, 0.05, 0.04, 0.03], [0.2, 0.1, 0.09, 0.05], [0.5, 0.115, 0.1, 0.06],
-		[0.8, 0.09, 0.08, 0.05], [1.0, 0.04, 0.03, 0.02]]},
-	"sport": {"len": 0.56, "n": 3.4, "bw": 0.85, "keys": [[0.0, 0.1, 0.08, 0.06], [0.15, 0.17, 0.15, 0.09], [0.4, 0.19, 0.16, 0.1],
-		[0.65, 0.16, 0.12, 0.09], [0.85, 0.12, 0.08, 0.07], [1.0, 0.08, 0.04, 0.04]]},
-	"enduro": {"len": 0.5, "n": 2.4, "bw": 0.9, "keys": [[0.0, 0.06, 0.05, 0.05], [0.2, 0.12, 0.09, 0.08], [0.5, 0.13, 0.1, 0.08],
-		[0.8, 0.1, 0.07, 0.06], [1.0, 0.05, 0.03, 0.03]]},
-	"touring": {"len": 0.66, "n": 2.6, "bw": 0.85, "keys": [[0.0, 0.1, 0.07, 0.06], [0.15, 0.18, 0.14, 0.11], [0.45, 0.21, 0.16, 0.13],
-		[0.75, 0.19, 0.14, 0.12], [0.92, 0.14, 0.1, 0.09], [1.0, 0.09, 0.05, 0.05]]},
-	# Shapes a part can ask for by its look (see _look): the teardrop of a 50s classic, a slab-sided
-	# 70s tank, a coffin, a big split cruiser tank, a slim Sportster peanut, a little Wassell, a
-	# long café tank with deep knee cut-outs and a long low pointed one.
 	"teardrop": {"len": 0.52, "n": 2.3, "bw": 0.8, "keys": [[0.0, 0.06, 0.05, 0.04], [0.15, 0.13, 0.11, 0.07], [0.35, 0.145, 0.12, 0.075],
 		[0.7, 0.11, 0.09, 0.06], [1.0, 0.045, 0.03, 0.025]]},
-	"slab": {"len": 0.6, "n": 3.8, "bw": 0.85, "keys": [[0.0, 0.08, 0.06, 0.05], [0.12, 0.14, 0.12, 0.08], [0.7, 0.14, 0.12, 0.08],
-		[0.92, 0.12, 0.09, 0.07], [1.0, 0.07, 0.04, 0.04]]},
+	"cafe": {"len": 0.66, "n": 2.6, "bw": 0.8, "keys": [[0.0, 0.07, 0.05, 0.04], [0.12, 0.135, 0.11, 0.06], [0.35, 0.155, 0.13, 0.07],
+		[0.62, 0.1, 0.12, 0.07], [0.8, 0.105, 0.1, 0.065], [0.95, 0.09, 0.07, 0.05], [1.0, 0.05, 0.03, 0.03]]},
+	"peanut": {"len": 0.5, "n": 2.2, "bw": 0.8, "keys": [[0.0, 0.05, 0.04, 0.03], [0.2, 0.095, 0.085, 0.05], [0.55, 0.105, 0.095, 0.055],
+		[0.85, 0.08, 0.07, 0.045], [1.0, 0.035, 0.025, 0.02]]},
 	"coffin": {"len": 0.5, "n": 5.0, "bw": 0.95, "keys": [[0.0, 0.07, 0.06, 0.04], [0.08, 0.11, 0.09, 0.06], [0.9, 0.11, 0.09, 0.06],
 		[1.0, 0.07, 0.05, 0.04]]},
-	"fatbob": {"len": 0.64, "n": 2.8, "bw": 0.9, "keys": [[0.0, 0.1, 0.08, 0.07], [0.15, 0.18, 0.15, 0.1], [0.5, 0.2, 0.16, 0.11],
-		[0.85, 0.17, 0.13, 0.09], [1.0, 0.1, 0.06, 0.05]]},
-	"sportster": {"len": 0.52, "n": 2.2, "bw": 0.8, "keys": [[0.0, 0.05, 0.04, 0.03], [0.2, 0.095, 0.085, 0.05], [0.55, 0.105, 0.095, 0.055],
-		[0.85, 0.08, 0.07, 0.045], [1.0, 0.035, 0.025, 0.02]]},
-	"wassell": {"len": 0.38, "n": 2.6, "bw": 0.85, "keys": [[0.0, 0.05, 0.05, 0.03], [0.2, 0.09, 0.1, 0.05], [0.6, 0.09, 0.1, 0.05],
-		[1.0, 0.04, 0.03, 0.02]]},
-	"kneedent": {"len": 0.66, "n": 2.6, "bw": 0.8, "keys": [[0.0, 0.07, 0.05, 0.04], [0.12, 0.135, 0.11, 0.06], [0.35, 0.155, 0.13, 0.07],
-		[0.62, 0.1, 0.12, 0.07], [0.8, 0.105, 0.1, 0.065], [0.95, 0.09, 0.07, 0.05], [1.0, 0.05, 0.03, 0.03]]},
-	# Creased, angular shapes for the modern bikes: an adventure bike's tall, wide-shouldered tank
-	# that tapers back to a narrow waist, a supermoto's low flat slab, and a Bonneville-style
-	# classic tank, long and level with a low crown.
+	"fatbob": {"len": 0.64, "n": 2.8, "bw": 0.9, "keys": [[0.0, 0.1, 0.08, 0.07], [0.15, 0.18, 0.13, 0.1], [0.5, 0.2, 0.14, 0.11],
+		[0.85, 0.17, 0.12, 0.09], [1.0, 0.1, 0.06, 0.05]]},
+	"sport": {"len": 0.56, "n": 3.4, "bw": 0.85, "keys": [[0.0, 0.1, 0.08, 0.06], [0.15, 0.17, 0.15, 0.09], [0.4, 0.19, 0.16, 0.1],
+		[0.65, 0.16, 0.12, 0.09], [0.85, 0.12, 0.08, 0.07], [1.0, 0.08, 0.04, 0.04]]},
+	"race": {"len": 0.54, "n": 3.8, "bw": 0.9, "keys": [[0.0, 0.11, 0.09, 0.06], [0.15, 0.18, 0.15, 0.09], [0.38, 0.19, 0.14, 0.1],
+		[0.6, 0.15, 0.085, 0.09], [0.82, 0.11, 0.05, 0.07], [1.0, 0.07, 0.03, 0.04]]},
+	"touring": {"len": 0.66, "n": 2.6, "bw": 0.85, "keys": [[0.0, 0.1, 0.07, 0.06], [0.15, 0.18, 0.14, 0.11], [0.45, 0.21, 0.16, 0.13],
+		[0.75, 0.19, 0.14, 0.12], [0.92, 0.14, 0.1, 0.09], [1.0, 0.09, 0.05, 0.05]]},
 	"adv": {"len": 0.58, "n": 1.8, "bw": 0.9, "keys": [[0.0, 0.11, 0.06, 0.11], [0.15, 0.18, 0.1, 0.15], [0.45, 0.17, 0.085, 0.12],
 		[0.75, 0.13, 0.065, 0.08], [1.0, 0.08, 0.03, 0.05]]},
-	"sm": {"len": 0.46, "n": 1.9, "bw": 0.9, "keys": [[0.0, 0.08, 0.05, 0.07], [0.2, 0.14, 0.075, 0.1], [0.6, 0.12, 0.065, 0.08],
-		[1.0, 0.06, 0.03, 0.04]]},
-	"bonnie": {"len": 0.56, "n": 2.4, "bw": 0.8, "keys": [[0.0, 0.07, 0.045, 0.04], [0.15, 0.13, 0.08, 0.06], [0.5, 0.145, 0.088, 0.065],
-		[0.85, 0.12, 0.072, 0.055], [1.0, 0.06, 0.03, 0.03]]},
-	"spitfire": {"len": 0.68, "n": 2.4, "bw": 0.8, "keys": [[0.0, 0.03, 0.03, 0.02], [0.2, 0.11, 0.08, 0.05], [0.5, 0.14, 0.1, 0.06],
-		[0.8, 0.12, 0.09, 0.055], [1.0, 0.06, 0.03, 0.03]]},
+	"enduro": {"len": 0.5, "n": 2.4, "bw": 0.9, "keys": [[0.0, 0.06, 0.05, 0.05], [0.2, 0.12, 0.09, 0.08], [0.5, 0.13, 0.1, 0.08],
+		[0.8, 0.1, 0.07, 0.06], [1.0, 0.05, 0.03, 0.03]]},
 }
 
 
@@ -1262,55 +1301,14 @@ func _draw_tank() -> void:
 	var body := _shell(secs, mat)
 	body.name = "TankBody"
 	_tank_secs = secs
-	if look.get("shrouds", false):
-		# Radiator shrouds: angular plastic wings either side of the tank, from the head stock
-		# back to the seat and down over the radiator and the top of the engine, the way a
-		# motard is dressed. They fill the space a bare frame leaves between tank and engine.
-		var shroud_mat := _mat(_accent(_col()), 0.0, 0.45)
-		var flash_mat := _mat(_col(), 0.0, 0.45)
-		for side in [-1.0, 1.0]:
-			var panel := []
-			var stripe := []
-			for k in 5:
-				var f := k / 4.0
-				var z := lerpf(front + 0.02, back - 0.1, f)
-				var top := tank_base_y(z) + lerpf(0.06, 0.02, f)
-				var bottom := top - lerpf(0.26, 0.1, f) * _eng_s
-				var x := lerpf(0.13, 0.11, f) + 0.02 * sin(f * PI)
-				panel.append({"c": Vector3(x * side, (top + bottom) * 0.5, z), "w": 0.007, "up": (top - bottom) * 0.5, "down": (top - bottom) * 0.5, "n": 5.0})
-				stripe.append({"c": Vector3((x + 0.006) * side, top - (top - bottom) * 0.3, z), "w": 0.003, "up": 0.012, "down": 0.012, "n": 5.0})
-			_shell(panel, shroud_mat).name = "TankShroud"
-			_shell(stripe, flash_mat)
+	if look.get("panels", false):
+		# Black plastic knee panels down the lower sides of an adventure tank, where your knees
+		# grip it standing on the pegs, with a crease along their top edge.
+		var plastic := _tex(_mat(Color(0.05, 0.05, 0.055), 0.0, 0.7), "grain", 16.0, 1.2)
+		var from := roundi(steps * 0.3)
+		_shell(_grown(secs, 1.012, from, steps - 1), plastic, true, -0.85, 0.05).name = "TankPanel"
+		_shell(_grown(secs, 1.012, from, steps - 1), plastic, true, PI - 0.05, PI + 0.85).name = "TankPanel"
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15)
-	var accent := _mat(_accent(), 0.3, 0.25, 0.6)
-	# Paint schemes over the base colour: the top in a second colour, pinstripes along the
-	# sides, twin racing stripes over the top, or a band round the middle.
-	var paint_look := str(look.get("paint", ""))
-	match paint_look:
-		"two_tone":
-			_shell(_grown(secs, 1.012, 1, steps - 1), accent, true, 0.35, PI - 0.35)
-		"band":
-			_shell(_grown(secs, 1.015, roundi(steps * 0.38), roundi(steps * 0.62)), accent, false)
-		"racing":
-			for x in [-0.028, 0.028]:
-				var path := []
-				for s in secs.slice(1, steps):
-					path.append(_on_loft(s, PI * 0.5 + x * 6.0, 1.004))
-				_bend(path, 0.009, accent, self, 6)
-		"scallop":
-			for side in [-1.0, 1.0]:
-				var path := []
-				for i in range(1, roundi(steps * 0.7)):
-					var f := float(i) / (steps * 0.7)
-					path.append(_on_loft(secs[i], (0.15 + 0.55 * sin(f * PI)) if side > 0.0 else PI - (0.15 + 0.55 * sin(f * PI)), 1.004))
-				_bend(path, 0.012, accent, self, 6)
-		"pin":
-			for side in [-1.0, 1.0]:
-				for lift in [0.25, 0.4]:
-					var path := []
-					for s in secs.slice(1, steps):
-						path.append(_on_loft(s, lift if side > 0.0 else PI - lift, 1.004))
-					_bend(path, 0.0028, accent, self, 5)
 	# The filler cap on top, a third of the way back: a plain cap, a raised Monza flip cap, a flush
 	# aircraft cap, or two of them on a cruiser's split tank.
 	var cap_s: Dictionary = secs[roundi(steps * 0.3)]
@@ -1335,17 +1333,13 @@ func _draw_tank() -> void:
 		_bend(path, 0.03, chrome, self, 10)
 		var dial := _mesh_instance(_cylinder(0.035, 0.012), _mat(Color(0.05, 0.05, 0.05), 0.3, 0.3), path[1] + Vector3(0.0, 0.02, 0.0), self)
 		dial.rotation.x = -0.3
-	# Badges on the sides: a chrome oval, a big round roundel, a long winged script or none.
+	# Badges on the sides: a chrome oval, a long winged script or none.
 	var badge_s: Dictionary = secs[roundi(steps * 0.3)]
 	var badge := str(look.get("badge", "oval"))
 	for side in ([-1.0, 1.0] if badge != "none" else []):
 		var at: Vector3 = badge_s["c"] + Vector3(float(badge_s["w"]) * 0.97 * side, float(badge_s["up"]) * 0.05, 0.0)
-		var bm := _mesh_instance(_sphere(0.03), chrome if badge != "roundel" else accent, at, self)
+		var bm := _mesh_instance(_sphere(0.03), chrome, at, self)
 		match badge:
-			"roundel":
-				bm.scale = Vector3(0.12, 1.1, 1.1)
-				var inner := _mesh_instance(_sphere(0.018), chrome, at + Vector3(0.003 * side, 0.0, 0.0), self)
-				inner.scale = Vector3(0.12, 1.0, 1.0)
 			"wing":
 				bm.scale = Vector3(0.1, 0.35, 2.6)
 			_:
@@ -5016,7 +5010,7 @@ func _draw_rearsets() -> void:
 
 
 ## Engine guards: chrome bars round the front of the engine, a full adventure cage up round the
-## tank, an alloy bash plate or an MX skid plate under it, or nylon frame sliders. They stand off
+## tank, wrap-around bars from the head stock round the engine to the pegs, an alloy bash plate or an MX skid plate under it, or nylon frame sliders. They stand off
 ## the engine by its own width, so a boxer's bars go out round its cylinders.
 func _draw_guards() -> void:
 	_current_slot = "guards"
@@ -5024,7 +5018,7 @@ func _draw_guards() -> void:
 	if p.is_empty():
 		return
 	var style := str(p.get("style", "bars"))
-	var shiny := style == "bars"
+	var shiny := style in ["bars", "wrap"]
 	var mat := _skin(_mat(_col(), 1.0 if shiny else (0.85 if style == "plate" else 0.2), 0.12 if shiny else 0.35))
 	var s := _eng_s
 	var out := _block_w * 0.5 + 0.07
@@ -5045,6 +5039,15 @@ func _draw_guards() -> void:
 					_tube(Vector3(out * side, _engine_c.y, nose + 0.02), _head + Vector3(0.2 * side, -0.16, 0.22), 0.012, mat)
 			if style == "cage":
 				_tube(Vector3(-0.08, bottom - 0.03, nose + 0.14), Vector3(0.08, bottom - 0.03, nose + 0.14), 0.013, mat)
+		"wrap":
+			# One long hoop a side, wrapped from the head stock out round the front of the engine,
+			# back under it and up to the footpeg hangers, tied together across the front.
+			for side in [-1.0, 1.0]:
+				_bend([_head_bottom + Vector3(0.05 * side, -0.05, 0.04), Vector3(out * 0.85 * side, _engine_c.y + 0.14 * s, nose - 0.06),
+					Vector3(out * side, _engine_c.y + 0.02, nose - 0.03), Vector3(out * 0.95 * side, bottom + 0.01, nose + 0.06),
+					Vector3(out * 0.8 * side, bottom - 0.02, _engine_c.z + 0.08), Vector3(0.12 * side, _peg.y + 0.05, _peg.z - 0.08)], 0.014, mat)
+			_bend([Vector3(-out * 0.97, _engine_c.y + 0.06, nose - 0.04), Vector3(0.0, _engine_c.y + 0.07, nose - 0.07),
+				Vector3(out * 0.97, _engine_c.y + 0.06, nose - 0.04)], 0.011, mat)
 		"plate", "skid":
 			var w := 0.24 if style == "plate" else 0.19
 			var tray := _box(Vector3(0.0, bottom - 0.035, _engine_c.z + 0.02), Vector3(w, 0.01 if style == "plate" else 0.014, 0.34 * s + 0.08), mat)
@@ -5616,18 +5619,21 @@ func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w :
 	if style == "drum":
 		_draw_drum(side, wheel, hub, rim_r, x)
 		return
-	var steel := _tex(_mat(_col(), 1.0, 0.3), "brushed", 30.0, 0.5)
-	var d := _mesh_instance(_cylinder(disc_r, 0.006, -1.0, 10 if style == "wave" else 32), steel, Vector3(x, 0.0, 0.0), wheel)
-	d.rotation.z = PI * 0.5
+	# The rotor and the carrier in the middle of it, flat rings with their holes cut right
+	# through (see disc_face), so the wheel shows through a drilled disc.
+	var face := disc_face(style)
+	var steel := _disc_mat(_col(), face, 1.0, 0.3)
+	# A floating or drilled disc's carrier is a colour of its own; a plain or wave disc is one piece.
+	var carrier_col = {"floating": Color(0.8, 0.62, 0.2), "drilled": Color(0.2, 0.2, 0.22)}.get(style)
+	var d := _mesh_instance(_disc_ring(disc_r, 0.6 if carrier_col else 0.14, 1.0, 0.006, style != "wave"), steel, Vector3(x, 0.0, 0.0), wheel)
+	d.name = "Disc"
+	if carrier_col:
+		var carrier := _mesh_instance(_disc_ring(disc_r, 0.14, 0.62, 0.008, false), _disc_mat(carrier_col, face, 0.85, 0.35), Vector3(x + 0.001, 0.0, 0.0), wheel)
+		carrier.name = "DiscCarrier"
 	var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
 	if style == "floating":
-		var carrier := _mesh_instance(_cylinder(disc_r * 0.62, 0.008), _mat(Color(0.8, 0.62, 0.2), 0.9, 0.3), Vector3(x + 0.002, 0.0, 0.0), wheel)
-		carrier.rotation.z = PI * 0.5
 		# The floating buttons joining rotor to carrier.
-		_bolt_ring(Vector3(x + 0.006, 0.0, 0.0), Vector3.RIGHT, disc_r * 0.66, 10, bolt, wheel)
-	elif style == "drilled":
-		var ring := _mesh_instance(_cylinder(disc_r * 0.55, 0.008), _mat(Color(0.2, 0.2, 0.22), 0.8, 0.4), Vector3(x + 0.002, 0.0, 0.0), wheel)
-		ring.rotation.z = PI * 0.5
+		_bolt_ring(Vector3(x + 0.006, 0.0, 0.0), Vector3.RIGHT, disc_r * 0.61, 10, bolt, wheel)
 	_bolt_ring(Vector3(x + 0.004, 0.0, 0.0), Vector3.RIGHT, 0.045, 5, bolt, wheel)
 	_current_slot = side + "_caliper"
 	var pistons := int(_part().get("pistons", 2))
@@ -5652,6 +5658,89 @@ func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w :
 	_current_slot = side + "_pads"
 	var pad := _box(cal_at + Vector3(0.0, 0.0, 0.0) + cal.basis.y * (cal_size.y * 0.5 + 0.012), Vector3(0.035, 0.024, 0.05), _mat(_col(), 0.4, 0.6), hub)
 	pad.basis = cal.basis
+
+
+## Each disc style's face, drawn once: white where there's metal and clear where there isn't
+## (the cross-drilled holes in staggered rows, a wave disc's scalloped edge and its holes, the
+## carrier's five cut-outs), across the whole disc from -1 to 1 (see _disc_ring).
+static var _disc_faces := {}
+const DISC_HOLES := {"drilled": [[0.7, 24, 0.032, 0.0], [0.8, 24, 0.032, 0.5], [0.9, 24, 0.032, 0.0]],
+	"floating": [[0.74, 20, 0.03, 0.0], [0.86, 20, 0.03, 0.5]], "wave": [[0.78, 12, 0.034, 0.5]], "round": []}
+
+
+static func disc_face(style: String) -> ImageTexture:
+	if _disc_faces.has(style):
+		return _disc_faces[style]
+	var n := 256
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for py in n:
+		for px in n:
+			var p := Vector2((px + 0.5) / n * 2.0 - 1.0, (py + 0.5) / n * 2.0 - 1.0)
+			var r := p.length()
+			var a := p.angle()
+			var edge := 1.0 - (0.06 * (0.5 + 0.5 * cos(a * 12.0)) if style == "wave" else 0.0)
+			var solid := r <= edge and r >= 0.08
+			# The carrier's spokes: five kidney-shaped windows between the hub and the rotor.
+			if r > 0.27 and r < 0.53 and absf(wrapf(a * 5.0, -PI, PI)) < 1.6:
+				solid = false
+			# Faint machining rings across the rotor face.
+			var shade := 0.92 + 0.08 * sin(r * 260.0) if r > 0.6 else 1.0
+			img.set_pixel(px, py, Color(shade, shade, shade, 1.0 if solid else 0.0))
+	for row in DISC_HOLES.get(style, []):
+		for k in int(row[1]):
+			var a := (k + float(row[3])) * TAU / float(row[1])
+			var c := Vector2(cos(a), sin(a)) * float(row[0])
+			var hr := float(row[2])
+			for py in range(floori((c.y - hr + 1.0) * 0.5 * n), ceili((c.y + hr + 1.0) * 0.5 * n) + 1):
+				for px in range(floori((c.x - hr + 1.0) * 0.5 * n), ceili((c.x + hr + 1.0) * 0.5 * n) + 1):
+					if px >= 0 and py >= 0 and px < n and py < n \
+							and Vector2((px + 0.5) / n * 2.0 - 1.0, (py + 0.5) / n * 2.0 - 1.0).distance_to(c) <= hr:
+						img.set_pixel(px, py, Color(0.0, 0.0, 0.0, 0.0))
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_disc_faces[style] = tex
+	return tex
+
+
+## A flat ring of a disc `r` across, from `from` to `to` of the way out, `thick` thick, facing
+## along x, mapped onto its face (see disc_face); `rim` closes its outer edge.
+static func _disc_ring(r: float, from: float, to: float, thick: float, rim: bool) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var segs := 64
+	for face in [-1.0, 1.0]:
+		for i in segs:
+			var quad := []
+			for k in [[i, from], [i + 1, from], [i + 1, to], [i, to]]:
+				var a := float(k[0]) * TAU / segs
+				var p := Vector2(cos(a), sin(a)) * float(k[1])
+				quad.append([Vector3(face * thick * 0.5, p.y * r, p.x * r), Vector2(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5)])
+			var order := [0, 1, 2, 0, 2, 3] if face > 0.0 else [0, 2, 1, 0, 3, 2]
+			for j in order:
+				st.set_normal(Vector3(face, 0.0, 0.0))
+				st.set_uv(quad[j][1])
+				st.add_vertex(quad[j][0])
+	if rim:
+		for i in segs:
+			var a0 := float(i) * TAU / segs
+			var a1 := float(i + 1) * TAU / segs
+			var ps := [Vector3(-thick * 0.5, sin(a0) * r * to, cos(a0) * r * to), Vector3(thick * 0.5, sin(a0) * r * to, cos(a0) * r * to),
+				Vector3(thick * 0.5, sin(a1) * r * to, cos(a1) * r * to), Vector3(-thick * 0.5, sin(a1) * r * to, cos(a1) * r * to)]
+			for j in [0, 2, 1, 0, 3, 2]:
+				var p: Vector3 = ps[j]
+				st.set_normal(Vector3(0.0, p.y, p.z).normalized())
+				st.set_uv(Vector2(0.5 + 0.5 * to, 0.5))
+				st.add_vertex(p)
+	return st.commit()
+
+
+func _disc_mat(col: Color, face: Texture2D, metallic: float, roughness: float) -> StandardMaterial3D:
+	var m := _mat(col, metallic, roughness)
+	m.albedo_texture = face
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.5
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
 
 
 ## A drum brake: a finned drum cast into the hub (turning with the wheel), and a backplate

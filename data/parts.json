@@ -47,29 +47,59 @@
 				"naked"
 			]
 		},
-		"chromoly_trellis": {
-			"name": "Chromoly trellis frame",
-			"description": "Light lattice of thin tubes. Quick, flickable steering.",
-			"mass": 11.5,
+		"steel_trestle": {
+			"name": "Steel trestle frame",
+			"description": "No frame round the engine: a short lattice of steel tubes bolts the head stock to the cylinder heads, and the engine carries the rest. Light and quick to steer.",
+			"mass": 8.5,
 			"wheelbase": 1.41,
 			"com_height": 0.63,
 			"rake_deg": 25.0,
 			"seat_height": 0.85,
 			"color": [
-				0.85,
-				0.35,
+				0.72,
+				0.07,
 				0.05
 			],
 			"cda": 0.55,
-			"style": "trellis",
-			"type": "Chromoly trellis",
+			"style": "trestle",
+			"type": "Trestle, engine stressed",
 			"styles": [
 				"naked",
-				"sport",
 				"cafe",
 				"supermoto",
-				"roader"
-			]
+				"sport"
+			],
+			"price": 1150,
+			"pack": "naked"
+		},
+		"alu_trestle": {
+			"name": "Cast alloy trestle frame",
+			"description": "A deep cast alloy beam a side from the head stock to the cylinder heads, the engine hung from it as a stressed member. Stiff, light and very modern.",
+			"mass": 7.0,
+			"wheelbase": 1.42,
+			"com_height": 0.63,
+			"rake_deg": 24.0,
+			"seat_height": 0.85,
+			"color": [
+				0.13,
+				0.13,
+				0.14
+			],
+			"cda": 0.55,
+			"style": "trestle",
+			"type": "Trestle, engine stressed",
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"race"
+			],
+			"price": 1500,
+			"look": {
+				"cast": true
+			},
+			"lightweight": true,
+			"pack": "sport"
 		},
 		"alu_twin_spar": {
 			"name": "Aluminium twin-spar frame",
@@ -271,8 +301,8 @@
 			]
 		},
 		"adv_trellis": {
-			"name": "Tall adventure trellis frame",
-			"description": "Long-travel steel trellis with a bolt-on rack. Roomy, tall and happy loaded up.",
+			"name": "Tall adventure tubular frame",
+			"description": "Long-travel steel tubular frame with a bolt-on rack. Roomy, tall and happy loaded up.",
 			"mass": 13.0,
 			"wheelbase": 1.56,
 			"com_height": 0.68,
@@ -285,7 +315,7 @@
 			],
 			"cda": 0.62,
 			"style": "adv",
-			"type": "Adventure trellis",
+			"type": "Adventure tubular",
 			"price": 1300,
 			"geo": {
 				"arm": 0.62,
@@ -418,30 +448,6 @@
 				"cafe",
 				"classic",
 				"naked"
-			],
-			"pack": "cafe",
-			"price": 1170
-		},
-		"cafe_bronze_trellis": {
-			"mass": 11.5,
-			"wheelbase": 1.4,
-			"com_height": 0.63,
-			"rake_deg": 24.5,
-			"seat_height": 0.85,
-			"cda": 0.55,
-			"style": "trellis",
-			"type": "Chromoly trellis",
-			"name": "Bronze trellis cafe frame",
-			"description": "Chromoly lattice in bronze powder coat. Modern cafe, sharp handling.",
-			"color": [
-				0.48,
-				0.34,
-				0.16
-			],
-			"styles": [
-				"cafe",
-				"naked",
-				"sport"
 			],
 			"pack": "cafe",
 			"price": 1170
@@ -811,29 +817,6 @@
 			"pack": "mx",
 			"price": 1170
 		},
-		"sm_trellis_red": {
-			"mass": 11.5,
-			"wheelbase": 1.44,
-			"com_height": 0.63,
-			"rake_deg": 25.0,
-			"seat_height": 0.89,
-			"cda": 0.55,
-			"style": "trellis",
-			"type": "Chromoly trellis",
-			"name": "Supermoto trellis frame",
-			"description": "Red trellis tuned for a supermoto: short, stiff and steep.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"supermoto",
-				"naked"
-			],
-			"pack": "supermoto",
-			"price": 1170
-		},
 		"sm_white_loop": {
 			"mass": 9.0,
 			"fixed_mass": 24.0,
@@ -881,7 +864,7 @@
 			"seat_height": 0.9,
 			"cda": 0.62,
 			"style": "adv",
-			"type": "Adventure trellis",
+			"type": "Adventure tubular",
 			"geo": {
 				"arm": 0.62,
 				"pivot_y": 0.18,
@@ -896,8 +879,8 @@
 				"exhaust": "upswept",
 				"swingarm": "box"
 			},
-			"name": "Rally trellis frame",
-			"description": "Taller and longer-travel trellis for the Dakar dreamers.",
+			"name": "Rally tubular frame",
+			"description": "Taller and longer-travel tubular frame for the Dakar dreamers.",
 			"color": [
 				0.93,
 				0.93,
@@ -917,7 +900,7 @@
 			"seat_height": 0.85,
 			"cda": 0.62,
 			"style": "adv",
-			"type": "Adventure trellis",
+			"type": "Adventure tubular",
 			"geo": {
 				"arm": 0.62,
 				"pivot_y": 0.18,
@@ -1090,29 +1073,6 @@
 			"pack": "race",
 			"price": 1440
 		},
-		"naked_trellis_green": {
-			"mass": 11.5,
-			"wheelbase": 1.42,
-			"com_height": 0.63,
-			"rake_deg": 24.5,
-			"seat_height": 0.85,
-			"cda": 0.55,
-			"style": "trellis",
-			"type": "Chromoly trellis",
-			"name": "Green trellis frame",
-			"description": "Lime trellis frame.",
-			"color": [
-				0.45,
-				0.8,
-				0.08
-			],
-			"styles": [
-				"naked",
-				"sport"
-			],
-			"pack": "naked",
-			"price": 1170
-		},
 		"naked_cradle_black": {
 			"mass": 16.0,
 			"wheelbase": 1.43,
@@ -1144,7 +1104,7 @@
 			"seat_height": 0.84,
 			"cda": 0.62,
 			"style": "adv",
-			"type": "Adventure trellis",
+			"type": "Adventure tubular",
 			"geo": {
 				"arm": 0.62,
 				"pivot_y": 0.18,
@@ -1159,8 +1119,8 @@
 				"exhaust": "upswept",
 				"swingarm": "box"
 			},
-			"name": "Road trellis frame",
-			"description": "Tall trellis set up for the road.",
+			"name": "Road tubular frame",
+			"description": "Tall tubular frame set up for the road.",
 			"color": [
 				0.3,
 				0.3,
@@ -4091,6 +4051,31 @@
 			],
 			"pack": "tourer",
 			"price": 300
+		},
+		"fat_18_billet": {
+			"mass": 9.5,
+			"type": "Billet",
+			"style": "cast",
+			"diameter": 18,
+			"rim_width": 8.5,
+			"tyres": [
+				200,
+				300
+			],
+			"name": "18\" billet fat-tyre rear wheel",
+			"description": "A huge 8.5\" billet rim for a super-fat rear tyre. Pure show.",
+			"color": [
+				0.86,
+				0.87,
+				0.89
+			],
+			"styles": [
+				"chopper",
+				"cruiser",
+				"bobber"
+			],
+			"price": 650,
+			"pack": "chopper"
 		}
 	},
 	"tyre": {
@@ -5931,6 +5916,73 @@
 			],
 			"price": 190,
 			"tread": "studs"
+		},
+		"fat_road_240": {
+			"name": "Fat road tyre 240/40",
+			"description": "A super-fat 240 mm rear tyre for the show-bike look. Heavy and slow to tip in, but planted in a straight line.",
+			"mass": 8.5,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 240,
+			"aspect": 0.4,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.25,
+			"stiffness": 0.95,
+			"slide": 0.82,
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				18
+			],
+			"styles": [
+				"chopper",
+				"cruiser",
+				"bobber"
+			],
+			"price": 260,
+			"pack": "chopper"
+		},
+		"fat_road_300": {
+			"name": "Fat road tyre 300/35",
+			"description": "As fat as rear tyres come: 300 mm of rubber. Turning takes a shove.",
+			"mass": 11.0,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 300,
+			"aspect": 0.35,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.35,
+			"stiffness": 0.95,
+			"slide": 0.82,
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				18
+			],
+			"styles": [
+				"chopper",
+				"cruiser"
+			],
+			"price": 340,
+			"pack": "chopper"
 		}
 	},
 	"disc": {
@@ -6271,45 +6323,33 @@
 		}
 	},
 	"tank": {
-		"peanut_9": {
-			"name": "Peanut tank, 9 L",
-			"description": "Tiny, slim and very bobber.",
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
+		"teardrop_14": {
+			"name": "Teardrop tank, 14 L",
+			"description": "A rounded 50s teardrop with rubber knee pads and a chrome badge.",
+			"mass": 3.8,
+			"capacity": 14,
+			"style": "cafe",
 			"color": [
-				0.1,
-				0.1,
-				0.1
+				0.86,
+				0.82,
+				0.7
 			],
+			"price": 240,
+			"look": {
+				"shape": "teardrop",
+				"badge": "oval",
+				"pads": true
+			},
 			"styles": [
-				"bobber",
-				"chopper",
-				"cruiser",
+				"classic",
+				"cafe",
 				"scrambler"
-			]
-		},
-		"enduro_12": {
-			"name": "Enduro tank, 12 L",
-			"description": "Narrow plastic tank with radiator shrouds.",
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"color": [
-				0.95,
-				0.95,
-				0.95
 			],
-			"styles": [
-				"mx",
-				"supermoto",
-				"adventure",
-				"scrambler"
-			]
+			"pack": "classic"
 		},
 		"cafe_15": {
 			"name": "Café racer tank, 15 L",
-			"description": "Long teardrop with knee dents.",
+			"description": "Long and low with deep knee cut-outs and a Monza flip cap.",
 			"mass": 4.0,
 			"capacity": 15,
 			"style": "cafe",
@@ -6318,15 +6358,95 @@
 				0.1,
 				0.08
 			],
+			"price": 260,
+			"look": {
+				"shape": "cafe",
+				"cap": "monza",
+				"badge": "none",
+				"pads": false
+			},
 			"styles": [
 				"cafe",
 				"classic",
 				"naked"
-			]
+			],
+			"pack": "cafe"
+		},
+		"peanut_9": {
+			"name": "Peanut tank, 9 L",
+			"description": "Slim and tiny, perched high on the frame. Very bobber.",
+			"mass": 2.5,
+			"capacity": 9,
+			"style": "peanut",
+			"color": [
+				0.42,
+				0.05,
+				0.05
+			],
+			"price": 180,
+			"look": {
+				"shape": "peanut",
+				"badge": "oval",
+				"pads": false
+			},
+			"styles": [
+				"bobber",
+				"chopper",
+				"cruiser"
+			],
+			"pack": "bobber"
+		},
+		"coffin_10": {
+			"name": "Coffin tank, 10 L",
+			"description": "Square-edged with a flat top and a flush aircraft cap.",
+			"mass": 3.0,
+			"capacity": 10,
+			"style": "peanut",
+			"color": [
+				0.08,
+				0.08,
+				0.085
+			],
+			"price": 220,
+			"look": {
+				"shape": "coffin",
+				"cap": "flush",
+				"badge": "none",
+				"pads": false
+			},
+			"styles": [
+				"chopper",
+				"bobber"
+			],
+			"pack": "chopper"
+		},
+		"fatbob_23": {
+			"name": "Fat bob tank, 23 L",
+			"description": "The big split cruiser tank: twin caps and a chrome console down the middle with the speedo in it.",
+			"mass": 5.5,
+			"capacity": 23,
+			"style": "touring",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"price": 340,
+			"look": {
+				"shape": "fatbob",
+				"cap": "twin",
+				"console": true,
+				"badge": "wing"
+			},
+			"styles": [
+				"cruiser",
+				"tourer"
+			],
+			"pack": "cruiser"
 		},
 		"sport_17": {
 			"name": "Sport tank, 17 L",
-			"description": "Angular, tucks you in.",
+			"description": "Angular, with a grippy pad where your chest lands. Tucks you in.",
 			"mass": 3.5,
 			"capacity": 17,
 			"style": "sport",
@@ -6335,33 +6455,22 @@
 				0.3,
 				0.75
 			],
+			"price": 260,
+			"look": {
+				"shape": "sport",
+				"cap": "flush",
+				"badge": "none"
+			},
 			"styles": [
 				"sport",
-				"race",
 				"naked",
 				"roader"
-			]
-		},
-		"touring_23": {
-			"name": "Touring tank, 23 L",
-			"description": "Big and broad. Goes forever between fills.",
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"color": [
-				0.2,
-				0.2,
-				0.22
 			],
-			"styles": [
-				"tourer",
-				"adventure",
-				"roader"
-			]
+			"pack": "sport"
 		},
 		"carbon_sport_16": {
-			"name": "Carbon sport tank, 16 L",
-			"description": "Race carbon shell over a fuel cell. Saves weight up high where you feel it.",
+			"name": "Carbon race tank, 16 L",
+			"description": "A race carbon shell over a fuel cell, cut low for tucking in. Saves weight up high where you feel it.",
 			"mass": 1.4,
 			"capacity": 16,
 			"style": "sport",
@@ -6370,1621 +6479,90 @@
 				0.06,
 				0.07
 			],
+			"price": 520,
 			"lightweight": true,
 			"material": "carbon",
+			"look": {
+				"shape": "race",
+				"cap": "flush",
+				"badge": "none"
+			},
 			"styles": [
 				"race",
 				"sport"
-			]
+			],
+			"pack": "race"
 		},
-		"alloy_cafe_14": {
-			"name": "Hand-beaten alloy café tank, 14 L",
-			"description": "Polished aluminium with a quick-release cap.",
-			"mass": 2.0,
-			"capacity": 14,
-			"style": "cafe",
-			"color": [
-				0.82,
-				0.83,
-				0.85
-			],
-			"lightweight": true,
-			"styles": [
-				"cafe",
-				"classic"
-			]
-		},
-		"teardrop_classic": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Teardrop tank, two-tone",
-			"description": "The rounded 50s teardrop in two-tone paint with chrome knee pads.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"shape": "bonnie",
-				"scale": [
-					0.92,
-					0.95,
-					0.9
-				],
-				"paint": "two_tone",
-				"accent": [
-					0.9,
-					0.86,
-					0.74
-				],
-				"badge": "oval",
-				"pads": true
-			},
-			"styles": [
-				"classic",
-				"cafe"
-			],
-			"pack": "classic",
-			"price": 265
-		},
-		"slab_pinstripe": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Slab-sided tank, pinstriped",
-			"description": "Flat-sided 70s tank with hand-painted pinstripes and a wing badge.",
-			"color": [
-				0.05,
-				0.24,
-				0.13
-			],
-			"look": {
-				"shape": "slab",
-				"scale": [
-					0.9,
-					0.92,
-					0.8
-				],
-				"paint": "pin",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				],
-				"badge": "wing",
-				"cap": "stock"
-			},
-			"styles": [
-				"classic"
-			],
-			"pack": "classic",
-			"price": 265
-		},
-		"chrome_panel_tank": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Chrome-panelled tank",
-			"description": "Chrome tank with painted top panel and rubber knee grips. Shows every fingerprint.",
-			"color": [
-				0.86,
-				0.87,
-				0.89
-			],
-			"look": {
-				"shape": "bonnie",
-				"scale": [
-					0.9,
-					0.95,
-					0.88
-				],
-				"paint": "band",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"pads": true,
-				"badge": "roundel"
-			},
-			"styles": [
-				"classic"
-			],
-			"pack": "classic",
-			"price": 330
-		},
-		"classic_console_tank": {
+		"touring_23": {
+			"name": "Touring tank, 23 L",
+			"description": "Broad and deep with knee recesses. Goes forever between fills.",
 			"mass": 5.5,
 			"capacity": 23,
 			"style": "touring",
-			"name": "Touring tank with dash console",
-			"description": "Big tank with a chrome console strip and clock on the top. Range for days.",
 			"color": [
-				0.04,
-				0.07,
-				0.2
+				0.2,
+				0.2,
+				0.22
 			],
+			"price": 300,
 			"look": {
-				"shape": "slab",
-				"scale": [
-					0.92,
-					0.9,
-					0.78
-				],
-				"console": true,
-				"paint": "pin",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				]
-			},
-			"styles": [
-				"classic",
-				"tourer",
-				"cruiser"
-			],
-			"pack": "classic",
-			"price": 265
-		},
-		"kneedent_alloy": {
-			"mass": 2.0,
-			"capacity": 14,
-			"style": "cafe",
-			"lightweight": true,
-			"name": "Long alloy tank, knee dents",
-			"description": "Hand-beaten polished alloy with deep knee cut-outs and a monza cap.",
-			"color": [
-				0.8,
-				0.8,
-				0.8
-			],
-			"look": {
-				"shape": "kneedent",
-				"cap": "monza",
-				"badge": "none",
-				"pads": false
-			},
-			"styles": [
-				"cafe"
-			],
-			"pack": "cafe",
-			"price": 350
-		},
-		"cafe_racing_stripe": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Cafe tank, racing stripes",
-			"description": "Long cafe tank with twin racing stripes over the top and a flush cap.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"shape": "kneedent",
-				"paint": "racing",
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				],
-				"cap": "flush",
-				"badge": "none"
-			},
-			"styles": [
-				"cafe",
-				"sport"
-			],
-			"pack": "cafe",
-			"price": 265
-		},
-		"cafe_band_tank": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Cafe tank, painted band",
-			"description": "A painted band round a cream tank, rubber knee pads and roundel badges.",
-			"color": [
-				0.9,
-				0.86,
-				0.74
-			],
-			"look": {
-				"shape": "cafe",
-				"paint": "band",
-				"accent": [
-					0.05,
-					0.24,
-					0.13
-				],
-				"badge": "roundel",
-				"pads": true
-			},
-			"styles": [
-				"cafe",
-				"classic"
-			],
-			"pack": "cafe",
-			"price": 265
-		},
-		"cafe_spitfire_tank": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Long low racing tank",
-			"description": "Long, low and pointed at the front for a flat back over the tank.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"shape": "spitfire",
-				"cap": "monza",
-				"paint": "pin",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"cafe",
-				"race"
-			],
-			"pack": "cafe",
-			"price": 265
-		},
-		"bobber_mini_peanut": {
-			"mass": 2.5,
-			"capacity": 7,
-			"style": "peanut",
-			"name": "Mini peanut tank",
-			"description": "Tiny slim peanut, 7 litres. The fuel light is a lifestyle.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "sportster",
-				"scale": [
-					0.9,
-					0.9,
-					0.95
-				],
-				"paint": "scallop",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				]
-			},
-			"styles": [
-				"bobber",
-				"chopper"
-			],
-			"pack": "bobber",
-			"price": 265
-		},
-		"bobber_coffin": {
-			"mass": 2.5,
-			"capacity": 10,
-			"style": "peanut",
-			"name": "Coffin tank",
-			"description": "A square-edged coffin tank with a flush cap.",
-			"color": [
-				0.08,
-				0.08,
-				0.085
-			],
-			"look": {
-				"shape": "coffin",
-				"cap": "flush",
-				"badge": "none",
-				"paint": "pin",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				]
-			},
-			"styles": [
-				"bobber",
-				"chopper"
-			],
-			"pack": "bobber",
-			"price": 265
-		},
-		"bobber_wassell": {
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
-			"name": "Little round tank",
-			"description": "A short round 60s tank with a big filler cap.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"shape": "wassell",
-				"cap": "monza",
-				"badge": "none",
-				"pads": false
-			},
-			"styles": [
-				"bobber",
-				"scrambler",
-				"chopper"
-			],
-			"pack": "bobber",
-			"price": 265
-		},
-		"bobber_two_tone_peanut": {
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
-			"name": "Two-tone peanut tank",
-			"description": "Cream top, red sides, chrome badge. Classic bobber colours.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"shape": "peanut",
-				"paint": "two_tone",
-				"accent": [
-					0.9,
-					0.86,
-					0.74
-				],
-				"badge": "wing"
-			},
-			"styles": [
-				"bobber",
-				"classic",
-				"cruiser"
-			],
-			"pack": "bobber",
-			"price": 265
-		},
-		"chopper_sportster_flames": {
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
-			"name": "Slim peanut, scalloped",
-			"description": "A slim peanut with gold-edged scallops down the sides.",
-			"color": [
-				0.33,
-				0.08,
-				0.45
-			],
-			"look": {
-				"shape": "sportster",
-				"paint": "scallop",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"chopper"
-			],
-			"pack": "chopper",
-			"price": 265
-		},
-		"chopper_coffin_chrome": {
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
-			"name": "Chrome coffin tank",
-			"description": "A long chrome coffin with a flush cap.",
-			"color": [
-				0.86,
-				0.87,
-				0.89
-			],
-			"look": {
-				"shape": "coffin",
-				"scale": [
-					1.15,
-					0.95,
-					1.0
-				],
-				"cap": "flush",
-				"badge": "none"
-			},
-			"styles": [
-				"chopper"
-			],
-			"pack": "chopper",
-			"price": 350
-		},
-		"chopper_teardrop_candy": {
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
-			"name": "Candy teardrop tank",
-			"description": "A small teardrop in candy paint with a pinstripe.",
-			"color": [
-				0.55,
-				0.02,
-				0.04
-			],
-			"look": {
-				"shape": "teardrop",
-				"scale": [
-					0.85,
-					0.85,
-					0.9
-				],
-				"paint": "pin",
-				"accent": [
-					0.95,
-					0.93,
-					0.86
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"chopper",
-				"bobber"
-			],
-			"pack": "chopper",
-			"price": 265
-		},
-		"chopper_stretched_peanut": {
-			"mass": 2.5,
-			"capacity": 9,
-			"style": "peanut",
-			"name": "Stretched peanut, two-tone",
-			"description": "A stretched peanut tank in two-tone, sat high on the backbone.",
-			"color": [
-				0.04,
-				0.42,
-				0.42
-			],
-			"look": {
-				"shape": "sportster",
-				"scale": [
-					1.25,
-					0.9,
-					1.0
-				],
-				"paint": "two_tone",
-				"accent": [
-					0.95,
-					0.93,
-					0.86
-				],
-				"badge": "wing"
-			},
-			"styles": [
-				"chopper"
-			],
-			"pack": "chopper",
-			"price": 265
-		},
-		"cruiser_fatbob_console": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Fat split tank with console",
-			"description": "The big split fuel tank with a chrome dash console down the middle.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "fatbob",
-				"scale": [
-					0.95,
-					0.88,
-					0.8
-				],
-				"console": true,
-				"cap": "twin",
-				"badge": "wing"
-			},
-			"styles": [
-				"cruiser",
-				"tourer"
-			],
-			"pack": "cruiser",
-			"price": 265
-		},
-		"cruiser_fatbob_flames": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Fat tank, scallops",
-			"description": "Fat cruiser tank with ivory scallops and gold pinstripe.",
-			"color": [
-				0.55,
-				0.02,
-				0.04
-			],
-			"look": {
-				"shape": "fatbob",
-				"scale": [
-					0.95,
-					0.88,
-					0.8
-				],
-				"paint": "scallop",
-				"accent": [
-					0.95,
-					0.93,
-					0.86
-				],
-				"cap": "twin",
-				"badge": "none"
-			},
-			"styles": [
-				"cruiser"
-			],
-			"pack": "cruiser",
-			"price": 265
-		},
-		"cruiser_two_tone_fat": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Two-tone fat tank",
-			"description": "Big tank in two-tone with a chrome wing badge.",
-			"color": [
-				0.04,
-				0.42,
-				0.42
-			],
-			"look": {
-				"shape": "fatbob",
-				"scale": [
-					0.95,
-					0.88,
-					0.8
-				],
-				"paint": "two_tone",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"badge": "wing",
-				"console": true
-			},
-			"styles": [
-				"cruiser",
-				"classic"
-			],
-			"pack": "cruiser",
-			"price": 265
-		},
-		"cruiser_slim_sport": {
-			"mass": 2.5,
-			"capacity": 12,
-			"style": "peanut",
-			"name": "Slim cruiser tank",
-			"description": "A 12 litre slim tank for a lighter cruiser look.",
-			"color": [
-				0.68,
-				0.58,
-				0.4
-			],
-			"look": {
-				"shape": "sportster",
-				"scale": [
-					1.12,
-					1.15,
-					0.95
-				],
-				"paint": "pin",
-				"accent": [
-					0.28,
-					0.16,
-					0.09
-				],
+				"shape": "touring",
 				"badge": "oval"
 			},
 			"styles": [
-				"cruiser",
-				"bobber"
+				"tourer",
+				"roader"
 			],
-			"pack": "cruiser",
-			"price": 265
+			"pack": "tourer"
 		},
-		"scrambler_round_tank": {
-			"mass": 2.5,
-			"capacity": 11,
-			"style": "peanut",
-			"name": "Round scrambler tank, two-tone",
-			"description": "A round 60s tank in two-tone with rubber knee pads.",
-			"color": [
-				0.05,
-				0.24,
-				0.13
-			],
-			"look": {
-				"shape": "bonnie",
-				"scale": [
-					0.85,
-					0.92,
-					0.85
-				],
-				"paint": "two_tone",
-				"accent": [
-					0.9,
-					0.86,
-					0.74
-				],
-				"pads": true,
-				"badge": "roundel"
-			},
-			"styles": [
-				"scrambler",
-				"classic"
-			],
-			"pack": "scrambler",
-			"price": 265
-		},
-		"scrambler_slab_stripe": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Slab tank, racing stripe",
-			"description": "Flat-sided tank with a single wide stripe.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"look": {
-				"shape": "slab",
-				"scale": [
-					0.88,
-					0.92,
-					0.8
-				],
-				"paint": "racing",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"scrambler",
-				"naked"
-			],
-			"pack": "scrambler",
-			"price": 265
-		},
-		"scrambler_alloy_wassell": {
-			"mass": 2.0,
-			"capacity": 9,
-			"style": "cafe",
-			"lightweight": true,
-			"name": "Brushed alloy round tank",
-			"description": "Small brushed alloy tank, big cap.",
-			"color": [
-				0.8,
-				0.8,
-				0.8
-			],
-			"look": {
-				"shape": "wassell",
-				"cap": "monza",
-				"badge": "none",
-				"pads": false
-			},
-			"styles": [
-				"scrambler",
-				"bobber",
-				"mx"
-			],
-			"pack": "scrambler",
-			"price": 265
-		},
-		"scrambler_banded": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Banded scrambler tank",
-			"description": "Olive tank with a painted band and roundels.",
-			"color": [
-				0.28,
-				0.3,
-				0.14
-			],
-			"look": {
-				"shape": "bonnie",
-				"scale": [
-					0.88,
-					0.92,
-					0.85
-				],
-				"paint": "band",
-				"accent": [
-					0.9,
-					0.86,
-					0.74
-				],
-				"badge": "roundel"
-			},
-			"styles": [
-				"scrambler"
-			],
-			"pack": "scrambler",
-			"price": 265
-		},
-		"mx_orange_tank": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Plastic MX tank, orange",
-			"description": "Orange plastic tank with the shrouds moulded on.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"look": {
-				"badge": "none"
-			},
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 265
-		},
-		"mx_yellow_tank": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Plastic MX tank, yellow",
-			"description": "Yellow tank, black shrouds.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"look": {
-				"paint": "two_tone",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 265
-		},
-		"mx_blue_tank": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Plastic MX tank, blue stripe",
-			"description": "Blue tank with white racing stripes.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"paint": "racing",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 265
-		},
-		"mx_vintage_alloy": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Vintage alloy MX tank",
-			"description": "Brushed alloy 70s MX tank with a rubber strap.",
-			"color": [
-				0.8,
-				0.8,
-				0.8
-			],
-			"look": {
-				"shape": "wassell",
-				"cap": "monza",
-				"badge": "none"
-			},
-			"styles": [
-				"mx",
-				"scrambler"
-			],
-			"pack": "mx",
-			"price": 265
-		},
-		"sm_orange_tank": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Supermoto tank, orange",
-			"description": "Orange tank with black shrouds.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"look": {
-				"shape": "sm",
-				"shrouds": true,
-				"paint": "two_tone",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 265
-		},
-		"sm_white_tank": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Supermoto tank, white stripe",
-			"description": "White tank with red racing stripes.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"shape": "sm",
-				"shrouds": true,
-				"paint": "racing",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 265
-		},
-		"sm_lime_tank": {
-			"mass": 2.0,
-			"capacity": 12,
-			"style": "enduro",
-			"name": "Supermoto tank, lime",
-			"description": "Lime tank with white racing stripes.",
-			"color": [
-				0.45,
-				0.8,
-				0.08
-			],
-			"look": {
-				"shape": "sm",
-				"shrouds": true,
-				"paint": "racing",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 265
-		},
-		"sm_street_slab": {
-			"mass": 3.5,
-			"capacity": 13,
-			"style": "sport",
-			"name": "Street motard tank",
-			"description": "A slabby street tank for a road-going motard.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "slab",
-				"scale": [
-					0.85,
-					0.9,
-					0.9
-				],
-				"paint": "band",
-				"accent": [
-					0.92,
-					0.38,
-					0.04
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"supermoto",
-				"naked"
-			],
-			"pack": "supermoto",
-			"price": 265
-		},
-		"adv_big_tank": {
-			"mass": 5.5,
-			"capacity": 30,
+		"adv_25": {
+			"name": "Adventure tank, 25 L",
+			"description": "Tall, wide-shouldered and creased, with plastic knee panels. Range for days.",
+			"mass": 5.0,
+			"capacity": 25,
 			"style": "touring",
-			"name": "Rally tank, 30 L",
-			"description": "A huge rally tank. Range for weeks.",
 			"color": [
-				0.93,
-				0.93,
-				0.92
+				0.85,
+				0.85,
+				0.83
 			],
-			"look": {
-				"shape": "adv",
-				"scale": [
-					1.0,
-					0.95,
-					0.85
-				],
-				"paint": "racing",
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 265
-		},
-		"adv_orange_tank": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Orange adventure tank",
-			"description": "Orange tank, black side panels.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"look": {
-				"shape": "adv",
-				"paint": "two_tone",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 265
-		},
-		"adv_sand_tank": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Desert sand tank",
-			"description": "Matt sand paint with a black band.",
-			"color": [
-				0.68,
-				0.58,
-				0.4
-			],
-			"look": {
-				"shape": "adv",
-				"paint": "band",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 265
-		},
-		"adv_alloy_tank": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Brushed alloy expedition tank",
-			"description": "Brushed alloy expedition tank, flush cap.",
-			"color": [
-				0.8,
-				0.8,
-				0.8
-			],
+			"price": 360,
 			"look": {
 				"shape": "adv",
 				"cap": "flush",
-				"badge": "none"
+				"badge": "none",
+				"panels": true
 			},
 			"styles": [
 				"adventure",
 				"tourer"
 			],
-			"pack": "adventure",
-			"price": 330
+			"pack": "adventure"
 		},
-		"sport_blue_white": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Sport tank, blue and white",
-			"description": "Blue tank with white racing stripes.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"paint": "racing",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"sport",
-				"race"
-			],
-			"pack": "sport",
-			"price": 265
-		},
-		"sport_red_two_tone": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Sport tank, red and white",
-			"description": "Red with a white top.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"paint": "two_tone",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 265
-		},
-		"sport_green_pin": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Sport tank, green pinstripe",
-			"description": "Lime with black pinstripe.",
-			"color": [
-				0.45,
-				0.8,
-				0.08
-			],
-			"look": {
-				"paint": "pin",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 265
-		},
-		"sport_black_band": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Sport tank, black and gold",
-			"description": "Black with a gold band.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"paint": "band",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"sport",
-				"naked"
-			],
-			"pack": "sport",
-			"price": 265
-		},
-		"race_carbon_stripe": {
-			"mass": 1.4,
-			"capacity": 16,
-			"style": "sport",
-			"lightweight": true,
-			"material": "carbon",
-			"name": "Carbon tank, red stripe",
-			"description": "Carbon tank with a red stripe.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"paint": "racing",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 265
-		},
-		"race_white_red": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Race tank, white and red",
-			"description": "White tank with red top.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"paint": "two_tone",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"race",
-				"sport"
-			],
-			"pack": "race",
-			"price": 265
-		},
-		"race_yellow_tank": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Race tank, yellow",
-			"description": "Yellow tank with black stripe.",
+		"enduro_12": {
+			"name": "Enduro tank, 12 L",
+			"description": "Narrow plastic tank with radiator shrouds down the sides.",
+			"mass": 2.0,
+			"capacity": 12,
+			"style": "enduro",
 			"color": [
 				0.95,
-				0.74,
-				0.08
+				0.95,
+				0.95
 			],
+			"price": 200,
+			"material": "plastic",
 			"look": {
-				"paint": "racing",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
+				"shape": "enduro",
 				"badge": "none"
 			},
 			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 265
-		},
-		"race_vintage_spitfire": {
-			"mass": 2.0,
-			"capacity": 14,
-			"style": "cafe",
-			"lightweight": true,
-			"name": "Vintage racer tank",
-			"description": "Long alloy racer tank.",
-			"color": [
-				0.8,
-				0.8,
-				0.8
-			],
-			"look": {
-				"shape": "spitfire",
-				"cap": "monza",
-				"badge": "none",
-				"pads": false
-			},
-			"styles": [
-				"race",
-				"cafe"
-			],
-			"pack": "race",
-			"price": 265
-		},
-		"naked_slab_orange": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Naked tank, orange",
-			"description": "Slabby naked tank, orange and black.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"look": {
-				"shape": "slab",
-				"paint": "two_tone",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"naked"
-			],
-			"pack": "naked",
-			"price": 265
-		},
-		"naked_grey_tank": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Naked tank, grey and red",
-			"description": "Grey with a red stripe.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"paint": "racing",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"naked"
-			],
-			"pack": "naked",
-			"price": 265
-		},
-		"naked_retro_tank": {
-			"mass": 4.0,
-			"capacity": 15,
-			"style": "cafe",
-			"name": "Retro naked tank",
-			"description": "Rounded retro tank, silver with stripes.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"shape": "teardrop",
-				"paint": "pin",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"badge": "roundel"
-			},
-			"styles": [
-				"naked",
-				"cafe",
-				"classic"
-			],
-			"pack": "naked",
-			"price": 265
-		},
-		"naked_black_matt": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Matt black naked tank",
-			"description": "Matt black, no badges.",
-			"color": [
-				0.08,
-				0.08,
-				0.085
-			],
-			"look": {
-				"badge": "none"
-			},
-			"styles": [
-				"naked",
-				"sport"
-			],
-			"pack": "naked",
-			"price": 265
-		},
-		"roader_slab_tank": {
-			"mass": 3.5,
-			"capacity": 19,
-			"style": "sport",
-			"name": "Tall roader tank",
-			"description": "Tall sculpted tank.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"shape": "sport",
-				"scale": [
-					1.0,
-					1.05,
-					1.08
-				],
-				"paint": "two_tone",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"roader"
-			],
-			"pack": "roader",
-			"price": 265
-		},
-		"roader_red_tank": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Red roader tank",
-			"description": "Red with black.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"paint": "band",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"roader",
-				"sport"
-			],
-			"pack": "roader",
-			"price": 265
-		},
-		"roader_white_tank": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "White roader tank",
-			"description": "White with blue stripe.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"paint": "racing",
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				],
-				"badge": "none"
-			},
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
-			"price": 265
-		},
-		"roader_matt_tank": {
-			"mass": 3.5,
-			"capacity": 17,
-			"style": "sport",
-			"name": "Matt grey roader tank",
-			"description": "Matt grey.",
-			"color": [
-				0.2,
-				0.21,
-				0.23
-			],
-			"look": {
-				"badge": "none"
-			},
-			"styles": [
-				"roader",
+				"mx",
+				"supermoto",
+				"scrambler",
 				"adventure"
 			],
-			"pack": "roader",
-			"price": 265
-		},
-		"tourer_blue": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Touring tank, two-tone blue",
-			"description": "Two-tone blue tank.",
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"paint": "two_tone",
-				"accent": [
-					0.35,
-					0.6,
-					0.85
-				],
-				"badge": "wing"
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
-			"price": 265
-		},
-		"tourer_red": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Touring tank, red with pin",
-			"description": "Red tank with gold pin.",
-			"color": [
-				0.32,
-				0.04,
-				0.04
-			],
-			"look": {
-				"paint": "pin",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				],
-				"badge": "oval",
-				"console": true
-			},
-			"styles": [
-				"tourer",
-				"cruiser"
-			],
-			"pack": "tourer",
-			"price": 265
-		},
-		"tourer_silver": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Touring tank, silver band",
-			"description": "Silver with black band.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"paint": "band",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"badge": "roundel"
-			},
-			"styles": [
-				"tourer",
-				"roader"
-			],
-			"pack": "tourer",
-			"price": 265
-		},
-		"tourer_classic_slab": {
-			"mass": 5.5,
-			"capacity": 23,
-			"style": "touring",
-			"name": "Classic touring slab tank",
-			"description": "Slab-sided classic tourer tank.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "slab",
-				"scale": [
-					1.05,
-					1.1,
-					1.05
-				],
-				"paint": "pin",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"badge": "wing",
-				"pads": true
-			},
-			"styles": [
-				"tourer",
-				"classic"
-			],
-			"pack": "tourer",
-			"price": 265
+			"pack": "mx"
 		}
 	},
 	"saddle": {
@@ -16914,7 +15492,32 @@
 				"cafe",
 				"scrambler",
 				"supermoto"
-			]
+			],
+			"price": 90,
+			"pack": "naked"
+		},
+		"headlight_cowl": {
+			"mass": 0.8,
+			"type": "Headlight cowl",
+			"style": "flyscreen",
+			"cda": -0.01,
+			"screen": 0.08,
+			"name": "Headlight cowl",
+			"description": "A little round cowl over the headlamp with a tiny screen.",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"styles": [
+				"cafe",
+				"naked"
+			],
+			"price": 70,
+			"look": {
+				"shape": "cowl"
+			},
+			"pack": "cafe"
 		},
 		"bikini_fairing": {
 			"name": "Bikini fairing",
@@ -16932,13 +15535,66 @@
 			"styles": [
 				"cafe",
 				"naked",
-				"roader",
-				"classic"
-			]
+				"classic",
+				"roader"
+			],
+			"price": 160,
+			"pack": "cafe"
+		},
+		"batwing_fairing": {
+			"mass": 7.0,
+			"type": "Fork-mounted, small",
+			"style": "bikini",
+			"cda": -0.04,
+			"screen": 0.26,
+			"name": "Batwing fairing",
+			"description": "The big fork-mounted batwing round the headlight with a tall screen.",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"styles": [
+				"cruiser",
+				"tourer"
+			],
+			"price": 380,
+			"look": {
+				"shape": "batwing"
+			},
+			"pack": "cruiser"
+		},
+		"seeley_half": {
+			"mass": 4.5,
+			"type": "Frame-mounted, upper",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.22,
+			"frame_mount": true,
+			"name": "Club racer half fairing",
+			"description": "A round-nosed fibreglass half fairing in the 60s production racer style.",
+			"color": [
+				0.74,
+				0.75,
+				0.77
+			],
+			"styles": [
+				"cafe",
+				"classic",
+				"race"
+			],
+			"price": 320,
+			"look": {
+				"shape": "seeley",
+				"wide": 0.9,
+				"tall": 0.85,
+				"roundel": true
+			},
+			"pack": "cafe"
 		},
 		"half_fairing": {
 			"name": "Half fairing",
-			"description": "Frame-mounted upper fairing with a proper screen. Calm at motorway speeds.",
+			"description": "A creased, frame-mounted upper fairing with a proper screen. Calm at motorway speeds.",
 			"mass": 4.5,
 			"type": "Frame-mounted, upper",
 			"style": "half",
@@ -16951,10 +15607,40 @@
 				0.09
 			],
 			"styles": [
-				"roader",
 				"sport",
+				"roader",
+				"naked",
 				"tourer"
-			]
+			],
+			"price": 300,
+			"pack": "sport"
+		},
+		"adventure_fairing": {
+			"mass": 5.0,
+			"type": "Frame-mounted, tall adjustable screen",
+			"style": "half",
+			"cda": -0.055,
+			"screen": 0.38,
+			"screen_adjust": 0.12,
+			"frame_mount": true,
+			"name": "Adventure fairing, adjustable screen",
+			"description": "A creased adventure fairing with a tall screen on rails: raise it on the motorway, drop it on the trail (Page Up / Page Down as you ride).",
+			"color": [
+				0.85,
+				0.85,
+				0.83
+			],
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"price": 420,
+			"look": {
+				"shape": "adventure",
+				"wide": 1.05,
+				"tall": 1.05
+			},
+			"pack": "adventure"
 		},
 		"touring_fairing": {
 			"name": "Touring fairing",
@@ -16971,13 +15657,14 @@
 				0.09
 			],
 			"styles": [
-				"tourer",
-				"adventure"
-			]
+				"tourer"
+			],
+			"price": 480,
+			"pack": "tourer"
 		},
 		"race_fairing": {
-			"name": "Full race fairing",
-			"description": "Upper, sides and belly pan in fibreglass with a bubble screen. Tuck in and it slips through the air.",
+			"name": "Full sports fairing",
+			"description": "Upper, sides and belly pan in fibreglass, with slim LED headlights and a winglet a side. Tuck in and it slips through the air.",
 			"mass": 6.5,
 			"type": "Fibreglass, full",
 			"style": "race",
@@ -16991,13 +15678,18 @@
 			],
 			"material": "mixed",
 			"styles": [
-				"race",
-				"sport"
-			]
+				"sport",
+				"race"
+			],
+			"price": 520,
+			"look": {
+				"wings": 1
+			},
+			"pack": "sport"
 		},
 		"carbon_race_fairing": {
 			"name": "Carbon race fairing",
-			"description": "The full race fairing in carbon fibre. Half the weight, a touch slipperier.",
+			"description": "A carbon fibre race fairing: no lamps, a number board nose and two winglets a side. Half the weight, and slipperier still.",
 			"mass": 3.2,
 			"type": "Carbon fibre, full",
 			"style": "race",
@@ -17013,802 +15705,16 @@
 			"lightweight": true,
 			"styles": [
 				"race"
-			]
-		},
-		"cafe_seeley_half": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.22,
-			"frame_mount": true,
-			"name": "Club racer half fairing",
-			"description": "A round-nosed fibreglass half fairing in the 60s production racer style.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
 			],
+			"price": 900,
 			"look": {
-				"shape": "seeley",
-				"wide": 0.9,
-				"tall": 0.85,
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
+				"lamps": false,
+				"wings": 2,
+				"tall": 0.8,
+				"n": 2.3,
 				"roundel": true
 			},
-			"styles": [
-				"cafe",
-				"classic",
-				"race"
-			],
-			"pack": "cafe",
-			"price": 360
-		},
-		"cafe_dome_cowl": {
-			"mass": 0.8,
-			"type": "Headlight cowl",
-			"style": "flyscreen",
-			"cda": -0.01,
-			"screen": 0.08,
-			"name": "Dome headlight cowl",
-			"description": "A small round cowl over the headlamp with a tiny screen.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "cowl"
-			},
-			"styles": [
-				"cafe",
-				"naked"
-			],
-			"pack": "cafe",
-			"price": 360
-		},
-		"cruiser_batwing": {
-			"mass": 7.0,
-			"type": "Fork-mounted, small",
-			"style": "bikini",
-			"cda": -0.04,
-			"screen": 0.26,
-			"name": "Batwing fairing",
-			"description": "The big fork-mounted batwing round the headlight with a tall screen.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "batwing",
-				"accent": [
-					0.74,
-					0.75,
-					0.77
-				]
-			},
-			"styles": [
-				"cruiser",
-				"tourer"
-			],
-			"pack": "cruiser",
-			"price": 360
-		},
-		"cruiser_windshield": {
-			"mass": 2.5,
-			"type": "Headlight cowl",
-			"style": "flyscreen",
-			"cda": -0.02,
-			"screen": 0.42,
-			"name": "Cruiser windscreen",
-			"description": "A tall clear screen on chrome stays. Wind off your chest.",
-			"color": [
-				0.86,
-				0.87,
-				0.89
-			],
-			"look": {
-				"shape": "screen"
-			},
-			"styles": [
-				"cruiser",
-				"tourer",
-				"classic"
-			],
-			"pack": "cruiser",
-			"price": 360
-		},
-		"adv_rally_tower": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.32,
-			"frame_mount": true,
-			"name": "Rally tower fairing",
-			"description": "Tall narrow rally fairing with a big screen.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 0.9,
-				"tall": 1.15,
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				]
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 360
-		},
-		"adv_beak_red": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.3,
-			"frame_mount": true,
-			"name": "Beak-nosed adventure fairing, red",
-			"description": "Creased red half fairing with twin LED eyes and a tall screen, Multistrada style.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 1.05,
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				]
-			},
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 390
-		},
-		"adv_beak_grey": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.34,
-			"frame_mount": true,
-			"name": "Expedition fairing, grey and blue",
-			"description": "Angular grey fairing with blue flashes and a big screen, GS style.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 1.1,
-				"tall": 1.05,
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				]
-			},
-			"styles": [
-				"adventure",
-				"roader"
-			],
-			"pack": "adventure",
-			"price": 390
-		},
-		"adv_tracer_black": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.26,
-			"frame_mount": true,
-			"name": "Sport adventure fairing, black",
-			"description": "Sharp black fairing with a short screen, Tracer style.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 1.0,
-				"tall": 0.92,
-				"accent": [
-					0.35,
-					0.6,
-					0.85
-				]
-			},
-			"styles": [
-				"adventure",
-				"roader",
-				"sport"
-			],
-			"pack": "adventure",
-			"price": 360
-		},
-		"sport_red_fairing": {
-			"mass": 6.5,
-			"type": "Fibreglass, full",
-			"style": "race",
-			"cda": -0.09,
-			"screen": 0.16,
-			"frame_mount": true,
-			"material": "mixed",
-			"name": "Full sport fairing, red",
-			"description": "Red full fairing with white stripe.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"n": 2.6
-			},
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 360
-		},
-		"sport_blue_fairing": {
-			"mass": 6.5,
-			"type": "Fibreglass, full",
-			"style": "race",
-			"cda": -0.09,
-			"screen": 0.16,
-			"frame_mount": true,
-			"material": "mixed",
-			"name": "Full sport fairing, blue",
-			"description": "Blue full fairing with white stripe and winglets.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"n": 2.5,
-				"wings": 1
-			},
-			"styles": [
-				"sport",
-				"race"
-			],
-			"pack": "sport",
-			"price": 360
-		},
-		"sport_grey_winged": {
-			"mass": 6.5,
-			"type": "Fibreglass, full",
-			"style": "race",
-			"cda": -0.09,
-			"screen": 0.16,
-			"frame_mount": true,
-			"material": "mixed",
-			"name": "Winged sport fairing, grey",
-			"description": "Grey and red full fairing with a winglet a side.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"n": 2.4,
-				"wings": 1
-			},
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 360
-		},
-		"sport_black_half": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.22,
-			"frame_mount": true,
-			"name": "Sport half fairing, black",
-			"description": "Black half fairing.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"wide": 0.95,
-				"tall": 0.9
-			},
-			"styles": [
-				"sport",
-				"roader",
-				"naked"
-			],
-			"pack": "sport",
-			"price": 360
-		},
-		"race_white_fairing": {
-			"mass": 3.2,
-			"type": "Carbon fibre, full",
-			"style": "race",
-			"cda": -0.095,
-			"screen": 0.1,
-			"frame_mount": true,
-			"material": "carbon",
-			"lightweight": true,
-			"name": "White race fairing, red stripe",
-			"description": "White race fairing with a red stripe, winglets and no lamps.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				],
-				"roundel": true,
-				"lamps": false,
-				"wings": 2,
-				"tall": 0.8,
-				"n": 2.3
-			},
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 360
-		},
-		"race_yellow_fairing": {
-			"mass": 6.5,
-			"type": "Fibreglass, full",
-			"style": "race",
-			"cda": -0.09,
-			"screen": 0.1,
-			"frame_mount": true,
-			"material": "mixed",
-			"name": "Yellow race fairing",
-			"description": "Yellow race fairing with black stripe, winglets and no lamps.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"look": {
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"roundel": true,
-				"lamps": false,
-				"wings": 2,
-				"tall": 0.8,
-				"n": 2.3
-			},
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 360
-		},
-		"race_red_winged": {
-			"mass": 6.5,
-			"type": "Fibreglass, full",
-			"style": "race",
-			"cda": -0.09,
-			"screen": 0.1,
-			"frame_mount": true,
-			"material": "mixed",
-			"name": "Red works fairing",
-			"description": "Red MotoGP-style fairing with stacked winglets and a blank nose.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"lamps": false,
-				"wings": 2,
-				"tall": 0.8,
-				"n": 2.3
-			},
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 390
-		},
-		"race_carbon_winged": {
-			"mass": 3.2,
-			"type": "Carbon fibre, full",
-			"style": "race",
-			"cda": -0.095,
-			"screen": 0.09,
-			"frame_mount": true,
-			"material": "carbon",
-			"lightweight": true,
-			"name": "Carbon works fairing",
-			"description": "Bare carbon MotoGP-style fairing, stacked winglets, blank nose.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"accent": [
-					0.92,
-					0.38,
-					0.04
-				],
-				"lamps": false,
-				"wings": 2,
-				"tall": 0.78,
-				"n": 2.3
-			},
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 420
-		},
-		"race_dustbin": {
-			"mass": 6.5,
-			"type": "Fibreglass, full",
-			"style": "race",
-			"cda": -0.09,
-			"screen": 0.16,
-			"frame_mount": true,
-			"material": "mixed",
-			"name": "Vintage race fairing",
-			"description": "Round-nosed silver vintage race fairing.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"shape": "seeley",
-				"accent": [
-					0.05,
-					0.24,
-					0.13
-				],
-				"roundel": true
-			},
-			"styles": [
-				"cafe",
-				"race"
-			],
-			"pack": "cafe",
-			"price": 360
-		},
-		"naked_flyscreen": {
-			"mass": 0.8,
-			"type": "Headlight cowl",
-			"style": "flyscreen",
-			"cda": -0.01,
-			"screen": 0.12,
-			"name": "Naked flyscreen, red stripe",
-			"description": "Small flyscreen with stripe.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				]
-			},
-			"styles": [
-				"naked"
-			],
-			"pack": "naked",
-			"price": 360
-		},
-		"naked_cowl": {
-			"mass": 0.8,
-			"type": "Headlight cowl",
-			"style": "flyscreen",
-			"cda": -0.01,
-			"screen": 0.06,
-			"name": "Naked headlight cowl",
-			"description": "Cowl over the headlight.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"shape": "cowl"
-			},
-			"styles": [
-				"naked",
-				"cafe"
-			],
-			"pack": "naked",
-			"price": 360
-		},
-		"roader_half_grey": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.3,
-			"frame_mount": true,
-			"name": "Roader half fairing, adjustable screen",
-			"description": "Half fairing with a taller screen.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"tall": 1.05
-			},
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
-			"price": 360
-		},
-		"roader_beak_half": {
-			"mass": 4.5,
-			"type": "Frame-mounted, upper",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.22,
-			"frame_mount": true,
-			"name": "Red roader half fairing",
-			"description": "Red half fairing with stripe.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				],
-				"wide": 0.95
-			},
-			"styles": [
-				"roader",
-				"sport"
-			],
-			"pack": "roader",
-			"price": 360
-		},
-		"tourer_batwing": {
-			"mass": 9.0,
-			"type": "Frame-mounted, tall screen",
-			"style": "touring",
-			"cda": -0.035,
-			"screen": 0.32,
-			"frame_mount": false,
-			"name": "Touring batwing",
-			"description": "Fork-mounted batwing, tall screen.",
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"shape": "batwing",
-				"accent": [
-					0.35,
-					0.6,
-					0.85
-				]
-			},
-			"styles": [
-				"tourer",
-				"cruiser"
-			],
-			"pack": "tourer",
-			"price": 360
-		},
-		"tourer_full": {
-			"mass": 9.0,
-			"type": "Frame-mounted, tall screen",
-			"style": "touring",
-			"cda": -0.035,
-			"screen": 0.42,
-			"frame_mount": true,
-			"name": "Full touring fairing, silver",
-			"description": "Silver full touring fairing.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				],
-				"wide": 1.05
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
-			"price": 360
-		},
-		"adv_tall_screen_adj": {
-			"mass": 5.0,
-			"type": "Frame-mounted, tall adjustable screen",
-			"style": "half",
-			"cda": -0.055,
-			"screen": 0.38,
-			"screen_adjust": 0.12,
-			"frame_mount": true,
-			"name": "Adventure fairing, tall adjustable screen",
-			"description": "A creased adventure fairing with a tall screen on rails: raise it on the motorway, drop it on the trail (Page Up / Page Down as you ride).",
-			"color": [
-				0.85,
-				0.85,
-				0.83
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 1.05,
-				"tall": 1.05,
-				"accent": [
-					0.75,
-					0.08,
-					0.06
-				]
-			},
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 420
-		},
-		"adv_touring_screen_adj": {
-			"mass": 6.5,
-			"type": "Frame-mounted, touring adjustable screen",
-			"style": "half",
-			"cda": -0.06,
-			"screen": 0.44,
-			"screen_adjust": 0.15,
-			"frame_mount": true,
-			"name": "Touring adventure fairing, adjustable",
-			"description": "A wide fairing with a big screen you raise or lower on the move. Calm air all day on a long ride.",
-			"color": [
-				0.2,
-				0.21,
-				0.23
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 1.18,
-				"tall": 1.1,
-				"accent": [
-					0.74,
-					0.75,
-					0.77
-				]
-			},
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 480
-		},
-		"adv_rally_screen_tall": {
-			"mass": 4.0,
-			"type": "Frame-mounted, tall rally screen",
-			"style": "half",
-			"cda": -0.05,
-			"screen": 0.46,
-			"frame_mount": true,
-			"name": "Rally fairing, extra tall screen",
-			"description": "A narrow rally nose with a tall fixed screen. Stand up on the pegs and it still keeps the wind off.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 0.9,
-				"tall": 1.15,
-				"accent": [
-					0.92,
-					0.42,
-					0.06
-				]
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 340
-		},
-		"adv_spoiler_screen_adj": {
-			"mass": 4.8,
-			"type": "Frame-mounted, adjustable screen",
-			"style": "half",
-			"cda": -0.052,
-			"screen": 0.34,
-			"screen_adjust": 0.09,
-			"frame_mount": true,
-			"name": "Adventure fairing, quick-adjust screen",
-			"description": "A mid-height screen on a one-hand adjuster. Not the tallest, but it moves.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "adventure",
-				"wide": 1.0,
-				"tall": 1.0,
-				"accent": [
-					0.95,
-					0.75,
-					0.1
-				]
-			},
-			"styles": [
-				"adventure",
-				"roader"
-			],
-			"pack": "adventure",
-			"price": 380
+			"pack": "race"
 		}
 	},
 	"mirrors": {
@@ -19925,6 +17831,29 @@
 			],
 			"pack": "roader",
 			"price": 215
+		},
+		"wrap_bars": {
+			"name": "Wrap-around crash bars",
+			"description": "One long chrome hoop a side, wrapped from the head stock round the front of the engine and back under it to the footpegs.",
+			"mass": 4.8,
+			"type": "Tubular steel, wrap-around",
+			"style": "wrap",
+			"color": [
+				0.86,
+				0.87,
+				0.9
+			],
+			"material": "metal",
+			"styles": [
+				"classic",
+				"scrambler",
+				"roader",
+				"tourer",
+				"naked",
+				"cafe"
+			],
+			"price": 190,
+			"pack": "classic"
 		}
 	},
 	"number_boards": {

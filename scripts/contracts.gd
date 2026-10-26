@@ -852,24 +852,24 @@ static func style_build(style: String) -> Dictionary:
 	var b: Dictionary = PartsDB.DEFAULT_BUILD.duplicate()
 	match style:
 		"classic":
-			b.merge({"frame": "featherbed_cradle", "fork": "classic_conventional", "tank": "teardrop_classic", "saddle": "ribbed_bench",
+			b.merge({"frame": "featherbed_cradle", "fork": "classic_conventional", "tank": "teardrop_14", "saddle": "ribbed_bench",
 				"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "exhaust": "peashooter_twins", "headlight": "chrome_ring_7",
 				"mirrors": "round_mirrors", "front_tyre": "touring_road_110", "rear_tyre": "touring_road_130"}, true)
 		"roader":
-			b.merge({"frame": "roader_spar_red", "fork": "roader_usd_black", "shock": "sport_mono", "tank": "roader_slab_tank",
-				"saddle": "roader_comfort", "handlebars": "roader_wide", "tail": "roader_sport", "fairing": "roader_half_grey",
+			b.merge({"frame": "roader_spar_red", "fork": "roader_usd_black", "shock": "sport_mono", "tank": "sport_17",
+				"saddle": "roader_comfort", "handlebars": "roader_wide", "tail": "roader_sport", "fairing": "half_fairing",
 				"exhaust": "roader_tri", "headlight": "roader_twin", "mirrors": "fairing_mirrors"}, true)
 		"naked":
-			b.merge({"frame": "naked_trellis_green", "fork": "naked_gold", "shock": "sport_mono", "tank": "naked_grey_tank",
+			b.merge({"frame": "alu_trestle", "fork": "naked_gold", "shock": "sport_mono", "tank": "sport_17",
 				"saddle": "naked_step_seat", "handlebars": "naked_fat_bar", "tail": "naked_sport_tail", "exhaust": "naked_stubby",
 				"headlight": "naked_round_led", "mirrors": "sport_mirrors"}, true)
 		"cafe":
-			b.merge({"frame": "steel_cradle", "tank": "alloy_cafe_14", "saddle": "cafe_hump", "handlebars": "alloy_clip_ons",
+			b.merge({"frame": "steel_cradle", "tank": "cafe_15", "saddle": "cafe_hump", "handlebars": "alloy_clip_ons",
 				"tail": "cafe_tail", "engine": "twin_750", "exhaust": "full_system", "headlight": "bates_cafe",
 				"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "touring_road_110",
 				"rear_tyre": "touring_road_130", "mirrors": "bar_end_mirrors", "front_mudguard": "alloy_cafe_blade"}, true)
 		"scrambler":
-			b.merge({"frame": "steel_backbone", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "mx_tall",
+			b.merge({"frame": "steel_backbone", "tank": "teardrop_14", "saddle": "flat_bench", "handlebars": "mx_tall",
 				"tail": "scrambler_loop", "engine": "twin_500", "exhaust": "scrambler_high_twin", "front_wheel": "spoked_19_adventure",
 				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "fork": "enduro_usd",
 				"mirrors": "round_mirrors", "front_mudguard": "enduro_front_fender"}, true)
@@ -880,12 +880,12 @@ static func style_build(style: String) -> Dictionary:
 				"rear_tyre": "touring_road", "front_tyre": "touring_road_120", "front_mudguard": "chrome_classic"}, true)
 		"sport":
 			b.merge({"frame": "sport_perimeter_red", "tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons",
-				"tail": "sport_pointed_tail", "engine": "inline_1000", "exhaust": "race_underseat_ti", "fairing": "sport_red_fairing",
+				"tail": "sport_pointed_tail", "engine": "inline_1000", "exhaust": "race_underseat_ti", "fairing": "race_fairing",
 				"fork": "usd_sport", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "fairing_mirrors",
 				"headlight": "led_projector", "front_mudguard": "carbon_hugger"}, true)
 		"race":
-			b.merge({"frame": "race_alu_perimeter", "tank": "race_white_red", "saddle": "race_foam_seat", "handlebars": "race_black_clips",
-				"tail": "race_hump", "engine": "inline_1000", "exhaust": "race_hex_carbon", "fairing": "race_white_fairing",
+			b.merge({"frame": "race_alu_perimeter", "tank": "carbon_sport_16", "saddle": "race_foam_seat", "handlebars": "race_black_clips",
+				"tail": "race_hump", "engine": "inline_1000", "exhaust": "race_hex_carbon", "fairing": "carbon_race_fairing",
 				"fork": "race_works_usd", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "none", "front_wheel": "cast_17_front",
 				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "race_white_hugger",
 				"front_tyre": "sport_road_120", "rear_tyre": "sport_road_190"}, true)
@@ -895,27 +895,27 @@ static func style_build(style: String) -> Dictionary:
 				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel",
 				"rear_tyre": "touring_road_150"}, true)
 		"chopper":
-			b.merge({"frame": "chopper_raked", "fork": "springer_long", "tank": "peanut_9", "saddle": "flat_bench",
+			b.merge({"frame": "chopper_raked", "fork": "springer_long", "tank": "coffin_10", "saddle": "flat_bench",
 				"handlebars": "ape_hangers", "tail": "bobber_fender", "engine": "vtwin_1200", "exhaust": "shotgun_duals",
 				"front_wheel": "wire_19_chrome", "rear_wheel": "wire_16_bobber", "headlight": "bates_cafe", "mirrors": "bar_end_mirrors",
 				"front_mudguard": "none", "rear_tyre": "touring_road_150"}, true)
 		"cruiser":
-			b.merge({"frame": "cruiser_cradle", "tank": "cruiser_fatbob_console", "saddle": "touring_comfort", "handlebars": "drag_bar",
+			b.merge({"frame": "cruiser_cradle", "tank": "fatbob_23", "saddle": "touring_comfort", "handlebars": "drag_bar",
 				"tail": "classic_mudguard", "engine": "vtwin_1100", "exhaust": "shotgun_duals", "front_wheel": "cast_19_six",
 				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic",
 				"front_tyre": "touring_road_130", "rear_tyre": "touring_road_150"}, true)
 		"adventure":
-			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_big_tank", "saddle": "adv_comfort_seat",
+			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_25", "saddle": "adv_comfort_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "boxer_1100", "exhaust": "mx_upswept", "front_wheel": "spoked_19_adventure",
 				"rear_wheel": "adv_17_cast", "front_tyre": "trail_road_110", "rear_tyre": "trail_road_150", "panniers": "aluminium_boxes",
-				"fairing": "adv_beak_red", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
+				"fairing": "adventure_fairing", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
 		"mx":
 			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "enduro_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "excel_21_black",
 				"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_80", "rear_tyre": "knobbly_mx", "front_mudguard": "mx_high_fender",
 				"headlight": "rect_enduro", "number_boards": "mx_side_boards"}, true)
 		"supermoto":
-			b.merge({"frame": "sm_white_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "sm_orange_tank", "saddle": "sm_flat_seat",
+			b.merge({"frame": "sm_white_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "sm_flat_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "supermoto_17",
 				"rear_wheel": "supermoto_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road_160", "front_mudguard": "mx_high_fender",
 				"headlight": "rect_enduro", "mirrors": "sport_mirrors"}, true)
@@ -947,7 +947,7 @@ static func style_marks(style: String, parts: Dictionary) -> Array:
 				p.call("tail") == "cafe_tail"]
 		"scrambler":
 			marks = [st.call("rear_tyre") == "offroad", p.call("handlebars") in ["flat_bar", "mx_tall", "titanium_flat"],
-				p.call("tail") == "scrambler_loop", st.call("tank") in ["peanut", "enduro"]]
+				p.call("tail") == "scrambler_loop", PartsDB.styles_of(p.call("tank")).has("scrambler")]
 		"tourer":
 			marks = [p.call("panniers") != "none", p.call("top_box") != "none", st.call("saddle") == "touring",
 				st.call("tank") == "touring" or st.call("fairing") in ["touring", "half"]]

@@ -81,7 +81,8 @@ func test_close() -> void:
 	var dirt_draws: int = (dirt._overlays.size() + dirt._restore.size()) if dirt else 0
 	check(dirt != null and dirt.mesh_count() > 40 and dirt_draws * 2 < dirt.mesh_count(),
 		"its dirt is drawn over %d pieces in %d draws" % [dirt.mesh_count() if dirt else 0, dirt_draws])
-	check(int(d["all"]) <= 215 and int(d["casters"]) <= 75,
+	# (Three more casters since the brake discs have their holes cut through them.)
+	check(int(d["all"]) <= 215 and int(d["casters"]) <= 78,
 		"the crew's muddy bike is %d draws up close, its dirt and all, and %d in each shadow split it's in" % [int(d["all"]), int(d["casters"])])
 	rb.queue_free()
 	# Riding beside them and stood beside them, timed: 2 m against 30 m, turn about.

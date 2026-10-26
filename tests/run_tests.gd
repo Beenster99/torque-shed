@@ -676,6 +676,9 @@ func _run_all() -> void:
 	await _t(&"_test_bike_shop_for_sale")
 	await _t(&"_test_bike_shop_buy_used")
 	await _t(&"_test_bike_shop_configurator")
+	await _t(&"_test_parts_refresh_catalogue")
+	await _t(&"_test_parts_refresh_migrate")
+	await _t(&"_test_parts_refresh_drawn")
 	await _t(&"_test_bike_copy_project_card")
 	print("Bike collections: your own bikes on show at your house, bought, ridden out, offered for and sold back")
 	await _t(&"_test_collection_slots")
@@ -8329,18 +8332,18 @@ func _test_money_parts_and_selling() -> void:
 		"fancier and bigger parts cost more (carbon frame %s, steel %s)" % [TvChannels.money_text(Money.part_price("carbon_monocoque")),
 		TvChannels.money_text(Money.part_price("steel_cradle"))])
 	check(Shed.part_price("frame_nope") == 0 and Shed.part_price("steel_cradle") == Money.part_price("steel_cradle"), "Shed.part_price is the same price")
-	var price := Money.part_price("chromoly_trellis")
+	var price := Money.part_price("steel_trestle")
 	var bal := Shed.garage_money
-	var frame := _order("chromoly_trellis")
+	var frame := _order("steel_trestle")
 	check(frame != 0 and Shed.garage_money == bal - price and str(Shed.bank["ledger"][-1]["why"]).begins_with("Bought"),
 		"ordering a part takes its price from the business (%s)" % TvChannels.money_text(price))
 	Progress.profile["skills"]["haggler"] = 2
-	check(Money.buy_price("chromoly_trellis", me) == roundi(price * 0.9), "Haggler 2: 10% off")
+	check(Money.buy_price("steel_trestle", me) == roundi(price * 0.9), "Haggler 2: 10% off")
 	Progress.profile["skills"].erase("haggler")
 	Shed.garage_money = 10
 	var count := Shed.items.size()
-	check(Shed.check(me, {"a": "order_part", "part": "chromoly_trellis"}).contains("afford"), "the business can't afford it: it says so")
-	Shed.request({"a": "order_part", "part": "chromoly_trellis"})
+	check(Shed.check(me, {"a": "order_part", "part": "steel_trestle"}).contains("afford"), "the business can't afford it: it says so")
+	Shed.request({"a": "order_part", "part": "steel_trestle"})
 	check(Shed.items.size() == count and Shed.garage_money == 10, "and nothing comes")
 	var bikes := Shed.bikes.size()
 	Shed.request({"a": "order"})
@@ -8349,7 +8352,7 @@ func _test_money_parts_and_selling() -> void:
 	# Selling a loose part: as good as new, it fetches SELL_RATE of its price.
 	var sale := Money.part_sale(frame)
 	check(sale == roundi(price * Money.SELL_RATE), "a new part sells for %d%% of its price" % roundi(Money.SELL_RATE * 100.0))
-	var rusty := _order("chromoly_trellis")
+	var rusty := _order("steel_trestle")
 	Shed.items[rusty]["rust"] = 0.9
 	Shed.items[rusty]["wear"] = 0.6
 	check(Money.part_sale(rusty) < sale / 2, "a worn, rusty one far less (%s)" % TvChannels.money_text(Money.part_sale(rusty)))
@@ -13642,10 +13645,11 @@ func _test_detail_pass() -> void:
 	check((core.material_override as StandardMaterial3D).normal_texture != null and count.call(rad, "RadiatorGrille") > 3
 		and count.call(rad, "RadiatorShroud") == 2 and count.call(rad, "CoolantHose") == 2, "a radiator has a finned core, a grille, shrouds and coolant hoses")
 	# Bodywork: twin lamps in a race fairing, vents in a half one, a pad on a sports tank.
-	var race: BikeModel = bike.call({"fairing": "carbon_race_fairing", "tank": "carbon_sport_16"})
-	check(count.call(race, "FairingLamp") == 2 and count.call(race, "TankPad") == 1, "a race fairing has twin lamp eyes and a sports tank a grip pad")
+	var race: BikeModel = bike.call({"fairing": "race_fairing", "tank": "carbon_sport_16"})
+	check(count.call(race, "FairingLamp") == 2 and count.call(race, "TankPad") == 1, "a sports fairing has twin lamp eyes and a sports tank a grip pad")
+	var carbon: BikeModel = bike.call({"fairing": "carbon_race_fairing"})
+	check((carbon.find_children("FairingShell", "", true, false)[0].material_override as StandardMaterial3D).albedo_texture != null, "a carbon fairing shows its weave")
 	var shell: MeshInstance3D = race.find_children("FairingShell", "", true, false)[0]
-	check((shell.material_override as StandardMaterial3D).albedo_texture != null, "a carbon fairing shows its weave")
 	# A full fairing is flat panels with crisp creases, not a round blob: where two facets meet,
 	# the same point carries two normals well apart.
 	var arrays := (shell.mesh as ArrayMesh).surface_get_arrays(0)
@@ -13661,10 +13665,10 @@ func _test_detail_pass() -> void:
 	check(count.call(race, "SideCover") == 2 and count.call(race, "LowerFairing") == 1 and count.call(race, "Screen") == 1
 		and count.call(race, "RamAir") == 1 and count.call(race, "FairingVent") >= 4,
 		"it has layered side covers with vent gaps, a keeled belly pan, a screen and a ram-air mouth")
-	var gp: BikeModel = bike.call({"fairing": "race_red_winged"})
+	var gp: BikeModel = bike.call({"fairing": "carbon_race_fairing"})
 	check(count.call(gp, "FairingLamp") == 0 and count.call(gp, "NoseCap") == 1 and count.call(gp, "Winglet") == 6,
 		"a race-only fairing has a blank nose and two winglets a side with endplates")
-	var winged: BikeModel = bike.call({"fairing": "sport_grey_winged"})
+	var winged: BikeModel = bike.call({"fairing": "race_fairing"})
 	check(count.call(winged, "FairingLamp") == 2 and count.call(winged, "Winglet") == 4, "a winged sports fairing keeps its lamps and has one winglet a side")
 	# Under it the frame beams stay inside the bodywork, the radiator and headers are out of
 	# sight through the wheel cut, and the clocks sit below the screen's top.
@@ -13694,7 +13698,7 @@ func _test_detail_pass() -> void:
 			seen[key] = nrm
 		return false
 	check(faceted.call(sb.find_children("TailCowl", "", true, false)[0]), "a sports tail is creased panels too")
-	var hf: BikeModel = bike.call({"fairing": "sport_black_half"})
+	var hf: BikeModel = bike.call({"fairing": "half_fairing"})
 	check(faceted.call(hf.find_children("FairingShell", "", true, false)[0]), "and so is a sports half fairing")
 	var half: BikeModel = bike.call({"fairing": "half_fairing"})
 	check(count.call(half, "FairingVent") == 8, "a half fairing has side vents")
@@ -15720,7 +15724,8 @@ func _test_style_packs() -> void:
 		var kinds := {}
 		for id in ids:
 			kinds[PartsDB.kind_of(id)] = true
-		check(ids.size() >= 30 and kinds.size() >= 10, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
+		# (About thirty once; fewer since the tanks and fairings came down to ten each in plain paint.)
+		check(ids.size() >= 20 and kinds.size() >= 10, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
 	var bad := []
 	for style in packs:
 		for id in packs[style]:
@@ -15764,7 +15769,7 @@ func _test_style_packs() -> void:
 	plain.build_from(BikeBuild.new({"tank": "cafe_15"}))
 	var drop := BikeModel.new()
 	add_child(drop)
-	drop.build_from(BikeBuild.new({"tank": "teardrop_classic"}))
+	drop.build_from(BikeBuild.new({"tank": "teardrop_14"}))
 	check(not plain.slot_bounds("tank").size.is_equal_approx(drop.slot_bounds("tank").size), "a teardrop tank is a different shape from the plain cafe tank")
 	plain.free()
 	drop.free()
@@ -17587,6 +17592,8 @@ func _test_spray_session() -> void:
 	check(w.spray_coat() == "clear", "T on to clear lacquer")
 	await _aim_point(w, centre)
 	check(str(w.plan.get("action", {}).get("a", "")) == "coat" and w.plan["blocked"] == "", "then lacquer over the colour (%s)" % str(w.plan.get("blocked", "")))
+	# (A good colour coat on a tank this shape can already be perfect: room for the lacquer to show.)
+	it["paint_quality"] = minf(float(it["paint_quality"]), 0.8)
 	var before := float(it["paint_quality"])
 	await _spray_round(w, tank, xf, box, centre, away)
 	check(Shed.items[tank].get("coat", "") == "clear" and float(Shed.items[tank]["paint_quality"]) > before,
@@ -21910,7 +21917,7 @@ func _kit_fit(bike: int, slot: String, part: String) -> int:
 func _kit_build() -> Dictionary:
 	var parts: Dictionary = Shed.style_parts("adventure") if PartsDB.STYLES.has("adventure") else {}
 	parts.merge({"tank_bag": "mag_tank_bag_15", "aux_tank": "rear_rally_tank_10", "toolbox": "alloy_toolbox",
-		"satnav": "adventure_gps", "fairing": "adv_tall_screen_adj", "panniers": "adv_alloy_trunks_silver",
+		"satnav": "adventure_gps", "fairing": "adventure_fairing", "panniers": "adv_alloy_trunks_silver",
 		"top_box": "adv_alloy_top_55"}, true)
 	return parts
 
@@ -21927,7 +21934,7 @@ func _test_kit_parts() -> void:
 	check(["road", "adventure", "knobbly", "winter", "studded"].all(func(k): return int(kinds.get(k, 0)) >= 3),
 		"road, 50/50, knobbly, winter and studded adventure tyres in three sizes each %s" % str(kinds))
 	var adjustable: Array = PartsDB.by_kind["fairing"].filter(func(id): return float(PartsDB.get_part(id).get("screen_adjust", 0.0)) > 0.0)
-	check(adjustable.size() >= 3, "%d tall adventure screens that raise and lower" % adjustable.size())
+	check(adjustable.size() >= 1, "%d tall adventure screen that raises and lowers" % adjustable.size())
 	var boxes: int = PartsDB.by_kind.get("top_box", []).size() + PartsDB.by_kind.get("panniers", []).size()
 	check(boxes >= 10, "more side and top boxes (%d)" % boxes)
 	var bad := []
@@ -22975,6 +22982,22 @@ func _test_bike_shop_buy_used() -> void:
 
 func _test_bike_shop_configurator() -> void:
 	await _bike_shop().test_configurator()
+
+
+func _parts_refresh() -> RefCounted:
+	return load("res://tests/parts_refresh_tests.gd").new(self)
+
+
+func _test_parts_refresh_catalogue() -> void:
+	_parts_refresh().test_catalogue()
+
+
+func _test_parts_refresh_migrate() -> void:
+	_parts_refresh().test_migrate()
+
+
+func _test_parts_refresh_drawn() -> void:
+	_parts_refresh().test_drawn()
 
 
 func _test_bike_copy_built() -> void:

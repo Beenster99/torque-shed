@@ -32,7 +32,7 @@ const STAGE_LEVEL := 6
 const HP_TOL := 3.0
 ## Painted parts: the kinds and the donor parts that come for each.
 const PAINT_KINDS := {"tank": "tanks", "front_mudguard": "front mudguards", "side_panels": "sets of side panels"}
-const PAINT_DONORS := {"tank": ["peanut_9", "cafe_15", "sport_17", "teardrop_classic", "enduro_12", "touring_23"],
+const PAINT_DONORS := {"tank": ["peanut_9", "cafe_15", "sport_17", "teardrop_14", "enduro_12", "touring_23"],
 	"front_mudguard": ["road_hugger", "bobbed_steel", "valanced_painted_guard", "mx_high_fender"],
 	"side_panels": ["triangle_classic", "oval_number"]}
 ## The library colour Simon asked for by name: trade customers often want it.
