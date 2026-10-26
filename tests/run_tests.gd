@@ -22507,6 +22507,34 @@ func _test_region_land() -> void:
 	_region().test_land()
 
 
+func _roads() -> RefCounted:
+	return load("res://tests/road_block_tests.gd").new(self)
+
+
+func _test_road_block_interface() -> void:
+	_roads().test_interface()
+
+
+func _test_road_kinds() -> void:
+	_roads().test_kinds()
+
+
+func _test_road_locate() -> void:
+	_roads().test_locate()
+
+
+func _test_road_heights() -> void:
+	_roads().test_heights()
+
+
+func _test_road_blocks() -> void:
+	_roads().test_blocks()
+
+
+func _test_road_cell() -> void:
+	_roads().test_cell()
+
+
 func _planner() -> RefCounted:
 	return load("res://tests/route_planner_tests.gd").new(self)
 
