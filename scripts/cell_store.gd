@@ -130,27 +130,46 @@ static func streams_url(cell: String) -> String:
 ## tools/stream_bake.py), from the copy kept on disk if it is the one index `idx` names, else fetched (and kept). [] when
 ## the index has none for it, or it can't be had. Blocks while it fetches: a worker's job.
 static func streams(cell: String, idx: Dictionary) -> Array:
-	var want := str((idx.get("streams", {}) as Dictionary).get(cell, ""))
+	var v = _kept_json("streams", "stream", cell, idx, streams_url(cell))
+	return v["streams"] if v is Dictionary and v.get("streams") is Array else []
+
+
+## Where cell "ROW_COL"'s trees are (tools/tree_bake.py), beside the index.
+static func trees_url(cell: String) -> String:
+	return index_url.get_base_dir().path_join("tree/c%s.json" % cell)
+
+
+## The trees of cell `cell` ("ROW_COL"): {cell, rows, cols, trees, leaf} (see tools/tree_bake.py; RealTerrain.add_trees
+## reads it), from the copy kept on disk if it is the one index `idx` names, else fetched (and kept). {} when the index
+## has none for it, or it can't be had. Blocks while it fetches: a worker's job.
+static func trees(cell: String, idx: Dictionary) -> Dictionary:
+	var v = _kept_json("trees", "tree", cell, idx, trees_url(cell))
+	return v if v is Dictionary and v.get("trees") is String else {}
+
+
+## A cell's own file of the world's store (its index's `key` hash names the one wanted), from the copy kept on disk
+## under `folder` if it is that one, else fetched (and kept): its JSON, or null when the index has none or it can't be had.
+static func _kept_json(key: String, folder: String, cell: String, idx: Dictionary, url: String) -> Variant:
+	var want := str((idx.get(key, {}) as Dictionary).get(cell, ""))
 	if want == "":
-		return []
-	var path := dir.path_join("stream").path_join("c%s.json" % cell)
+		return null
+	var path := dir.path_join(folder).path_join("c%s.json" % cell)
 	var text := FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
 	if text.trim_suffix("\n").sha1_text().left(12) != want:
 		if offline:
-			return []
-		var res := http_get(streams_url(cell))
+			return null
+		var res := http_get(url)
 		if int(res["code"]) != 200:
-			return []
+			return null
 		text = (res["body"] as PackedByteArray).get_string_from_utf8()
 		if text.trim_suffix("\n").sha1_text().left(12) != want:
-			return []
+			return null   # (not the one the index names: it may have changed since; next time)
 		DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		if f != null:
 			f.store_string(text)
 			f.close()
-	var v = JSON.parse_string(text)
-	return v["streams"] if v is Dictionary and v.get("streams") is Array else []
+	return JSON.parse_string(text)
 
 
 ## The cells of a box (degrees) the game hasn't got but the index has baked (empty ones, the sea, aren't wanted).

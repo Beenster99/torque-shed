@@ -10,6 +10,8 @@ extends RefCounted
 const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
 ## COVER's id for rivers and lakes (the sea isn't cover: it's shaped into the heights).
 const WATER := 8
+## What leaves the trees have where the map says (tools/tree_bake.py LEAVES; RealTerrain.trees_at), by id: 0 unknown.
+const LEAVES: Array[String] = ["", "broadleaved", "needleleaved", "mixed"]
 ## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
 const BUILDING_KINDS: Array[String] = ["house", "shed", "barn", "shop", "block", "industrial", "worship", "civic"]
 

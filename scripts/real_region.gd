@@ -27,6 +27,8 @@ var id := ""
 var title := ""
 var hash := ""
 var credits: Array = []
+## The canopy map's credit, added to a region's when its cells have their trees (tools/tree_bake.py).
+const TREES_CREDIT := "Tree heights: Meta and World Resources Institute, High Resolution Canopy Height Maps (CC BY 4.0)."
 var theme := "hills"
 var sea := false
 ## The country's speed-limit rules ("uk", "jp" or "world": see RealPack.region).
@@ -147,6 +149,9 @@ static func _load(region_id: String) -> RealRegion:
 		if stitched != null:
 			stitched.spans = _cell_spans(cells, mid)
 			stitched.streams = _cell_streams(cells, mid)
+			_cell_trees(cells, stitched.terrain)
+			if stitched.terrain.has_trees():
+				stitched.credits.append(TREES_CREDIT)
 		return stitched
 	if region_id.begins_with(AREA_PREFIX):
 		var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
@@ -201,6 +206,13 @@ static func _load(region_id: String) -> RealRegion:
 	r.terrain = RealTerrain.new(dir, meta)
 	if r.terrain.live:
 		r.terrain.set_buildings(r.buildings)   # (live heights level the ground under them; baked ones were levelled by the baker)
+	var rows_tr = _json(dir.path_join("trees.json"))
+	if rows_tr is Dictionary and rows_tr.get("cells") is Array:
+		for row in rows_tr["cells"]:
+			if row is Dictionary:
+				r.terrain.add_trees(row)
+		if r.terrain.has_trees() and not r.credits.has(TREES_CREDIT):
+			r.credits.append(TREES_CREDIT)
 	return r
 
 
@@ -544,6 +556,16 @@ static func _cell_streams(cells: Array[Vector2i], frame: Vector2) -> Array:
 	for c in cells:
 		out.append_array(_streams_in(CellStore.streams("%d_%d" % [c.x, c.y], idx), frame))
 	return out
+
+
+## The trees of `cells` (their own files, CellStore.trees, fetched if this game hasn't the ones the world's index names)
+## into `terrain`. Blocks while it fetches: a worker's job.
+static func _cell_trees(cells: Array[Vector2i], terrain: RealTerrain) -> void:
+	var idx := CellStore.saved_index()
+	for c in cells:
+		var row := CellStore.trees("%d_%d" % [c.x, c.y], idx)
+		if not row.is_empty():
+			terrain.add_trees(row)
 
 
 ## The bridges and tunnels of `cells` (from their sketch blocks, CellStore.sketch, fetched if this game hasn't the one

@@ -988,6 +988,20 @@ func test_streams() -> void:
 	var pts: PackedVector2Array = lines[0][1] if lines.size() == 1 else PackedVector2Array()
 	check(pts.size() == 3 and pts[0].distance_to(RealRegion.to_frame(Vector2(54.3, -2.2), 54.3, -2.2)) < 0.01
 		and FileAccess.file_exists(store.path_join("stream/c577_711.json")), "a cell's streams are fetched by their hash, kept, and read as lines (%d)" % pts.size())
+	# And its trees (tools/tree_bake.py) the same way, read into a terrain.
+	var trees_text := JSON.stringify({"cell": "577_711", "rows": 2, "cols": 3, "trees": "eNpjeMWgzMAAAAUBAQ4=", "leaf": "eNpjYGJgZGAAAAATAAQ="})
+	host.files["/tree/c577_711.json"] = (trees_text + "\n").to_utf8_buffer()
+	index["trees"] = {"577_711": trees_text.sha1_text().left(12)}
+	var got_trees: Array = []
+	job = WorkerThreadPool.add_task(func(): got_trees.append(CellStore.trees("577_711", index)))
+	while not WorkerThreadPool.is_task_completed(job):
+		host.serve()
+		await t.get_tree().process_frame
+	WorkerThreadPool.wait_for_task_completion(job)
+	var g := RealTerrain.new("", {"frame": {"lat": 54.45, "lon": -2.125}})
+	g.add_trees(got_trees[0])
+	check(g.trees_at(0.0, 0.0) == (7 << 5 | 10) + 2 * 256 and FileAccess.file_exists(store.path_join("tree/c577_711.json")),
+		"and its trees, kept and read")
 	CellStore.offline = true
 	var changed := index.duplicate(true)
 	changed["streams"]["577_711"] = "000000000000"
