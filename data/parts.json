@@ -14768,6 +14768,54 @@
 				"classic"
 			],
 			"price": 130
+		},
+		"triple_led": {
+			"name": "Twin LED streetfighter headlights",
+			"description": "Two slim, angular LED lamps swept back like narrowed eyes, with daytime running lights along their brows. The look of today's big British triples.",
+			"type": "LED, twin",
+			"style": "twin",
+			"look": {
+				"lamp": "triple"
+			},
+			"lumens": 2800,
+			"mass": 1.1,
+			"size": 0.055,
+			"lightweight": true,
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"price": 185,
+			"styles": [
+				"naked",
+				"sport",
+				"roader"
+			]
+		},
+		"triple_led_rs": {
+			"name": "Twin LED streetfighter headlights, alloy",
+			"description": "The same angular LED pair in a brushed alloy housing, with bright running-light brows.",
+			"type": "LED, twin",
+			"style": "twin",
+			"look": {
+				"lamp": "triple",
+				"shell": "brushed"
+			},
+			"lumens": 3000,
+			"mass": 1.1,
+			"size": 0.058,
+			"lightweight": true,
+			"color": [
+				0.6,
+				0.61,
+				0.63
+			],
+			"price": 199,
+			"styles": [
+				"naked",
+				"sport"
+			]
 		}
 	},
 	"horn": {

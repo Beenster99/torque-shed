@@ -2804,6 +2804,9 @@ func _draw_headlight() -> void:
 		"bugeye":
 			_bugeye_lamps(at, size, shell, lens, chrome)
 			face_r = 0.0
+		"triple":
+			_triple_lamps(at, size, shell, lens, lk)
+			face_r = 0.0
 		"nacelle":
 			# A round lamp sunk into a cowl that wraps back over the fork tops.
 			_shell([{"c": at + Vector3(0.0, 0.0, -size * 0.5), "w": size * 1.05, "up": size * 1.05, "n": 2.0},
@@ -2854,6 +2857,40 @@ func _draw_headlight() -> void:
 	if lk.get("brackets", false):
 		for side in [-1.0, 1.0]:
 			_tube(at + Vector3(size * 1.05 * side, 0.0, 0.0), Vector3(0.09 * side, -0.02, 0.0), 0.007, chrome, Vector3.ONE, _steer_node)
+
+
+## The modern Speed Triple's pair: two slim, angular LED lamps either side of the middle,
+## swept back and raised at their outer ends like narrowed eyes, each with a daytime running
+## light along its brow that's lit whenever the ignition is on (look "brow" false leaves it
+## off), on a cast bracket between them.
+func _triple_lamps(at: Vector3, size: float, shell: Material, lens: Material, lk: Dictionary) -> void:
+	var gap := size * 1.15
+	var black := _mat(Color(0.04, 0.04, 0.045), 0.5, 0.45)
+	var drl := _lamp(Color(0.92, 0.96, 1.0), 3.5, "drl")
+	var inner := _lamp(Color(0.85, 0.92, 1.0), 3.0, "head")
+	for side in [-1.0, 1.0]:
+		var c := at + Vector3(side * gap, size * 0.1, 0.0)
+		var b := Basis(Vector3.UP, -side * 0.38) * Basis(Vector3.BACK, -side * 0.3)
+		var body := _box(c + b * Vector3(0.0, 0.0, size * 0.45), Vector3(size * 1.9, size * 0.8, size * 1.3), shell, _steer_node)
+		body.basis = b
+		body.name = "TripleLamp"
+		# The housing tapers to a point at the outer end: a wedge cut on the slant over it.
+		var wedge := _box(c + b * Vector3(side * size * 0.95, -size * 0.12, size * 0.4), Vector3(size * 0.5, size * 0.55, size * 1.2), shell, _steer_node)
+		wedge.basis = b * Basis(Vector3.BACK, side * 0.6)
+		var glass := _box(c + b * Vector3(0.0, -size * 0.06, -size * 0.24), Vector3(size * 1.75, size * 0.52, 0.006), lens, _steer_node)
+		glass.basis = b
+		glass.name = "Lens"
+		# The projector's bright eye in the glass, nearer the middle.
+		var eye := _mesh_instance(_cylinder(size * 0.17, 0.004), inner, c + b * Vector3(-side * size * 0.4, -size * 0.08, -size * 0.25), _steer_node)
+		eye.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
+		if lk.get("brow", true):
+			var brow := _box(c + b * Vector3(0.0, size * 0.28, -size * 0.25), Vector3(size * 1.8, size * 0.07, 0.008), drl, _steer_node)
+			brow.basis = b
+			brow.name = "DRL"
+		# The bracket arm back to the fork leg.
+		_tube(c + b * Vector3(side * size * 0.3, -size * 0.2, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+	var bridge := _box(at + Vector3(0.0, -size * 0.05, size * 0.5), Vector3(gap * 1.2, size * 0.6, size * 0.9), black, _steer_node)
+	bridge.name = "LampBracket"
 
 
 ## An old-school rectangular headlight centred on `at` (steering space), `size` setting its scale:
@@ -6943,12 +6980,14 @@ static func assembly_display(parts: Dictionary, cond: Dictionary, unseen := {}) 
 	var model := BikeModel.new()
 	model.build_from(BikeBuild.new(build, cond), Color(0.55, 0.56, 0.58), fitted, cond, false)
 	model.strip_to(parts.keys())
-	# Off the bike, a part leaves behind the cables and hoses that ran to the rest of it.
+	# Off the bike, a part leaves behind the cables and hoses that ran to the rest of it, and a
+	# headlight or tail unit the little stock indicators the bike wears beside them.
 	for slot in model._slot_meshes:
 		for mi in (model._slot_meshes[slot] as Array).duplicate():
-			if (mi as Node).has_meta("bike_only"):
+			if (mi as Node).has_meta("bike_only") or model._stock_pieces.has(mi):
 				(model._slot_meshes[slot] as Array).erase(mi)
 				mi.free()
+	model._stock_pieces.clear()
 	var bounds := AABB()
 	var first := true
 	for slot in parts:
