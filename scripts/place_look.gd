@@ -43,7 +43,7 @@ const KIT := {
 		"forest": Color(0.34, 0.36, 0.22), "shrub": Color(0.52, 0.47, 0.3), "rock": Color(0.66, 0.45, 0.32),
 		"plants": {"dry_bush": 110, "tussock": 50, "acacia": 14, "red_rock": 40, "rock": 30},
 		"broad": "acacia", "needle": "pine", "turns": false},
-	"tropical_dry": {"grass": Color(0.36, 0.46, 0.18), "dry": Color(0.68, 0.57, 0.35), "patch": Color(0.54, 0.43, 0.28),
+	"tropical_dry": {"grass": Color(0.46, 0.5, 0.22), "dry": Color(0.72, 0.6, 0.38), "patch": Color(0.6, 0.48, 0.3),
 		"forest": Color(0.2, 0.3, 0.12), "shrub": Color(0.42, 0.43, 0.22), "rock": Color(0.58, 0.47, 0.38),
 		"plants": {"acacia": 70, "tree": 40, "pine": 50, "dry_bush": 70, "bush": 30, "rock": 24},
 		"broad": "acacia", "needle": "pine", "turns": false},
@@ -91,10 +91,13 @@ const KIT_FIELDS := {
 const LAPSE := 0.0065
 const SNOW_TEMP := -1.5
 ## How much the satellite's mean colour of a place's land tones its kit's grass up close.
-const TINT_LAND := 0.35
+const TINT_LAND := 0.5
+## The most a clear place's sky takes off the world's own haze (Daylight.WORLD_FOG): the far peaks of a dry mountain
+## land stand out sharp.
+const MOST_CLEAR := -0.00065
 ## How far from the road (m) the satellite's colour of the ground takes over from the kit's and the cover's, and how
 ## much it takes there (its 1.7 km pixels are no use up close).
-const GROUND_NEAR := [40.0, 0.18]
+const GROUND_NEAR := [40.0, 0.3]
 const GROUND_FAR := [700.0, 0.7]
 
 ## The month a look is chosen for (0: this month, by the clock). The postcards hold it.
@@ -151,10 +154,10 @@ static func zone_shade(p: Dictionary, kit: String) -> Dictionary:
 			out["autumn"] = 0.4
 		return out
 	if k.substr(2, 1) == "a" and k.substr(0, 1) == "C":
-		out["grass"] = [Color(0.4, 0.54, 0.16), 0.4]
+		out["grass"] = [Color(0.3, 0.4, 0.15), 0.45]
 		out["forest"] = [Color(0.12, 0.3, 0.12), 0.5]
 		out["autumn"] = 0.4
-		out["plants"] = {"cypress": 40, "jungle_tree": 40, "tree": -50, "oak": -60, "sheep": -10}
+		out["plants"] = {"cypress": 60, "jungle_tree": 80, "bush": 40, "tree": -50, "oak": -60, "sheep": -10}
 		out["broad"] = "jungle_tree"
 		out["needle"] = "cypress"
 	elif k.substr(0, 1) == "D":
@@ -325,24 +328,34 @@ static func _sun_share(p: Dictionary) -> float:
 	return clampf(sun / maxf(day, 1.0), 0.0, 1.0)
 
 
-## The sky's tint ({top, horizon, fog, amount, haze}, Daylight.tint) and the sun's path (lat, decl): deep blue and clear
-## up high, dusty and warm over a desert, pale and hazy in damp air, a sea haze by the coast.
+## The sky's tint ({top, horizon, fog, amount, haze}, Daylight.tint) and the sun's path (lat, decl). The air's clarity
+## is the month's sunshine against its damp: clear, warm and golden over a sunny dry land (the Atlas, Oaxaca's dry
+## months), deep blue up high, pale grey and thick in a wet maritime month, cool blue in the far north, a white haze in
+## the humid tropics, and a sea haze by the coast.
 static func sky(p: Dictionary, month: int, green: float, kit: String) -> Dictionary:
 	var m := PlaceProfile.month(p, month)
+	var lat := float(p.get("lat", 0.0))
 	var high := clampf(float(p["altitude"]["mean"]) / 2500.0, 0.0, 1.0)
-	var damp := clampf(float(m["rain_mm"]) / 150.0, 0.0, 1.0) * clampf((float(m["temp_c"]) + 5.0) / 25.0, 0.2, 1.0)
+	var temp := float(m["temp_c"])
+	var days := float(PlaceProfile.MONTH_DAYS[clampi(month, 1, 12) - 1])
+	var sunny := clampf(float(m["sun_h"]) / maxf(day_hours(lat, month) * days, 1.0), 0.0, 1.0)
+	var damp := clampf(float(m["rain_days"]) / days, 0.0, 1.0) * clampf((temp + 5.0) / 25.0, 0.3, 1.0)
+	var clear := clampf(sunny * 1.4 - damp * 0.8, 0.0, 1.0)
+	var warm := smoothstep(8.0, 24.0, temp)
 	var dust := (1.0 - green) * (1.0 if kit == "arid" else (0.6 if kit in ["mediterranean", "tropical_dry"] else 0.2))
+	var north := smoothstep(48.0, 64.0, absf(lat))
 	var coast := 1.0 if bool(p.get("coast", false)) else 0.0
-	var top := Color(0.22, 0.42, 0.75).lerp(Color(0.09, 0.27, 0.72), high).lerp(Color(0.34, 0.48, 0.7), damp * 0.5)
-	var horizon := Color(0.72, 0.8, 0.9).lerp(Color(0.88, 0.78, 0.62), dust * 0.8).lerp(Color(0.78, 0.82, 0.84), damp * 0.5)
-	var fog := Color(0.72, 0.79, 0.88).lerp(Color(0.88, 0.76, 0.6), dust * 0.8).lerp(Color(0.76, 0.8, 0.82), damp * 0.6)
+	var top := Color(0.24, 0.42, 0.72).lerp(Color(0.1, 0.3, 0.74), maxf(high, clear * 0.7)).lerp(Color(0.4, 0.5, 0.64), damp * 0.6)
+	var horizon := Color(0.74, 0.8, 0.86).lerp(Color(0.9, 0.82, 0.68), clear * warm * 0.8).lerp(Color(0.92, 0.78, 0.6), dust * 0.6) \
+		.lerp(Color(0.76, 0.78, 0.8), damp * 0.6).lerp(Color(0.7, 0.8, 0.94), north * 0.5)
+	var fog := Color(0.72, 0.78, 0.84).lerp(Color(0.9, 0.8, 0.64), clear * warm * 0.8).lerp(Color(0.9, 0.74, 0.54), dust * 0.6) \
+		.lerp(Color(0.72, 0.74, 0.76), damp * 0.7).lerp(Color(0.68, 0.78, 0.92), north * 0.5)
 	if kit == "tropical_wet":
-		horizon = horizon.lerp(Color(0.82, 0.86, 0.84), 0.4)
-		fog = fog.lerp(Color(0.82, 0.86, 0.84), 0.5)
-	# (below nothing up high and dry: the thin clear air takes some of the world's own haze away)
-	var haze := maxf(-0.00045, 0.0002 + damp * 0.0006 + dust * 0.0005 + coast * 0.0003 - high * 0.0009)
-	return {"top": top, "horizon": horizon, "fog": fog, "amount": 0.55, "haze": haze,
-		"lat": float(p.get("lat", 0.0)), "decl": declination(month)}
+		horizon = horizon.lerp(Color(0.86, 0.9, 0.86), 0.5)
+		fog = fog.lerp(Color(0.84, 0.88, 0.84), 0.6)
+	# (below nothing in clear air and up high: they take some of the world's own haze away)
+	var haze := clampf(0.0001 + damp * 0.0009 + dust * 0.0003 + coast * 0.0003 - clear * 0.0006 - high * 0.0004, MOST_CLEAR, 0.0012)
+	return {"top": top, "horizon": horizon, "fog": fog, "amount": 0.8, "haze": haze, "lat": lat, "decl": declination(month)}
 
 
 ## The odds of each kind of weather in `month` ({state: weight}, Weather.odds), from the climate normals: rain as
