@@ -31,7 +31,8 @@ static var current: Daylight
 ## Settings say; 0 back at the shed.
 static var adventure_rate := 0.0
 ## An adventure theme's tint on the day sky and the haze ({top, horizon, fog, amount, haze}: see
-## AdventureTheme "sky"); empty back at the shed. Set it with set_tint.
+## AdventureTheme "sky"), and on a real ride the sun's path there (lat, decl: the latitude and the sun's
+## declination, in degrees; see PlaceLook.sky); empty back at the shed. Set it with set_tint.
 static var tint := {}
 ## 0 under the open sky .. 1 deep in an adventure's tunnel (set each frame by AdventureWorld): the sun and most of the
 ## sky's light are shut out, leaving the tunnel's own lamps.
@@ -199,10 +200,18 @@ func _on_host_time(h: float, rate: float) -> void:
 # ---------------------------------------------------------------------------- the look
 
 ## Where the sun is at `h` hours: rises in the east (+X) at 6, highest in the south (+Z) at
-## noon, sets in the west at 18.
+## noon, sets in the west at 18. On a real ride (the tint's lat and decl) it is the sun's path
+## there that month: high in the tropics, low in a northern winter, in the north south of the
+## tropics, up early and late in summer.
 static func sun_direction(h: float) -> Vector3:
 	var a := (h - 12.0) / 24.0 * TAU
-	return Vector3(-sin(a), cos(a) * cos(TILT), cos(a) * sin(TILT)).normalized()
+	if not tint.has("lat"):
+		return Vector3(-sin(a), cos(a) * cos(TILT), cos(a) * sin(TILT)).normalized()
+	var lat := deg_to_rad(float(tint["lat"]))
+	var decl := deg_to_rad(float(tint.get("decl", 0.0)))
+	var north := cos(lat) * sin(decl) - sin(lat) * cos(decl) * cos(a)
+	var up := sin(lat) * sin(decl) + cos(lat) * cos(decl) * cos(a)
+	return Vector3(-sin(a) * cos(decl), up, -north).normalized()
 
 
 func _apply(force: bool) -> void:

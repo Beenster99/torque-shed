@@ -258,7 +258,8 @@ func test_trees() -> void:
 	check(chunks > 10 and planted > chunks * 20, "trees planted from the canopy map in %d chunks (%d of them)" % [chunks, planted])
 	check(stray == 0 and wet == 0 and tall == 0,
 		"each where the map has trees (%d not), none in the water (%d), as tall as the map says (%d not)" % [stray, wet, tall])
-	check(kinds.has("pine") and (kinds.has("tree") or kinds.has("oak")), "conifers and broadleaves both (%s)" % [kinds.keys()])
+	check(kinds.has(r.look["needle"]) and (kinds.has(r.look["broad"]) or kinds.has("tree") or kinds.has("autumn_tree")),
+		"conifers and broadleaves both, the place's kinds (%s)" % [kinds.keys()])
 	# Without the canopy map, the trees are scattered by the land cover as before.
 	var cells: Array = p.terrain._tree_cells
 	p.terrain._tree_cells = []

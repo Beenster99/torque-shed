@@ -46,9 +46,10 @@ const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0
 	"post": 220.0, "snow_pole": 260.0, "km_post": 200.0, "buildings": 1100.0, "lines": 380.0,
 	"cactus": 420.0, "red_rock": 320.0, "gorse": 260.0, "dune_grass": 200.0, "oak": 650.0, "sheep": 220.0,
 	"mesa": 3400.0, "crag": 2400.0, "lighthouse": 2600.0, "walls": 420.0,
-	"bridge": 1600.0}
+	"bridge": 1600.0, "birch": 650.0, "autumn_tree": 650.0, "olive": 500.0, "cypress": 650.0, "palm": 650.0,
+	"acacia": 650.0, "jungle_tree": 650.0, "agave": 220.0, "tussock": 200.0}
 ## Small things that may stand close to the road's edge (the rest keep 6 m off it).
-const NEAR_KINDS := ["rock", "bush", "dry_bush", "red_rock", "gorse", "dune_grass", "sheep"]
+const NEAR_KINDS := ["rock", "bush", "dry_bush", "red_rock", "gorse", "dune_grass", "sheep", "agave", "tussock"]
 ## The far scenery (AdventureTheme "far"): how far out from the road it stands (m), and how
 ## clear of any road its middle must be.
 const FAR_PLACE := {"mesa": [170.0, 380.0, 80.0], "crag": [70.0, 260.0, 40.0]}
@@ -64,7 +65,7 @@ const FENCE_ODDS := {"tarmac": 0.55, "gravel": 0.3, "sand": 0.0, "snow": 0.0}
 ## A beach's sand, along a coastal sea.
 const BEACH := Color(0.86, 0.8, 0.62)
 ## On a real road the land is tinted by what covers it (RealPack.COVER): colour and how far it takes over the theme's
-## (under a river or a lake, its muddy bed: RealLand draws the water over it).
+## (under a river or a lake, its muddy bed: RealLand draws the water over it). A place's look has its own (PlaceLook).
 const COVER_TINT := {
 	"forest": [Color(0.09, 0.22, 0.1), 0.85], "crop": [Color(0.62, 0.66, 0.3), 0.7], "shrub": [Color(0.34, 0.4, 0.2), 0.55],
 	"urban": [Color(0.52, 0.5, 0.46), 0.65], "sand": [BEACH, 0.8], "barren": [Color(0.5, 0.45, 0.38), 0.6],
@@ -72,8 +73,8 @@ const COVER_TINT := {
 }
 ## How much of each thing's scenery a real road's cover takes (0 to 1), by what covers the ground: trees, bushes,
 ## rocks, and anything else (sheep and the like). A cover left out takes OTHER_ODDS of it.
-const TREES := ["tree", "pine", "oak", "snow_pine"]
-const BUSHES := ["bush", "dry_bush", "gorse"]
+const TREES := ["tree", "pine", "oak", "snow_pine", "birch", "autumn_tree", "olive", "cypress", "palm", "acacia", "jungle_tree"]
+const BUSHES := ["bush", "dry_bush", "gorse", "agave", "tussock", "cactus"]
 const ODDS := {
 	"trees": {"forest": 1.0, "shrub": 0.35, "wetland": 0.3, "grass": 0.12, "urban": 0.15, "crop": 0.03, "barren": 0.05, "sand": 0.03, "rock": 0.0, "water": 0.0},
 	"bushes": {"forest": 0.6, "shrub": 1.0, "wetland": 0.5, "grass": 0.5, "urban": 0.1, "crop": 0.1, "barren": 0.3, "sand": 0.3, "rock": 0.1, "water": 0.0},
@@ -82,7 +83,8 @@ const ODDS := {
 }
 const OTHER_ODDS := 0.3
 ## What a real road tries to scatter per chunk, then thinned to the cover (the theme's own counts are for made-up
-## country): enough that forest is dense, and open country keeps only a few.
+## country): enough that forest is dense, and open country keeps only a few. A place's look has its own kit of them
+## (PlaceLook "plants").
 const REAL_TRIES := {"tree": 240, "pine": 70, "bush": 70, "rock": 24}
 ## How far out from a real road scenery is scattered (m): woods run well up the hillsides.
 const REAL_REACH := 260.0
@@ -97,7 +99,9 @@ const CANOPY_HEIGHT_STEP := 2.0
 ## Past this far out (m) only this share of the trees are planted: the far woods look as thick with fewer.
 const CANOPY_THIN := [70.0, 0.4]
 ## Each tree's height and its crown's width (m) as AdventureProps draws it, to scale it to the real tree's.
-const TREE_SIZE := {"tree": [6.6, 5.2], "oak": [8.1, 7.6], "pine": [8.0, 4.4], "snow_pine": [8.0, 4.4]}
+const TREE_SIZE := {"tree": [6.6, 5.2], "oak": [8.1, 7.6], "pine": [8.0, 4.4], "snow_pine": [8.0, 4.4], "birch": [8.0, 3.2],
+	"autumn_tree": [6.6, 5.2], "olive": [4.1, 4.4], "cypress": [8.8, 1.9], "palm": [9.0, 5.6], "acacia": [4.8, 6.8],
+	"jungle_tree": [9.6, 7.2]}
 ## A real tree's crown is this wide for its height (m per m, and m), a broadleaf's and a conifer's.
 const CROWN_BROAD := [0.35, 3.0]
 const CROWN_NEEDLE := [0.22, 2.0]
@@ -247,9 +251,19 @@ static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: fl
 	elif k == 2:
 		col = col.lerp(route.look["verge"][here], 0.5)
 	if k > 1:
-		var tint: Array = COVER_TINT.get(route.cover_at(x, z), [])
+		var tint: Array = (route.look.get("cover", COVER_TINT) as Dictionary).get(route.cover_at(x, z), [])
 		if not tint.is_empty():
 			col = col.lerp(tint[0] as Color, float(tint[1]) * (0.5 if k == 2 else 1.0))
+		# Further out, the satellite's own colour of the ground (PlaceLook).
+		var ground: Array = route.look.get("ground", [])
+		if not ground.is_empty():
+			var ll := RealRegion.from_frame(route.frame, x, z)
+			var g := PlaceLook.ground_at(ground, ll.x, ll.y)
+			if g.a > 0.0:
+				col = col.lerp(Color(g.r, g.g, g.b), PlaceLook.ground_share(lat) * g.a)
+	# Snow above the place's snow line (PlaceLook), on the gentler ground.
+	if y > route.snow_line - 120.0 and route.look.has("snow_line"):
+		col = col.lerp(PlaceLook.SNOW, smoothstep(route.snow_line - 120.0, route.snow_line + 80.0, y) * 0.85)
 	# Steep ground away from the road shows rock (snow lies on the gentler slopes).
 	var rise := absf(y - route.ph[i]) / maxf(lat, 1.0)
 	if k > 3:
@@ -378,18 +392,25 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	var counts: Dictionary = (AdventureTheme.get_value(theme, "scenery", {}) as Dictionary).get(surf, SCENERY.get(surf, {}))
 	var real := route.real != null
 	var canopy := real and _has_canopy(route, i0, i1)
+	var tries: Dictionary = route.look.get("plants", REAL_TRIES)
 	if real:
 		counts = counts.duplicate()
+		if route.look.has("plants"):
+			counts = tries.duplicate()
+			if surf == "snow":
+				counts["snow_pine"] = int(counts.get("pine", 0)) + int(counts.get("snow_pine", 0))
+				counts.erase("pine")
 		for kind in REAL_TRIES:
-			counts[kind] = REAL_TRIES[kind]
+			if not route.look.has("plants"):
+				counts[kind] = REAL_TRIES[kind]
 	if canopy:
 		mm = _canopy_trees(route, c, i0, i1, ax, az, surf)
 	for kind in counts:
 		if canopy and kind in TREES:
 			continue
 		var list := []
-		var tries := int(REAL_TRIES.get(kind, counts[kind])) if real else int(counts[kind])
-		for k in tries:
+		var many := int(tries.get(kind, counts[kind])) if real else int(counts[kind])
+		for k in many:
 			var i := rng.randi_range(i0, i1)
 			var side := -1.0 if rng.randf() < 0.5 else 1.0
 			var near := 2.5 if kind in NEAR_KINDS else 6.0
@@ -403,7 +424,7 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	# by the sea dry-stone walls and hedges (a theme's "bounds").
 	var buildings := AdventureProps.new_arrays()
 	var walls := AdventureProps.new_arrays()
-	var bounds: Array = AdventureTheme.get_value(theme, "bounds", [])
+	var bounds: Array = route.look["bounds"] if route.look.has("bounds") else AdventureTheme.get_value(theme, "bounds", [])
 	var bound_kind := "fence" if bounds.is_empty() else str(bounds[0])
 	var bound_odds: Dictionary = FENCE_ODDS if bounds.is_empty() else bounds[1]
 	var stretch := int(i0 * AdventureRoute.STEP / 600.0)
@@ -518,7 +539,9 @@ static func _canopy_trees(route: AdventureRoute, c: int, i0: int, i1: int, ax: f
 	var t := route.real.terrain
 	var out := {}
 	var broad := "oak" if AdventureTheme.get_value(route.theme, "scenery", {}).get("tarmac", {}).has("oak") else "tree"
-	var needle := "snow_pine" if surf == "snow" else "pine"
+	var needle := "snow_pine" if surf == "snow" else str(route.look.get("needle", "pine"))
+	broad = str(route.look.get("broad", broad))
+	var autumn := float(route.look.get("autumn", 0.0))
 	var along := int(CANOPY_STEP / AdventureRoute.STEP)
 	for i in range(i0, i1, along):
 		var h := route.hd[i]
@@ -546,6 +569,10 @@ static func _canopy_trees(route: AdventureRoute, c: int, i0: int, i1: int, ax: f
 				var n := int(many + rng.randf())
 				for k in n:
 					var kind := needle if (conifer if leaf != 3 else rng.randf() < 0.5) else (broad if share < 0.5 or rng.randf() < 0.4 else "tree")
+					if kind == "tree" and broad in ["jungle_tree", "acacia"]:
+						kind = broad   # (no temperate trees in the tropics' woods)
+					if kind in ["tree", "oak"] and autumn > 0.0 and rng.randf() < autumn:
+						kind = "autumn_tree"
 					var ii := clampi(i + rng.randi_range(-along / 2, along / 2), i0, i1)
 					var lj := maxf(lat0, lat - CANOPY_STEP * 1.5 + rng.randf() * CANOPY_STEP)
 					var xf := _on_land(route, ii, lj * side, ax, az, rng.randf() * TAU, 1.0)
@@ -584,7 +611,7 @@ static func _needle_odds(route: AdventureRoute, t: RealTerrain, x: float, z: flo
 	var y := t.height(x, z)
 	if not is_nan(y) and y > float(NEEDLE_ODDS["high_y"]):
 		p += float(NEEDLE_ODDS["high"])
-	if route.theme == "alpine":
+	if route.theme == "alpine" or str(route.look.get("kit", "")) in ["alpine", "boreal"]:
 		p += float(NEEDLE_ODDS["alpine"])
 	return p
 
@@ -1016,7 +1043,7 @@ static func _commit_scenery(data: Dictionary, node: Node3D, scale: float) -> voi
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "MM_" + kind
 		mmi.multimesh = multi
-		if kind in ["post", "snow_pole", "km_post", "bush", "dry_bush", "gorse", "dune_grass", "sheep", "red_rock"]:
+		if kind in ["post", "snow_pole", "km_post", "bush", "dry_bush", "gorse", "dune_grass", "sheep", "red_rock", "agave", "tussock"]:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_range(mmi, float(RANGES.get(kind, 400.0)) * scale)
 		node.add_child(mmi)

@@ -159,8 +159,11 @@ var _seq := PackedInt32Array()
 ## The sea round the region (coastal), and the snow line over the tops (alpine; INF without).
 var sea := false
 var snow_line := INF
-## The theme's colours: {"land", "patch", "verge", "road"} -> {surface: Color} (see AdventureSurface).
+## The theme's colours: {"land", "patch", "verge", "road"} -> {surface: Color} (see AdventureSurface); on a real road the
+## whole look of the place instead (PlaceLook: its cover, plants, fields, sky and weather besides).
 var look := {}
+## A real road's frame, (lat, lon) of its (0, 0) (its terrain's), or ZERO.
+var frame := Vector2.ZERO
 ## Where the land's colour is patched with the theme's "patch" colour (see AdventureChunk._land_color).
 var patches: FastNoiseLite
 ## The real road this route follows (see plan_real).
@@ -177,6 +180,9 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	theme = pack.theme if AdventureTheme.has(pack.theme) else "hills"
 	_theme_numbers()
 	sea = pack.sea
+	frame = Vector2(pack.terrain.lat0, pack.terrain.lon0) if pack.terrain else Vector2.ZERO
+	look = PlaceLook.for_pack(pack, PlaceLook.month_now())
+	snow_line = float(look["snow_line"])
 	length = clampf(km, 1.0, maxf(pack.max_km(), 1.0)) * 1000.0
 	total = length + pack.run_out_m
 	var n := mini(int(ceil(total / STEP)) + 1, pack.x.size())
@@ -185,7 +191,7 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	rng.seed = hash([seed, "adventure_road", theme, pack.id])
 	patches = FastNoiseLite.new()
 	patches.seed = seed + 1
-	patches.frequency = 1.0 / 90.0
+	patches.frequency = 1.0 / float(look.get("field_m", 90.0))
 	patches.fractal_octaves = 2
 	_planned = false
 	sites.clear()

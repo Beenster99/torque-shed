@@ -23777,6 +23777,32 @@ func _test_ghost_adventure() -> void:
 	await _ghosts().test_adventure()
 
 
+# ---------------------------------------------------------------------------- climate look (tests/place_look_tests.gd)
+
+func _place_look() -> RefCounted:
+	return load("res://tests/place_look_tests.gd").new(self)
+
+
+func _test_place_look_eight_places() -> void:
+	_place_look().test_eight_places()
+
+
+func _test_place_look_rules() -> void:
+	_place_look().test_rules()
+
+
+func _test_place_look_ground() -> void:
+	_place_look().test_ground()
+
+
+func _test_place_look_sun() -> void:
+	_place_look().test_sun()
+
+
+func _test_place_look_plants() -> void:
+	_place_look().test_plants()
+
+
 # ---------------------------------------------------------------------------- sound of place (tests/place_sound_tests.gd)
 
 func _place_sound() -> RefCounted:

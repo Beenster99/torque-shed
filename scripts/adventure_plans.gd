@@ -90,6 +90,7 @@ static func _run(plan: Dictionary) -> Dictionary:
 	_say(k, "")
 	if bool(res["ok"]):
 		RealPack.register(res["pack"])
+		PlaceLook.warm(res["pack"])   # (the place's profiles, for its look: fetched here, off the main thread)
 	return res
 
 
