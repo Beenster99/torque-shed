@@ -82,19 +82,18 @@ func test_tiles() -> void:
 	var was := [HeightTiles.disk, HeightTiles.keep, HeightTiles._used_now]
 	HeightTiles.disk = "user://test_heights_kept"
 	RegionStore._remove_tree(HeightTiles.disk)
-	var keys: Array[Vector3i] = [Vector3i(14, 5, 1), Vector3i(14, 5, 2), Vector3i(14, 5, 3)]
+	var keys: Array[Vector3i] = [Vector3i(14, 5, 1), Vector3i(14, 5, 2), Vector3i(14, 5, 3), Vector3i(14, 5, 4)]
 	for k in keys:
 		DirAccess.make_dir_recursive_absolute(HeightTiles.disk.path_join("14/5"))
 		var f := FileAccess.open(HeightTiles.disk.path_join("14/5/%d.webp" % k.z), FileAccess.WRITE)
 		f.store_string("tile")
 		f.close()
 		OS.delay_msec(1100)   # (a second apart: when each was fetched)
-	HeightTiles.keep = 1
+	HeightTiles.keep = 2
 	HeightTiles._used_now = {keys[0]: true}
 	var gone := HeightTiles.prune()
-	check(gone == 1 and FileAccess.file_exists(HeightTiles.disk.path_join("14/5/1.webp")) and not FileAccess.file_exists(HeightTiles.disk.path_join("14/5/2.webp"))
-		and FileAccess.file_exists(HeightTiles.disk.path_join("14/5/3.webp")),
-		"past the cap the tile fetched longest ago goes, not one this run asked for (%d went)" % gone)
+	var left := [1, 2, 3, 4].filter(func(z): return FileAccess.file_exists(HeightTiles.disk.path_join("14/5/%d.webp" % z)))
+	check(gone == 2 and left == [1, 4], "past the cap the tiles fetched longest ago go, not one this run asked for (%s left)" % str(left))
 	RegionStore._remove_tree(HeightTiles.disk)
 	HeightTiles.disk = was[0]
 	HeightTiles.keep = was[1]
