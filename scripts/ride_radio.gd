@@ -3,7 +3,8 @@ extends Node
 ## The bike's radio on an adventure: the local stations of the country you're riding through (PlaceSound's
 ## radio list, the local language first). Each press of its key ({ride_radio}) tunes the next station, and after
 ## the last it goes off. Switched on again, it starts on the station you last left it on in that country. It plays
-## from your bike, on the Radio bus (the radio volume setting), and hisses when a station can't be reached. RideAmbience makes it, so it lasts as long as the ride.
+## from your bike, on the Radio bus (the radio volume setting), and hisses when a station can't be reached.
+## RideAmbience makes it, so it lasts as long as the ride.
 
 ## The station each country was last left on, so the next ride there starts where you were.
 static var last := {}
