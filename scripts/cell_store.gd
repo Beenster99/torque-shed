@@ -24,6 +24,11 @@ static var _index := {}
 static var _index_at := 0
 ## One fetch at a time (the TV's view and a journey's plan may both want a cell).
 static var _fetching := Mutex.new()
+## At most this many fetched cells are kept on disk (each about 2.5 MB with its streams and trees): past it, those used
+## longest ago go (prune), never one this game has used since it started (its land may be on the screen).
+static var keep := 400
+## When each kept cell was last used ("ROW_COL" -> unix time), in used.json beside them; and those used this run.
+static var _used_now := {}
 
 
 ## The index: {format, release, cells: {"ROW_COLUMN": {hash, bytes, url} or {empty: true}}, areas: {name: {...}}}. Fetched
@@ -246,11 +251,72 @@ static func _fetch_cells(cells: Array[Vector2i], progress: Callable) -> String:
 		DirAccess.remove_absolute(zip)
 		if why != "":
 			return why
+		touch([c])
 		done += 1
 		if progress.is_valid():
 			progress.call(done, want.size())
 	RealRegion.forget_areas()
+	prune()
 	return ""
+
+
+## Notes cells `cells` used now (fetched, or stitched into a region): kept the longest, and never pruned this run.
+static func touch(cells: Array[Vector2i]) -> void:
+	_lock.lock()
+	var used := _used()
+	var now := int(Time.get_unix_time_from_system())
+	for c in cells:
+		var name := "%d_%d" % [c.x, c.y]
+		used[name] = now
+		_used_now[name] = true
+	if DirAccess.dir_exists_absolute(dir):
+		var f := FileAccess.open(dir.path_join("used.json"), FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(used))
+			f.close()
+	_lock.unlock()
+
+
+static func _used() -> Dictionary:
+	var v = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("used.json"))) if FileAccess.file_exists(dir.path_join("used.json")) else null
+	return v if v is Dictionary else {}
+
+
+## Deletes the kept cells past `keep`, those used longest ago first (a cell kept before used.json was, by when it was
+## fetched), with their streams and trees; never one used this run. Returns how many went.
+static func prune() -> int:
+	_lock.lock()
+	var used := _used()
+	var kept: Array = []   # [when, name]
+	var d := DirAccess.open(dir)
+	if d != null:
+		for sub in d.get_directories():
+			var at := dir.path_join(sub).path_join("region.json")
+			if sub.begins_with("c") and FileAccess.file_exists(at):
+				var name := sub.substr(1)
+				kept.append([int(used.get(name, FileAccess.get_modified_time(at))), name])
+	var gone := 0
+	if kept.size() > keep:
+		kept.sort()
+		for k in kept:
+			if kept.size() - gone <= keep:
+				break
+			var name: String = k[1]
+			if _used_now.has(name):
+				continue
+			RegionStore._remove_tree(dir.path_join("c" + name))
+			for folder in ["stream", "tree"]:
+				DirAccess.remove_absolute(dir.path_join(folder).path_join("c%s.json" % name))
+			used.erase(name)
+			gone += 1
+		var f := FileAccess.open(dir.path_join("used.json"), FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(used))
+			f.close()
+	_lock.unlock()
+	if gone > 0:
+		RealRegion.forget_areas()
+	return gone
 
 
 ## GETs `url` (https or http), following redirects: {code, body}. Code 0 when there was no answer. Blocks.
