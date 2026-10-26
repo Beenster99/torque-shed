@@ -144,7 +144,7 @@ func has_ground(x: float, z: float) -> bool:
 	return blocks.has(RoadBlock.key_of(x, z))
 
 
-func _on_ground_arrived(area: Rect2) -> void:
+func _on_ground_arrived(area: Rect2, _level := 0) -> void:
 	_lock.lock()
 	for k: Vector2i in blocks.keys() + _waiting.keys() + _tasks.keys():
 		if Rect2(Vector2(k) * RoadBlock.SIZE, Vector2.ONE * RoadBlock.SIZE).grow(READY_PAD).intersects(area):

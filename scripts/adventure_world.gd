@@ -145,10 +145,21 @@ func setup(pack: RealPack, seed := 1, km := 0.0) -> void:
 	ridges.setup(self, route.real.terrain)
 	add_child(ridges)
 	ridges.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
-	if network and _start_network():
-		return   # (no RealLand: the blocks lay out a ground of their own until the land follows the network, T5)
+	var on_network := network and _start_network()
 	land = RealLand.new()
+	var follows := land.has_method("set_roads")
+	# (riders may ride the land off the roads on the network ride: RealLand.roam, set by name till T5's land is in)
+	if follows:
+		(RealLand as Script).set("roam", on_network)
+	if on_network and not follows:
+		land.free()
+		land = null
+		return   # (no RealLand: the blocks lay out a ground of their own till the land can follow the network, T5)
 	land.setup(self, route)
+	if on_network:
+		# The land everywhere round the riders, the roads cut in (T5's network mode): no ground of the blocks' own.
+		land.call("set_roads", roads.net)
+		roads.net.debug_ground = false
 	add_child(land)
 	land.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
 

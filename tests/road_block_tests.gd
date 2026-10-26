@@ -343,7 +343,9 @@ func test_ride() -> void:
 	w.roads_region = region
 	w.setup(AdventurePlans.pack_for(plan), 1, 20.0)
 	AdventureWorld.network = was
-	check(w.roads != null and w.land == null, "the network ride streams road blocks (and no RealLand till T5's follows the network)")
+	var follows := RealLand.new().has_method("set_roads")
+	check(w.roads != null and (w.land != null) == follows and w.roads.net.debug_ground != follows,
+		"the network ride streams road blocks, on the land following the network (or a ground of their own till it can)")
 	if w.roads == null:
 		w.free()
 		return
