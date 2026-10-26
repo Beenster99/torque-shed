@@ -26,7 +26,7 @@
 		"market_east_asia": {"sound": "market_east_asia", "db": -15.0},
 		"traffic": {"sound": "traffic_horns", "db": -16.0},
 		"scooters": {"sound": "scooters", "db": -17.0},
-		"bicycles": {"sound": "bicycle_bells", "db": -18.0}
+		"bicycles": {"sound": "cycle_street", "db": -18.0}
 	},
 	"events": {
 		"church_bells": {"sound": "church_bells", "db": -8.0, "hours": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]},
