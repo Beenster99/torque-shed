@@ -29,6 +29,8 @@ var _list := false
 func _ready() -> void:
 	# The old demo bikes these were written round (a player's new shed starts empty).
 	Shed.demo_bikes = true
+	# The roads' forks are out of the game but kept working (see AdventureRoute.forks_on).
+	AdventureRoute.forks_on = true
 	await get_tree().process_frame
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shard="):
@@ -556,6 +558,7 @@ func _run_all() -> void:
 	await _t(&"_test_planner_world_map")
 	await _t(&"_test_real_pack")
 	await _t(&"_test_real_levels")
+	await _t(&"_test_real_no_forks")
 	await _t(&"_test_real_forks")
 	await _t(&"_test_real_fork_ride")
 	await _t(&"_test_real_stops")
@@ -22482,6 +22485,10 @@ func _test_planner_ride() -> void:
 
 func _test_real_pack() -> void:
 	_real().test_pack()
+
+
+func _test_real_no_forks() -> void:
+	_real().test_no_forks()
 
 
 func _test_real_forks() -> void:

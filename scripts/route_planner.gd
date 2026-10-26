@@ -251,7 +251,7 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	pack.pois = _pois(region, xs, zs)
 	parts["places"] = Time.get_ticks_msec() - t0
 	pack.junctions = thin_junctions(junctions_along(region, steps, xs, zs))
-	pack.forks = plan_forks(region, steps, xs, zs, elev, chunks_info, costs, int(request.get("seed", 0)), terrain)
+	pack.forks = plan_forks(region, steps, xs, zs, elev, chunks_info, costs, int(request.get("seed", 0)), terrain) if AdventureRoute.forks_on else []
 	if terrain != null and terrain.live and terrain.fetch() > 0:
 		return _fail("Couldn't get the lie of the land for that journey: are you online?")
 	pack.fork_count = pack.forks.size()

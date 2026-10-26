@@ -389,6 +389,18 @@ func test_limits() -> void:
 
 
 ## Real forks: a second way the crew can vote for, planned as a road of its own, joining the main road at both ends.
+## In the game the roads don't fork: a baked tour's ways stay unbuilt, with no signposts or junctions for them
+## (the tests turn AdventureRoute.forks_on on to keep the machinery working).
+func test_no_forks() -> void:
+	var p := Rides.tour_pack(EPIC)
+	AdventureRoute.forks_on = false
+	var r := AdventureRoute.new()
+	r.plan_real(p, 7, 23.0)
+	AdventureRoute.forks_on = true
+	check(p.forks.size() >= 1 and r.forks.is_empty() and r.sites_of("fork").is_empty() and r.next_fork(0.0) < 0,
+		"with forks off the Dales' %d forks aren't on the road (%d planned, %d signposts)" % [p.forks.size(), r.forks.size(), r.sites_of("fork").size()])
+
+
 func test_forks() -> void:
 	var p := Rides.tour_pack(EPIC)
 	check(p != null and p.forks.size() >= 1 and p.max_km() > 60.0, "the tour of the Dales has forks (%d) over %.0f km" % [p.forks.size(), p.max_km()])

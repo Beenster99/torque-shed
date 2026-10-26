@@ -78,6 +78,9 @@ const WAY_LETTERS: Array[String] = ["A", "B", "C"]
 const PACE := {"straight": 90.0, "sweeping": 78.0, "curvy": 58.0, "very_curvy": 40.0}
 const PACE_SURF := {"tarmac": 1.0, "gravel": 0.68, "sand": 0.5, "snow": 0.5}
 
+## Whether roads fork at all. Off in the game (Simon took the forks out); the tests turn it on to keep the machinery
+## (the ways, the votes, the signposts) working should they come back.
+static var forks_on := false
 var seed_value := 0
 var theme := "varied"
 ## Metres from the start to the destination, and the whole road (with the run-out).
@@ -379,6 +382,8 @@ func road_name_at(s: float) -> String:
 ## crowd a site already planned, or that runs past the ride's length, is left out. The other way itself is
 ## built by _plan_ways_real once the default path is kept.
 func _plan_forks_real(rows: Array) -> void:
+	if not forks_on:
+		return
 	for row: Dictionary in rows:
 		var i0 := int(row["i0"])
 		var i1 := int(row["i1"])
