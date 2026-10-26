@@ -1,6 +1,6 @@
 class_name DiaryBook
 extends Control
-## The Adventure Diary as a book (see AdventureDiary): a cover with the destination's picture,
+## The Adventure Diary as a book (see AdventureDiary): a cover with a snapshot from the ride,
 ## the crew and a little map of the road; a page of the trip computer's final stats under the
 ## route strip (the road's height all the way, coloured by its surface, the highlights marked
 ## along it); then the photos, two to a page like a photo journal, taped in at a tilt with their
@@ -369,8 +369,12 @@ class _Page extends Control:
 		var dest := str(d.get("dest", ""))
 		draw_string(font, Vector2(36, 196), "To %s  ·  %d km  ·  %s" % [AdventureDest.name_of(dest), roundi(float(d.get("km", 0.0))), str(d.get("date", ""))],
 			HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 17, FADED)
-		# The destination's picture, as on the shed wall, taped in.
-		if dest != "":
+		# A snapshot from the ride taped on the front (the destination's picture, as on the shed
+		# wall, for a ride without one).
+		var still := AdventureDiary.cover_photo(d)
+		if still != "" and book.texture_of(still) != null:
+			_polaroid(Rect2(70, 226, 420, 280), book.texture_of(still), -2.0, "", font, Rect2())
+		elif dest != "":
 			var crew: Array = d.get("crew", [])
 			var tex := AdventureDest.picture(AdventureDest.theme_of(d), maxi(1, crew.size()))
 			_polaroid(Rect2(70, 226, 420, 280), tex, -2.0, "", font, Rect2())

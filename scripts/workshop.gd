@@ -229,6 +229,7 @@ func build() -> void:
 	_build_bays()
 	_build_bench()
 	_build_computer()
+	add_child(DiaryShelf.new())   # the Adventure Diaries, against the east wall
 	_build_delivery_area()
 	_build_bin()
 	_build_radio()
