@@ -1191,15 +1191,40 @@ func _test_all_builds_ride() -> void:
 
 
 func _test_crash_and_respawn() -> void:
-	var r := await ride({}, 2.0, func(b, t):
+	var before := {"doll": false}
+	var r := await ride({}, 2.5, func(b, t):
+		b.throttle = 0.5
+		if t < 0.5 and b._ragdoll != null:
+			before["doll"] = true
 		if t > 0.5 and not b.is_crashed:
 			b.crash())
 	var bike: Bike = r["bike"]
 	check(bike.is_crashed, "crash puts the bike into the crashed state")
+	# The ragdoll's only there for a crash: arms and legs jointed on, still on the body after two
+	# seconds of tumbling.
+	var doll := bike._ragdoll
+	var torn := []
+	if doll != null:
+		for l in RiderRagdoll.LIMBS:
+			var limb: RigidBody3D = doll.limbs[l[0]]
+			var half := (l[2] as Vector3).distance_to(l[1]) * 0.5
+			var root_end: Vector3 = limb.global_transform * Vector3(0.0, -half, 0.0)
+			var anchor: Vector3
+			if l[5][0] == "":
+				anchor = doll.global_transform * (l[1] as Vector3)
+			else:
+				var p: RigidBody3D = doll.limbs[l[5][0]]
+				var p_half := (RiderRagdoll.LIMBS.filter(func(x): return x[0] == l[5][0])[0][2] as Vector3).distance_to(
+					RiderRagdoll.LIMBS.filter(func(x): return x[0] == l[5][0])[0][1]) * 0.5
+				anchor = p.global_transform * Vector3(0.0, p_half, 0.0)
+			if not root_end.is_finite() or root_end.distance_to(anchor) > 0.15:
+				torn.append("%s %.2f m" % [l[0], root_end.distance_to(anchor)])
+	check(not before["doll"] and doll != null and doll.pieces().size() == 9 and doll.find_children("Joint*", "ConeTwistJoint3D", false, false).size() == 8
+		and torn.is_empty(), "the rider's thrown off only in the crash, arms and legs jointed on and still attached as they tumble %s" % str(torn))
 	bike.respawn()
 	for i in 120:
 		await get_tree().physics_frame
-	check(not bike.is_crashed and absf(bike.lean_angle) < deg_to_rad(8.0), "respawn puts the bike back upright")
+	check(not bike.is_crashed and absf(bike.lean_angle) < deg_to_rad(8.0) and not is_instance_valid(doll), "respawn puts the bike back upright, the ragdoll gone")
 	await _done(r)
 
 

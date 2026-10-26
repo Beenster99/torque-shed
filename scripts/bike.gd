@@ -210,7 +210,7 @@ var _traction := 1.0
 var _crash_timer := 0.0
 var _base_com := Vector3.ZERO
 var _rider_shape_index := -1
-var _ragdoll: RigidBody3D
+var _ragdoll: RiderRagdoll
 var _starting := 0.0
 var _shift_from_rpm := 0.0
 var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
@@ -514,7 +514,7 @@ func shift_origin(d: Vector3) -> void:
 		if w.has("contact_pos"):
 			w["contact_pos"] = (w["contact_pos"] as Vector3) - d
 	if is_instance_valid(_ragdoll):
-		_ragdoll.global_position -= d
+		_ragdoll.shift(d)
 
 
 ## With the controls off (a menu up: the game never pauses, alone or in co-op) and the bike
@@ -1983,9 +1983,8 @@ func _spawn_ragdoll() -> void:
 	_ragdoll = RiderRagdoll.new()
 	get_parent().add_child(_ragdoll)
 	_ragdoll.dress(rider_gear, rider_color)
-	_ragdoll.global_transform = global_transform.translated_local(Vector3(0.0, build.seat_height, 0.0))
-	_ragdoll.linear_velocity = linear_velocity * 0.9 + Vector3.UP * 2.0
-	_ragdoll.angular_velocity = Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4))
+	_ragdoll.launch(global_transform.translated_local(Vector3(0.0, build.seat_height + 0.35, 0.0)), linear_velocity * 0.9 + Vector3.UP * 2.0,
+		Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4)))
 
 
 func _clear_ragdoll() -> void:
