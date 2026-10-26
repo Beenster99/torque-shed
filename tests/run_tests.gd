@@ -1228,6 +1228,30 @@ func _test_crash_and_respawn() -> void:
 				torn.append("%s %.2f m" % [l[0], root_end.distance_to(anchor)])
 	check(not before["doll"] and doll != null and doll.pieces().size() == 9 and doll.find_children("Joint*", "ConeTwistJoint3D", false, false).size() == 8
 		and torn.is_empty(), "the rider's thrown off only in the crash, arms and legs jointed on and still attached as they tumble %s" % str(torn))
+	# The other players see the same tumble: the pose goes in the snapshot, and their copy of the bike puts a
+	# rider (solid to nothing, not simulated) just so, gone once the rider's up again.
+	var state := bike.get_net_state()
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Crasher", bike.build, Color.RED)
+	rb.push_state(state)
+	rb.push_state(state)
+	await get_tree().physics_frame
+	var off := 0.0
+	var seen: RiderRagdoll = rb._ragdoll
+	if seen != null and doll != null:
+		for i in doll.pieces().size():
+			off = maxf(off, (doll.pieces()[i] as Node3D).global_position.distance_to((seen.pieces()[i] as Node3D).global_position))
+	check(state.size() == RemoteBike.RAGDOLL_AT + RiderRagdoll.POSE_SIZE and seen != null and off < 0.01 and seen.collision_layer == 0
+		and seen.freeze and seen.find_children("Joint*", "", false, false).is_empty(),
+		"the other players see the rider thrown off where they are on the crasher's game (%.3f m out)" % off)
+	var up := state.slice(0, RemoteBike.RAGDOLL_AT)
+	up[17] = 0.0
+	rb._snapshots.clear()
+	rb.push_state(up)
+	await get_tree().physics_frame
+	check(not is_instance_valid(seen), "and theirs is gone when the crasher's picked up")
+	rb.queue_free()
 	bike.respawn()
 	for i in 120:
 		await get_tree().physics_frame

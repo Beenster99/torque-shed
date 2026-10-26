@@ -27,6 +27,11 @@ var pushed := false
 var _ghost_until := 0.0
 
 
+## Where the thrown-off rider's pose starts in a snapshot (see Bike.get_net_state).
+const RAGDOLL_AT := 28
+## Their rider thrown off, while they're down (see _show_ragdoll).
+var _ragdoll: RiderRagdoll
+
 ## Its speed along itself last step (m/s), and how fast it's slowing, eased (m/s/s).
 var _speed_was := INF
 var _decel := 0.0
@@ -142,6 +147,7 @@ func _physics_process_body(delta: float) -> void:
 	model.update_rider(RiderStyle.lean_of(global_transform.basis), lerpf(sa[10], sb[10], f), fwd_speed,
 		RiderStyle.brake_from(_decel, sb.size() > 25 and sb[25] > 0.5), delta)
 	model.set_rider_visible(sb[17] < 0.5 and not pushed)
+	_show_ragdoll(sa, sb, f, pos)
 	BikeGhost.apply(model, BikeGhost.look(ghost_left()))
 	# Their left foot down as their bike comes to rest, by its speed as their snapshots have it.
 	model.update_foot(Vector3(sb[7], sb[8], sb[9]).length(), delta, sb[17] < 0.5)
@@ -196,6 +202,22 @@ func _rubber(burnout: float, skid: float, delta: float) -> void:
 		marks.scrub(_mark_key, hit["position"], hit["normal"], -global_basis.z, _build.rear_tyre_width, burnout, surf, delta)
 	else:
 		marks.mark(_mark_key, hit["position"], hit["normal"], _build.rear_tyre_width, skid, surf)
+
+
+## Their rider thrown off in a crash, tumbling as it does on their game (the pose in their
+## snapshots, see Bike.get_net_state), or gone once they're picked up.
+func _show_ragdoll(sa: PackedFloat32Array, sb: PackedFloat32Array, f: float, at: Vector3) -> void:
+	var need := RAGDOLL_AT + RiderRagdoll.POSE_SIZE
+	if sb[17] < 0.5 or sb.size() < need:
+		if is_instance_valid(_ragdoll):
+			_ragdoll.queue_free()
+			_ragdoll = null
+		return
+	if not is_instance_valid(_ragdoll):
+		_ragdoll = RiderRagdoll.puppet()
+		add_child(_ragdoll)
+		_ragdoll.dress(rider_gear, model.rider_color)
+	_ragdoll.show_pose(sa if sa.size() >= need else sb, sb, RAGDOLL_AT, f, at)
 
 
 ## The world's origin moved by `d` (see AdventureWorld): the bike and its snapshots move with it.
