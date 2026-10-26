@@ -47,7 +47,7 @@ const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0
 	"cactus": 420.0, "red_rock": 320.0, "gorse": 260.0, "dune_grass": 200.0, "oak": 650.0, "sheep": 220.0,
 	"mesa": 3400.0, "crag": 2400.0, "lighthouse": 2600.0, "walls": 420.0,
 	"bridge": 1600.0, "birch": 650.0, "autumn_tree": 650.0, "olive": 500.0, "cypress": 650.0, "palm": 650.0,
-	"acacia": 650.0, "jungle_tree": 650.0, "agave": 220.0, "tussock": 200.0}
+	"acacia": 650.0, "jungle_tree": 650.0, "cedar": 650.0, "agave": 220.0, "tussock": 200.0}
 ## Small things that may stand close to the road's edge (the rest keep 6 m off it).
 const NEAR_KINDS := ["rock", "bush", "dry_bush", "red_rock", "gorse", "dune_grass", "sheep", "agave", "tussock"]
 ## The far scenery (AdventureTheme "far"): how far out from the road it stands (m), and how
@@ -73,7 +73,7 @@ const COVER_TINT := {
 }
 ## How much of each thing's scenery a real road's cover takes (0 to 1), by what covers the ground: trees, bushes,
 ## rocks, and anything else (sheep and the like). A cover left out takes OTHER_ODDS of it.
-const TREES := ["tree", "pine", "oak", "snow_pine", "birch", "autumn_tree", "olive", "cypress", "palm", "acacia", "jungle_tree"]
+const TREES := ["tree", "pine", "oak", "snow_pine", "birch", "autumn_tree", "olive", "cypress", "palm", "acacia", "jungle_tree", "cedar"]
 const BUSHES := ["bush", "dry_bush", "gorse", "agave", "tussock", "cactus"]
 const ODDS := {
 	"trees": {"forest": 1.0, "shrub": 0.35, "wetland": 0.3, "grass": 0.12, "urban": 0.15, "crop": 0.03, "barren": 0.05, "sand": 0.03, "rock": 0.0, "water": 0.0},
@@ -101,7 +101,7 @@ const CANOPY_THIN := [70.0, 0.4]
 ## Each tree's height and its crown's width (m) as AdventureProps draws it, to scale it to the real tree's.
 const TREE_SIZE := {"tree": [6.6, 5.2], "oak": [8.1, 7.6], "pine": [8.0, 4.4], "snow_pine": [8.0, 4.4], "birch": [8.0, 3.2],
 	"autumn_tree": [6.6, 5.2], "olive": [4.1, 4.4], "cypress": [8.8, 1.9], "palm": [9.0, 5.6], "acacia": [4.8, 6.8],
-	"jungle_tree": [9.6, 7.2]}
+	"jungle_tree": [9.6, 7.2], "cedar": [9.4, 3.0]}
 ## A real tree's crown is this wide for its height (m per m, and m), a broadleaf's and a conifer's.
 const CROWN_BROAD := [0.35, 3.0]
 const CROWN_NEEDLE := [0.22, 2.0]

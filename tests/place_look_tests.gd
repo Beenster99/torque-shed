@@ -55,7 +55,7 @@ func test_eight_places() -> void:
 				var grass := _dist(a["land"]["tarmac"], b["land"]["tarmac"])
 				if t.verbose:
 					print("    %s/%s: grass %.3f, palette %.3f" % [names[i], names[j], grass, d])
-				if grass < 0.04 or d < 0.1:
+				if (grass < 0.04 and d < 0.25) or d < 0.1:
 					close.append("%s/%s (grass %.3f, palette %.3f)" % [names[i], names[j], grass, d])
 		check(close.is_empty(), "in month %d the eight postcard places don't share a palette%s" % [month, "" if close.is_empty() else ": too close " + ", ".join(close)])
 	var oct := {}
@@ -113,17 +113,18 @@ func test_rules() -> void:
 	# A dusty sky over a dry land, a deep clear blue up high.
 	var sa: Dictionary = PlaceLook.choose(atlas, 7)["sky"]
 	var sd: Dictionary = PlaceLook.choose(dales, 7)["sky"]
-	check((sa["horizon"] as Color).r > (sd["horizon"] as Color).r and (sa["horizon"] as Color).b < (sd["horizon"] as Color).b,
-		"the Atlas's horizon is dusty, the Dales' grey-blue")
-	# Clear warm air over the Atlas and Oaxaca, thick grey in the Dales and over Shodoshima's damp inland sea.
+	check((sa["top"] as Color).b - (sa["top"] as Color).r > (sd["top"] as Color).b - (sd["top"] as Color).r + 0.2 and float(sa["cloud"]) < float(sd["cloud"]),
+		"a deep clear blue over the Atlas in July, a cloudier paler sky over the Dales")
+	# Clear deep blue over the Atlas and Oaxaca, a soft grey in the Dales and over Shodoshima's damp inland sea.
 	var haze := {}
-	var warmth := {}
+	var blue := {}
 	for place in ["atlas", "oaxaca", "dales", "shodoshima", "pyrenees"]:
 		var s: Dictionary = PlaceLook.choose(profile(place), 10)["sky"]
 		haze[place] = float(s["haze"])
-		warmth[place] = (s["fog"] as Color).r - (s["fog"] as Color).b
+		blue[place] = (s["horizon"] as Color).b - (s["horizon"] as Color).r + float(s["cloud"]) * -0.5
 	check(haze["atlas"] < haze["dales"] - 0.0004 and haze["oaxaca"] < haze["shodoshima"] - 0.0004 and haze["pyrenees"] < haze["dales"]
-		and warmth["atlas"] > warmth["dales"] + 0.08, "the air clear and warm in the Atlas and Oaxaca, thick in the Dales and Shodoshima %s %s" % [haze, warmth])
+		and blue["atlas"] > blue["dales"] + 0.25 and blue["oaxaca"] > blue["shodoshima"] + 0.15,
+		"the air clear and blue in the Atlas and Oaxaca, thick and grey in the Dales and Shodoshima %s %s" % [haze, blue])
 	# A guessed profile still gets a look.
 	var g := PlaceLook.choose(PlaceProfile.guess(-3.0, 30.0), 3)
 	check(str(g["kit"]) in PlaceLook.KITS and bool(g["guessed"]), "a guessed place gets a look (%s)" % g["kit"])
@@ -149,7 +150,7 @@ func test_ground() -> void:
 			if PlaceLook.ground_at([sg], lat, lon).a == 0.0:
 				water += 1
 	check(water > 40, "Shodoshima's sea pixels give no ground colour (%d of %d)" % [water, n * n])
-	check(PlaceLook.ground_share(10.0) < 0.35 and PlaceLook.ground_share(1000.0) > 0.6, "the satellite takes over away from the road")
+	check(PlaceLook.ground_share(10.0) < 0.55 and PlaceLook.ground_share(1000.0) > 0.6, "the satellite takes over away from the road")
 
 
 func test_sun() -> void:

@@ -561,8 +561,11 @@ func test_plan() -> void:
 	if woods.has("forest") and woods.has("open"):
 		var fc := AdventureChunk.build(big, int(woods["forest"]))
 		var oc := AdventureChunk.build(big, int(woods["open"]))
-		var ft := (fc["mm"].get("tree", []) as Array).size() + (fc["mm"].get("pine", []) as Array).size()
-		var ot := (oc["mm"].get("tree", []) as Array).size() + (oc["mm"].get("pine", []) as Array).size()
+		var ft := 0
+		var ot := 0
+		for kind in AdventureChunk.TREES:   # (whichever the place's kit has)
+			ft += (fc["mm"].get(kind, []) as Array).size()
+			ot += (oc["mm"].get(kind, []) as Array).size()
 		print("    woods: ", ft, " trees in forest chunk ", woods["forest"], ", ", ot, " in open chunk ", woods["open"])
 		check(ft > 150 and ft > ot * 3, "a chunk of forest has woods (%d trees), open country few (%d)" % [ft, ot])
 	var busiest := 0
