@@ -267,7 +267,8 @@ func test_ride() -> void:
 	var taken := w.route.decided.has(0) and int(w.route.choices.get(0, 0)) == 1
 	print("    ADV RIDE PROFILE: %d frames, median %.2f ms, p99 %.2f, worst %.1f ms (at %.0f m / %.0f m), %d frames over the median by %.0f ms, %d over 33 ms; through the fork: worst %.1f ms, %d stutters; %s"
 		% [sum["n"], sum["median"], sum["p99"], sum["worst"], a[1], b[1], sum["spikes"], SPIKE_MS, sum["over33"], fork["worst"], fork["spikes"], w.timing_text()])
-	check(taken and w.has_ground(fs + 600.0), "the host's pick at the fork is taken, and the road built on along it")
+	check(taken and w.has_ground(fs + 600.0), "the host's pick at the fork is taken, and the road built on along it (picks %s, chosen %s, ground %s, voted %s)"
+		% [Shed.adventure.get("picks", {}), w.route.choices, w.has_ground(fs + 600.0), voted[0]])
 	check(float(sum["worst"]) < 60.0 and int(sum["over33"]) <= 2,
 		"no stutter on the ride: the worst of %d frames %.1f ms, %d over 33 ms (the median %.1f ms)" % [sum["n"], sum["worst"], sum["over33"], sum["median"]])
 	check(int(sum["spikes"]) * 400 < int(sum["n"]) and float(fork["worst"]) < 60.0,
