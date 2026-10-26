@@ -1,12 +1,11 @@
 extends RefCounted
 ## Real roads' checks (a road planned across a region by RoutePlanner, its land read by RealTerrain, laid out by
 ## AdventureRoute.plan_real and built into chunks), run from tests/run_tests.gd: its _test_real_* functions hand over to
-## these. The roads are the bundled regions' tours (see Rides): round Shodoshima, and the long one with forks round the
-## Dales.
+## these. The roads are the bundled regions' tours (see Rides): round Shodoshima, and the long one round the Dales.
 
 const Rides := preload("res://tests/rides.gd")
 const PACK := "shodoshima"
-## The long road with forks.
+## The long road.
 const EPIC := "dales"
 ## What a chunk may hold (see test_budget): the buildings' vertices, and trees, bushes, rocks and the like.
 const BUDGET_BUILDING_VERTS := 20000
@@ -389,124 +388,13 @@ func test_limits() -> void:
 	small_sign.free()
 
 
-## Real forks: a second way the crew can vote for, planned as a road of its own, joining the main road at both ends.
-## In the game the roads don't fork: a baked tour's ways stay unbuilt, with no signposts or junctions for them
-## (the tests turn AdventureRoute.forks_on on to keep the machinery working).
-func test_no_forks() -> void:
+## The long tour round the Dales: its chunks all have the road's names and limits.
+func test_epic() -> void:
 	var p := Rides.tour_pack(EPIC)
-	AdventureRoute.forks_on = false
-	var r := AdventureRoute.new()
-	r.plan_real(p, 7, 23.0)
-	AdventureRoute.forks_on = true
-	check(p.forks.size() >= 1 and r.forks.is_empty() and r.sites_of("fork").is_empty() and r.next_fork(0.0) < 0,
-		"with forks off the Dales' %d forks aren't on the road (%d planned, %d signposts)" % [p.forks.size(), r.forks.size(), r.sites_of("fork").size()])
-
-
-func test_forks() -> void:
-	var p := Rides.tour_pack(EPIC)
-	check(p != null and p.forks.size() >= 1 and p.max_km() > 60.0, "the tour of the Dales has forks (%d) over %.0f km" % [p.forks.size(), p.max_km()])
-	var bad := 0
-	for fk: Dictionary in p.forks:
-		var w: Dictionary = fk["way"]
-		if int(fk["i0"]) % 32 != 0 or int(fk["i1"]) % 32 != 0 or (int(w["n"]) - 1) % 32 != 0 or (w["chunks"] as Array).size() != (int(w["n"]) - 1) / 32:
-			bad += 1
-		if Vector2(float(w["x"][0]) - p.x[int(fk["i0"])], float(w["z"][0]) - p.z[int(fk["i0"])]).length() > 0.05 \
-				or Vector2(float(w["x"][-1]) - p.x[int(fk["i1"])], float(w["z"][-1]) - p.z[int(fk["i1"])]).length() > 0.05:
-			bad += 1
-	check(bad == 0, "each on chunk boundaries, a whole number of chunks long, from the main road's knot to its knot")
+	check(p != null and p.max_km() > 60.0, "the tour of the Dales is %.0f km" % p.max_km())
 	var r := AdventureRoute.new()
 	r.plan_real(p, 5, p.max_km())
-	check(r.forks.size() >= 1, "the ride has them as forks with signposts (%d forks, %d signs)" % [r.forks.size(), r.sites_of("fork").size()])
-	if r.forks.is_empty():
-		return
-	# The tour ends at Appersett, on the road it set off from Hawes along: a bike stood at the start (no hint yet) is at
-	# the start, not at the end past the forks still open (once it was, and nothing was built round it).
-	var at_start := r.xz_at(30.0, -1.5)
-	var found := r.locate(at_start[0], at_start[1])
-	check(not found.is_empty() and absf(float(found["s"]) - 30.0) < 2.0, "a bike stood at the start is at the start, not the end of the same road (%.0f m along)" % float(found.get("s", -1.0)))
-	var fk: Dictionary = r.forks[0]
-	var ways: Array = fk["ways"]
-	check(ways.size() == 2 and str(ways[0]["kind"]) == "main" and ["scenic", "gravel"].has(str(ways[1]["kind"])) and ways[0]["letter"] != ways[1]["letter"],
-		"two ways, the main road and the other (%s: %s)" % [ways[1]["kind"], ways[1]["name"]])
-	check(float(ways[1]["len"]) > 500.0 and float(ways[0]["len"]) > 500.0 and ways[0]["arrow"] != ways[1]["arrow"],
-		"each with its length (%.1f km main, %.1f km the other), and the way it points" % [float(ways[0]["len"]) / 1000.0, float(ways[1]["len"]) / 1000.0])
-	var main_total := r.total
-	var main_chunks := r.chunk_count()
-	check(r.chunk_name.size() == main_chunks and r.chunk_limit.size() == main_chunks, "the road's names and limits cover every chunk")
-	# Take the other way: the path is one unbroken road.
-	r.choose(0, 1)
-	var n := r.knot_count()
-	var worst_step := 0.0
-	var worst_turn := 0.0
-	var worst_grade := 0.0
-	for i in range(1, n):
-		worst_step = maxf(worst_step, absf(Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length() - AdventureRoute.STEP))
-		worst_turn = maxf(worst_turn, absf(r.hd[i] - r.hd[i - 1]))
-		worst_grade = maxf(worst_grade, absf(r.ph[i] - r.ph[i - 1]) / AdventureRoute.STEP)
-	check(worst_step < 0.7 and worst_turn < 0.6 and worst_grade <= RoutePlanner.MAX_GRADE + 0.001,
-		"through the other way it is one road (steps off %.2f m, turn %.2f rad, grade %.1f%%)" % [worst_step, worst_turn, worst_grade * 100.0])
-	check(r.chunk_surface.size() == r.chunk_count() and r.chunk_name.size() == r.chunk_count() and r.chunk_limit.size() == r.chunk_count()
-		and absf(r.total - (main_total + float(ways[1]["len"]) - float(ways[0]["len"]))) < 8.0,
-		"its chunks, names and limits follow the path (%.1f km, was %.1f)" % [r.total / 1000.0, main_total / 1000.0])
-	var mid_s := float(fk["s"]) + float(ways[1]["len"]) * 0.5
-	check(r.road_name_at(mid_s) == str(ways[1]["name"]) or r.road_name_at(mid_s) != "", "the sat nav names the road it is on (%s)" % r.road_name_at(mid_s))
-	check(r.limit_kmh_at(mid_s) > 5.0, "and it has its own limit (%.0f km/h)" % r.limit_kmh_at(mid_s))
-	# Its chunks build: the other way has none of the real buildings, the road beyond the rejoin has the main road's.
-	var c_mid := AdventureRoute.chunk_of(mid_s)
-	var alt_chunk := AdventureChunk.build(r, c_mid)
-	check((alt_chunk["buildings"]["v"] as PackedVector3Array).size() == 0 and not alt_chunk["road"].is_empty(), "a chunk on the other way builds, with no buildings (they aren't planned there)")
-	var after := int(fk["rejoin"] / AdventureRoute.CHUNK_LEN) + 2
-	var shift_chunks := r.chunk_count() - main_chunks
-	var m := AdventureRoute.new()
-	m.plan_real(p, 5, p.max_km())
-	var best := 0
-	var same := true
-	for dc in range(after, mini(after + 40, main_chunks - 2)):
-		var a := AdventureChunk.build(m, dc)
-		var b := AdventureChunk.build(r, dc + shift_chunks)
-		if (a["buildings"]["v"] as PackedVector3Array).size() != (b["buildings"]["v"] as PackedVector3Array).size():
-			same = false
-		best += (a["buildings"]["v"] as PackedVector3Array).size()
-	check(same and best > 0, "past the rejoin the same buildings stand beside the road, a chunk number %+d along (%d vertices)" % [shift_chunks, best])
-	# The signpost's and the map's view of the fork.
-	var choice := AdventureForks.choice(r, float(fk["s"]) - 400.0)
-	check(not choice.is_empty(), "the fork's choice comes up before it")
-
-
-## Ridden: the crew takes the other way at a real fork and the road streams in along it, through to the rejoin and on.
-func test_fork_ride() -> void:
-	var spot := {}
-	var w := AdventureWorld.new()
-	w.setup(Rides.tour_pack(EPIC), 5)
-	check(w.route.forks.size() >= 1, "the Dales world has a fork to ride")
-	if w.route.forks.is_empty():
-		return
-	w.apply_picks({0: 1})
-	spot["p"] = w.transform_at(20.0).origin
-	w.focus = func(): return [spot["p"]]
-	w.origin_shifted.connect(func(d): spot["p"] -= d)
-	t.add_child(w)
-	var fk: Dictionary = w.route.forks[0]
-	var through := w.route.rejoin_s(0) + 1500.0
-	var s := float(fk["s"]) - 1500.0
-	spot["p"] = w.transform_at(s).origin
-	var built_alt := true
-	while s < through:
-		s += 100.0
-		spot["p"] = w.transform_at(s).origin
-		await t.get_tree().process_frame
-		var held := Time.get_ticks_msec()
-		while not w.chunks.has(AdventureRoute.chunk_of(s)) and Time.get_ticks_msec() - held < 8000:
-			await t.get_tree().process_frame
-		if not w.chunks.has(AdventureRoute.chunk_of(s)):
-			built_alt = false
-			break
-	check(built_alt and w.route.decided.has(0) and int(w.route.choices[0]) == 1,
-		"the road is built along the other way, through the rejoin (to %.1f km, the fork at %.1f km)" % [s / 1000.0, float(fk["s"]) / 1000.0])
-	check(w.chunks.has(AdventureRoute.chunk_of(s)) and int(w.stats["freed"]) > 5,
-		"and the main road beyond it, with the chunks behind freed (%d)" % int(w.stats["freed"]))
-	w.queue_free()
-	await t.get_tree().process_frame
+	check(r.chunk_name.size() == r.chunk_count() and r.chunk_limit.size() == r.chunk_count(), "the road's names and limits cover every chunk")
 
 
 func test_plan() -> void:
@@ -585,8 +473,6 @@ func test_ride() -> void:
 	var spot := {}
 	var w := AdventureWorld.new()
 	w.setup(Rides.tour_pack(PACK), 11, 23.0)
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)   # (the road isn't built past a fork still open)
 	check(w.route.real != null and absf(w.route.length - 23000.0) < 0.1, "the world rides the real road (%.1f km)" % (w.route.length / 1000.0))
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
@@ -773,7 +659,7 @@ func test_real_land() -> void:
 	# The ridge lies under them.
 	check(w.ridges != null and RealRidges.LAND_UNDER > 5.0 and RealRidges.LAND_REACH >= RealLand.RANGES[2], "the skyline is eased down under them, out to their far range")
 	land.reset()
-	check(land.block_count() == 0 and land._at.x == INF, "a new road (a fork's way) clears them to be laid out again")
+	check(land.block_count() == 0 and land._at.x == INF, "a new road clears them to be laid out again")
 	w.queue_free()
 	await t.get_tree().process_frame
 

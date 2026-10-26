@@ -37,26 +37,6 @@ static func start(km := 20.0, seed := 1) -> void:
 	Adventure.start(plan(km), seed)
 
 
-## Takes the main road at every fork of `r` still open, so it's built (and found) all the way to its end; `r` back.
-static func main_roads(r: AdventureRoute) -> AdventureRoute:
-	for f in r.forks.size():
-		if not r.decided.has(f):
-			r.choose(f, 0)
-	return r
-
-
-## The host takes the main road at every fork of the adventure on (so the road's built all the way: it isn't built past
-## a fork still open), and waits till `trip`'s road has them all.
-static func take_main_roads(trip: AdventureTrip) -> void:
-	var r := trip.world.route
-	for f in r.forks.size():
-		if AdventureForks.pick_of(f) < 0:
-			Shed.request({"a": "adventure_vote", "fork": f, "way": 0})
-	var end := Time.get_ticks_msec() + 10000
-	while r.decided.size() < r.forks.size() and Time.get_ticks_msec() < end:
-		await trip.get_tree().process_frame
-
-
 ## The road of the whole tour of `region_id` (AdventurePlans.TOURS).
 static func tour_pack(region_id: String) -> RealPack:
 	return AdventurePlans.pack_for(AdventurePlans.tour(region_id))

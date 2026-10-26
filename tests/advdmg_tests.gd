@@ -187,9 +187,8 @@ func test_ride() -> void:
 		await _done(main)
 		return
 	var w := trip.world
-	await Rides.take_main_roads(trip)   # (the road's built all the way)
 	# The roughest 3 km of the road that's there to ride.
-	var end := minf(w.route.total, w.route.stream_end()) - 3100.0
+	var end := w.route.total - 3100.0
 	var best_s := 200.0
 	var best_n := -1
 	var s0 := 200.0
@@ -219,7 +218,7 @@ func test_ride() -> void:
 	var rattled := false
 	var frames := 120 * 120
 	for f in frames:
-		s = minf(s + step, minf(w.route.total, w.route.stream_end()) - 30.0)
+		s = minf(s + step, w.route.total - 30.0)
 		var xf := w.transform_at(s, -1.6)
 		if main.bike == null:
 			break

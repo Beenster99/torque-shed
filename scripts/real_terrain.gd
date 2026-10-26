@@ -336,20 +336,6 @@ func for_road(road: PackedVector2Array) -> RealTerrain:
 	return t
 
 
-## Takes in the tiles within reach of `more` too (a fork's other way). Tiles are only added, and the reach is far wider
-## than the easing at a level's edge, so heights within reach of what was there already are unchanged.
-func widen(more: PackedVector2Array) -> void:
-	if uses.is_empty():
-		return
-	_lock.lock()
-	for li in zooms.size():
-		for k in HeightTiles.keys_near(more, LIVE_REACH[li], zooms[li], lat0, lon0):
-			(_base[li] as Dictionary)[k] = true
-			(uses[li] as Dictionary)[k] = true
-	_ridge_tiles = {}
-	_lock.unlock()
-
-
 ## Every tile this ride uses, finest first (for HeightTiles.fetch).
 func used_keys() -> Array[Vector3i]:
 	var out: Array[Vector3i] = []

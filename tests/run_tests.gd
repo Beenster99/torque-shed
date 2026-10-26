@@ -29,8 +29,6 @@ var _list := false
 func _ready() -> void:
 	# The old demo bikes these were written round (a player's new shed starts empty).
 	Shed.demo_bikes = true
-	# The roads' forks are out of the game but kept working (see AdventureRoute.forks_on).
-	AdventureRoute.forks_on = true
 	await get_tree().process_frame
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shard="):
@@ -546,7 +544,6 @@ func _run_all() -> void:
 	await _t(&"_test_planner_streams")
 	await _t(&"_test_planner_corners")
 	await _t(&"_test_planner_places")
-	await _t(&"_test_planner_forks")
 	await _t(&"_test_planner_board")
 	await _t(&"_test_planner_im_in")
 	await _t(&"_test_planner_journeys_kept")
@@ -560,9 +557,7 @@ func _run_all() -> void:
 	await _t(&"_test_planner_world_map")
 	await _t(&"_test_real_pack")
 	await _t(&"_test_real_levels")
-	await _t(&"_test_real_no_forks")
-	await _t(&"_test_real_forks")
-	await _t(&"_test_real_fork_ride")
+	await _t(&"_test_real_epic")
 	await _t(&"_test_real_stops")
 	await _t(&"_test_real_junctions")
 	await _t(&"_test_real_limits")
@@ -622,16 +617,13 @@ func _run_all() -> void:
 	await _t(&"_test_toolbox_spares_fits")
 	await _t(&"_test_toolbox_spares_rules")
 	await _t(&"_test_toolbox_spares_session")
-	await _t(&"_test_adv_routes_graph")
-	await _t(&"_test_adv_routes_vote")
-	await _t(&"_test_adv_routes_stream")
 	await _t(&"_test_adv_routes_map")
 	print("Adventure traffic (v0.14.0): both ways, busier through villages, buses at the stops, hills, riders in the lanes, engines")
 	await _t(&"_test_adv_traffic_density")
 	await _t(&"_test_adv_traffic_climb")
 	await _t(&"_test_adv_traffic_bus")
 	await _t(&"_test_adv_traffic_blockers")
-	await _t(&"_test_adv_traffic_forks_origin")
+	await _t(&"_test_adv_traffic_origin")
 	await _t(&"_test_adv_traffic_takeover")
 	await _t(&"_test_adv_traffic_sounds")
 	await _t(&"_test_adv_traffic_perf")
@@ -809,7 +801,6 @@ func _run_all() -> void:
 	print("Simon's v0.21.0 round: smooth roads on adventures")
 	await _t(&"_test_smooth_fair")
 	await _t(&"_test_smooth_real")
-	await _t(&"_test_smooth_fork_joins")
 	print("Simon's v0.22.0 round: deleting a wall-mounted diary, and a more dipped dipped beam")
 	await _t(&"_test_diary_delete_take_down")
 	await _t(&"_test_beam_dipped")
@@ -5756,7 +5747,6 @@ func _test_board_images() -> void:
 	await get_tree().physics_frame
 
 
-
 # ---------------------------------------------------------------------------- carrying, snapping, surfaces, whiteboard, boxes
 
 ## A loose part made up and put straight into your hands.
@@ -6121,8 +6111,6 @@ func _test_box_labels() -> void:
 	check(int(shown.get_meta("courier")) == BikeModel.courier_for(box), "a delivered box carries the label for its own id")
 	shown.free()
 	Shed.stop()
-
-
 
 
 func _test_side_rooms() -> void:
@@ -7022,7 +7010,6 @@ func _test_geometry_session() -> void:
 	await get_tree().physics_frame
 
 
-
 # ---------------------------------------------------------------------------- scrapping, turning, shelves, board pictures, posters
 
 func _test_scrap() -> void:
@@ -7680,7 +7667,6 @@ func _test_tail_old_save() -> void:
 	var rows := Shed.plan_rows(Shed.blueprints[9000], 0)
 	check(rows.any(func(r): return r["slot"] == "tail"), "so a build from it orders one")
 	check(Shed._next_id > Shed.items.keys().max(), "new parts get fresh ids")
-
 
 
 ## The headlight is a soft core that lights the road and a wide, dim flood round it that is the
@@ -11064,7 +11050,6 @@ func _test_starter_variety() -> void:
 	await get_tree().process_frame
 
 
-
 ## Shed sound: every sound and variant made and audible, variants picked without repeats,
 ## impacts sounding of their material and surface, footsteps by floor, machine start and stop
 ## sounds, and the start-up synthesis kept off the main thread and within budget.
@@ -11318,7 +11303,6 @@ func _scrolls_to_end(col: Control) -> bool:
 		return true
 	var vis := sc.get_global_rect()
 	return (kids[-1] as Control).get_global_rect().end.y <= vis.end.y + 1.0 and vis.end.y <= get_viewport().get_visible_rect().end.y + 1.0
-
 
 
 ## Simon's recorded sounds: every file there and loading, loops looping, takes picked without
@@ -12990,8 +12974,6 @@ func _sign_light_hits(ws: Workshop) -> Array:
 	return out
 
 
-
-
 # ---------------------------------------------------------------------------- sandblaster round 3
 
 ## A sandblasting cabinet moved into the shed with the barn find's engine in it: {main, w, cab,
@@ -13616,7 +13598,6 @@ func _test_filler_parts() -> void:
 		"MX number boards carry the same race number front and sides (%s)" % str(labels.map(func(l): return l.text)))
 	mx.free()
 	check(BikeBuild.new({"guards": "adv_cage"}).bike_mass > BikeBuild.new().bike_mass + 5.0, "a crash cage weighs what it should")
-
 
 
 ## Step 4 of the style work: the small details that make a bike read as real at a glance.
@@ -15464,7 +15445,6 @@ func _test_telemetry() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	Progress.path = real_path
-
 
 
 ## The big riding map: the roads join up without steps, keep to their grades, have no jumps on
@@ -19085,7 +19065,6 @@ func _test_direct_bars_course() -> void:
 			% ["keys" if run[1] else "a stick", run[0] if run[0] != "" else "default bike", ", ".join(line)])
 
 
-
 ## Handling phase 3, the suspension standing still: each style sags a sensible share of its
 ## travel under bike and rider (what BikeBuild works out is what the ridden bike does), the
 ## swingarm and chain hold off most of the squat under power, more preload sags less on the same
@@ -22207,7 +22186,7 @@ func _test_kit_satnav() -> void:
 	var start := adv.transform_at(200.0)
 	var av := Satnav.view_for(nav.provider(), start.origin, -start.basis.z, 20.0)
 	var fuel_s := float(adv.route.sites_of("fuel")[0]["s"])
-	var ap: Array = (av["points"] as Array).filter(func(q): return q["kind"] != "fork")   # forks: see _test_adv_routes_*
+	var ap: Array = av["points"]
 	check(nav.provider() is Satnav.AdventureNav and (av["roads"] as Array).size() > 0 and (av["route"] as PackedVector2Array).size() > 50,
 		"on an adventure the sat nav draws its road and the way ahead (%d points)" % (av["route"] as PackedVector2Array).size())
 	check(ap.size() == 2 and ap[0]["kind"] == "fuel" and absf(float(ap[0]["distance"]) - (fuel_s - 200.0)) < 2.0
@@ -22599,10 +22578,6 @@ func _test_planner_rules() -> void:
 	_planner().test_rules()
 
 
-func _test_planner_forks() -> void:
-	_planner().test_forks()
-
-
 func _test_planner_places() -> void:
 	_planner().test_places()
 
@@ -22683,16 +22658,8 @@ func _test_real_pack() -> void:
 	_real().test_pack()
 
 
-func _test_real_no_forks() -> void:
-	_real().test_no_forks()
-
-
-func _test_real_forks() -> void:
-	_real().test_forks()
-
-
-func _test_real_fork_ride() -> void:
-	await _real().test_fork_ride()
+func _test_real_epic() -> void:
+	_real().test_epic()
 
 
 func _test_real_stops() -> void:
@@ -22878,22 +22845,10 @@ func _test_toolbox_spares_session() -> void:
 	await _toolbox_spares().test_session()
 
 
-# ---------------------------------------------------------------------------- adventure forks (tests/adventure_routes_tests.gd)
+# ---------------------------------------------------------------------------- the paper map (tests/adventure_routes_tests.gd)
 
 func _adv_routes() -> RefCounted:
 	return load("res://tests/adventure_routes_tests.gd").new(self)
-
-
-func _test_adv_routes_graph() -> void:
-	_adv_routes().test_graph()
-
-
-func _test_adv_routes_vote() -> void:
-	await _adv_routes().test_vote()
-
-
-func _test_adv_routes_stream() -> void:
-	await _adv_routes().test_stream()
 
 
 func _test_adv_routes_map() -> void:
@@ -22922,8 +22877,8 @@ func _test_adv_traffic_blockers() -> void:
 	await _adv_traffic().test_blockers()
 
 
-func _test_adv_traffic_forks_origin() -> void:
-	await _adv_traffic().test_forks_origin()
+func _test_adv_traffic_origin() -> void:
+	await _adv_traffic().test_origin()
 
 
 func _test_adv_traffic_takeover() -> void:
@@ -23096,7 +23051,6 @@ func _test_adv_roads_chunk_cost() -> void:
 	await _adv_roads().test_chunk_cost()
 
 
-
 # ---------------------------------------------------------------------------- order one of these, copy its blueprint (tests/bike_copy_tests.gd)
 
 func _bike_copy() -> RefCounted:
@@ -23167,7 +23121,6 @@ func _test_bike_copy_project_card() -> void:
 	await _bike_copy().test_project_card()
 
 
-
 # ---------------------------------------------------------------------------- trip computer and the Adventure Diary (tests/adventure_diary_tests.gd)
 
 func _adv_diary() -> RefCounted:
@@ -23216,7 +23169,6 @@ func _test_adv_diary_movie_states() -> void:
 
 func _test_adv_diary_movie_ride() -> void:
 	await _adv_diary().test_movie_ride()
-
 
 
 # ---------------------------------------------------------------------------- live mirrors (tests/mirror_tests.gd)
@@ -23761,10 +23713,6 @@ func _test_smooth_fair() -> void:
 
 func _test_smooth_real() -> void:
 	_smooth().test_real()
-
-
-func _test_smooth_fork_joins() -> void:
-	_smooth().test_fork_joins()
 
 
 func _test_smooth_surface() -> void:

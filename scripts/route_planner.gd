@@ -36,10 +36,6 @@ const FAIR_MOST := 30.0
 ## a change of width eases in.
 const FAIR_LEVELS: Array[float] = [3.0, 4.5, 6.5, 9.0, 13.0, 18.0, 24.0, 30.0]
 const FAIR_EASE := 10
-## A fork's other way starts at least FORK_LEAD knots before its junction with the main road (and ends as far after the
-## other), keeping the main road's own knots until FORK_EASE knots short of the junction (compose_way).
-const FORK_LEAD := 12
-const FORK_EASE := 8
 ## How many points (2 m apart) of the way into a turning place count as part of it (only lightly faired).
 const TURN_MARK := 40
 const MAX_GRADE := 0.15
@@ -91,18 +87,6 @@ const RING_MAX_EDGES := 8
 const RING_ROUNDNESS := 0.18
 const MINI_RING_M := 12.0
 const JUNCTION_GAP_KNOTS := 100
-## Forks (tools/fork_bake.py): where along the road the first is looked for and how far apart they come (m), how long
-## the main road's stretch of one is, the other way's length over the main road's, the most pairs of junctions tried
-## for one, the sharpest a way may turn between two knots, and no fork this close to the end.
-const FIRST_FORK := Vector2(5000.0, 10000.0)
-const FORK_EVERY := Vector2(8000.0, 16000.0)
-const MAIN_LEG := Vector2(2000.0, 10000.0)
-const IDEAL_LEG := 5000.0
-const RATIO := Vector2(0.8, 2.2)
-const MAX_TRIES := 40
-const MAX_TURN := 0.7
-const END_GAP_M := 3500.0
-const CHUNK_KNOTS := 32
 
 
 ## A binary min-heap of (cost, node), ties to the lower node so the same graph always gives the same path.
@@ -277,19 +261,10 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	pack.pois = _pois(region, xs, zs)
 	parts["places"] = Time.get_ticks_msec() - t0
 	pack.junctions = thin_junctions(junctions_along(region, steps, xs, zs))
-	pack.forks = plan_forks(region, steps, xs, zs, elev, chunks_info, costs, int(request.get("seed", 0)), terrain) if AdventureRoute.forks_on else []
 	if terrain != null and terrain.live and terrain.fetch() > 0:
 		return _fail("Couldn't get the lie of the land for that journey: are you online?")
-	pack.fork_count = pack.forks.size()
-	parts["forks"] = Time.get_ticks_msec() - t0
 	pack.summary = _summary(rows, names, elev, request)
-	# (the forks' ways' bridges and tunnels with the main road's: a machine without them has other ways)
-	var all_bridges := bridges.duplicate()
-	var all_tunnels := tunnels.duplicate()
-	for fk: Dictionary in pack.forks:
-		all_bridges.append_array(fk["way"].get("bridges", PackedInt32Array()))
-		all_tunnels.append_array(fk["way"].get("tunnels", PackedInt32Array()))
-	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), all_bridges, all_tunnels,
+	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), bridges, tunnels,
 		pack.streams)
 	pack.hash = hash
 	pack.id = "plan_" + hash
@@ -305,6 +280,11 @@ static func _every(pts: PackedVector2Array, n: int) -> PackedVector2Array:
 	if not pts.is_empty() and (pts.size() - 1) % n != 0:
 		out.append(pts[pts.size() - 1])
 	return out
+
+
+## The angle between `a` and `b` (radians, 0 to PI).
+static func _angle(a: Vector2, b: Vector2) -> float:
+	return acos(clampf(a.dot(b) / maxf(a.length() * b.length(), 1e-9), -1.0, 1.0))
 
 
 static func _fail(why: String) -> Dictionary:
@@ -1546,314 +1526,3 @@ static func thin_junctions(junctions: Array) -> Array:
 			kept.append(j)
 	kept.sort_custom(func(a, b): return int(a["k"]) < int(b["k"]))
 	return kept
-
-
-# ---------------------------------------------------------------------------- forks
-
-static func _rng(seed: int, tag: String) -> float:
-	return float(absi(("%s%d" % [tag, seed]).hash()) % 100000) / 100000.0
-
-
-## Where the planned road forks, as RealPack.forks rows ([{i0, i1, kinds, names, way: {n, x, z, e, chunks}}]): the
-## second-best way between two junctions of the road (its own stretch left out of the search), a road of its own
-## with its line, heights and chunks like the main road's (tools/fork_bake.py does the same for a baked road).
-static func plan_forks(region: RealRegion, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array,
-		elev: PackedFloat32Array, main_chunks: Array, costs: PackedFloat64Array, seed: int, terrain: RealTerrain = null) -> Array:
-	if terrain == null:
-		terrain = region.terrain
-	var out: Array = []
-	if steps.is_empty():
-		return out
-	var nodes := PackedInt32Array([steps[0].x])
-	for st in steps:
-		nodes.append(st.z)
-	var grid := KnotGrid.new(xs, zs)
-	var kn := PackedInt32Array()
-	var junction := PackedByteArray()
-	for n in nodes:
-		var p := region.node_pos[n]
-		kn.append(_knot_near(grid, p, xs, zs))
-		junction.append(1 if region.adjacent[n].size() > 2 else 0)
-	var total_m := (xs.size() - 1) * STEP
-	var at := FIRST_FORK.x + (FIRST_FORK.y - FIRST_FORK.x) * _rng(seed, "first")
-	var n_fork := 0
-	var searches := {}   # junction -> its search (the same however far on the look has got)
-	while at + MAIN_LEG.x < total_m - END_GAP_M:
-		var cands := PackedInt32Array()
-		for j in nodes.size():
-			if junction[j] == 1 and kn[j] * STEP >= at and kn[j] > 24 and kn[j] * STEP < total_m - END_GAP_M - MAIN_LEG.x:
-				cands.append(j)
-		var found := {}
-		var tries := 0
-		var searched := 0
-		for ja in cands:
-			searched += 1
-			if searched > 8:
-				break
-			# One search out from this junction, with the main road's stretch ahead left out, serves every jb.
-			var far := ja
-			var main_edges := {}
-			var main_cost := 0.0
-			while far + 1 < nodes.size() and (kn[far + 1] - kn[ja]) * STEP <= MAIN_LEG.y:
-				if not main_edges.has(steps[far].y):
-					main_edges[steps[far].y] = true
-					main_cost += region.edge_len[steps[far].y] * costs[region.edge_class[steps[far].y]]
-				far += 1
-			if not searches.has(ja):
-				searches[ja] = _search(region, nodes[ja], costs, main_edges, main_cost * 3.5)
-			var search: Dictionary = searches[ja]
-			for jb in range(ja + 1, far + 1):
-				var leg := (kn[jb] - kn[ja]) * STEP
-				if leg < MAIN_LEG.x or junction[jb] == 0 or kn[jb] * STEP > total_m - END_GAP_M:
-					continue
-				tries += 1
-				if tries > MAX_TRIES * 3:
-					break
-				var main_len := 0.0
-				var seen_e := {}
-				for q in range(ja, jb):
-					if not seen_e.has(steps[q].y):
-						seen_e[steps[q].y] = true
-						main_len += region.edge_len[steps[q].y]
-				var alt = _path_to(region, search, nodes[jb])
-				if alt == null or (alt as Array).is_empty():
-					continue
-				var alt_len := _length_of_steps(region, alt, (alt as Array).size())
-				var ratio := alt_len / maxf(main_len, 1.0)
-				if ratio < RATIO.x or ratio > RATIO.y:
-					continue
-				var score := absf(leg - IDEAL_LEG) + 3000.0 * absf(ratio - 1.1)
-				if not found.is_empty() and score >= float(found["score"]):
-					continue
-				if _doubles_back(region, alt, xs, zs, kn[ja], kn[jb]):
-					continue
-				var trial := {"i0": _fork_start(kn[ja]), "i1": _fork_end(kn[jb]),
-					"ka": kn[ja], "kb": kn[jb], "alt": alt}
-				if int(trial["i1"]) >= xs.size() - 1:
-					continue
-				var way: Dictionary = compose_way(region, trial, xs, zs, PackedInt32Array())
-				if sharpest_turn(way["pts"]) > MAX_TURN:
-					continue
-				found = {"score": score, "ja": ja, "jb": jb, "alt": alt}
-			if not found.is_empty() or tries > MAX_TRIES:
-				break
-		if found.is_empty():
-			at += 3000.0
-			continue
-		var ja: int = found["ja"]
-		var jb: int = found["jb"]
-		var i0 := _fork_start(kn[ja])
-		var i1 := _fork_end(kn[jb])
-		if i1 >= xs.size() - 1 or i1 - i0 < CHUNK_KNOTS or (not out.is_empty() and i0 <= int(out[out.size() - 1]["i1"]) + CHUNK_KNOTS * 8):
-			at += 3000.0
-			continue
-		var fork := {"i0": i0, "i1": i1, "ka": kn[ja], "kb": kn[jb], "alt": found["alt"]}
-		out.append(_fork_row(region, fork, steps, xs, zs, elev, main_chunks, costs, terrain))
-		n_fork += 1
-		at = i1 * STEP + FORK_EVERY.x + (FORK_EVERY.y - FORK_EVERY.x) * _rng(seed, "every%d" % n_fork)
-	return out
-
-
-## Whether the other way leaves the main road going back the way the main road came from, or arrives going back
-## the way it was heading: a hairpin on the main road rather than a way on.
-static func _doubles_back(region: RealRegion, alt: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array, ka: int, kb: int) -> bool:
-	var chain := _line_of(region, alt)["pts"] as PackedVector2Array
-	var out_v := _point_at(chain, 30.0) - chain[0]
-	var back := chain[chain.size() - 1] - _point_at(chain, 30.0, true)
-	var a8 := mini(ka + 8, xs.size() - 1)
-	var main_out := Vector2(xs[a8] - xs[ka], zs[a8] - zs[ka])
-	var b8 := maxi(kb - 8, 0)
-	var main_in := Vector2(xs[kb] - xs[b8], zs[kb] - zs[b8])
-	return _angle(out_v, main_out) > 2.1 or _angle(back, main_in) > 2.1
-
-
-static func _angle(a: Vector2, b: Vector2) -> float:
-	return acos(clampf(a.dot(b) / maxf(a.length() * b.length(), 1e-9), -1.0, 1.0))
-
-
-## `n` points evenly spaced along the line through `pts`, both ends included.
-static func resample_count(pts: PackedVector2Array, n: int) -> PackedVector2Array:
-	var cum := PackedFloat64Array([0.0])
-	for i in range(1, pts.size()):
-		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
-	var total := cum[cum.size() - 1]
-	var out := PackedVector2Array()
-	out.resize(n)
-	var j := 0
-	for i in n:
-		var s := total * i / maxi(n - 1, 1)
-		while j < cum.size() - 2 and cum[j + 1] < s:
-			j += 1
-		var span := cum[j + 1] - cum[j]
-		var t := 0.0 if span <= 0.0 else clampf((s - cum[j]) / span, 0.0, 1.0)
-		out[i] = pts[j].lerp(pts[j + 1], t)
-	return out
-
-
-## Where a fork's other way starts (a chunk boundary FORK_LEAD knots or more before the junction at knot `ka`, so it
-## has room to ease off the main road) and where it ends (as far after the junction at `kb`).
-static func _fork_start(ka: int) -> int:
-	return maxi((ka - FORK_LEAD) / CHUNK_KNOTS, 0) * CHUNK_KNOTS
-
-
-static func _fork_end(kb: int) -> int:
-	return ceili(float(kb + FORK_LEAD) / CHUNK_KNOTS) * CHUNK_KNOTS
-
-
-## The other way's line ({pts: n a whole number of chunks and one, raw: the composed points, owner: the edge each came
-## along}): from the main road's knot i0, along the main road to the junction where the two divide, along the other
-## way to where they meet, and on along the main road to knot i1; smoothed like the main road and stretched a little
-## to a whole number of chunks. `main_owner[k]` is the main road's edge at knot k (empty when it isn't needed).
-static func compose_way(region: RealRegion, fork: Dictionary, xs: PackedFloat64Array, zs: PackedFloat64Array, main_owner: PackedInt32Array) -> Dictionary:
-	var i0: int = fork["i0"]
-	var i1: int = fork["i1"]
-	var ka: int = fork["ka"]
-	var kb: int = fork["kb"]
-	var raw := PackedVector2Array()
-	var owner := PackedInt32Array()
-	for k in range(i0, ka + 1):
-		raw.append(Vector2(xs[k], zs[k]))
-		owner.append(main_owner[k] if k < main_owner.size() else -1)
-	var alt_line := _line_of(region, fork["alt"])
-	var apts: PackedVector2Array = alt_line["pts"]
-	var aown: PackedInt32Array = alt_line["owner"]
-	for k in range(1, apts.size()):
-		raw.append(apts[k])
-		owner.append(aown[k])
-	for k in range(kb, i1 + 1):
-		raw.append(Vector2(xs[k], zs[k]))
-		owner.append(main_owner[k] if k < main_owner.size() else -1)
-	# The main road's own knots at either end, already faired, are kept as they are (fair 0) until FORK_EASE knots short
-	# of the junction, then faired more and more to it, so the way eases off the main road there and back onto it.
-	var fair := fair_of(region, owner)
-	var tail := raw.size() - 1 - (i1 - kb)
-	for k in raw.size():
-		var to_junction := (ka - i0) - k if k <= ka - i0 else (k - tail if k >= tail else -1)
-		if to_junction >= 0:
-			fair[k] *= clampf(1.0 - float(to_junction) / FORK_EASE, 0.0, 1.0)
-	var smooth := smooth_line(raw, MIN_RADIUS, fair)
-	var end := Vector2(xs[i1], zs[i1])
-	if smooth[smooth.size() - 1].distance_to(end) > 0.25:
-		smooth.append(end)
-	var length := _length_of(smooth)
-	var n_chunks := maxi(1, roundi(length / (STEP * CHUNK_KNOTS)))
-	var way := resample_count(smooth, n_chunks * CHUNK_KNOTS + 1)
-	var m := way.size() - 1
-	way[0] = Vector2(xs[i0], zs[i0])
-	way[m] = end
-	return {"pts": way, "raw": raw, "owner": owner}
-
-
-## The most the way's heading changes between two knots (radians): a hairpin or a spike is near pi.
-static func sharpest_turn(way: PackedVector2Array) -> float:
-	var worst := 0.0
-	var prev := NAN
-	for i in range(1, way.size()):
-		var h := atan2(way[i].x - way[i - 1].x, -(way[i].y - way[i - 1].y))
-		if not is_nan(prev):
-			worst = maxf(worst, absf(wrapf(h - prev, -PI, PI)))
-		prev = h
-	return worst
-
-
-## Heights `e` shifted so they start at `first` and end at `last`, the correction dying away over `decay` knots.
-static func pin_ends(e: PackedFloat64Array, first: float, last: float, decay := 60.0) -> PackedFloat64Array:
-	var n := e.size()
-	var out := e.duplicate()
-	for k in n:
-		out[k] = e[k] + (first - e[0]) * exp(-float(k) / decay) + (last - e[n - 1]) * exp(-float(n - 1 - k) / decay)
-	out[0] = first
-	out[n - 1] = last
-	return out
-
-
-## The fork as a RealPack.forks row: the way's knots, heights and chunk rows (with the names spelled out), and the
-## kinds and names of both ways.
-static func _fork_row(region: RealRegion, fork: Dictionary, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array,
-		elev: PackedFloat32Array, main_chunks: Array, costs: PackedFloat64Array, terrain: RealTerrain = null) -> Dictionary:
-	if terrain == null:
-		terrain = region.terrain
-	var i0: int = fork["i0"]
-	var i1: int = fork["i1"]
-	# The main road's edge at each knot, for the shared stretches at either end of the way.
-	var main_owner := PackedInt32Array()
-	main_owner.resize(xs.size())
-	main_owner.fill(steps[0].y)
-	var grid := KnotGrid.new(xs, zs)
-	var last_k := 0
-	for st in steps:
-		var k := _knot_near(grid, region.node_pos[st.z], xs, zs)
-		for q in range(last_k, mini(k + 1, xs.size())):
-			main_owner[q] = st.y
-		last_k = maxi(last_k, k + 1)
-	var way := compose_way(region, fork, xs, zs, main_owner)
-	var pts: PackedVector2Array = way["pts"]
-	var n := pts.size()
-	var wx := PackedFloat64Array()
-	var wz := PackedFloat64Array()
-	wx.resize(n)
-	wz.resize(n)
-	for k in n:
-		wx[k] = pts[k].x
-		wz[k] = pts[k].y
-	# A live ride's land takes in the tiles along the way too (beyond reach of the main road, so its heights don't move);
-	# plan() fetches them before the ride is laid out.
-	if terrain != null and terrain.live:
-		terrain.widen(_every(pts, 16))
-		terrain.fetch()
-	var ground := PackedFloat64Array()
-	ground.resize(n)
-	var last := 0.0
-	for k in n:
-		var h := terrain.height(wx[k], wz[k]) if terrain != null else NAN
-		if is_nan(h):
-			h = last
-		last = h
-		ground[k] = maxf(h, 0.0)
-	# Its own bridges and tunnels, laid straight from end to end as the main road's are.
-	var bridges := bridges_along(region, wx, wz)
-	var tunnels := tunnels_along(region, wx, wz)
-	_level_spans(ground, bridges + tunnels)
-	var e := grade_limit(pin_ends(grade_limit(smooth_heights(ground, 9)), elev[i0], elev[i1]))
-	e[0] = elev[i0]
-	e[n - 1] = elev[i1]
-	var rows: Array = []
-	for c: Dictionary in _chunks(region, way["raw"], way["owner"], n):
-		var limit := int(c["limit"]) if int(c["limit"]) > 0 else default_limit(str(c["cls"]), region.country, false)
-		rows.append([c["surface"], c["width"], c["cls"], c["name"], limit])
-	var c0 := i0 / CHUNK_KNOTS
-	var c1 := i1 / CHUNK_KNOTS
-	var main_rows: Array = []
-	for c in range(c0, mini(c1, main_chunks.size())):
-		var mc: Dictionary = main_chunks[c]
-		main_rows.append([mc["surface"], mc["width"], mc["cls"], mc["name"], 0])
-	var main_kn := way_kind_and_name(main_rows, "Main road")
-	var other := way_kind_and_name(rows, "Minor road")
-	var name: String = other[1]
-	if name == str(main_kn[1]):
-		name += " (the other way)"
-	var ex := PackedFloat32Array()
-	ex.resize(n)
-	for k in n:
-		ex[k] = e[k]
-	return {"i0": i0, "i1": i1, "kinds": ["main", other[0]], "names": {"main": main_kn[1], other[0]: name},
-		"way": {"n": n, "x": wx, "z": wz, "e": ex, "chunks": rows, "bridges": bridges, "tunnels": tunnels}}
-
-
-## ["gravel" when most of the way is unpaved, else "scenic"; the road name most of it has].
-static func way_kind_and_name(rows: Array, generic: String) -> Array:
-	var gravel := 0
-	var names := {}
-	for r: Array in rows:
-		if str(r[0]) == "gravel":
-			gravel += 1
-		names[str(r[3])] = int(names.get(str(r[3]), 0)) + 1
-	var name := generic
-	var best := -1
-	var keys: Array = names.keys()
-	keys.sort()
-	for k in keys:
-		if int(names[k]) > best:
-			best = int(names[k])
-			name = str(k)
-	return ["gravel" if gravel * 2 > rows.size() else "scenic", name]

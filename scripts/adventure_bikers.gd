@@ -310,7 +310,7 @@ func clear() -> void:
 		_drop(i)
 
 
-## Down a side road on a junction list that's gone (the road changed at a fork): off the road.
+## Down a side road on a junction list that's gone (the junctions were listed again): off the road.
 func drop_arms() -> void:
 	for i in range(bikers.size() - 1, -1, -1):
 		if bikers[i].has("arm") or bikers[i].has("peel"):

@@ -23,24 +23,22 @@ func _frames(n: int) -> void:
 		await t.get_tree().process_frame
 
 
-## A tour (Rides) with a junction of `type` well along it (and not on a fork's ways), and that junction:
+## A tour (Rides) with a junction of `type` well along it, and that junction:
 ## [seed, route, junction, pack]; [] if no region's tour has one.
 static func _with_junction(type: String) -> Array:
 	for region_id in AdventurePlans.TOURS:
 		var r := Rides.tour_route(region_id, 7)
 		for st in r.sites_of(AdventureJunctions.KIND):
-			if st["type"] == type and float(st["s"]) > 1500.0 and r.fork_at(float(st["s"])) < 0:
+			if st["type"] == type and float(st["s"]) > 1500.0:
 				return [7, r, st, Rides.tour_pack(region_id)]
 	return []
 
 
-## A world along the road `found` (see _with_junction) came from, the main road at every fork.
+## A world along the road `found` (see _with_junction) came from.
 static func _world_for(found: Array) -> AdventureWorld:
 	var w := AdventureWorld.new()
 	var pack: RealPack = found[3]
 	w.setup(pack, int(found[0]), pack.max_km())
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)
 	return w
 
 
@@ -65,7 +63,7 @@ func test_junction_plan() -> void:
 					clash = true
 	check(types.has("tee") and types.has("cross") and types.has("lights") and count / km > 0.1,
 		"the real junctions along the tours, %.2f a km %s" % [count / km, str(types)])
-	check(not clash, "none on top of a stop, a fuel station or a fork")
+	check(not clash, "none on top of a stop or a fuel station")
 	var a := Rides.tour_route("dales", 42)
 	var b := Rides.tour_route("dales", 42)
 	check(str(a.sites_of(AdventureJunctions.KIND)) == str(b.sites_of(AdventureJunctions.KIND)), "the same plan has the same junctions, side roads and all")

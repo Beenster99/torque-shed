@@ -6,7 +6,7 @@
 # a fifth starts one along a planned journey and arrives at its destination together (tests/mp_dest.gd),
 # a sixth keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
 # a seventh rides with one of the other bikers on an adventure (tests/mp_bikers.gd),
-# an eighth rides a real road with a fork, taking the other way together (tests/mp_real.gd), and a ninth plans a
+# an eighth rides a real road together and sleeps at an inn along it (tests/mp_real.gd), and a ninth plans a
 # journey together on the Route planner and rides it (tests/mp_journey.gd).
 set -u
 cd "$(dirname "$0")/.."

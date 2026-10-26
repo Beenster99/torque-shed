@@ -1,11 +1,9 @@
 class_name AdventureMap
 extends Control
 ## The paper map of an adventure ride, got out once you've stopped ({paper_map}, or the Esc menu):
-## the whole route as a graph, north up (the way the crew's on marked like a highlighter, the
-## other ways at each fork fainter and lettered, their surfaces in colour), where everyone is,
-## the fuel stations and the stops along it (from the route's sites, so whatever's added there
-## shows), and beside it a close-up of the next fork with a button per way to vote (the host's
-## vote is the pick, see AdventureForks).
+## the whole route, north up (marked like a highlighter, its surfaces in colour), where everyone is,
+## and the fuel stations and the stops along it (from the route's sites, so whatever's added there
+## shows).
 
 signal closed
 
@@ -14,23 +12,18 @@ const INK := Color(0.2, 0.17, 0.13)
 const HIGHLIGHT := Color(0.95, 0.35, 0.2, 0.45)
 const SURFACE_INK := {"tarmac": Color(0.28, 0.28, 0.3), "gravel": Color(0.55, 0.36, 0.16), "sand": Color(0.82, 0.62, 0.2),
 	"snow": Color(0.35, 0.6, 0.9)}
-const WAY_INK: Array[Color] = [Color(0.15, 0.45, 0.2), Color(0.55, 0.25, 0.65), Color(0.15, 0.4, 0.75)]
-## How often what's on it (where everyone is, the votes) is brought up to date (s).
+## How often what's on it (where everyone is) is brought up to date (s).
 const REFRESH := 0.5
 
 var trip: AdventureTrip
 var _whole: Control        # the whole route
-var _zoom: Control         # the next fork, close up
 var _info: Label
-var _vote_title: Label
-var _vote_box: VBoxContainer
-var _lines: Array = []     # AdventureRoute.map_lines, kept till the path changes
+var _lines: Array = []     # AdventureRoute.map_lines, kept for the ride
 var _sites: Array = []
 var _box := Rect2()        # the route frame's bounds of it all
-var _fork := -1            # the fork in the close-up
 var _riders: Array = []    # [{x, z, name, me, heading}]
 var _timer := 0.0
-var _choices := ""         # the route's choices the lines were made for
+var _route: AdventureRoute   # the route the lines were made for
 
 
 func _ready() -> void:
@@ -66,18 +59,10 @@ func _ready() -> void:
 	_info = UITheme.label("", 15, Color(0.9, 0.9, 0.9))
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side.add_child(_info)
-	_zoom = Control.new()
-	_zoom.custom_minimum_size = Vector2(0, 300)
-	_zoom.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_zoom.draw.connect(_draw_zoom)
-	_zoom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	side.add_child(_zoom)
-	_vote_title = UITheme.label("", 16, UITheme.ACCENT)
-	_vote_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	side.add_child(_vote_title)
-	_vote_box = VBoxContainer.new()
-	_vote_box.add_theme_constant_override("separation", 4)
-	side.add_child(_vote_box)
+	var gap := Control.new()
+	gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	side.add_child(gap)
 	var close := Button.new()
 	Controls.bind_text(close, "Fold the map away ({paper_map})")
 	close.pressed.connect(func(): closed.emit())
@@ -95,7 +80,6 @@ func _input(event: InputEvent) -> void:
 ## Unfolds it, up to date.
 func open() -> void:
 	visible = true
-	_choices = ""
 	refresh()
 
 
@@ -105,14 +89,14 @@ func tick(delta: float) -> void:
 		refresh()
 
 
-## Brings it all up to date: the lines (when a way's been chosen), where everyone is, the votes.
+## Brings it all up to date: the lines (for a new ride), where everyone is.
 func refresh() -> void:
 	_timer = REFRESH
 	if trip == null or trip.world == null:
 		return
 	var r := trip.world.route
-	if _choices != str(r.choices) or _lines.is_empty():
-		_choices = str(r.choices)
+	if _route != r or _lines.is_empty():
+		_route = r
 		_lines = r.map_lines(8)
 		_sites = r.map_sites()
 		var first := true
@@ -121,14 +105,8 @@ func refresh() -> void:
 				_box = Rect2(p, Vector2.ZERO) if first else _box.expand(p)
 				first = false
 	_riders = _rider_spots()
-	var s := _own_s()
-	_fork = r.next_fork(s)
-	if _fork < 0:
-		_fork = r.fork_at(s)
-	_info.text = _info_text(r, s)
-	_fill_votes(r, s)
+	_info.text = _info_text(r, _own_s())
 	_whole.queue_redraw()
-	_zoom.queue_redraw()
 
 
 func _own_s() -> float:
@@ -163,75 +141,18 @@ func _info_text(r: AdventureRoute, s: float) -> String:
 	if trip.main and trip.main.bike:
 		var bike: Bike = trip.main.bike
 		lines.append("Petrol: %.1f litres, about %d km in the tank." % [bike.fuel_litres, roundi(bike.fuel_litres * bike.build.cruise_economy())])
-	var f := r.fork_at(s)
-	if f >= 0:
-		var way := r.way_of(f, int(r.choices.get(f, 0)))
-		lines.append("On %s %s: %.1f km till it meets the road on." % [str(way["letter"]), str(way["name"]), (r.rejoin_s(f) - s) / 1000.0])
 	return "\n".join(lines)
-
-
-## The vote for the fork in the close-up: a button a way, with who's for it.
-func _fill_votes(r: AdventureRoute, s: float) -> void:
-	for c in _vote_box.get_children():
-		c.queue_free()
-	if _fork < 0:
-		_vote_title.text = "No more forks: straight on to the destination."
-		return
-	var picked := AdventureForks.pick_of(_fork)
-	var dist := r.fork_s(_fork) - s
-	var host := Shed.is_authority()
-	if dist < 0.0:
-		_vote_title.text = "Through the fork."
-	elif picked >= 0:
-		_vote_title.text = "Fork in %.1f km: %s it is." % [dist / 1000.0, AdventureForks.way_name(_fork, picked)]
-	else:
-		_vote_title.text = "Fork in %.1f km. %s" % [dist / 1000.0, "Your vote is the pick." if host else "Vote: the host decides (main road if nobody picks)."]
-	var vs := AdventureForks.votes_of(_fork)
-	for w in r.forks[_fork]["ways"].size():
-		var way: Dictionary = r.forks[_fork]["ways"][w]
-		var who := PackedStringArray()
-		for peer in vs:
-			if int(vs[peer]) == w:
-				who.append(str(Shed.crew.get(peer, {}).get("name", "?")))
-		var b := Button.new()
-		b.text = "%s%s  %s: %s%s" % ["> " if picked == w else "", str(way["letter"]), str(way["name"]), AdventureForks.way_text(way),
-			"   [%s]" % ", ".join(who) if not who.is_empty() else ""]
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.disabled = picked >= 0 or dist < 0.0
-		b.add_theme_color_override("font_color", WAY_INK[w].lightened(0.45))
-		b.pressed.connect(func():
-			Shed.request({"a": "adventure_vote", "fork": _fork, "way": w})
-			refresh.call_deferred())
-		_vote_box.add_child(b)
 
 
 # ---------------------------------------------------------------------------- drawing
 
 ## The whole route, fitted into `c`.
 func _draw_whole() -> void:
-	_draw_map(_whole, _box.grow(maxf(_box.size.x, _box.size.y) * 0.03), -1)
+	_draw_map(_whole, _box.grow(maxf(_box.size.x, _box.size.y) * 0.03))
 
 
-## The next fork's ways close up.
-func _draw_zoom() -> void:
-	if _fork < 0 or trip == null or trip.world == null:
-		return
-	var r := trip.world.route
-	var box := Rect2()
-	var first := true
-	for l in _lines:
-		if int(l["fork"]) == _fork:
-			for p in l["pts"]:
-				box = Rect2(p, Vector2.ZERO) if first else box.expand(p)
-				first = false
-	if first:
-		return
-	_draw_map(_zoom, box.grow(maxf(box.size.x, box.size.y) * 0.08), _fork)
-
-
-## Draws the lines, sites and riders inside `box` (route frame) onto `c`, north up; `focus` is the
-## fork in a close-up (its ways lettered big), -1 for the whole.
-func _draw_map(c: Control, box: Rect2, focus: int) -> void:
+## Draws the lines, sites and riders inside `box` (route frame) onto `c`, north up.
+func _draw_map(c: Control, box: Rect2) -> void:
 	var area := Rect2(Vector2.ZERO, c.size)
 	if box.size.x <= 0.0 or box.size.y <= 0.0 or area.size.x < 10.0:
 		return
@@ -242,55 +163,21 @@ func _draw_map(c: Control, box: Rect2, focus: int) -> void:
 	var font := c.get_theme_default_font()
 	c.draw_rect(Rect2(off - Vector2(10, 10), used + Vector2(20, 20)), PAPER)
 	c.draw_rect(Rect2(off - Vector2(10, 10), used + Vector2(20, 20)), INK, false, 2.0)
-	var r := trip.world.route
-	var thin := focus < 0
-	# The way the crew's on, highlighted (as far as it's decided), then every road in its surface's ink.
+	# The road highlighted, then in its surface's ink.
 	for l in _lines:
-		if not bool(l["on"]) or (int(l["fork"]) >= 0 and not r.decided.has(int(l["fork"]))):
-			continue
-		c.draw_polyline(_pts(l["pts"], at), HIGHLIGHT, 9.0 if not thin else 6.0)
+		c.draw_polyline(_pts(l["pts"], at), HIGHLIGHT, 6.0)
 	for l in _lines:
-		var f := int(l["fork"])
-		var on := bool(l["on"])
-		var open := f >= 0 and not r.decided.has(f)
-		var col: Color = SURFACE_INK.get(str(l["surface"]), INK)
-		var wdt := 2.5 if thin else 4.0
-		if open:
-			col = WAY_INK[int(l["way"])].lerp(col, 0.35)
-		elif not on:
-			col = Color(col, 0.35)
-			wdt *= 0.6
-		c.draw_polyline(_pts(l["pts"], at), col, wdt, true)
-	# Each way at a fork lettered halfway along (big in the close-up).
-	for f in r.forks.size():
-		if focus >= 0 and f != focus:
-			continue
-		for w in r.forks[f]["ways"].size():
-			var mid := _way_mid(f, w)
-			if mid == Vector2.INF:
-				continue
-			var p: Vector2 = at.call(mid.x, mid.y)
-			var rad := 7.0 if thin else 13.0
-			c.draw_circle(p, rad, WAY_INK[w])
-			c.draw_string(font, p + Vector2(-rad, rad * 0.45), str(r.forks[f]["ways"][w]["letter"]), HORIZONTAL_ALIGNMENT_CENTER, rad * 2.0,
-				10 if thin else 16, Color.WHITE)
-			if not thin:
-				var way: Dictionary = r.forks[f]["ways"][w]
-				c.draw_string(font, p + Vector2(rad + 4.0, 5.0), "%s, %.1f km" % [str(way["name"]), float(way["len"]) / 1000.0],
-					HORIZONTAL_ALIGNMENT_LEFT, -1, 13, INK)
+		c.draw_polyline(_pts(l["pts"], at), SURFACE_INK.get(str(l["surface"]), INK), 2.5, true)
 	# The sites: fuel, the start and the destination, and any stops along the way.
 	for e in _sites:
 		var st: Dictionary = e["site"]
 		var kind := str(st["kind"])
-		if kind in ["junction", "fork"]:
-			continue
 		var p: Vector2 = at.call(float(e["x"]), float(e["z"]))
 		if not area.grow(-2.0).has_point(p):
 			continue
-		var faded := not bool(e["on"])
 		match kind:
 			"fuel":
-				c.draw_circle(p, 6.0, Color(0.15, 0.6, 0.25, 0.4 if faded else 1.0))
+				c.draw_circle(p, 6.0, Color(0.15, 0.6, 0.25))
 				c.draw_string(font, p + Vector2(-6, 4), "F", HORIZONTAL_ALIGNMENT_CENTER, 12, 10, Color.WHITE)
 			"start":
 				c.draw_circle(p, 6.0, Color(0.15, 0.35, 0.75))
@@ -299,9 +186,7 @@ func _draw_map(c: Control, box: Rect2, focus: int) -> void:
 				c.draw_rect(Rect2(p - Vector2(6, 6), Vector2(12, 12)), Color(0.8, 0.15, 0.1))
 				c.draw_string(font, p + Vector2(10, 5), "Destination", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, INK)
 			_:
-				c.draw_circle(p, 3.5, Color(INK, 0.35 if faded else 0.9))
-				if str(st.get("name", "")) != "" and not thin:
-					c.draw_string(font, p + Vector2(6, 4), str(st["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(INK, 0.8))
+				c.draw_circle(p, 3.5, Color(INK, 0.9))
 	# Everyone on the route: you as an arrow, the others as dots with their names.
 	for rd in _riders:
 		var p: Vector2 = at.call(float(rd["x"]), float(rd["z"]))
@@ -320,7 +205,7 @@ func _draw_map(c: Control, box: Rect2, focus: int) -> void:
 	var n0 := off + Vector2(used.x - 14.0, 30.0)
 	c.draw_line(n0, n0 - Vector2(0, 20), INK, 2.0)
 	c.draw_string(font, n0 - Vector2(7, 24), "N", HORIZONTAL_ALIGNMENT_CENTER, 14, 13, INK)
-	var bar := 5000.0 if thin else 1000.0
+	var bar := 5000.0
 	while bar * k > used.x * 0.4 and bar > 100.0:
 		bar *= 0.5
 	var b0 := off + Vector2(4.0, used.y - 6.0)
@@ -335,11 +220,3 @@ static func _pts(pts: PackedVector2Array, at: Callable) -> PackedVector2Array:
 		out[i] = at.call(pts[i].x, pts[i].y)
 	return out
 
-
-## The middle of way `w` at fork `f` on the route frame (from the map's lines).
-func _way_mid(f: int, w: int) -> Vector2:
-	var mine := _lines.filter(func(l): return int(l["fork"]) == f and int(l["way"]) == w)
-	if mine.is_empty():
-		return Vector2.INF
-	var pts: PackedVector2Array = mine[mine.size() / 2]["pts"]
-	return pts[pts.size() / 2]

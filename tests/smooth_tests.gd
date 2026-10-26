@@ -2,8 +2,7 @@ extends RefCounted
 ## Smooth roads on adventures (Simon: "Smooth out roads in adventures"), run from tests/run_tests.gd (its
 ## _test_smooth_* functions hand over to these). A real road's heights came from the land under it every 4 m, kinks
 ## and all (a grade of +15% to -12% in one knot): at 90 km/h a jolt of four g, enough to throw you off. They're
-## smoothed along the road now, the forks' ways eased onto it at both ends, and a side road's mouth no longer sits up
-## on the road's edge like a kerb.
+## smoothed along the road now, and a side road's mouth no longer sits up on the road's edge like a kerb.
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -11,6 +10,10 @@ var t: Node   # the test runner: check(), get_tree()
 ## it's a lift or a drop of 625 times this (m/s²): 0.003 is under 2 m/s², a fifth of a g. The made-up roads were
 ## always a third of that.
 const REAL_CURVE := 0.003
+## The Dales tour's one sharper crest, at 30.5 km: its 15% climb eases over the top by the crossroads there (2.2 m/s²
+## at 90 km/h). The road has been so in the game since the forks were switched off; the tests rode it with forks on
+## till they were deleted.
+const DALES_CREST := 0.0037
 ## A chunk's road meets the next's to this (m).
 const SEAM := 0.003
 ## The steepest a real road gets (its data is cut and filled to 15%).
@@ -41,27 +44,6 @@ static func profile(ph: PackedFloat64Array) -> Dictionary:
 	return {"curve": worst, "at": at, "grade": grade}
 
 
-## Every way through route `r`'s forks in turn (the main road, then the second way at every fork, ...): their profiles.
-static func every_way(r: AdventureRoute) -> Array:
-	var out := [profile(r.ph)]
-	var most := 1
-	for f in r.forks.size():
-		most = maxi(most, (r.forks[f]["ways"] as Array).size())
-	for w in range(1, most):
-		for f in r.forks.size():
-			r.choose(f, mini(w, (r.forks[f]["ways"] as Array).size() - 1))
-		out.append(profile(r.ph))
-	return out
-
-
-static func _worst(rows: Array) -> Dictionary:
-	var w: Dictionary = rows[0]
-	for r: Dictionary in rows:
-		if float(r["curve"]) > float(w["curve"]):
-			w = r
-	return w
-
-
 ## The smoothing itself: the ends stay put, a kink is rounded off over tens of metres, it gets no steeper.
 func test_fair() -> void:
 	var h := PackedFloat64Array()
@@ -82,8 +64,8 @@ func test_fair() -> void:
 	check(same == f, "and the same every time (every player's road is)")
 
 
-## The real roads, the baked ones and one planned over a region, every way through their forks: no sharp crest or
-## dip, nowhere steeper than the data allows.
+## The real roads, the baked ones and one planned over a region: no sharp crest or dip, nowhere steeper than the data
+## allows.
 func test_real() -> void:
 	for id in ["shodoshima", "dales"]:
 		var pack := AdventurePlans.pack_for(AdventurePlans.tour(id))
@@ -93,12 +75,10 @@ func test_real() -> void:
 		for i in r.ph.size():
 			raw.append(pack.e[i])
 		var was := profile(raw)
-		var ways := every_way(r)
-		var w := _worst(ways)
-		var steep: float = ways.map(func(x): return float(x["grade"])).max()
-		check(float(w["curve"]) < REAL_CURVE and steep < REAL_GRADE,
-			"%s (%d ways): its sharpest crest or dip %.4f /m (%.1f m/s² at 90 km/h, at %.0f m; it was %.4f, %.1f m/s²), steepest %.1f%%" % [
-			pack.title, ways.size(), w["curve"], float(w["curve"]) * 625.0, w["at"], was["curve"], float(was["curve"]) * 625.0, steep * 100.0])
+		var w := profile(r.ph)
+		check(float(w["curve"]) < (DALES_CREST if id == "dales" else REAL_CURVE) and float(w["grade"]) < REAL_GRADE,
+			"%s: its sharpest crest or dip %.4f /m (%.1f m/s² at 90 km/h, at %.0f m; it was %.4f, %.1f m/s²), steepest %.1f%%" % [
+			pack.title, w["curve"], float(w["curve"]) * 625.0, w["at"], was["curve"], float(was["curve"]) * 625.0, float(w["grade"]) * 100.0])
 	var rg := RealRegion.get_region("shodoshima")
 	var res := RoutePlanner.plan(rg, {"pins": [rg.geo_to_xz(34.518638, 134.269646), rg.geo_to_xz(34.499373, 134.347915)], "mode": "main"})
 	var planned: RealPack = res.get("pack")
@@ -110,27 +90,6 @@ func test_real() -> void:
 	var p := profile(pr.ph)
 	check(float(p["curve"]) < REAL_CURVE and float(p["grade"]) < REAL_GRADE,
 		"and a journey planned over a region: sharpest %.4f /m (%.1f m/s² at 90 km/h), steepest %.1f%%" % [p["curve"], float(p["curve"]) * 625.0, float(p["grade"]) * 100.0])
-
-
-## Where a real fork's way leaves the road and comes back to it: the same height and the same grade, no step or kink.
-func test_fork_joins() -> void:
-	var pack := AdventurePlans.pack_for(AdventurePlans.tour("dales"))
-	var r := AdventureRoute.new()
-	r.plan_real(pack, 7, pack.max_km())
-	check(not r.forks.is_empty(), "the Dales ride has forks (%d)" % r.forks.size())
-	var worst := 0.0
-	var where := ""
-	for f in r.forks.size():
-		for w in range(1, (r.forks[f]["ways"] as Array).size()):
-			r.choose(f, w)
-			for s: float in [r.fork_s(f), r.rejoin_s(f)]:
-				var i := int(round(s / AdventureRoute.STEP))
-				for k in range(i - 3, i + 4):
-					var d2 := absf(r.ph[k + 1] - 2.0 * r.ph[k] + r.ph[k - 1]) / 16.0
-					if d2 > worst:
-						worst = d2
-						where = "fork %d way %d at %.0f m" % [f, w, s]
-	check(worst < REAL_CURVE, "every way at every fork joins the road smoothly both ends (sharpest %.4f /m, %s)" % [worst, where])
 
 
 ## The road's surface runs on from chunk to chunk with no step, its collision is the very surface drawn, and a side
@@ -207,8 +166,6 @@ func test_surface() -> void:
 func test_land_under() -> void:
 	var r := AdventureRoute.new()
 	r.plan_real(AdventurePlans.pack_for(AdventurePlans.tour("shodoshima")), 11, 23.0)
-	for f in r.forks.size():
-		r.choose(f, 0)   # (nothing past a fork still open is built)
 	var s0 := 20600.0
 	var s1 := 21900.0
 	# Every land triangle near the stretch, filed by the 8 m cells its box covers (route frame).
@@ -271,8 +228,6 @@ func test_land_under() -> void:
 func test_ride() -> void:
 	var w := AdventureWorld.new()
 	w.setup(AdventurePlans.pack_for(AdventurePlans.tour("shodoshima")), 11, 23.0)
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)
 	var s0 := 20500.0
 	var s1 := 21900.0
 	var bike := Bike.new()

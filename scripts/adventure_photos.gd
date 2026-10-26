@@ -7,8 +7,7 @@ extends Node
 ## climb, a puncture) and tells the host, who keeps the crew's highlights; the host's game also
 ## watches the clock for sunrise and sunset. As each highlight comes in, it takes a photo of it if
 ## this rider was part of it (or it was the whole crew's), a few seconds' grace apart, through
-## PhotoCapture, so nothing stutters; the way taken at a fork is snapped riding onto it, and the
-## arrival in the middle of the moment there.
+## PhotoCapture, so nothing stutters; the arrival is snapped in the middle of the moment there.
 ##
 ## {photo} takes a photo whenever you like (held, it films a few seconds as a flipbook clip);
 ## on foot {photo_camera} holds the camera up to your eye: first person, {scroll} zooms, and
@@ -58,8 +57,7 @@ var _surf_told := ""
 var _stop_t := 0.0
 var _stop_key := ""
 var _peaks: Array = []
-var _peaks_for := -1           # forks decided when the peaks were found
-var _fork := -1
+var _peaks_found := false
 var _hours := -1.0
 var _press_t := -1.0           # how long {photo} has been held (-1: not)
 var _filming := false
@@ -133,9 +131,8 @@ func begin() -> void:
 	_s = -1.0
 	_surf = ""
 	_surf_told = ""
-	_fork = -1
 	_hours = Daylight.time_of_day()
-	_peaks_for = -1
+	_peaks_found = false
 	_route = {}
 	_n = 0
 	_keep_adventure()
@@ -203,7 +200,7 @@ func _tick(delta: float) -> void:
 
 
 ## Where you are along the road now, and what that makes: a stop visited, a new surface, the top
-## of a climb, riding onto the way taken at a fork; and on the host the sun coming up or going down.
+## of a climb; and on the host the sun coming up or going down.
 func _watch(dt: float) -> void:
 	var w := trip.world
 	var r := w.route
@@ -255,18 +252,13 @@ func _watch(dt: float) -> void:
 		_surf_told = here
 		report("surface", "surf_%d" % AdventureRoute.chunk_of(_surf_from), {"what": here})
 	# The top of a climb, ridden over.
-	if _peaks_for != r.decided.size():
-		_peaks_for = r.decided.size()
+	if not _peaks_found:
+		_peaks_found = true
 		_peaks = AdventureDiary.peaks(r)
 	if was >= 0.0 and s > was and s - was < 200.0:
 		for p in _peaks:
 			if was < float(p["s"]) and s >= float(p["s"]):
 				report("peak", "peak_%d" % int(float(p["s"])), {"h": float(p["h"])})
-	# Riding onto the way the crew took at a fork: its photo (the host has the highlight).
-	var f := r.fork_at(s)
-	if f >= 0 and f != _fork:
-		_want("fork_%d" % f, "fork", "", [], s)
-	_fork = f
 
 
 ## The stop along the road within STOP_REACH of `s` ({} for none).
@@ -316,7 +308,7 @@ func _new_highlights() -> void:
 		var who: Array = e.get("who", [])
 		var mine := who.is_empty() or who.has(me) or bool(AdventureDiary.KINDS.get(kind, {}).get("crew", false))
 		if not mine or kind in ["fork", "arrive"]:
-			continue   # the fork's taken riding onto it, the arrival in the moment there
+			continue   # (a fork, in a ride from before they were taken out), the arrival's taken in the moment there
 		_want(str(e.get("key", "")) if str(e.get("key", "")) != "" else "log_%d" % n, kind, str(e["text"]), who, float(e.get("s", _s)),
 			2.5 if kind == "start" else 0.0)
 
@@ -343,11 +335,6 @@ func _take_queued() -> void:
 	if _queue.is_empty() or now < int(_queue[0]["at"]):
 		return
 	var q: Dictionary = _queue.pop_front()
-	if str(q["kind"]) == "fork":
-		var r := trip.world.route
-		var f := int(str(q["key"]).trim_prefix("fork_"))
-		var way := r.way_of(f, int(r.choices.get(f, 0)))
-		q["caption"] = "Taking %s, %s" % [str(way.get("letter", "")), str(way.get("name", "the way on"))] if not way.is_empty() else "The way we went"
 	snap(str(q["kind"]), str(q["caption"]), str(q["key"]), q["who"])
 	_auto_wait = AUTO_GAP
 

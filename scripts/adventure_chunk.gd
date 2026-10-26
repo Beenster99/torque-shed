@@ -644,16 +644,11 @@ static func _farmed(route: AdventureRoute, i0: int, i1: int) -> bool:
 
 ## The real buildings beside the road in chunk `c` of the path on a real road, into `buildings`: each on the ground the
 ## land's mesh has there, none by a site (a fuel station, a stop) or over the road's verge. The pack files them by the
-## main road's chunk, so on the other way of a fork there are none (they aren't baked there), and past one the path's
-## chunk is mapped back to the main road's (`eq`).
+## road's chunk.
 static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, az: float, buildings: Dictionary) -> void:
 	var style := str(AdventureTheme.get_value(route.theme, "style", "mixed"))
 	var kit := RegionKit.for_route(route, i0 + AdventureRoute.CHUNK_KNOTS / 2)
-	var piece := route._piece_at(float(i0) * AdventureRoute.STEP)
-	if int(piece["fork"]) >= 0 and int(piece["way"]) > 0:
-		return
-	var dk0 := route.eq[mini(i0, route.eq.size() - 1)] if not route.eq.is_empty() else i0
-	var dc := dk0 / AdventureRoute.CHUNK_KNOTS
+	var dc := i0 / AdventureRoute.CHUNK_KNOTS
 	# Nearest the road first: in the middle of a town the ones furthest back are left out (BUILDING_VERTS).
 	var todo := []
 	for b: Array in route.real.buildings_in(dc):
