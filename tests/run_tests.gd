@@ -582,6 +582,10 @@ func _run_all() -> void:
 	await _t(&"_test_live_pads")
 	await _t(&"_test_live_same")
 	await _t(&"_test_live_ride")
+	await _t(&"_test_terrain_by_position")
+	await _t(&"_test_terrain_ring")
+	await _t(&"_test_terrain_polder")
+	await _t(&"_test_terrain_off_plan")
 	await _t(&"_test_cells_grid")
 	await _t(&"_test_cells_stitch")
 	await _t(&"_test_cells_same_road")
@@ -22469,6 +22473,26 @@ func _test_live_same() -> void:
 
 func _test_live_ride() -> void:
 	await _live().test_ride()
+
+
+func _terrain() -> RefCounted:
+	return load("res://tests/terrain_ring_tests.gd").new(self)
+
+
+func _test_terrain_by_position() -> void:
+	_terrain().test_by_position()
+
+
+func _test_terrain_ring() -> void:
+	_terrain().test_ring()
+
+
+func _test_terrain_polder() -> void:
+	_terrain().test_polder()
+
+
+func _test_terrain_off_plan() -> void:
+	await _terrain().test_off_plan()
 
 
 func _real() -> RefCounted:
