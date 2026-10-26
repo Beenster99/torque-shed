@@ -23811,6 +23811,10 @@ func _test_place_sound_ride() -> void:
 	_place_sound().test_ride()
 
 
+func _test_place_sound_ride_radio() -> void:
+	_place_sound().test_ride_radio()
+
+
 func _test_place_sound_with_profiles() -> void:
 	_place_sound().test_with_profiles()
 
