@@ -50,7 +50,7 @@ Every function returns a Dictionary with all the fields below present (parse fil
 | built | float 0..1 | share of the cell's land that is built up (= cover.urban) | 0.0 |
 | density | String | from built: wild (< 0.0005), rural (< 0.01), village (< 0.05), town (< 0.2), city (cover is read at 160 m, which misses much of a scattered village, hence the low limits) | "rural" |
 | climate | Dictionary of 12-entry Arrays, January first (null in the file for open sea; the loader fills it from latitude) | temp_c, temp_min_c, temp_max_c (°C, monthly means of daily mean/min/max), rain_mm (monthly total), rain_days (days with rain, ≥ 0.1 mm), sun_h (bright sunshine hours in the month) | a mild temperate year |
-| tint | null or Dictionary {size, rgb, png} | low-resolution true colour of the ground: size px a side (16), rgb the mean [r, g, b] 0..255, png base64 of a size x size PNG, north up; null until the source is agreed | null |
+| tint | null or Dictionary {size, rgb, png} | low-resolution true colour of the ground: size px a side (16), rgb the mean [r, g, b] 0..255, png base64 of a size x size PNG, north up; from ESA WorldCover's Sentinel-2 2021 composite (agreed 26 October); null over open sea | null |
 | sources | Dictionary String -> String | which data each field came from (credits screen) | {} |
 | bake_key | String | what the profile was made from (baker version and sources): the baker skips a cell whose key is unchanged | "" |
 | hash | String | 12 hex, the profile's own hash; co-op can compare it | "" |
@@ -81,7 +81,7 @@ All are global, fetched once into /mnt/project-files/torque-shed/ride-anywhere-v
 | cover, built, density | ESA WorldCover 2021 v200 (read at its 160 m overview) | 10 m | CC BY 4.0 | © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium |
 | altitude, altitude_band | Mapterhorn terrain tiles (AWS Terrain Tiles fallback), as the cells already use | ~300 m sampled | per Mapterhorn attribution.json (open) | as the game's credits already say |
 | climate (temp, min, max, rain, rain days, sun hours) | CRU TS 4.09, 1991-2020 means; sun hours from cloud cover and day length | 0.5° | Open Government Licence v3 | Climatic Research Unit (University of East Anglia) and Met Office |
-| tint (if agreed) | ESA WorldCover Sentinel-2 median L2A RGBNIR composite 2021 (cloud-free yearly median) | 10 m, read at 160 m, kept 16 x 16 px a cell | CC BY 4.0 (in the file's own licence tag) | as WorldCover above |
+| tint | ESA WorldCover Sentinel-2 median L2A RGBNIR composite 2021 (cloud-free yearly median) | 10 m, read at 160 m, kept 16 x 16 px a cell | CC BY 4.0 (in the file's own licence tag) | as WorldCover above |
 
 ### Rejected
 
