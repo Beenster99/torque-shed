@@ -319,19 +319,44 @@ func test_fetch() -> void:
 		"mode": "main", "names": ["Gunnerside", "Grinton"]})
 	check(not plan.is_empty() and plan["region_hash"] == host_map.hash, "the host's plan for the area is taken before its cells are here")
 	var res := {}
+	var said := {}
 	var end := Time.get_ticks_msec() + 60000
 	while Time.get_ticks_msec() < end:
 		host.serve()
 		res = AdventurePlans.result(plan)
+		said[AdventurePlans.progress_of(plan)] = true
 		if not res.is_empty():
 			break
 		await t.get_tree().process_frame
+	check(said.keys().any(func(w): return str(w).contains("of 2 parts of the world")) and AdventurePlans.progress_of(plan) == "",
+		"while it plans, it says what it's getting (%s)" % ", ".join(said.keys()))
 	var redirected := host.asked.filter(func(p): return str(p).begins_with("/dl/")).size()
 	check(not res.is_empty() and bool(res.get("ok", false)), "planned over the area once its cells came (%s)" % str(res.get("error", "still waiting")))
 	check(RealRegion.cell_dir(Vector2i(577, 711)).begins_with(store) and RealRegion.cell_dir(Vector2i(577, 712)).begins_with(store) and redirected == 2,
 		"both cells fetched (through the download's redirect) and kept, the empty one next door not asked for (%s)" % str(host.asked))
 	if bool(res.get("ok", false)):
 		check(absf((res["pack"] as RealPack).max_km() - 11.35) < 0.1, "the same road as from the fixtures (%.2f km)" % (res["pack"] as RealPack).max_km())
+	# The cells kept are capped: past `keep`, the ones used longest ago go, with their streams and trees; never one
+	# used this run (its land may be on the screen).
+	var was_keep := CellStore.keep
+	CellStore.keep = 1
+	check(CellStore.prune() == 0 and RealRegion.cell_dir(Vector2i(577, 711)) != "" and RealRegion.cell_dir(Vector2i(577, 712)) != "",
+		"cells used this run are never pruned")
+	var was_used: Dictionary = CellStore._used_now
+	CellStore._used_now = {}
+	var f := FileAccess.open(store.path_join("used.json"), FileAccess.WRITE)
+	f.store_string(JSON.stringify({"577_711": 100, "577_712": 200}))
+	f.close()
+	DirAccess.make_dir_recursive_absolute(store.path_join("tree"))
+	f = FileAccess.open(store.path_join("tree/c577_711.json"), FileAccess.WRITE)
+	f.store_string("{}")
+	f.close()
+	var gone := CellStore.prune()
+	check(gone == 1 and RealRegion.cell_dir(Vector2i(577, 711)) == "" and RealRegion.cell_dir(Vector2i(577, 712)) != ""
+		and not FileAccess.file_exists(store.path_join("tree/c577_711.json")) and not CellStore._used().has("577_711"),
+		"past the cap the cell used longest ago goes, its trees with it (%d went)" % gone)
+	CellStore.keep = was_keep
+	CellStore._used_now = was_used
 	# A cell whose bytes aren't the index's.
 	RegionStore._remove_tree(store.path_join("c577_712"))
 	RealRegion.forget_areas()

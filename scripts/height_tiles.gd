@@ -5,7 +5,7 @@ extends RefCounted
 ## tools/route_bake.py bakes from. A region whose heights are "live" (RealTerrain) reads them from here instead of from
 ## baked tiles of its own.
 ##
-## Tiles are kept on disk under DISK (and read from any folder in `dirs`, the tests' fixtures among them) and decoded
+## Tiles are kept on disk under `disk` (and read from any folder in `dirs`, the tests' fixtures among them) and decoded
 ## into memory the first time they are sampled, a few at most per frame. fetch() fills the disk from the network and
 ## blocks while it does, so it is called on a worker (RoutePlanner, before the road's heights are worked out); the
 ## samplers never touch the network. Safe from any thread.
@@ -13,7 +13,8 @@ extends RefCounted
 const MAPTERHORN := "https://tiles.mapterhorn.com/%d/%d/%d.webp"
 const AWS := "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.png"
 const USER_AGENT := "TorqueShed (+https://github.com/Beenster99/torque-shed)"
-const DISK := "user://heights"
+## Where fetched tiles are kept (the tests keep theirs elsewhere).
+static var disk := "user://heights"
 ## Decoded tiles kept in memory (a 512 px tile is 768 KB): a long ride's near tiles and their surroundings.
 const MEMORY := 160
 ## Fetches at once.
@@ -28,10 +29,14 @@ const SEA_DEPTH := 35.0
 ## The sea mask is smoothed by shrinking the tile to this many cells a side and back (Godot does it natively).
 const SEA_CELLS := 16
 
-## Folders searched for a tile, after DISK.
+## Folders searched for a tile, after `disk`.
 static var dirs: Array[String] = ["res://data/heights"]
 ## No network: tiles that aren't on disk stay missing (the tests).
 static var offline := false
+## At most this many fetched tiles are kept on disk (about 100 KB each: a long ride wants a thousand or so): past it, the
+## ones fetched longest ago go (prune), never one this game has asked for since it started (its ride may want it).
+static var keep := 10000
+static var _used_now := {}   # Vector3i -> true
 
 static var _lock := Mutex.new()
 static var _mem := {}        # Vector3i(z, x, y) -> Tile
@@ -170,9 +175,9 @@ static func _rel(key: Vector3i) -> String:
 	return "%d/%d/%d" % [key.x, key.y, key.z]
 
 
-## The file holding tile `key` (webp or png) in DISK or `dirs`, or "".
+## The file holding tile `key` (webp or png) in `disk` or `dirs`, or "".
 static func _path_of(key: Vector3i) -> String:
-	for root in [DISK] + Array(dirs):
+	for root in [disk] + Array(dirs):
 		for ext in [".webp", ".png"]:
 			var p: String = str(root).path_join(_rel(key) + ext)
 			if FileAccess.file_exists(p):
@@ -208,11 +213,52 @@ static func keys_near(points: PackedVector2Array, reach: float, zoom: int, lat0:
 ## couldn't get. Never call it on the main thread. `progress(done, total)` is called as they come.
 static func fetch(keys: Array[Vector3i], progress := Callable()) -> int:
 	var todo: Array[Vector3i] = []
+	_lock.lock()
+	for k in keys:
+		_used_now[k] = true
+	_lock.unlock()
 	for k in keys:
 		if not has(k):
 			todo.append(k)
 	if todo.is_empty() or offline:
 		return todo.size() if offline else 0
+	var failed := _fetch(todo, progress)
+	prune()
+	return failed
+
+
+## Deletes the tiles in `disk` past `keep`, those fetched longest ago first; never one asked for this run. Returns
+## how many went.
+static func prune() -> int:
+	var files: Array = []   # [when, path, key]
+	var root := DirAccess.open(disk)
+	if root == null:
+		return 0
+	for z in root.get_directories():
+		var dz := DirAccess.open(disk.path_join(z))
+		for x in dz.get_directories():
+			var dx := DirAccess.open(disk.path_join(z).path_join(x))
+			for fn in dx.get_files():
+				var path := disk.path_join(z).path_join(x).path_join(fn)
+				files.append([FileAccess.get_modified_time(path), path, Vector3i(int(z), int(x), int(fn.get_basename()))])
+	if files.size() <= keep:
+		return 0
+	files.sort()
+	var gone := 0
+	_lock.lock()
+	for f in files:
+		if files.size() - gone <= keep:
+			break
+		if _used_now.has(f[2]) or _mem.has(f[2]):
+			continue
+		DirAccess.remove_absolute(f[1])
+		_missing[f[2]] = true
+		gone += 1
+	_lock.unlock()
+	return gone
+
+
+static func _fetch(todo: Array[Vector3i], progress: Callable) -> int:
 	var total := todo.size()
 	var failed := 0
 	var done := 0
@@ -271,7 +317,7 @@ static func _poll(c: Dictionary) -> int:
 		if decode(body) == null:
 			return -1
 		var key: Vector3i = c["key"]
-		var path := DISK.path_join(_rel(key) + (".png" if bool(c["aws"]) else ".webp"))
+		var path := disk.path_join(_rel(key) + (".png" if bool(c["aws"]) else ".webp"))
 		DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		if f == null:

@@ -139,6 +139,7 @@ static func _load(region_id: String) -> RealRegion:
 		var cells := cells_of_area(region_id)
 		if cells.is_empty():
 			return null
+		CellStore.touch(cells)   # (in use: the last to be pruned, and never this run)
 		var dirs: Array[String] = []
 		for c in cells:
 			var d := cell_dir(c)
