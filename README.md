@@ -123,9 +123,9 @@ Six optional kinds finish a bike in its style, each bolted to the frame, five or
 
 #### Style packs
 
-Each of the fourteen styles has its own **pack** of about thirty parts made for it (436 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
+Each of the fourteen styles has its own **pack** of twenty-odd parts made for it: frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
 
-- Tanks: teardrop, slab-sided, coffin, fat split cruiser tanks with a dash console, slim peanuts, little round tanks, long tanks with knee dents and long low racing tanks. Paint can be two-tone, a band, racing stripes, scallops or pinstripes. Caps can be monza, flush or twin, with oval, roundel or wing badges and knee pads.
+- Tanks: ten of them, one plain colour each for spraying as you like: a 50s teardrop with knee pads, a long café tank with knee cut-outs and a monza cap, a slim peanut, a flat-topped coffin, a fat bob split tank with twin caps and a dash console, an angular sport tank with a grip pad, a low carbon race tank, a broad touring tank, a tall creased adventure tank with knee panels and a narrow enduro tank with radiator shrouds.
 - Seats: brat, stepped two-up, king-and-queen, sprung solo pans, gunfighter, long cafe humps and flat-track seats. They can be tuck-and-roll, ribbed or diamond-stitched with coloured piping, with springs, sissy bars and backrests.
 - Bars: tracker, drag, buckhorn, Z bar, T bar on a centre post, clubman drops and ape hangers, on risers, with an MX brace and pad.
 - Exhausts: fishtails, turnouts, cigar mufflers, trumpets, reverse cones, triangle cans and stubbies. Headers can be chrome, black, blued titanium or heat-wrapped, and some systems fit a pipe each side.
@@ -133,7 +133,8 @@ Each of the fourteen styles has its own **pack** of about thirty parts made for 
 - Tails: ducktail, cafe hump, solo cowl, flat-track tail with an oval number board, and sharp sport and race tails, with chrome fender struts.
 - Wheels and tyres: moon discs, split-spoke cast wheels, rim stripes, polished lips, black or chrome spokes, big finned drum hubs and whitewall tyres.
 - Forks: gaiters, chrome or black shrouds, fork braces, wide-glide spreads and fatter legs. Frames come in chrome, nickel and polished finishes.
-- Front mudguards and fairings: ribbed and striped guards, a batwing, a club racer half fairing, a dome cowl and a bare cruiser screen. Bags come as studded leather saddlebags or rounded hard cases.
+- Front mudguards and fairings: ribbed and striped guards. Ten fairings, one plain colour each: a flyscreen, a headlight cowl, a bikini, a batwing, a club racer half, a creased sports half, an adventure fairing with an adjustable screen, a touring fairing, a full sports fairing and a carbon race fairing.
+- Frames: no trellis frames; instead two **trestle** frames, a steel lattice and a cast alloy beam, bolted from the head stock to the cylinder heads with the engine hung from them as a stressed member, the swingarm pivoting on plates on the back of the crankcase. Also wrap-around crash bars, super-fat 240 and 300 mm rear tyres on an 8.5" billet wheel, and brake discs with their drilled holes cut right through. Bags come as studded leather saddlebags or rounded hard cases.
 
 Each pack part suits its own style first and usually one or two related ones, so a bike built from one pack reads as a proper example of that style.
 
