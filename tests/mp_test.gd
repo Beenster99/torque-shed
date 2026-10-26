@@ -37,6 +37,8 @@ var SPRAY_XF := Transform3D(Basis(), Workshop.CENTER + Vector3(-2.5, 0.0, 1.0)) 
 
 ## What the client offers the host for the bike in its collection (the collection offer step).
 const HOME_OFFER := 1234
+## A spray request that nothing came of in this many frames (5 s) is asked again.
+const SPRAY_AGAIN := 300
 
 
 func _ready() -> void:
@@ -56,6 +58,11 @@ func _ready() -> void:
 	# A ceiling: the pair stops as soon as every step is seen. The steps follow one another, and on a slow machine 90 s
 	# ran out before the last (the collection offer).
 	var deadline := Time.get_ticks_msec() + 240000
+	# What the host turned away (Shed.feedback, not ok): said if the pair fails, to show where it stuck.
+	var turned_away: Array = []
+	Shed.feedback.connect(func(text: String, ok: bool):
+		if not ok and turned_away.size() < 30 and not turned_away.has(text):
+			turned_away.append(text))
 	var moved := false
 	var shed_ok := false
 	var start := Vector3.ZERO
@@ -113,6 +120,7 @@ func _ready() -> void:
 	var card_ok := false
 	var spray_made := false
 	var spray_step := 0
+	var spray_at := 0           # the frame the last spray request went (asked again if nothing came of it: SPRAY_AGAIN)
 	var spray_ok := false
 	var paint_step := 0
 	var paint_ok := false
@@ -479,15 +487,22 @@ func _ready() -> void:
 				spray_tank = iid
 		if role == "client" and spray_tank != 0:
 			var sit: Dictionary = Shed.items[spray_tank]
+			# (a request the host turned away, or one that never got there, is asked again: each step goes on only
+			# once the last one's coat is seen on the tank)
+			if spray_step in [1, 2, 3] and not spray_ok and Engine.get_physics_frames() - spray_at > SPRAY_AGAIN:
+				spray_step -= 1
 			if spray_step == 0:
 				Shed.request({"a": "prime", "item": spray_tank, "quality": 0.9, "waste": 0.0})
 				spray_step = 1
+				spray_at = Engine.get_physics_frames()
 			elif spray_step == 1 and sit.get("primer_top", false):
 				Shed.request({"a": "paint", "item": spray_tank, "color": 2, "finish": "gloss", "quality": 0.8, "waste": 0.0})
 				spray_step = 2
+				spray_at = Engine.get_physics_frames()
 			elif spray_step == 2 and sit.has("paint_quality") and not sit.get("primer_top", false):
 				Shed.request({"a": "coat", "item": spray_tank, "coat": "clear", "quality": 0.9, "waste": 0.0})
 				spray_step = 3
+				spray_at = Engine.get_physics_frames()
 		if spray_tank != 0:
 			var sd: Dictionary = Shed.items[spray_tank]
 			spray_ok = float(sd.get("primer", 0.0)) > 0.5 and float(sd.get("paint_quality", 0.0)) > 0.8 \
@@ -792,6 +807,9 @@ func _ready() -> void:
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
 	var ok := moved and shed_ok
+	if not ok:
+		print("MP note %s: where it stuck: spray %d, paint bay %d, recovery %d, passenger %d, washing %d, detailing %d, pump %d, collection %d; turned away: %s" % [
+			role, spray_step, paint_step, rec_step, pass_step, wash_step, shine_step, pump_step, home_step, str(turned_away)])
 	print("MP note %s: helmet visors seen up both ways %s" % [role, visor_ok])
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
