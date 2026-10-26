@@ -13493,8 +13493,16 @@ func _test_filler_parts() -> void:
 		check(am._arm_type() == str(PartsDB.get_part(id)["arm"]) and am.slot_bounds("swingarm").size.z > 0.3,
 			"%s hangs off the pivot as its own swingarm (%s)" % [id, str(am.slot_bounds("swingarm").size)])
 		am.free()
-	check(arms.has("box_section") and arms.has("banana") and arms.has("braced_mx") and arms.has("hardtail") and arms.has("single"),
-		"box-section, banana, braced MX, hardtail and single-sided swingarms (%s)" % str(arms.keys()))
+	check(arms.has("box_section") and arms.has("banana") and arms.has("braced_mx") and arms.has("hardtail") and arms.has("single") and arms.has("single_gull"),
+		"box-section, banana, braced MX, hardtail and single-sided swingarms, plain and gull-wing (%s)" % str(arms.keys()))
+	var gull := BikeModel.new()
+	add_child(gull)
+	gull.build_from(BikeBuild.new({"swingarm": "single_gull_alloy"}))
+	var gb := gull.slot_bounds("swingarm")
+	check(gull.find_children("SingleSidedArm*", "", true, false).size() == 1 and gull.find_children("ArmHole*", "", true, false).size() == 3
+		and gull.find_children("CentreNut*", "", true, false).size() == 1 and gb.position.x < -0.15,
+		"the gull-wing arm is one beam down the left with holes cast through it, the wheel on a centre nut (%s)" % str(gb))
+	gull.free()
 	var ht := BikeModel.new()
 	add_child(ht)
 	ht.build_from(BikeBuild.new({"swingarm": "hardtail_chrome"}))

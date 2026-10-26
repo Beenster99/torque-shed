@@ -20170,6 +20170,51 @@
 				"roader"
 			],
 			"material": "metal"
+		},
+		"single_gull_alloy": {
+			"name": "Gull-wing single-sided swingarm",
+			"description": "A deep cast alloy single-sided arm that bows up and out over the exhaust, with lightening holes cast through it and an eccentric hub for the chain. The back wheel hangs off one big centre nut, the right-hand side left bare.",
+			"type": "Single-sided cast aluminium, gull-wing",
+			"arm": "single_gull",
+			"material": "metal",
+			"mass": 6.4,
+			"metal": 0.9,
+			"rough": 0.3,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"price": 540,
+			"styles": [
+				"naked",
+				"sport",
+				"roader",
+				"race"
+			]
+		},
+		"single_gull_black": {
+			"name": "Gull-wing single-sided swingarm, black",
+			"description": "The gull-wing single-sided arm in satin black, the right-hand side of the wheel left bare to show it off.",
+			"type": "Single-sided cast aluminium, gull-wing",
+			"arm": "single_gull",
+			"material": "metal",
+			"mass": 6.4,
+			"metal": 0.6,
+			"rough": 0.45,
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"price": 520,
+			"styles": [
+				"naked",
+				"sport",
+				"roader",
+				"tourer",
+				"cafe"
+			]
 		}
 	},
 	"steering_damper": {

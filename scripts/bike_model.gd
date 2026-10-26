@@ -993,7 +993,7 @@ func _arm_type() -> String:
 ## triangulated rear end that looks rigid but moves as one with the shocks hidden underneath.
 ## A swingarm part of its own replaces it: a deep box-section arm, a banana arm curving up over
 ## the exhaust, a braced MX arm with its truss underneath and chain slider, a rigid hardtail rear
-## end, or a single-sided arm.
+## end, or a single-sided arm (plain, or the gull-wing kind curving over the exhaust).
 func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 	_swingarm = Node3D.new()
 	_swingarm.position = _pivot
@@ -1126,6 +1126,32 @@ func _draw_own_swingarm(kind: String, arm_x: float, mat: Material) -> bool:
 				_box(axle, Vector3(0.016, 0.075, 0.09), mat, _swingarm)   # the axle plate
 			var cross := _to_arm(Vector3(0.0, _seat_front.y - 0.06, _pivot.z + 0.12))
 			_tube(cross - Vector3(arm_x * 0.85, 0.0, 0.0), cross + Vector3(arm_x * 0.85, 0.0, 0.0), 0.013, mat, Vector3.ONE, _swingarm)
+		"single_gull":
+			# A modern streetfighter's single-sided arm: a deep cast beam down the chain side that
+			# bows up and out over the exhaust in a gull-wing curve, with lightening holes cast
+			# through it, an eccentric hub carrier at the axle for the chain adjustment and the
+			# wheel on one big centre nut, the right-hand side of the wheel left bare.
+			var x := -arm_x - 0.012
+			var secs := []
+			for k in 9:
+				var f := k / 8.0
+				secs.append({"c": Vector3(x - 0.018 * sin(f * PI), 0.035 * sin(pow(f, 0.8) * PI), lerpf(0.0, _arm_len - 0.03, f)),
+					"w": lerpf(0.045, 0.032, f), "up": lerpf(0.085, 0.06, f), "down": lerpf(0.07, 0.055, f), "n": 3.4})
+			_shell(secs, mat, false, 0.0, TAU, _swingarm).name = "SingleSidedArm"
+			for f in [0.3, 0.52, 0.72]:
+				var hole := _mesh_instance(_sphere(0.026 * (1.0 - f * 0.35)), dark,
+					Vector3(x - 0.018 * sin(f * PI) - 0.04, 0.035 * sin(pow(f, 0.8) * PI) + 0.005, _arm_len * f), _swingarm)
+				hole.scale = Vector3(0.25, 0.8, 1.5)
+				hole.name = "ArmHole"
+			var carrier := _mesh_instance(_cylinder(0.085, 0.06), mat, Vector3(x + 0.02, 0.0, _arm_len), _swingarm)
+			carrier.rotation.z = PI * 0.5
+			var ring := _mesh_instance(_torus(0.07, 0.006), steel, Vector3(x - 0.012, 0.0, _arm_len), _swingarm)
+			ring.rotation.z = PI * 0.5
+			var nut := _mesh_instance(_cylinder(0.038, 0.032, 0.035, 6), steel, Vector3(arm_x - 0.02, 0.0, _arm_len), _swingarm)
+			nut.rotation.z = PI * 0.5
+			nut.name = "CentreNut"
+			_box(Vector3(-arm_x * 0.5, 0.0, 0.04), Vector3(arm_x + 0.03, 0.075, 0.055), mat, _swingarm)
+			return true
 		_:
 			return false
 	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), mat, _swingarm)
