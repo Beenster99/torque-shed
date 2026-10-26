@@ -23837,5 +23837,27 @@ func _test_place_sound_ride() -> void:
 	_place_sound().test_ride()
 
 
+func _test_place_sound_ride_radio() -> void:
+	_place_sound().test_ride_radio()
+
+
 func _test_place_sound_with_profiles() -> void:
 	_place_sound().test_with_profiles()
+
+
+# ---------------------------------------------------------------------------- regional kits (tests/region_kit_tests.gd)
+
+func _region_kit() -> RefCounted:
+	return load("res://tests/region_kit_tests.gd").new(self)
+
+
+func _test_region_kit_countries() -> void:
+	_region_kit().test_countries()
+
+
+func _test_region_kit_choose() -> void:
+	_region_kit().test_choose()
+
+
+func _test_region_kit_buildings() -> void:
+	_region_kit().test_buildings()

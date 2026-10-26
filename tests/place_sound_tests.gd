@@ -185,6 +185,37 @@ func test_ride() -> void:
 	amb.queue_free()
 
 
+func test_ride_radio() -> void:
+	# The bike's radio: each press the next local station, then off; back on, where you left it in that country.
+	check(RideRadio.next_index(-1, 3) == 0 and RideRadio.next_index(1, 3) == 2 and RideRadio.next_index(2, 3) == -1, "first, next, then off")
+	check(RideRadio.label({"name": "NPO Radio 1", "genre": "News", "language": "dutch"}) == "NPO Radio 1  ·  News (Dutch)", "a station reads with its genre and language")
+	RideRadio.last.clear()
+	var amb := RideAmbience.new()
+	amb.radio = RideRadio.new()
+	amb.radio.offline = true
+	amb.add_child(amb.radio)
+	t.add_child(amb)
+	amb.setup(profile("polder"), 7)
+	var radio := amb.radio
+	var count := radio.stations().size()
+	check(radio.country == "NL" and count > 1 and radio.index == -1, "riding in the polder the Dutch stations are lined up, and it starts off")
+	var said := radio.press()
+	check(radio.index == 0 and said.contains(str(radio.stations()[0]["name"])), "a press tunes the first: %s" % said)
+	radio.press()
+	check(radio.index == 1, "and the next")
+	for i in count - 1:
+		said = radio.press()
+	check(radio.index == -1 and said == "Radio off", "after the last it goes off")
+	radio.press()
+	radio.press()
+	amb.setup(profile("atlas"), 7)
+	check(radio.country == "MA" and radio.index == 0, "on in Morocco, it's on Morocco's stations")
+	amb.setup(profile("polder"), 7)
+	check(radio.index == 1, "and back in the Netherlands, on the station you left it on")
+	check(Settings.clashes().is_empty(), "its key clashes with nothing %s" % str(Settings.clashes().slice(0, 3)))
+	amb.queue_free()
+
+
 func test_with_profiles() -> void:
 	# The game's own place profiles (PlaceProfile): even a guessed one, offline, gives the place its sounds.
 	var fes := PlaceSound.choose(PlaceProfile.guess(34.06, -4.98), 7)

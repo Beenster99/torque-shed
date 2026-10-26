@@ -474,6 +474,11 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 				if xf != Transform3D():
 					poles.append(xf)
 		mm["snow_pole"] = poles
+	# The place's own posts and kerb paint (its region kit, RegionKit), on a real road.
+	var paint := AdventureProps.new_arrays()
+	if real:
+		RegionKit.roadside(route, RegionKit.for_route(route, (i0 + i1) / 2), i0, i1, ax, az, surf, mm, paint)
+	out["kerbs"] = paint
 	# The buildings: the real ones beside a real road, else the odd one.
 	if real:
 		_real_buildings(route, c, i0, ax, az, buildings)
@@ -643,6 +648,7 @@ static func _farmed(route: AdventureRoute, i0: int, i1: int) -> bool:
 ## chunk is mapped back to the main road's (`eq`).
 static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, az: float, buildings: Dictionary) -> void:
 	var style := str(AdventureTheme.get_value(route.theme, "style", "mixed"))
+	var kit := RegionKit.for_route(route, i0 + AdventureRoute.CHUNK_KNOTS / 2)
 	var piece := route._piece_at(float(i0) * AdventureRoute.STEP)
 	if int(piece["fork"]) >= 0 and int(piece["way"]) > 0:
 		return
@@ -675,7 +681,11 @@ static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, a
 				var px := bx + (cx * w) * cos(yaw) + (cz * d) * sin(yaw)
 				var pz := bz - (cx * w) * sin(yaw) + (cz * d) * cos(yaw)
 				y = minf(y, route.land_height(k, (px - route.px[k]) * cos(route.hd[k]) + (pz - route.pz[k]) * sin(route.hd[k]), px, pz))
-		AdventureProps.real_building(buildings, Vector3(bx - ax, y, bz - az), w, d, yaw, float(b[5]), RealPack.BUILDING_KINDS[clampi(int(b[6]), 0, RealPack.BUILDING_KINDS.size() - 1)], style)
+		var kind := RealPack.BUILDING_KINDS[clampi(int(b[6]), 0, RealPack.BUILDING_KINDS.size() - 1)]
+		if kit.is_empty():
+			AdventureProps.real_building(buildings, Vector3(bx - ax, y, bz - az), w, d, yaw, float(b[5]), kind, style)
+		else:
+			RegionBuildings.real_building(buildings, Vector3(bx - ax, y, bz - az), w, d, yaw, float(b[5]), kind, kit)
 
 
 ## The real lighthouses of a real road that stand by knots i0..i1, into `mm`.
@@ -1032,7 +1042,7 @@ static func _commit_scenery(data: Dictionary, node: Node3D, scale: float) -> voi
 			continue
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
-		multi.mesh = AdventureProps.mesh(kind)
+		multi.mesh = RegionKit.post_mesh(kind.trim_prefix("kit_post_")) if kind.begins_with("kit_post_") else AdventureProps.mesh(kind)
 		multi.instance_count = list.size()
 		var buf: PackedFloat32Array = bufs.get(kind, PackedFloat32Array())
 		if buf.size() == list.size() * 12:
@@ -1043,9 +1053,9 @@ static func _commit_scenery(data: Dictionary, node: Node3D, scale: float) -> voi
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "MM_" + kind
 		mmi.multimesh = multi
-		if kind in ["post", "snow_pole", "km_post", "bush", "dry_bush", "gorse", "dune_grass", "sheep", "red_rock", "agave", "tussock"]:
+		if kind in ["post", "snow_pole", "km_post", "bush", "dry_bush", "gorse", "dune_grass", "sheep", "red_rock", "agave", "tussock"] or kind.begins_with("kit_post_"):
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_range(mmi, float(RANGES.get(kind, 400.0)) * scale)
+		_range(mmi, float(RANGES.get(kind, RANGES["post"] if kind.begins_with("kit_post_") else 400.0)) * scale)
 		node.add_child(mmi)
 	var walls: Dictionary = data.get("walls", {})
 	if not walls.is_empty() and not (walls["v"] as PackedVector3Array).is_empty():
@@ -1055,6 +1065,14 @@ static func _commit_scenery(data: Dictionary, node: Node3D, scale: float) -> voi
 		wmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_range(wmi, RANGES["walls"] * scale)
 		node.add_child(wmi)
+	var kerbs: Dictionary = data.get("kerbs", {})
+	if not kerbs.is_empty() and not (kerbs["v"] as PackedVector3Array).is_empty():
+		var kmi := MeshInstance3D.new()
+		kmi.name = "Kerbs"
+		kmi.mesh = AdventureProps.to_mesh(kerbs)
+		kmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_range(kmi, RANGES["walls"] * scale)
+		node.add_child(kmi)
 	var bld: Dictionary = data["buildings"]
 	if not (bld["v"] as PackedVector3Array).is_empty():
 		var bmi := MeshInstance3D.new()
