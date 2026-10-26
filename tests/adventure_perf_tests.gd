@@ -256,25 +256,32 @@ func test_ride() -> void:
 	trip.jump(jumped - w.distance_of(main.bike.global_position, "own"))
 	await _frames(60)
 	var voted := [false]
+	var ground := [false]
 	var b: Array = await _ride(main, trip, jumped, fs + 1200.0, 2.0, func(s):
 		if not voted[0] and s > fs - 2000.0:
 			voted[0] = true
-			Shed.request({"a": "adventure_vote", "fork": 0, "way": 1}))
+			Shed.request({"a": "adventure_vote", "fork": 0, "way": 1})
+		if s > fs + 600.0 and w.has_ground(fs + 600.0):
+			ground[0] = true)
 	var fork := _summary(b[0])
 	var all: Array = (a[0] as Array) + (b[0] as Array)
 	all.sort()
 	var sum := _summary(all)
 	var taken := w.route.decided.has(0) and int(w.route.choices.get(0, 0)) == 1
 	# The ride goes as fast as the frames do, and on a quick machine it can get ahead of the worker
-	# thread building the road: give it a moment to catch up along the way picked.
+	# thread building the road: hold the bike still and give the road a moment to catch up along the
+	# way picked (ridden on, the stretch 600 m past the fork soon drops off behind).
+	if main.bike:
+		main.bike.linear_velocity = Vector3.ZERO
 	for i in 600:
-		if w.has_ground(fs + 600.0):
+		if ground[0] or w.has_ground(fs + 600.0):
+			ground[0] = true
 			break
 		await t.get_tree().process_frame
 	print("    ADV RIDE PROFILE: %d frames, median %.2f ms, p99 %.2f, worst %.1f ms (at %.0f m / %.0f m), %d frames over the median by %.0f ms, %d over 33 ms; through the fork: worst %.1f ms, %d stutters; %s"
 		% [sum["n"], sum["median"], sum["p99"], sum["worst"], a[1], b[1], sum["spikes"], SPIKE_MS, sum["over33"], fork["worst"], fork["spikes"], w.timing_text()])
-	check(taken and w.has_ground(fs + 600.0), "the host's pick at the fork is taken, and the road built on along it (picks %s, chosen %s, ground %s, voted %s)"
-		% [Shed.adventure.get("picks", {}), w.route.choices, w.has_ground(fs + 600.0), voted[0]])
+	check(taken and ground[0], "the host's pick at the fork is taken, and the road built on along it (picks %s, chosen %s, ground %s, voted %s)"
+		% [Shed.adventure.get("picks", {}), w.route.choices, ground[0], voted[0]])
 	check(float(sum["worst"]) < 60.0 and int(sum["over33"]) <= 2,
 		"no stutter on the ride: the worst of %d frames %.1f ms, %d over 33 ms (the median %.1f ms)" % [sum["n"], sum["worst"], sum["over33"], sum["median"]])
 	check(int(sum["spikes"]) * 400 < int(sum["n"]) and float(fork["worst"]) < 60.0,
