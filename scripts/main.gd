@@ -122,13 +122,8 @@ func _ready() -> void:
 	hud_satnav = SatnavScreen.new()
 	hud_satnav.framed = true
 	hud_satnav.visible = false
-	hud_satnav.anchor_top = 1.0
-	hud_satnav.anchor_bottom = 1.0
-	hud_satnav.offset_left = 24.0
-	hud_satnav.offset_right = 24.0 + 300.0
-	hud_satnav.offset_top = -24.0 - 200.0
-	hud_satnav.offset_bottom = -24.0
 	ui.add_child(hud_satnav)
+	place_hud_satnav()
 	emote_bar = EmoteBar.new()
 	ui.add_child(emote_bar)
 	computer = PartsComputer.new()
@@ -1003,6 +998,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				satnav._timer = 0.0   # the new page straight away
 		else:
 			hud.flash("No sat nav on this bike", 1.5)
+	elif event.is_action_pressed("satnav_zoom_in") or event.is_action_pressed("satnav_zoom_out"):
+		hud.flash(Satnav.zoom(-1 if event.is_action_pressed("satnav_zoom_in") else 1), 1.0)
+		if satnav:
+			satnav._timer = 0.0
+	elif event.is_action_pressed("satnav_satellite"):
+		Settings.satnav_satellite = not Settings.satnav_satellite
+		hud.flash("Sat nav: satellite view" if Settings.satnav_satellite else "Sat nav: map", 1.2)
+		if satnav:
+			satnav._timer = 0.0
+	elif event.is_action_pressed("satnav_portrait"):
+		Settings.satnav_portrait = not Settings.satnav_portrait
+		hud.flash("Sat nav: portrait" if Settings.satnav_portrait else "Sat nav: landscape", 1.2)
 	elif event.is_action_pressed("screen_up") or event.is_action_pressed("screen_down"):
 		_move_screen(0.2 if event.is_action_pressed("screen_up") else -0.2)
 	elif event.is_action_pressed("telemetry"):
@@ -1127,6 +1134,8 @@ func _physics_process_body(delta: float) -> void:
 	telemetry_overlay.bike = bike
 	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
 	hud_satnav.visible = bike != null and satnav != null and satnav.fitted() and bike.engine_on and Settings.satnav_hud and not menu.visible
+	if hud_satnav.visible:
+		place_hud_satnav()
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0
@@ -1347,6 +1356,23 @@ func _tow_step(delta: float) -> void:
 		if not stop.is_empty() and absf(float(stop["s"]) - s) < Roadside.STOP_REACH and absf(bike.speed) < 3.0:
 			Shed.request({"a": "roadside_untow"})
 			hud.flash("At the stop: the tow strap's off.", 3.0)
+
+
+## The HUD's sat nav, as big and where the settings say (Settings.satnav_scale, satnav_x and
+## satnav_y), wide or standing tall (satnav_portrait), kept on the screen.
+func place_hud_satnav() -> void:
+	var r := hud_rect(get_viewport().get_visible_rect().size)
+	hud_satnav.position = r.position
+	hud_satnav.size = r.size
+
+
+## Where the HUD's sat nav goes on a screen `screen` big (see place_hud_satnav).
+static func hud_rect(screen: Vector2) -> Rect2:
+	var s := Vector2(200.0, 300.0) if Settings.satnav_portrait else Vector2(300.0, 200.0)
+	s *= Settings.satnav_scale
+	s = s.min(screen - Vector2(48.0, 48.0)).max(Vector2(60.0, 60.0))
+	var room := (screen - s - Vector2(48.0, 48.0)).max(Vector2.ZERO)
+	return Rect2(Vector2(24.0, 24.0) + room * Vector2(Settings.satnav_x, Settings.satnav_y), s)
 
 
 ## The reverse view button on the bike: a tap turns the view round to look behind and leaves it

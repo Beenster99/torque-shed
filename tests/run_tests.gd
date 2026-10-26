@@ -520,6 +520,7 @@ func _run_all() -> void:
 	await _t(&"_test_kit_grip")
 	await _t(&"_test_kit_toolbox")
 	await _t(&"_test_kit_satnav")
+	await _t(&"_test_kit_satnav_views")
 	await _t(&"_test_kit_fuel")
 	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
 	await _t(&"_test_adventure_route")
@@ -22115,6 +22116,91 @@ func _test_kit_satnav() -> void:
 	await get_tree().process_frame
 	check(hud_nav.view == pv, "the HUD's sat nav shows the same")
 	hud_nav.queue_free()
+	nav.queue_free()
+	world.queue_free()
+	await get_tree().process_frame
+
+
+## The sat nav as you like it: the satellite view (a picture from straight above, under the map,
+## gone again when it's turned off), the zoom keys' steps, portrait on the HUD showing further
+## ahead, and the HUD's copy sized and placed where the settings say, always on the screen.
+func _test_kit_satnav_views() -> void:
+	var saved := [Settings.satnav_satellite, Settings.satnav_zoom, Settings.satnav_portrait, Settings.satnav_scale, Settings.satnav_x, Settings.satnav_y]
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new(_kit_build()))
+	world.add_child(bike)
+	var spawn: Transform3D = world.spawn_point(0)
+	bike.place(spawn.origin, spawn.basis.get_euler().y)
+	bike.engine_on = true
+	var nav := Satnav.new(bike, world)
+	add_child(nav)
+	await get_tree().process_frame
+	Settings.satnav_satellite = true
+	Settings.satnav_zoom = 1.0
+	nav._timer = 0.0
+	nav._tick(0.01)
+	for i in 3:
+		await get_tree().process_frame
+	var sat: Dictionary = nav.screen.view.get("sat", {})
+	var cam_down := nav._sat_cam != null and (-nav._sat_cam.global_basis.z).dot(Vector3.DOWN) > 0.99
+	check(nav.sat_viewport != null and sat.get("tex") == nav.sat_viewport.get_texture() and cam_down
+		and float(sat["metres"]) > nav.screen.span and nav._sat_cam.projection == Camera3D.PROJECTION_ORTHOGONAL,
+		"satellite view: a camera straight down over the bike takes the picture under the map (%.0f m across)" % float(sat.get("metres", 0.0)))
+	check(nav.sat_viewport.size == Vector2i(Satnav.SAT_PX, Satnav.SAT_PX) and nav.sat_viewport.world_3d == bike.get_world_3d(),
+		"it's a %d px picture of the world the bike's in" % Satnav.SAT_PX)
+	Settings.satnav_satellite = false
+	nav._timer = 0.0
+	nav._tick(0.01)
+	check(nav.sat_viewport == null and not nav.screen.view.has("sat"), "turned off, the camera goes and the map is plain again")
+	# Zoom: the keys' steps, and the map's span follows.
+	var spans := []
+	for dir in [0, 1, -1, -1]:
+		if dir != 0:
+			Satnav.zoom(dir)
+		nav.screen.span = SatnavScreen.SPAN_SLOW * Settings.satnav_zoom
+		spans.append(Settings.satnav_zoom)
+	check(spans[1] > spans[0] and spans[2] == spans[0] and spans[3] < spans[0], "zooming out and in steps the map's span %s" % str(spans))
+	# Portrait: tall, and further ahead in view at the same zoom.
+	Settings.satnav_zoom = 1.0
+	var wide := SatnavScreen.new()
+	wide.size = Vector2(300, 200)
+	var tall := SatnavScreen.new()
+	tall.size = Vector2(200, 300)
+	for s in [wide, tall]:
+		add_child(s)
+		s.span = SatnavScreen.SPAN_SLOW
+		s.view = {"pos": Vector2.ZERO, "fwd": Vector2(0, -1)}
+	var ahead := Vector2(0, -150)
+	check(tall._scale() == wide._scale() and tall.to_screen(ahead).y > 0.0 and wide.to_screen(ahead).y < 0.0,
+		"standing tall the same scale shows 150 m ahead, which is off the top when it's wide")
+	wide.queue_free()
+	tall.queue_free()
+	# Where the HUD's copy sits.
+	var screen := Vector2(1920, 1080)
+	Settings.satnav_portrait = false
+	Settings.satnav_scale = 1.0
+	Settings.satnav_x = 0.0
+	Settings.satnav_y = 1.0
+	var home := preload("res://scripts/main.gd").hud_rect(screen)
+	check(home == Rect2(24, 1080 - 24 - 200, 300, 200), "as it comes: 300 x 200 in the bottom left corner (%s)" % home)
+	Settings.satnav_portrait = true
+	Settings.satnav_scale = 2.0
+	Settings.satnav_x = 1.0
+	Settings.satnav_y = 0.0
+	var moved := preload("res://scripts/main.gd").hud_rect(screen)
+	check(moved.size == Vector2(400, 600) and moved.end.x == 1920 - 24 and moved.position.y == 24,
+		"twice the size, standing tall, in the top right corner (%s)" % moved)
+	Settings.satnav_scale = 9.0
+	check(Rect2(Vector2.ZERO, screen).encloses(preload("res://scripts/main.gd").hud_rect(screen)), "however big it's set it stays on the screen")
+	Settings.satnav_satellite = saved[0]
+	Settings.satnav_zoom = saved[1]
+	Settings.satnav_portrait = saved[2]
+	Settings.satnav_scale = saved[3]
+	Settings.satnav_x = saved[4]
+	Settings.satnav_y = saved[5]
 	nav.queue_free()
 	world.queue_free()
 	await get_tree().process_frame

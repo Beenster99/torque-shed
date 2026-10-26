@@ -50,10 +50,10 @@ func _ready() -> void:
 	clip_contents = true   # the roads run off the edge of the screen, not over the HUD
 
 
-## Takes a new `v` (see view) and redraws.
+## Takes a new `v` (see view) and redraws. The span is zoomed by Settings.satnav_zoom.
 func show_view(v: Dictionary) -> void:
 	view = v
-	var want := lerpf(SPAN_SLOW, SPAN_FAST, clampf(float(v.get("speed", 0.0)) / 35.0, 0.0, 1.0))
+	var want := lerpf(SPAN_SLOW, SPAN_FAST, clampf(float(v.get("speed", 0.0)) / 35.0, 0.0, 1.0)) * Settings.satnav_zoom
 	span = lerpf(span, want, 0.15)
 	queue_redraw()
 
@@ -64,8 +64,29 @@ func to_screen(p: Vector2) -> Vector2:
 	var fwd: Vector2 = view.get("fwd", Vector2(0, -1))
 	var right := Vector2(-fwd.y, fwd.x)
 	var rel := p - pos
-	var k := size.x / span
-	return _bike_at() + Vector2(rel.dot(right), -rel.dot(fwd)) * k
+	return _bike_at() + Vector2(rel.dot(right), -rel.dot(fwd)) * _scale()
+
+
+## Pixels a metre: the span across the screen's longer side, so standing tall (portrait) it shows
+## further ahead rather than zooming in.
+func _scale() -> float:
+	return maxf(size.x, size.y) / span
+
+
+## The satellite picture (see Satnav.sat) under the map: where it was taken, turned by however
+## far the bike has turned since.
+func _draw_satellite(sat: Dictionary, k: float) -> void:
+	var tex: Texture2D = sat.get("tex")
+	if tex == null:
+		return
+	var fwd: Vector2 = view.get("fwd", Vector2(0, -1))
+	var right := Vector2(-fwd.y, fwd.x)
+	var up: Vector2 = sat["fwd"]
+	var on_screen := Vector2(up.dot(right), -up.dot(fwd))
+	var side := float(sat["metres"]) * k
+	draw_set_transform(to_screen(sat["centre"]), atan2(on_screen.x, -on_screen.y), Vector2.ONE)
+	draw_texture_rect(tex, Rect2(-side * 0.5, -side * 0.5, side, side), false)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _bike_at() -> Vector2:
@@ -85,10 +106,13 @@ func _draw() -> void:
 	if str(view.get("page", "map")) == "trip" and view.get("trip") is Dictionary:
 		_draw_trip(view["trip"], fs, font)
 		return
-	var k := size.x / span
+	var k := _scale()
 	var show_map := features.has("map")
+	var sat: Dictionary = view.get("sat", {}) if show_map else {}
 	if show_map:
 		draw_rect(r.grow(-1.0), LAND)
+		if not sat.is_empty():
+			_draw_satellite(sat, k)
 		for road in view.get("roads", []):
 			var pts: PackedVector2Array = road["pts"]
 			if pts.size() < 2:
@@ -99,7 +123,12 @@ func _draw() -> void:
 				out[i] = to_screen(pts[i])
 			var w := maxf(float(road.get("hw", 3.0)) * 2.0 * k, 2.0)
 			var kind := str(road.get("kind", ""))
-			draw_polyline(out, TRACK if kind == "dirt" else OTHER if kind == "other" else ROAD, w if kind != "other" else maxf(w * 0.6, 1.5), true)
+			var col := TRACK if kind == "dirt" else OTHER if kind == "other" else ROAD
+			if not sat.is_empty():
+				# Over the satellite picture the roads are a light outline: the picture shows them.
+				col.a *= 0.35
+				w = maxf(w * 0.5, 1.5)
+			draw_polyline(out, col, w if kind != "other" else maxf(w * 0.6, 1.5), true)
 	var route: PackedVector2Array = view.get("route", PackedVector2Array())
 	if features.has("route") and route.size() >= 2:
 		var out := PackedVector2Array()

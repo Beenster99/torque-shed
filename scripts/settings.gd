@@ -15,6 +15,18 @@ var direct_bars := false
 var telemetry_overlay := false
 ## The sat nav's map on the HUD too, while riding a bike with one fitted ({satnav_hud}).
 var satnav_hud := true
+## The sat nav as you like it: the map over a live picture from above ({satnav_satellite}),
+## standing tall rather than wide on the HUD ({satnav_portrait}), how far it's zoomed out (1 as
+## it comes, {satnav_zoom_in} / {satnav_zoom_out}), and the HUD's copy's size and where it sits
+## (across and down the space it has, 0..1: 0, 1 is the bottom left corner).
+var satnav_satellite := false
+var satnav_portrait := false
+var satnav_zoom := 1.0
+var satnav_scale := 1.0
+var satnav_x := 0.0
+var satnav_y := 1.0
+const SATNAV_ZOOM := [0.4, 3.0]
+const SATNAV_SCALE := [0.6, 2.2]
 var auto_shift := true
 ## The chase camera eases back behind the bike after a moment of not swinging it round.
 var camera_recentre := true
@@ -124,6 +136,9 @@ const ACTIONS := [
 	["tow", "Adventure: ask a mate for a tow, or let the strap go", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["satnav_hud", "Sat nav: map, trip computer, then off the HUD", ["ride"]],
+	["satnav_zoom_in", "Sat nav: zoom in", ["ride"]], ["satnav_zoom_out", "Sat nav: zoom out", ["ride"]],
+	["satnav_satellite", "Sat nav: satellite view on / off", ["ride"]],
+	["satnav_portrait", "Sat nav on the HUD: portrait or landscape", ["ride"]],
 	["paper_map", "Adventure: the paper map of the route (when stopped)", ["foot", "ride"]],
 	["photo", "Adventure: take a photo (hold to film a clip)", ["foot", "ride"]],
 	["photo_camera", "Adventure: hold the camera up on foot (zoom, friends in shot)", ["foot"]],
@@ -177,6 +192,12 @@ func load_settings() -> void:
 		direct_bars = bool(cfg.get_value("riding", "direct_bars", direct_bars))
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
 		satnav_hud = bool(cfg.get_value("riding", "satnav_hud", satnav_hud))
+		satnav_satellite = bool(cfg.get_value("riding", "satnav_satellite", satnav_satellite))
+		satnav_portrait = bool(cfg.get_value("riding", "satnav_portrait", satnav_portrait))
+		satnav_zoom = clampf(float(cfg.get_value("riding", "satnav_zoom", satnav_zoom)), SATNAV_ZOOM[0], SATNAV_ZOOM[1])
+		satnav_scale = clampf(float(cfg.get_value("riding", "satnav_scale", satnav_scale)), SATNAV_SCALE[0], SATNAV_SCALE[1])
+		satnav_x = clampf(float(cfg.get_value("riding", "satnav_x", satnav_x)), 0.0, 1.0)
+		satnav_y = clampf(float(cfg.get_value("riding", "satnav_y", satnav_y)), 0.0, 1.0)
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		look_into_corner = bool(cfg.get_value("riding", "look_into_corner", look_into_corner))
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
@@ -213,6 +234,12 @@ func save_settings() -> void:
 	cfg.set_value("riding", "direct_bars", direct_bars)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
 	cfg.set_value("riding", "satnav_hud", satnav_hud)
+	cfg.set_value("riding", "satnav_satellite", satnav_satellite)
+	cfg.set_value("riding", "satnav_portrait", satnav_portrait)
+	cfg.set_value("riding", "satnav_zoom", satnav_zoom)
+	cfg.set_value("riding", "satnav_scale", satnav_scale)
+	cfg.set_value("riding", "satnav_x", satnav_x)
+	cfg.set_value("riding", "satnav_y", satnav_y)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("riding", "look_into_corner", look_into_corner)
 	cfg.set_value("walking", "third_person", walk_third_person)
@@ -360,6 +387,10 @@ func _setup_inputs() -> void:
 	_bind("telemetry", [KEY_F3], [])
 	# The sat nav's map on the HUD, and an adjustable screen up and down on the move.
 	_bind("satnav_hud", [KEY_M], [])
+	_bind("satnav_zoom_in", [KEY_EQUAL, KEY_KP_ADD], [])
+	_bind("satnav_zoom_out", [KEY_MINUS, KEY_KP_SUBTRACT], [])
+	_bind("satnav_satellite", [KEY_BRACKETRIGHT], [])
+	_bind("satnav_portrait", [KEY_BRACKETLEFT], [])
 	# Out on an adventure: the paper map of the whole route, once you have stopped.
 	_bind("paper_map", [KEY_TAB], [])
 	# The camera for the Adventure Diary: a photo (held, a clip), and on foot holding it up to your eye.

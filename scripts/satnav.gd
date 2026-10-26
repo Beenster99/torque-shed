@@ -48,6 +48,17 @@ const STOPS := 3
 ## How far ahead (m) a junction's instruction comes up.
 const JUNCTION_AHEAD := 400.0
 
+## The satellite view (Settings.satnav_satellite): a picture of the world straight down from
+## above, under the map, SAT_PX square, taken SAT_RATE times a second from SAT_HEIGHT m up and
+## SAT_COVER times the map's span across (so it fills the screen whichever way it's turned).
+const SAT_PX := 384
+const SAT_RATE := 4.0
+const SAT_HEIGHT := 400.0
+const SAT_COVER := 1.7
+## The zoom steps {satnav_zoom_in} and {satnav_zoom_out} go through (Settings.satnav_zoom: the
+## map's span is multiplied by it, so more is further out).
+const ZOOMS: Array[float] = [0.4, 0.6, 0.8, 1.0, 1.4, 2.0, 3.0]
+
 ## The route provider (see the top): null for the town's own.
 static var route_provider: Object = null
 ## The page showing: "map" or "trip" (the trip computer), on the unit and the HUD alike.
@@ -65,6 +76,12 @@ var adventure: AdventureNav      # the adventure road's provider, made when one 
 var trip := TripComputer.new()
 var _timer := 0.0
 var _model: BikeModel            # the model the texture went on
+## The satellite view's camera and its picture (made while the setting is on).
+var sat_viewport: SubViewport
+var _sat_cam: Camera3D
+var _sat_timer := 0.0
+## The last picture taken: {tex, centre (x z), metres (across), fwd (x z, its up)}, {} for none.
+var sat := {}
 
 
 func _init(ridden: Bike = null, on: World = null) -> void:
@@ -134,6 +151,7 @@ func _tick(delta: float) -> void:
 		_model = bike.model
 		if _model != null and fitted():
 			_model.set_satnav_texture(viewport.get_texture() if on else null)
+	_satellite_step(delta, on)
 	_timer -= delta
 	if _timer > 0.0 or not fitted():
 		return
@@ -145,11 +163,85 @@ func _tick(delta: float) -> void:
 	refresh()
 
 
+## The satellite view: while it's on (and the unit has a map), a top-down camera over the bike
+## takes a fresh picture SAT_RATE times a second, at the span the screens show now; off, the
+## camera goes.
+func _satellite_step(delta: float, on: bool) -> void:
+	var want := on and Settings.satnav_satellite and bike.build.satnav_features.has("map")
+	if not want:
+		if sat_viewport != null:
+			sat_viewport.queue_free()
+			sat_viewport = null
+			_sat_cam = null
+		sat = {}
+		return
+	if sat_viewport == null:
+		sat_viewport = SubViewport.new()
+		sat_viewport.name = "SatelliteView"
+		sat_viewport.size = Vector2i(SAT_PX, SAT_PX)
+		sat_viewport.world_3d = bike.get_world_3d()
+		sat_viewport.positional_shadow_atlas_size = 0
+		sat_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(sat_viewport)
+		_sat_cam = Camera3D.new()
+		_sat_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		_sat_cam.keep_aspect = Camera3D.KEEP_HEIGHT
+		_sat_cam.near = 1.0
+		_sat_cam.far = SAT_HEIGHT * 2.0
+		_sat_cam.cull_mask = BikeMirrors.cull_mask()
+		var env := BikeMirrors.cheap_environment(_world_env(), false)
+		if env != null:
+			env.fog_enabled = false
+			env.ssao_enabled = false
+		_sat_cam.environment = env
+		sat_viewport.add_child(_sat_cam)
+		_sat_cam.current = true
+		_sat_timer = 0.0
+	_sat_timer -= delta
+	if _sat_timer > 0.0:
+		return
+	_sat_timer = 1.0 / SAT_RATE
+	var fwd3 := -bike.global_transform.basis.z
+	var fwd := Vector2(fwd3.x, fwd3.z)
+	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector2(0, -1)
+	var span := screen.span
+	if hud_screen != null and is_instance_valid(hud_screen) and hud_screen.is_visible_in_tree():
+		span = maxf(span, hud_screen.span)
+	var metres := span * SAT_COVER
+	# Centred a little ahead of the bike, where the screens show most.
+	var c := Vector2(bike.global_position.x, bike.global_position.z) + fwd * span * 0.15
+	_sat_cam.size = metres
+	_sat_cam.global_transform = Transform3D(Basis.looking_at(Vector3.DOWN, Vector3(fwd.x, 0.0, fwd.y)),
+		Vector3(c.x, bike.global_position.y + SAT_HEIGHT, c.y))
+	sat_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	sat = {"tex": sat_viewport.get_texture(), "centre": c, "metres": metres, "fwd": fwd}
+
+
+func _world_env() -> Environment:
+	var w := bike.get_world_3d() if bike != null else null
+	if w != null and w.environment != null:
+		return w.environment
+	return Lighting.current.env if Lighting.current else null
+
+
+## {satnav_zoom_in} (`dir` -1) or {satnav_zoom_out} (1): the next zoom step. What to say.
+static func zoom(dir: int) -> String:
+	var i := 0
+	for k in ZOOMS.size():
+		if absf(ZOOMS[k] - Settings.satnav_zoom) < absf(ZOOMS[i] - Settings.satnav_zoom):
+			i = k
+	i = clampi(i + dir, 0, ZOOMS.size() - 1)
+	Settings.satnav_zoom = ZOOMS[i]
+	return "Sat nav: %s across" % Units.distance(SatnavScreen.SPAN_SLOW * Settings.satnav_zoom / 1000.0, 2)
+
+
 ## Works out the view now and redraws the screen (and the HUD's).
 func refresh() -> void:
 	var fwd3 := -bike.global_transform.basis.z
 	var v := view_for(provider(), bike.global_position, fwd3, absf(bike.speed))
 	v["page"] = page
+	if not sat.is_empty():
+		v["sat"] = sat
 	if page == "trip":
 		v["trip"] = trip_view(computer(), provider(), bike.global_position, fwd3, bike.fuel_litres, bike.build.cruise_economy())
 	screen.features = bike.build.satnav_features
