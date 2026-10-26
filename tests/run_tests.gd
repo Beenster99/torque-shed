@@ -735,6 +735,9 @@ func _run_all() -> void:
 	await _t(&"_test_phone_screen")
 	await _t(&"_test_phone_buy_fit_save")
 	print("Simon's v0.20.0 round: twin bug-eye headlights and big old-school square ones")
+	await _t(&"_test_dash_catalogue")
+	await _t(&"_test_dash_modes")
+	await _t(&"_test_dash_cruise")
 	await _t(&"_test_headlight_catalogue")
 	await _t(&"_test_headlight_builds")
 	await _t(&"_test_headlight_lit")
@@ -880,7 +883,7 @@ func _test_catalogue() -> void:
 	check(BikeBuild.new({"tank": "touring_23"}).bike_mass > BikeBuild.new({"tank": "peanut_9"}).bike_mass + 5.0,
 		"a big tank carries more fuel weight")
 	check(b.front_rebound > b.front_bump and b.rear_rebound > b.rear_bump, "suspension has separate bump and rebound damping")
-	check(BikeBuild.new({"dashboard": "analog_speedo"}).dash_features == ["speed"]
+	check(not BikeBuild.new({"dashboard": "analog_speedo"}).dash_features.has("rpm")
 		and BikeBuild.new({"dashboard": "race_logger"}).dash_features.has("shift_light"), "the dashboard decides what the speedo shows")
 	check(PartsDB.dependents("engine").has("exhaust") and PartsDB.dependents("engine").has("final_drive")
 		and not PartsDB.dependents("engine").has("head"), "exhaust and chain come off before the engine; its head goes with it")
@@ -2257,7 +2260,7 @@ func _test_round5_shed() -> void:
 
 func _test_round5_models() -> void:
 	# The clocks face the rider, and dial clocks have needles that move.
-	for dash in ["analog_speedo", "twin_clocks", "lcd_basic", "tft_colour", "race_logger"]:
+	for dash in PartsDB.by_kind["dashboard"]:
 		var m := BikeModel.new()
 		add_child(m)
 		m.build_from(BikeBuild.new({"dashboard": dash}))
@@ -23131,6 +23134,24 @@ func _test_phone_screen() -> void:
 
 func _test_phone_buy_fit_save() -> void:
 	_phone_t().test_buy_fit_save()
+
+
+# ---------------------------------------------------------------------------- dashboards' trip computer, ride modes and cruise (tests/dash_tests.gd)
+
+func _dash_t() -> RefCounted:
+	return load("res://tests/dash_tests.gd").new(self)
+
+
+func _test_dash_catalogue() -> void:
+	_dash_t().test_catalogue()
+
+
+func _test_dash_modes() -> void:
+	await _dash_t().test_modes()
+
+
+func _test_dash_cruise() -> void:
+	await _dash_t().test_cruise()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)

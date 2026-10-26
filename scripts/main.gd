@@ -973,6 +973,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("headlight"):
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
 		Shed.request({"a": "beam", "bike": riding_id, "beam": bike.beam})   # kept with the bike
+	elif event.is_action_pressed("ride_mode"):
+		var why := bike.next_ride_mode()
+		hud.flash(why if why != "" else "Ride mode: %s" % BikeBuild.mode_name(bike.build.ride_mode), 1.5, why != "")
+		if why == "":
+			Shed.request({"a": "ride_mode", "bike": riding_id, "mode": bike.build.ride_mode})   # kept with the bike
+	elif event.is_action_pressed("cruise"):
+		var why := bike.toggle_cruise()
+		hud.flash(why if why != "" else ("Cruise control: %s" % Units.kmh(bike.cruise_speed * 3.6) if bike.cruise_speed > 0.0 else "Cruise control off"), 1.5, why != "")
 	elif event.is_action_pressed("indicate_left") or event.is_action_pressed("indicate_right"):
 		var why := bike.indicate(-1 if event.is_action_pressed("indicate_left") else 1)
 		if why != "":
@@ -1498,7 +1506,13 @@ func _update_dash() -> void:
 		if b.dash_features.has("rpm"):
 			var seg := roundi(clampf(bike.rpm / b.redline, 0.0, 1.0) * 10.0)
 			revs = "\n" + "#".repeat(seg) + "-".repeat(10 - seg) + " %d rpm" % (roundi(bike.rpm / 100.0) * 100)
-		_dash.text = "%d %s   %s%s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(), gear, revs, gauge]
+		# The ride mode and cruise control, where the dash has them.
+		var tags := ""
+		if b.has_ride_modes():
+			tags += "  " + BikeBuild.mode_name(b.ride_mode).to_upper()
+		if bike.cruise_speed > 0.0:
+			tags += "  CRUISE"
+		_dash.text = "%d %s   %s%s\n%s%s" % [Units.speed_value(bike.speed), Units.speed_unit(), gear, revs, gauge, tags]
 	_dash.modulate = Color(1.0, 0.45, 0.3) if fuel < 0.15 else Color(0.75, 1.0, 0.85)
 
 

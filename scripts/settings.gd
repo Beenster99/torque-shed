@@ -118,6 +118,8 @@ const ACTIONS := [
 	["indicate_left", "Indicate left (again to cancel)", ["ride"]], ["indicate_right", "Indicate right (again to cancel)", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["look_back", "Reverse view: tap to toggle, hold to look behind", ["ride"]],
+	["ride_mode", "Ride mode: Custom, Sport, Tour, Wet (dashes with ride modes)", ["ride"]],
+	["cruise", "Cruise control on / off (dashes with it; the brakes or clutch cancel it)", ["ride"]],
 	["nod", "Nod to a biker (hold: wave)", ["ride"]], ["ride_ping", "Ping (riding or driving)", ["ride"]],
 	["tow", "Adventure: ask a mate for a tow, or let the strap go", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
@@ -330,6 +332,9 @@ func _setup_inputs() -> void:
 	# Held: the clutch in (rev it in any gear), and a look back over your shoulder.
 	_bind("clutch", [KEY_Z], [JOY_BUTTON_LEFT_SHOULDER])
 	_bind("look_back", [KEY_X], [JOY_BUTTON_RIGHT_SHOULDER])
+	# The dash's ride mode and cruise control (no pad buttons spare).
+	_bind("ride_mode", [KEY_B], [])
+	_bind("cruise", [KEY_O], [])
 	# A nod to another biker (held, a wave with the left hand).
 	_bind("nod", [KEY_N], [JOY_BUTTON_RIGHT_STICK])
 	_bind("respawn", [KEY_R], [JOY_BUTTON_BACK])

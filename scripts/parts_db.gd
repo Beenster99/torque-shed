@@ -367,7 +367,7 @@ func spec_line(id: String) -> String:
 		"handlebars":
 			bits = [p["style"], "%d mm wide" % int(p["width"])]
 		"dashboard":
-			bits = [", ".join(p["features"]).replace("_", " ")]
+			bits = [", ".join(p["features"].map(func(f): return str(BikeBuild.DASH_FEATURE_NAMES.get(f, str(f).replace("_", " ")))))]
 		"engine":
 			bits = [p["type"], "%d cc" % int(p["displacement"]), "%.0f x %.1f mm" % [p["bore"], p["stroke"]],
 				"redline %d" % int(p["redline"])]

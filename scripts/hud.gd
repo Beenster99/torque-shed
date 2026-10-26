@@ -579,14 +579,14 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 	draw_string(font, Vector2(x0, hint_y), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
 
 
-## The speedo shows what the bike's dashboard can: an old analogue clock gives you only speed,
-## a race logger adds revs, gear, a shift light and your top speed.
+## The speedo shows what the bike's dashboard can: every dash the speed, gear, trip, fuel economy
+## and range; most the revs; a TFT or race logger a shift light, the ride mode and cruise control.
 func _draw_speedo() -> void:
 	if bike.build == null:
 		return
 	var features: Array = bike.build.dash_features
 	var font := get_theme_default_font()
-	var r := Rect2(size.x - 250, size.y - 172, 226, 148)
+	var r := Rect2(size.x - 250, size.y - 196, 226, 172)
 	draw_rect(r, Color(0.03, 0.03, 0.04, 0.6))
 	_top_kmh = maxf(_top_kmh, absf(bike.speed) * 3.6)
 	draw_string(font, r.position + Vector2(12, 58), "%d" % Units.speed_value(bike.speed), HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
@@ -610,8 +610,27 @@ func _draw_speedo() -> void:
 	draw_rect(Rect2(r.position + Vector2(52, 96), Vector2(162, 10)), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(r.position + Vector2(52, 96), Vector2(162 * fuel, 10)), Color(1, 0.3, 0.2) if fuel < 0.15 else Color(0.9, 0.85, 0.3))
 	var used := trip_fuel + bike.fuel_used
-	var economy := Units.economy(trip_km / used) if used > 0.01 and trip_km > 0.05 else "-- " + Units.economy_unit()
-	draw_string(font, r.position + Vector2(12, 130), "%.1f L  ·  %s" % [bike.fuel_litres, economy], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.8))
+	var km_per_l := trip_km / used if used > 0.01 and trip_km > 0.05 else 0.0
+	var economy := Units.economy(km_per_l) if km_per_l > 0.0 else "-- " + Units.economy_unit()
+	var line := "%.1f L" % bike.fuel_litres
+	if features.has("economy"):
+		line += "  ·  " + economy
+	draw_string(font, r.position + Vector2(12, 130), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.8))
+	# The trip and the range left: the trip computer the dash has.
+	var bits := []
+	if features.has("trip"):
+		bits.append("TRIP %s" % Units.distance(trip_km))
+	if features.has("range"):
+		bits.append("RANGE %s" % Units.distance(range_km(km_per_l), 0))
+	draw_string(font, r.position + Vector2(12, 152), "   ".join(bits), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.7))
+	# The ride mode and cruise control, along the top.
+	var tags := []
+	if bike.build.has_ride_modes():
+		tags.append(BikeBuild.mode_name(bike.build.ride_mode).to_upper())
+	if bike.cruise_speed > 0.0:
+		tags.append("CRUISE %d" % Units.speed_value(bike.cruise_speed))
+	if not tags.is_empty():
+		draw_string(font, r.position + Vector2(120, 15), "  ".join(tags), HORIZONTAL_ALIGNMENT_LEFT, 80, 12, UITheme.ACCENT)
 	if fuel_stop and fuel_stop.low() and int(Time.get_ticks_msec() / 500) % 2 == 0:
 		# The low fuel light, blinking.
 		draw_string(font, r.position + Vector2(140, 106), "LOW FUEL", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.65, 0.1))
@@ -645,6 +664,13 @@ func _draw_speedo() -> void:
 
 ## The indicators' green telltale over the speedo's top right corner: an arrow the way the bike
 ## is indicating, flashing with the indicators (see BikeLamps), and the other one dark.
+## How far the petrol left goes (km): at this ride's economy once there's enough of it to go on
+## (`km_per_l`, 0 for not yet), else the bike's own at a steady cruise.
+func range_km(km_per_l: float) -> float:
+	var econ := km_per_l if km_per_l > 0.0 else bike.build.cruise_economy()
+	return maxf(bike.fuel_litres, 0.0) * econ
+
+
 func _draw_indicator_lamp(panel: Rect2) -> void:
 	if bike.lamps.side == 0:
 		return

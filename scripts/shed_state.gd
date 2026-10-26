@@ -96,7 +96,7 @@ const BEAD_LEAK := 0.02
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
 ## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
 ## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs},
-## beam (where its headlight switch was left: see beam_of)}
+## beam (where its headlight switch was left: see beam_of), ride_mode (the dash's: see mode_of)}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot", "floor" (ref is then the Transform3D it was put down at)
@@ -796,7 +796,9 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 	if float(bike.get("tune_reach", 0.0)) > 0.0:
 		# Tuned by someone with Fine Tuning: the map, ignition and limiter go further.
 		tune["reach"] = float(bike["tune_reach"])
-	return BikeBuild.new(parts, cond, tune)
+	var b := BikeBuild.new(parts, cond, tune)
+	b.ride_mode = mode_of(bike_id)
+	return b
 
 
 ## A bike's tune gathered from where each setting is kept (see TUNE_HOME), for BikeBuild.
@@ -2877,6 +2879,11 @@ func check(peer: int, action: Dictionary) -> String:
 				return "How much?"
 			if fuel_space(ridden) < 0.05:
 				return "The tank's full."
+		"ride_mode":
+			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
+				return "You're not riding that bike."
+			if not BikeBuild.MODE_ORDER.has(str(action.get("mode", "?"))):
+				return "There's no such ride mode."
 		"beam":
 			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
 				return "You're not riding that bike."
@@ -3874,6 +3881,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Filled up with %.1f L of unleaded" % put
 		"beam":
 			bikes[bike_id]["beam"] = int(action["beam"])   # the headlight switch stays where it's left
+		"ride_mode":
+			bikes[bike_id]["ride_mode"] = str(action["mode"])   # so is the dash's ride mode
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			var fairing := item_on(ridden, "fairing")
@@ -5368,6 +5377,13 @@ func _on_player_left(id: int) -> void:
 ## never had it touched has its lights off.
 func beam_of(bike_id: int) -> int:
 	return clampi(int(bikes.get(bike_id, {}).get("beam", 0)), 0, Bike.BEAM_FOG)
+
+
+## The ride mode bike `bike_id`'s dash was left in (see BikeBuild.RIDE_MODES), kept with the bike
+## like its headlight switch; "" (Custom: the dyno desk's levels) until someone picks one.
+func mode_of(bike_id: int) -> String:
+	var m := str(bikes.get(bike_id, {}).get("ride_mode", ""))
+	return m if BikeBuild.RIDE_MODES.has(m) else ""
 
 
 ## A bike's own fit for its parts (see GeoGizmo): slot -> {p, r, s}. Never shared between bikes.

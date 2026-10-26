@@ -489,6 +489,8 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Shift up / down | E / Q | A / X |
 | Hold the clutch in: the throttle blips the revs in any gear, at any speed, without driving the back wheel (let go and it takes up smoothly) | Hold Z | Hold LB |
 | Reverse view: tap to look behind until the next tap, or hold to look behind while held | X | RB |
+| Ride mode: Custom (the dyno desk's aid levels), Sport, Tour, Wet (a dash with ride modes, on an ECU with rider aids) | B | |
+| Cruise control on / off at the speed you're doing (a dash with it; the brakes or clutch cancel it) | O | |
 | Nod to a biker you pass; hold it to raise your left hand off the bar in a wave (the crew see both; a biker in the traffic nods back) | N (hold: wave) | Right stick click (hold: wave) |
 | Toggle auto-shift | U | |
 | Adventure: ask a mate for a tow when you've broken down, or let the strap go | T | (none) |

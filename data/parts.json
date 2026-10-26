@@ -10414,11 +10414,15 @@
 	"dashboard": {
 		"analog_speedo": {
 			"name": "Analogue speedo",
-			"description": "Single round speedo. Just your speed.",
+			"description": "Single round speedo, with a little LCD window in its face for the gear, trip, mpg and range.",
 			"mass": 0.5,
 			"style": "analog",
 			"features": [
-				"speed"
+				"speed",
+				"gear",
+				"trip",
+				"economy",
+				"range"
 			],
 			"color": [
 				0.85,
@@ -10435,12 +10439,16 @@
 		},
 		"twin_clocks": {
 			"name": "Twin clocks",
-			"description": "Speedo and rev counter side by side.",
+			"description": "Speedo and rev counter side by side, with LCD windows for the gear, trip, mpg and range.",
 			"mass": 0.8,
 			"style": "twin",
 			"features": [
 				"speed",
-				"rpm"
+				"rpm",
+				"gear",
+				"trip",
+				"economy",
+				"range"
 			],
 			"color": [
 				0.85,
@@ -10457,13 +10465,16 @@
 		},
 		"lcd_basic": {
 			"name": "LCD dash",
-			"description": "Speed, revs and a gear readout.",
+			"description": "Speed, revs and a gear readout, with trip, mpg and range.",
 			"mass": 0.4,
 			"style": "lcd",
 			"features": [
 				"speed",
 				"rpm",
-				"gear"
+				"gear",
+				"trip",
+				"economy",
+				"range"
 			],
 			"color": [
 				0.08,
@@ -10478,14 +10489,19 @@
 		},
 		"tft_colour": {
 			"name": "Colour TFT dash",
-			"description": "Full colour with a shift light.",
+			"description": "Full colour with a shift light, trip computer, cruise control and ride modes (Sport, Tour, Wet) on an ECU with rider aids.",
 			"mass": 0.6,
 			"style": "tft",
 			"features": [
 				"speed",
 				"rpm",
 				"gear",
-				"shift_light"
+				"shift_light",
+				"trip",
+				"economy",
+				"range",
+				"cruise",
+				"modes"
 			],
 			"color": [
 				0.08,
@@ -10501,7 +10517,7 @@
 		},
 		"race_logger": {
 			"name": "Race data logger",
-			"description": "Shift light, gear, revs and a top-speed log.",
+			"description": "Shift light, gear, revs, a top-speed log and the trip computer, with ride modes on an ECU with rider aids.",
 			"mass": 0.5,
 			"style": "race",
 			"features": [
@@ -10509,7 +10525,11 @@
 				"rpm",
 				"gear",
 				"shift_light",
-				"top_speed"
+				"top_speed",
+				"trip",
+				"economy",
+				"range",
+				"modes"
 			],
 			"color": [
 				0.15,
@@ -10519,6 +10539,62 @@
 			"styles": [
 				"race"
 			]
+		},
+		"tft_naked": {
+			"name": "Streetfighter TFT dash",
+			"description": "A slim 5 inch colour TFT for a modern naked: big gear readout, shift light, trip computer, cruise control and ride modes (Sport, Tour, Wet) on an ECU with rider aids.",
+			"mass": 0.5,
+			"style": "tft",
+			"features": [
+				"speed",
+				"rpm",
+				"gear",
+				"shift_light",
+				"trip",
+				"economy",
+				"range",
+				"cruise",
+				"modes"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"naked",
+				"sport",
+				"roader"
+			],
+			"price": 420
+		},
+		"tft_touring": {
+			"name": "Touring TFT dash",
+			"description": "A big 7 inch colour TFT: trip computer, range, cruise control and ride modes (Sport, Tour, Wet) on an ECU with rider aids. Easy to read at a glance on a long day.",
+			"mass": 0.9,
+			"style": "tft",
+			"features": [
+				"speed",
+				"rpm",
+				"gear",
+				"trip",
+				"economy",
+				"range",
+				"cruise",
+				"modes"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"tourer",
+				"adventure",
+				"roader",
+				"cruiser"
+			],
+			"price": 480
 		}
 	},
 	"engine": {

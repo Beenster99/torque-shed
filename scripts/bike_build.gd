@@ -97,6 +97,21 @@ const PSI_BEST := {"road": [2.3, 2.5], "offroad": [1.0, 1.0], "slick": [2.1, 1.8
 const LIGHTEN := {"frame": 0.08, "fork": 0.06, "shock": 0.06, "wheel": 0.12, "disc": 0.15, "saddle": 0.25,
 	"handlebars": 0.15, "exhaust": 0.15, "final_drive": 0.3, "gearbox": 0.06, "side_stand": 0.3, "centre_stand": 0.3}
 const OCTANE := {"unleaded_95": 95.0, "super_98": 98.0, "race_fuel": 102.0}
+## The ride modes a dashboard with "modes" offers, on an ECU with rider aids: the level each aid
+## steps in at (as the dyno desk's 0..AID_LEVELS), how much of the engine's power comes through,
+## how quickly the throttle answers (opening, a share a second; 0 straight away) and whether the
+## ABS looks after the back wheel as well as the front (Sport lets it lock to back it in).
+const RIDE_MODES := {
+	"sport": {"name": "Sport", "traction": 1, "anti_wheelie": 1, "stability": 1, "power": 1.0, "rate": 0.0, "abs_rear": false},
+	"tour": {"name": "Tour", "traction": 3, "anti_wheelie": 3, "stability": 3, "power": 0.92, "rate": 6.0, "abs_rear": true},
+	"wet": {"name": "Wet", "traction": 5, "anti_wheelie": 5, "stability": 5, "power": 0.7, "rate": 2.5, "abs_rear": true},
+}
+## The order the dash's mode button steps through them: "" is Custom, the dyno desk's own levels.
+const MODE_ORDER: Array[String] = ["", "sport", "tour", "wet"]
+## What each dashboard feature is called in the parts computer.
+const DASH_FEATURE_NAMES := {"speed": "speed", "rpm": "revs", "gear": "gear", "shift_light": "shift light",
+	"top_speed": "top speed", "trip": "trip", "economy": "fuel economy", "range": "range",
+	"cruise": "cruise control", "modes": "ride modes"}
 
 var parts: Dictionary          # slot -> part id
 var condition: Dictionary      # slot -> {rust, dirt, wear, color}, each 0 (as new) .. 1 (ruined)
@@ -126,6 +141,9 @@ var horn_loudness := 0.0
 var horn_sound := ""           # the horn's recordings (an Sfx sound), "" for a synthesised one
 var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
 var ecu_aid := 0.0             # how firmly those aids step in, 0..1
+## The ride mode chosen on the dash (a key of RIDE_MODES) while ridden, "" for none: then the
+## aids are at the dyno desk's levels. Only counts on a bike with ride modes (has_ride_modes).
+var ride_mode := ""
 var luggage_litres := 0.0
 ## The adventure kit: the tyres' kinds (see TyreGrip), what's packed in the toolbox (PartsDB
 ## TOOLBOX_CONTENTS ids), what the sat nav shows (empty with none), and an adjustable screen: how
@@ -666,7 +684,42 @@ func aid_strength(aid: String) -> float:
 	if not AID_KEYS.has(aid):
 		return ecu_aid
 	var level := clampi(roundi(tune_value(str(AID_KEYS[aid]))), 0, AID_LEVELS)
+	var mode := _mode()
+	if not mode.is_empty():
+		level = int(mode[aid])
 	return clampf(ecu_aid * AID_SCALE[level], 0.0, 1.2)
+
+
+## A ride mode's name on the dash ("" is Custom: the levels set on the dyno desk).
+static func mode_name(mode: String) -> String:
+	return str(RIDE_MODES[mode]["name"]) if RIDE_MODES.has(mode) else "Custom"
+
+
+## Whether the dash offers ride modes: one with "modes", on an ECU with rider aids to set.
+func has_ride_modes() -> bool:
+	return dash_features.has("modes") and not ecu_features.is_empty()
+
+
+## The ride mode in use (see RIDE_MODES), or {} when there's none.
+func _mode() -> Dictionary:
+	return RIDE_MODES.get(ride_mode, {}) if ride_mode != "" and has_ride_modes() else {}
+
+
+## How much of the engine's power the ride mode lets through (1 with none).
+func mode_power() -> float:
+	return float(_mode().get("power", 1.0))
+
+
+## How quickly the ride mode lets the throttle open (a share a second), 0 for straight away.
+func mode_throttle_rate() -> float:
+	return float(_mode().get("rate", 0.0))
+
+
+## Whether the ABS looks after this wheel: always the front, the back unless the ride mode is Sport.
+func abs_on(is_front: bool) -> bool:
+	if not has_aid("abs"):
+		return false
+	return is_front or bool(_mode().get("abs_rear", true))
 
 
 ## Whether the ECU has this aid and it's switched on.
