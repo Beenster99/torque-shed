@@ -133,7 +133,7 @@ static func _verge_on_arc(b: Bike, ahead: float, length: float, surf := "grass",
 
 ## Rides a stock sports bike (on road tyres) in a steady turn at `v` m/s with the input at
 ## `lean_in`, then lays grass across its line for `seconds` of riding. Returns what happened.
-func _excursion(seconds: float, v := 15.0, lean_in := 0.75, build := {}) -> Dictionary:
+func _excursion(seconds: float, v := 15.0, lean_in := 0.75, build := {}, width := 3.0) -> Dictionary:
 	var st := {"patch": null, "t0": -1.0, "lean": 0.0, "min_mu": 9.0, "on_grass": 0.0, "lean_end": 0.0, "crashed_at": -1.0, "min_lean": 9.0, "slide": 0.0}
 	var built: Dictionary = Contracts.style_build("sport") if build.is_empty() else build
 	var r: Dictionary = await t.ride(built, 14.0, func(b: Bike, now: float) -> void:
@@ -142,7 +142,7 @@ func _excursion(seconds: float, v := 15.0, lean_in := 0.75, build := {}) -> Dict
 		b.lean_input = 0.0 if now < 3.0 else lean_in
 		if st["patch"] == null and now >= 7.0:
 			st["lean"] = absf(b.lean_angle)
-			st["patch"] = _verge_on_arc(b, 4.0, v * seconds)
+			st["patch"] = _verge_on_arc(b, 4.0, v * seconds, "grass", width)
 			b.get_parent().add_child(st["patch"])
 			st["t0"] = now
 		if st["t0"] > 0.0:
@@ -177,12 +177,14 @@ func test_verge_save() -> void:
 
 
 ## Staying out there is another matter: a long run on the grass has the grass's grip. At a road
-## rider's lean the bike can't hold its line and runs wide; leaned further it goes down.
+## rider's lean the bike can't hold its line and runs wide; leaned further it goes down. The grass
+## is wide enough to stay on for the whole run (a 3 m strip laid along the bend is crossed in
+## under a second and a half, and whether it goes down then is a toss-up).
 func test_verge_long() -> void:
 	var road := BikeBuild.new(Contracts.style_build("sport"))
 	var grass := Bike.surface_grip(road, true, "grass")
-	var wide := await _excursion(3.0, 15.0, 0.75)
-	var down := await _excursion(3.0, 15.0, 0.85)
+	var wide := await _excursion(3.0, 15.0, 0.75, {}, 10.0)
+	var down := await _excursion(3.0, 15.0, 0.85, {}, 10.0)
 	if t.verbose:
 		print("    long excursions: %s\n    %s" % [str(wide), str(down)])
 	check(not wide["crashed"] and float(wide["min_mu"]) <= grass and float(wide["min_lean"]) < float(wide["lean"]) - deg_to_rad(4.0),

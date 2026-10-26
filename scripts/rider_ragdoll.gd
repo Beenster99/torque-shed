@@ -22,6 +22,9 @@ const LIMBS := [
 	["ShinR", Vector3(0.12, -0.32, -0.42), Vector3(0.12, -0.72, -0.4), 0.06, 5.0, ["ThighR", 65.0, 10.0], "boots"],
 ]
 
+## How many numbers a pose takes in a snapshot (see pose()): each piece's place and turn.
+const POSE_SIZE := (1 + 8) * 7
+
 ## The arms and legs (RigidBody3D, set apart from the body: see launch()), by name.
 var limbs := {}
 var _mats := {}
@@ -161,6 +164,42 @@ func shift(d: Vector3) -> void:
 	global_position -= d
 	for n in limbs.values():
 		(n as Node3D).global_position -= d
+
+
+## Where every piece is, for the other players (Bike.get_net_state): its place from `from` (the
+## bike's, so the snapshot's origin doesn't matter) and its turn, seven numbers a piece.
+func pose(from: Vector3) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for p: Node3D in pieces():
+		var o := p.global_position - from
+		var q := p.global_basis.get_rotation_quaternion()
+		out.append_array([o.x, o.y, o.z, q.x, q.y, q.z, q.w])
+	return out
+
+
+## Another player's rider thrown off, as their snapshots have it (RemoteBike): the same pieces,
+## not simulated here and solid to nothing, put where show_pose() says.
+static func puppet() -> RiderRagdoll:
+	var r := RiderRagdoll.new()
+	r.top_level = true
+	for p: RigidBody3D in r.pieces():
+		p.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		p.freeze = true
+		p.collision_layer = 0
+		p.collision_mask = 0
+	return r
+
+
+## Puts a puppet's pieces in the pose between snapshots `a` and `b` (their poses from index `at`),
+## `f` of the way from one to the other, about the bike's place `from` between them.
+func show_pose(a: PackedFloat32Array, b: PackedFloat32Array, at: int, f: float, from: Vector3) -> void:
+	var k := at
+	for p: Node3D in pieces():
+		var o := Vector3(a[k], a[k + 1], a[k + 2]).lerp(Vector3(b[k], b[k + 1], b[k + 2]), f)
+		var q := Quaternion(a[k + 3], a[k + 4], a[k + 5], a[k + 6]).normalized().slerp(
+			Quaternion(b[k + 3], b[k + 4], b[k + 5], b[k + 6]).normalized(), f)
+		p.global_transform = Transform3D(Basis(q), from + o)
+		k += 7
 
 
 ## Every piece of the rider: the body and its limbs.

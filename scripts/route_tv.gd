@@ -365,6 +365,8 @@ static func credits_line(credits: Array) -> String:
 		said.append("heights Mapterhorn")
 	if all.contains("Canopy Height"):
 		said.append("trees Meta and WRI (CC BY 4.0)")
+	if all.contains("ESA WorldCover"):
+		said.append("place Natural Earth, Beck et al. 2023 and ESA WorldCover 2021 with Copernicus Sentinel data (CC BY 4.0), CRU TS (OGL)")
 	return ("Map data: " + "; ".join(said) + ".") if not said.is_empty() else ""
 
 
