@@ -106,6 +106,8 @@ func test_of_cell() -> void:
 	var dales := RealRegion.get_region("dales")
 	var bundled := PlaceProfile.of_region(dales)
 	check(not bundled["guessed"] and bundled["country"] == "GB" and bundled["region_code"] == "GB-NYK", "the bundled Dales have their own profile")
+	check(dales.credits.has(PlaceProfile.CREDIT) and RouteTv.credits_line(dales.credits).contains("ESA WorldCover 2021 with Copernicus Sentinel data (CC BY 4.0)"),
+		"and the route planner credits what profiles are made from (%s)" % RouteTv.credits_line(dales.credits))
 	CellStore.dir = was_dir
 	CellStore.offline = was_offline
 	CellStore.forget_index()

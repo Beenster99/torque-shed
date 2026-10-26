@@ -18,6 +18,10 @@ const CLIMATE_KEYS := ["temp_c", "temp_min_c", "temp_max_c", "rain_mm", "rain_da
 ## (as tools/profile_bake.py: altitude_band by the land's mean height, density by the share built up)
 const ALTITUDE_BANDS := [[300.0, "lowland"], [1000.0, "upland"], [2500.0, "mountain"], [INF, "high"]]
 const DENSITIES := [[0.0005, "wild"], [0.01, "rural"], [0.05, "village"], [0.2, "town"], [INF, "city"]]
+## The credit for what a profile is made from (tools/profile_bake.py), added to a region's when it has profiles.
+const CREDIT := ("Place: Natural Earth; Köppen-Geiger zones, Beck, H.E. et al. (2023) (CC BY 4.0); land cover and ground "
+	+ "colour, © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA "
+	+ "WorldCover consortium (CC BY 4.0); climate, CRU TS 4.09, University of East Anglia and Met Office (Open Government Licence).")
 const MONTH_DAYS := [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 ## The road rules' regions a region.json names (RealRegion.country) -> its country.
 const ROAD_REGIONS := {"uk": ["GB", "United Kingdom"], "jp": ["JP", "Japan"], "japan": ["JP", "Japan"]}
@@ -65,6 +69,11 @@ static func of_region(region: RealRegion) -> Dictionary:
 		if v is Dictionary:
 			return parse(v)
 	return at(region.frame_lat, region.frame_lon)
+
+
+## Whether the game has a profile of its own for bundled region `region_id` (data/profiles).
+static func bundled(region_id: String) -> bool:
+	return region_id != "" and FileAccess.file_exists(BUNDLED_DIR.path_join("%s.json" % region_id))
 
 
 ## Where cell "ROW_COL"'s profile is in the world's store, beside its index.

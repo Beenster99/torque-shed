@@ -214,6 +214,8 @@ static func _load(region_id: String) -> RealRegion:
 				r.terrain.add_trees(row)
 		if r.terrain.has_trees() and not r.credits.has(TREES_CREDIT):
 			r.credits.append(TREES_CREDIT)
+	if PlaceProfile.bundled(region_id) and not r.credits.has(PlaceProfile.CREDIT):
+		r.credits.append(PlaceProfile.CREDIT)
 	return r
 
 
@@ -499,6 +501,8 @@ static func stitch(region_id: String, title: String, dirs: Array[String], lat0: 
 	r.title = title
 	hashes.sort()
 	r.hash = ("|".join(hashes)).sha256_text().substr(0, 16)
+	if not credits.has(PlaceProfile.CREDIT):
+		credits.append(PlaceProfile.CREDIT)   # (every cell of the world's store has its place profile)
 	r.credits = credits
 	r.sea = sea
 	r.theme = "coastal" if sea else "hills"
