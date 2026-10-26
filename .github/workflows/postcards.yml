@@ -1,0 +1,116 @@
+name: Postcards
+
+# The eight postcard places (tests/postcards), four views each, and their contact sheet with frame times and memory: on
+# a pull request only when it changes how the world is drawn or what it's made of (the paths below), and on every push to
+# main. A workflow of its own, so it runs beside CI's test shards and never holds them up: four machines draw two
+# places each, then one makes the sheet (about four minutes in all). The sheet is the "postcards" artifact.
+
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - "scripts/adventure_*"
+      - "scripts/real_*"
+      - "scripts/*terrain*"
+      - "scripts/*road*"
+      - "scripts/*kit*"
+      - "scripts/*region*"
+      - "scripts/*profile*"
+      - "scripts/*climate*"
+      - "scripts/*scenery*"
+      - "scripts/*sky*"
+      - "scripts/*theme*"
+      - "scripts/daylight.gd"
+      - "scripts/lighting.gd"
+      - "scripts/weather.gd"
+      - "scripts/world.gd"
+      - "scripts/graphics.gd"
+      - "scripts/settings.gd"
+      - "scripts/height_tiles.gd"
+      - "scripts/cell_store.gd"
+      - "scripts/route_planner.gd"
+      - "**.gdshader"
+      - "data/**"
+      - "project.godot"
+      - "tests/postcards/**"
+      - ".github/workflows/postcards.yml"
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+concurrency:
+  group: postcards-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.6.2-stable
+
+jobs:
+  draw:
+    name: postcards (${{ matrix.group }} of 4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - id: mesa
+        run: echo "version=$(dpkg-query -W -f='${Version}' libgl1-mesa-dri)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/lavapipe
+          key: lavapipe-${{ runner.os }}-${{ steps.mesa.outputs.version }}
+      - name: Install Godot, and Vulkan drawn on the processor (no graphics card here)
+        run: |
+          tests/postcards/lavapipe.sh ~/lavapipe
+          command -v xvfb-run > /dev/null || sudo apt-get install -y -qq --no-install-recommends xvfb > /dev/null
+          curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
+      - name: Import project
+        run: godot --headless --path . --import > /dev/null 2>&1 || true
+      - name: Draw this machine's places
+        run: tests/postcards/postcards.sh --group=${{ matrix.group }}/4 --renderer=forward_plus --out="$PWD/part"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: postcards-part-${{ matrix.group }}
+          path: part/
+          retention-days: 3
+          if-no-files-found: ignore
+
+  sheet:
+    needs: draw
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: postcards-part-*
+          path: parts
+      - name: Install Godot
+        run: |
+          # (the sheet is only 2D: OpenGL drawn on the processor is enough)
+          command -v xvfb-run > /dev/null || sudo apt-get install -y -qq --no-install-recommends xvfb > /dev/null
+          curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
+      - name: Import project
+        run: godot --headless --path . --import > /dev/null 2>&1 || true
+      - name: Make the contact sheet
+        env:
+          LABEL: ${{ github.event_name == 'pull_request' && format('PR {0}, {1}', github.event.number, github.head_ref) || github.ref_name }}
+        run: |
+          DIRS=$(ls -d "$PWD"/parts/*/ | sed 's:/$::' | paste -sd, -)
+          tests/postcards/postcards.sh --merge="$DIRS" --out="$PWD/postcards" --label="$LABEL $(git rev-parse --short HEAD)"
+          python3 tests/postcards/summary.py postcards/stats.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: postcards
+          path: postcards/
+          retention-days: 30

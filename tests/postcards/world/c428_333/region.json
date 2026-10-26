@@ -1,0 +1,119 @@
+{
+ "format": 2,
+ "kind": "cell",
+ "name": "c428_333",
+ "title": "c428_333",
+ "frame": {
+  "lat": 17.125,
+  "lon": -96.625
+ },
+ "bounds": [
+  -13301.9,
+  -13833.8,
+  13301.9,
+  13833.8
+ ],
+ "geo": {
+  "south": 17.0,
+  "west": -96.75,
+  "north": 17.25,
+  "east": -96.5
+ },
+ "heights": "live",
+ "cell": [
+  428,
+  333
+ ],
+ "levels": [
+  {
+   "name": "fine",
+   "dir": "tiles",
+   "spacing": 4.0,
+   "n": 128,
+   "size_m": 512.0,
+   "min": -256.0,
+   "scale": 0.0625,
+   "cover": false
+  },
+  {
+   "name": "coarse",
+   "dir": "coarse",
+   "spacing": 32.0,
+   "n": 128,
+   "size_m": 4096.0,
+   "min": -256.0,
+   "scale": 0.125,
+   "cover": true
+  },
+  {
+   "name": "ridge",
+   "dir": "ridge",
+   "spacing": 128.0,
+   "n": 256,
+   "size_m": 32768.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": false
+  },
+  {
+   "name": "cover",
+   "dir": "cover",
+   "spacing": 16.0,
+   "n": 128,
+   "size_m": 2048.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": true
+  }
+ ],
+ "tile_counts": {
+  "fine": 1930,
+  "coarse": 76,
+  "ridge": 4,
+  "cover": 194
+ },
+ "cover": [
+  "grass",
+  "forest",
+  "crop",
+  "shrub",
+  "barren",
+  "urban",
+  "sand",
+  "wetland",
+  "water",
+  "rock"
+ ],
+ "building_kinds": [
+  "house",
+  "shed",
+  "barn",
+  "shop",
+  "block",
+  "industrial",
+  "worship",
+  "civic"
+ ],
+ "counts": {
+  "nodes": 20987,
+  "edges": 26987,
+  "buildings": 60000,
+  "pois": 4361,
+  "landmarks": 288,
+  "places": 73,
+  "oneway": 4023,
+  "bans": 25
+ },
+ "sea": false,
+ "theme": "hills",
+ "region": "world",
+ "sources": {
+  "overture_release": "2026-10-21.0",
+  "elevation": "Mapterhorn, AWS Terrain Tiles fallback"
+ },
+ "credits": [
+  "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
+  "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
+ ],
+ "hash": "00ecede4f1fba7ee"
+}

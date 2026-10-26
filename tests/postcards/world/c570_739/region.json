@@ -1,0 +1,119 @@
+{
+ "format": 2,
+ "kind": "cell",
+ "name": "c570_739",
+ "title": "c570_739",
+ "frame": {
+  "lat": 52.625,
+  "lon": 4.875
+ },
+ "bounds": [
+  -8464.7,
+  -13909.9,
+  8464.7,
+  13909.9
+ ],
+ "geo": {
+  "south": 52.5,
+  "west": 4.75,
+  "north": 52.75,
+  "east": 5.0
+ },
+ "heights": "live",
+ "cell": [
+  570,
+  739
+ ],
+ "levels": [
+  {
+   "name": "fine",
+   "dir": "tiles",
+   "spacing": 4.0,
+   "n": 128,
+   "size_m": 512.0,
+   "min": -256.0,
+   "scale": 0.0625,
+   "cover": false
+  },
+  {
+   "name": "coarse",
+   "dir": "coarse",
+   "spacing": 32.0,
+   "n": 128,
+   "size_m": 4096.0,
+   "min": -256.0,
+   "scale": 0.125,
+   "cover": true
+  },
+  {
+   "name": "ridge",
+   "dir": "ridge",
+   "spacing": 128.0,
+   "n": 256,
+   "size_m": 32768.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": false
+  },
+  {
+   "name": "cover",
+   "dir": "cover",
+   "spacing": 16.0,
+   "n": 128,
+   "size_m": 2048.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": true
+  }
+ ],
+ "tile_counts": {
+  "fine": 2110,
+  "coarse": 54,
+  "ridge": 4,
+  "cover": 161
+ },
+ "cover": [
+  "grass",
+  "forest",
+  "crop",
+  "shrub",
+  "barren",
+  "urban",
+  "sand",
+  "wetland",
+  "water",
+  "rock"
+ ],
+ "building_kinds": [
+  "house",
+  "shed",
+  "barn",
+  "shop",
+  "block",
+  "industrial",
+  "worship",
+  "civic"
+ ],
+ "counts": {
+  "nodes": 29383,
+  "edges": 32604,
+  "buildings": 60000,
+  "pois": 1373,
+  "landmarks": 107,
+  "places": 180,
+  "oneway": 4154,
+  "bans": 295
+ },
+ "sea": true,
+ "theme": "coastal",
+ "region": "world",
+ "sources": {
+  "overture_release": "2026-10-21.0",
+  "elevation": "Mapterhorn, AWS Terrain Tiles fallback"
+ },
+ "credits": [
+  "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
+  "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
+ ],
+ "hash": "5de6407928fb71ad"
+}
