@@ -71,8 +71,14 @@ const NO_HANDS_RATE := 1.0        # ... and N m s per radian per kg against the 
 const NO_HANDS_MAX := 70.0        # N m: as much as a few centimetres of body shift can do
 const RIDER_FEEL := 0.035        # s: how quickly the rider feels the bike's lean change
 const LEAN_RATE_GAIN := 3.0      # per second: how briskly the rider rolls the bike towards the lean they want
-const LEAN_RATE_MAX := 1.0       # rad/s: the quickest they roll it in or out of a lean
-const LEAN_CATCH := 2.0          # rad/s^2: how hard they reckon they can stop a roll, so they ease off in time
+const LEAN_RATE_MAX := 1.0       # rad/s: the quickest they roll an ordinary bike in or out of a lean (times BikeBuild.flick)
+const LEAN_CATCH := 2.0          # rad/s^2: how hard they reckon they can stop a roll, so they ease off in time (times flick squared)
+## Flicking a quick bike from one lean to the other, the rider pushes the bars harder than they
+## tip it in: by this much of the bike's extra flick (BikeBuild.flick less 1) while the bike is
+## still leaned the other way (fully with FLICK_CROSS radians of it still to cross), so a race
+## bike's rider puts well over 100 N m through the clip-ons through a chicane and a tourer's doesn't.
+const FLICK_PUSH := 1.0
+const FLICK_CROSS := 0.2
 const STEER_CATCH := 30.0        # rad of bar per rad/s of roll, times speed squared: steering into a fall to catch it
 const STEER_CATCH_FAST := 0.8    # ... and this much more by BAR_PUSH_FULL (see _fast), against the front wheel's spin
 ## The most of the tyres' grip the rider uses for a steady lean, keeping the rest in hand.
@@ -670,7 +676,8 @@ func _physics_process_body(delta: float) -> void:
 	# Hanging off: riding, the rider moves their body to the inside of the turn they're asking
 	# for, which carries the centre of mass over so the bike itself needs a little less lean.
 	var hang_to := lean_input * HANG_OFF * clampf((absf(speed) - 3.0) / 5.0, 0.0, 1.0) if controls_enabled else 0.0
-	_hang = move_toward(_hang, hang_to, delta * 0.4)
+	# A quick bike's rider moves across it as quickly as it rolls (see BikeBuild.flick).
+	_hang = move_toward(_hang, hang_to, delta * 0.4 * build.flick)
 	center_of_mass = _base_com + Vector3(_hang * BikeBuild.RIDER_MASS / mass, 0.0, -shift)
 
 	_update_feet(delta)
@@ -919,8 +926,11 @@ func _update_steering(delta: float) -> void:
 		# with long trail fights back harder, so they tip it in more slowly (a short-trail front
 		# is twitchy).
 		var push := clampf(pow(0.09 / maxf(build.trail * cos(rake), 0.02), 2.0), 0.5, 1.3)
-		var r_want := clampf(err * LEAN_RATE_GAIN, -LEAN_RATE_MAX, LEAN_RATE_MAX)
-		var stop := sqrt(2.0 * LEAN_CATCH * absf(err))
+		# A quick bike (a sports, race or naked bike: BikeBuild.flick) rolls that much faster, and
+		# its rider can stop a roll that much more sharply, so it flicks through a chicane.
+		var rate_max := LEAN_RATE_MAX * build.flick
+		var r_want := clampf(err * LEAN_RATE_GAIN, -rate_max, rate_max)
+		var stop := sqrt(2.0 * LEAN_CATCH * build.flick * build.flick * absf(err))
 		r_want = clampf(r_want, -stop, stop) * push
 		# Then they steer into the lean as fast as it's going faster than that (out of it to speed
 		# it up): the faster the bike, the less bar it takes.
@@ -950,6 +960,10 @@ func _update_steering(delta: float) -> void:
 		var lever := float(build.part("handlebars").get("width", 720.0)) / 720.0
 		var hold := lerpf(ARM_HOLD_SLOW, ARM_HOLD, riding) * lever
 		var most := bar_strength(v)
+		if not direct_bars and v >= 2.0:
+			# Flicking a quick bike over from the other lean, they push harder (see FLICK_PUSH).
+			var cross := clampf(-signf(target) * _seen[1] / FLICK_CROSS, 0.0, 1.0) if target != 0.0 else 0.0
+			most *= 1.0 + FLICK_PUSH * (build.flick - 1.0) * cross
 		if direct_bars:
 			# The input is the push itself: the right grip forward (steer right) turns the bars
 			# left, which leans the bike right, and the trail then swings the front into the lean.
