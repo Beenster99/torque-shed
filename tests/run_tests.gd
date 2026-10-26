@@ -587,6 +587,9 @@ func _run_all() -> void:
 	await _t(&"_test_cells_ride")
 	await _t(&"_test_cells_fetch")
 	await _t(&"_test_cells_ready")
+	await _t(&"_test_profile_parse")
+	await _t(&"_test_profile_guess")
+	await _t(&"_test_profile_of_cell")
 	await _t(&"_test_adventure_stream")
 	await _t(&"_test_adventure_frames")
 	await _t(&"_test_adventure_origin")
@@ -22355,6 +22358,22 @@ func _test_cells_fetch() -> void:
 
 func _test_cells_ready() -> void:
 	await _cells().test_ready_check()
+
+
+func _profiles() -> RefCounted:
+	return load("res://tests/profile_tests.gd").new(self)
+
+
+func _test_profile_parse() -> void:
+	_profiles().test_parse()
+
+
+func _test_profile_guess() -> void:
+	_profiles().test_guess()
+
+
+func _test_profile_of_cell() -> void:
+	_profiles().test_of_cell()
 
 
 func _live() -> RefCounted:
