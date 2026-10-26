@@ -31,7 +31,8 @@ static var current: Daylight
 ## Settings say; 0 back at the shed.
 static var adventure_rate := 0.0
 ## An adventure theme's tint on the day sky and the haze ({top, horizon, fog, amount, haze}: see
-## AdventureTheme "sky"); empty back at the shed. Set it with set_tint.
+## AdventureTheme "sky"), and on a real ride the sun's path there (lat, decl: the latitude and the sun's
+## declination, in degrees; see PlaceLook.sky); empty back at the shed. Set it with set_tint.
 static var tint := {}
 ## 0 under the open sky .. 1 deep in an adventure's tunnel (set each frame by AdventureWorld): the sun and most of the
 ## sky's light are shut out, leaving the tunnel's own lamps.
@@ -198,11 +199,25 @@ func _on_host_time(h: float, rate: float) -> void:
 
 # ---------------------------------------------------------------------------- the look
 
+## The cloud cover the sky shows (0..1): the weather's, with an adventure's place's usual cloud on top (the tint's
+## "cloud", -0.2 for a sunny land's clear sky to 0.5 for a damp one's grey lid; see PlaceLook.sky).
+static func cloud_cover() -> float:
+	return clampf(Weather.cover_level() + float(tint.get("cloud", 0.0)), 0.0, 1.0)
+
+
 ## Where the sun is at `h` hours: rises in the east (+X) at 6, highest in the south (+Z) at
-## noon, sets in the west at 18.
+## noon, sets in the west at 18. On a real ride (the tint's lat and decl) it is the sun's path
+## there that month: high in the tropics, low in a northern winter, in the north south of the
+## tropics, up early and late in summer.
 static func sun_direction(h: float) -> Vector3:
 	var a := (h - 12.0) / 24.0 * TAU
-	return Vector3(-sin(a), cos(a) * cos(TILT), cos(a) * sin(TILT)).normalized()
+	if not tint.has("lat"):
+		return Vector3(-sin(a), cos(a) * cos(TILT), cos(a) * sin(TILT)).normalized()
+	var lat := deg_to_rad(float(tint["lat"]))
+	var decl := deg_to_rad(float(tint.get("decl", 0.0)))
+	var north := cos(lat) * sin(decl) - sin(lat) * cos(decl) * cos(a)
+	var up := sin(lat) * sin(decl) + cos(lat) * cos(decl) * cos(a)
+	return Vector3(-sin(a) * cos(decl), up, -north).normalized()
 
 
 func _apply(force: bool) -> void:
@@ -215,7 +230,7 @@ func _apply(force: bool) -> void:
 	var twilight := exp(-pow(s / 0.13, 2.0))
 	# The weather (see Weather): cloud cover greys the sky and dims the sun, mist and rain thicken
 	# the fog and the haze.
-	var cover := Weather.cover_level()
+	var cover := cloud_cover()
 	var mist := Weather.fog_level()
 	var rain := Weather.rain_level()
 	var overcast := smoothstep(0.35, 1.0, cover)
@@ -303,7 +318,7 @@ func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float, over
 	_sky_mat.set_shader_parameter("moon_dir", moon_dir)
 	_sky_mat.set_shader_parameter("moon_strength", smoothstep(0.2, 0.8, dark) * (1.0 - 0.9 * overcast))
 	_sky_mat.set_shader_parameter("star_strength", smoothstep(0.55, 0.95, dark) * (1.0 - overcast) * (1.0 - mist))
-	_sky_mat.set_shader_parameter("cloud_cover", Weather.cover_level())
+	_sky_mat.set_shader_parameter("cloud_cover", cloud_cover())
 	# The raymarched clouds are lit by the sun, or by the moon once it's down; rain makes them
 	# heavier and darker and the wind picks up.
 	_sky_mat.set_shader_parameter("cloud_light_dir", sun_dir if s > -0.06 else moon_dir)

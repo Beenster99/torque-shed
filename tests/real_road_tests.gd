@@ -258,7 +258,8 @@ func test_trees() -> void:
 	check(chunks > 10 and planted > chunks * 20, "trees planted from the canopy map in %d chunks (%d of them)" % [chunks, planted])
 	check(stray == 0 and wet == 0 and tall == 0,
 		"each where the map has trees (%d not), none in the water (%d), as tall as the map says (%d not)" % [stray, wet, tall])
-	check(kinds.has("pine") and (kinds.has("tree") or kinds.has("oak")), "conifers and broadleaves both (%s)" % [kinds.keys()])
+	check(kinds.has(r.look["needle"]) and (kinds.has(r.look["broad"]) or kinds.has("tree") or kinds.has("autumn_tree")),
+		"conifers and broadleaves both, the place's kinds (%s)" % [kinds.keys()])
 	# Without the canopy map, the trees are scattered by the land cover as before.
 	var cells: Array = p.terrain._tree_cells
 	p.terrain._tree_cells = []
@@ -560,8 +561,11 @@ func test_plan() -> void:
 	if woods.has("forest") and woods.has("open"):
 		var fc := AdventureChunk.build(big, int(woods["forest"]))
 		var oc := AdventureChunk.build(big, int(woods["open"]))
-		var ft := (fc["mm"].get("tree", []) as Array).size() + (fc["mm"].get("pine", []) as Array).size()
-		var ot := (oc["mm"].get("tree", []) as Array).size() + (oc["mm"].get("pine", []) as Array).size()
+		var ft := 0
+		var ot := 0
+		for kind in AdventureChunk.TREES:   # (whichever the place's kit has)
+			ft += (fc["mm"].get(kind, []) as Array).size()
+			ot += (oc["mm"].get(kind, []) as Array).size()
 		print("    woods: ", ft, " trees in forest chunk ", woods["forest"], ", ", ot, " in open chunk ", woods["open"])
 		check(ft > 150 and ft > ot * 3, "a chunk of forest has woods (%d trees), open country few (%d)" % [ft, ot])
 	var busiest := 0

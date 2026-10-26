@@ -44,10 +44,10 @@ func _world(seed: int, region_id: String, spot: Dictionary) -> AdventureWorld:
 	return w
 
 
-## The scenery is the region's theme's: gorse and a lighthouse or two by the coast round Shodoshima; oaks, sheep, stone
-## walls and hedges in the Dales. Each theme's stops are built in its own style.
+## The scenery is the place's (PlaceLook, from the region's profile): Japan's evergreen woods and cedars round
+## Shodoshima; oaks, sheep, stone walls and hedges in the Dales. Each theme's stops are built in its own style.
 func test_scenery() -> void:
-	var want := {"coastal": ["gorse"], "hills": ["oak", "sheep"]}
+	var want := {"coastal": ["jungle_tree", "cedar"], "hills": ["oak", "sheep"]}
 	var never := {"coastal": ["cactus", "snow_pine", "sheep"], "hills": ["cactus", "snow_pine", "mesa"]}
 	for region_id in REGIONS:
 		var theme: String = REGIONS[region_id]
@@ -198,11 +198,12 @@ func test_sky() -> void:
 	for i in 10:
 		await t.get_tree().physics_frame
 	var trip: AdventureTrip = main.trip
-	var expect := AdventureTheme.weather_pick("hills", float(absi(hash([77, "weather"])) % 1000) / 1000.0)
+	var odds: Dictionary = trip.world.route.look["weather"]
+	var expect := AdventureTheme.weather_pick_from(odds, float(absi(hash([77, "weather"])) % 1000) / 1000.0)
 	check(trip.on_trip() and trip.world.route.theme == "hills" and absf(Daylight.time_of_day() - 8.5) < 0.1,
 		"a ride in the Dales sets off in the morning (%s)" % Daylight.clock_text(Daylight.time_of_day()))
-	check(not Daylight.tint.is_empty() and Weather.odds == AdventureTheme.get_value("hills", "weather") and Weather.current.state == expect,
-		"under the hills' sky, the weather %s from the seed" % expect)
+	check(Daylight.tint.has("lat") and Weather.odds == odds and Weather.current.state == expect,
+		"under the Dales' own sky and sun, the weather %s from the seed (by the month's odds there, %s)" % [expect, odds])
 	check(trip.world.horizon.material_override is StandardMaterial3D, "the far ground's there")
 	Adventure.menu_action()
 	for i in 10:

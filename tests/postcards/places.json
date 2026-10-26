@@ -2,6 +2,7 @@
  "format": 1,
  "views": ["road", "side", "back", "vista"],
  "hour": 11.0,
+ "month": 10,
  "places": [
   {"id": "dales", "title": "The Yorkshire Dales", "note": "Wensleydale, Hawes to Askrigg",
    "from": [54.3045, -2.1975], "to": [54.3135, -2.0775]},

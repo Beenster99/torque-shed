@@ -277,7 +277,7 @@ func enter() -> void:
 		var side := world.transform_at(s0, -world.route.width_at_s(s0) * 0.5 - 1.5)
 		main.walker.place(side)
 	Daylight.adventure_rate = Adventure.day_rate()
-	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0)
+	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0, world.route.look)
 	Shed.request(join)
 	computer.reset()
 	photos.begin()   # (a ride carried on picks its diary and trip computer up again)
@@ -291,20 +291,23 @@ func enter() -> void:
 		await main._fade_to(0.0)
 
 
-## The theme's sky and weather (AdventureTheme): the sky and haze tinted, the weather changing
-## by the theme's odds, and on a fresh start (`fresh`; not carrying on after a night) the time of
+## The theme's sky and weather (AdventureTheme), or on a real ride the place's (`look`, PlaceLook:
+## its sun's path, its sky and the month's weather there): the sky and haze tinted, the weather changing
+## by the odds, and on a fresh start (`fresh`; not carrying on after a night) the time of
 ## day it sets off at and its first weather, from the seed. The host's clock and weather are
 ## everyone's (Daylight, Weather), so on a client only the tint and odds are its own.
-func apply_theme(theme: String, seed: int, fresh: bool) -> void:
-	Daylight.set_tint(AdventureTheme.get_value(theme, "sky", {}))
-	Weather.odds = (AdventureTheme.get_value(theme, "weather", {}) as Dictionary).duplicate()
+func apply_theme(theme: String, seed: int, fresh: bool, look := {}) -> void:
+	var placed := look.has("sky")
+	Daylight.set_tint(look["sky"] if placed else AdventureTheme.get_value(theme, "sky", {}))
+	var odds: Dictionary = look["weather"] if placed else AdventureTheme.get_value(theme, "weather", {})
+	Weather.odds = odds.duplicate()
 	if not fresh:
 		return
-	var hour := float(AdventureTheme.get_value(theme, "start_hour", -1.0))
+	var hour := float(look["start_hour"]) if placed else float(AdventureTheme.get_value(theme, "start_hour", -1.0))
 	if hour >= 0.0 and Daylight.current and not Daylight.set_by_host():
 		Daylight.current.set_time(hour)
 	if Weather.current and not Weather.set_by_host() and not Weather.STATES.has(Settings.weather):
-		var pick := AdventureTheme.weather_pick(theme, float(absi(hash([seed, "weather"])) % 1000) / 1000.0)
+		var pick := AdventureTheme.weather_pick_from(odds, float(absi(hash([seed, "weather"])) % 1000) / 1000.0)
 		if pick != "":
 			Weather.current.change_to(pick, true)
 

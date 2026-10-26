@@ -206,6 +206,7 @@ static func view_xf(w: AdventureWorld, s: float, view: String) -> Transform3D:
 func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	var got := {"id": place["id"], "title": place.get("title", place["id"]), "error": "", "views": {}}
 	var t0 := Time.get_ticks_msec()
+	PlaceLook.month_override = int(place.get("month", spec.get("month", 0)))
 	var plan := plan_of(place)
 	var res := AdventurePlans.result(plan, true)
 	if not bool(res.get("ok", false)):
@@ -219,15 +220,19 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	got["profile"] = "%s · %s · %s · %s%s" % [prof.get("country", "?"), prof.get("koppen", "?"), prof.get("altitude_band", "?"),
 		prof.get("density", "?"), " (guessed)" if bool(prof.get("guessed", false)) else ""]
 	got["theme"] = pack.theme
+	got["month"] = PlaceLook.month_override
 	if fetch:
 		return got   # (planning fetched the ride's heights: that's all a fetch is for)
 	var w := AdventureWorld.new()
 	w.setup(pack, 1)
+	if w.route.look.has("kit"):
+		got["theme"] = "%s, %s" % [str(w.route.look["kit_name"]).to_lower(), ["January", "February", "March", "April", "May", "June",
+			"July", "August", "September", "October", "November", "December"][int(w.route.look["month"]) - 1]]
 	w.focus = func(): return [cam.global_position]
 	w.origin_shifted.connect(func(d): cam.global_position -= d)
 	add_child(w)
 	Daylight.adventure_rate = 0.0
-	Daylight.set_tint(AdventureTheme.get_value(w.route.theme, "sky", {}))
+	Daylight.set_tint(w.route.look["sky"] if w.route.look.has("sky") else AdventureTheme.get_value(w.route.theme, "sky", {}))
 	if Daylight.current:
 		Daylight.current.set_time(float(place.get("hour", spec.get("hour", 11.0))))
 	var s := float(place.get("s", w.route.length * 0.35))

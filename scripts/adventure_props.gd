@@ -139,7 +139,8 @@ static func vc_material() -> StandardMaterial3D:
 
 ## One shared mesh per kind: "pine", "snow_pine", "tree", "bush", "dry_bush", "rock", "post",
 ## "snow_pole", "km_post", and the themes' (AdventureTheme): "cactus", "red_rock", "mesa" (desert),
-## "crag" (alpine), "gorse", "dune_grass", "lighthouse" (coastal), "oak", "sheep" (hills).
+## "crag" (alpine), "gorse", "dune_grass", "lighthouse" (coastal), "oak", "sheep" (hills), and the place's vegetation
+## kits' (PlaceLook.plant).
 static func mesh(kind: String) -> ArrayMesh:
 	if _meshes.has(kind):
 		return _meshes[kind]
@@ -224,6 +225,8 @@ static func mesh(kind: String) -> ArrayMesh:
 			var cottage := Transform3D(Basis(), Vector3(0, 0, 6.5))
 			box(a, cottage, Vector3(7.0, 3.0, 4.5), Color(0.95, 0.95, 0.93), false)
 			gable(a, cottage * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO), 4.5, 7.0, 3.0, 1.8, Color(0.28, 0.3, 0.35), Color(0.95, 0.95, 0.93))
+		_:
+			PlaceLook.plant(a, kind)   # (the place's vegetation kits' own: birch, olive, palm and the rest)
 	var m := to_mesh(a)
 	_meshes[kind] = m
 	return m

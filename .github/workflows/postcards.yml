@@ -17,6 +17,7 @@ on:
       - "scripts/*region*"
       - "scripts/*profile*"
       - "scripts/*climate*"
+      - "scripts/place_look.gd"
       - "scripts/*scenery*"
       - "scripts/*sky*"
       - "scripts/*theme*"
