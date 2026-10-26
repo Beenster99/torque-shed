@@ -10122,6 +10122,8 @@ func _test_lighting_profile() -> void:
 	p = Lighting.profile(best, false)
 	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
 	check(not bool(CloudSky.quality("low", false)["volumetric"]), "compatibility at low: the old flat clouds")
+	var steps: Array = ["low", "medium", "high", "ultra"].map(func(q): return int(CloudSky.quality(q, true)["steps"]))
+	check(steps[0] < steps[1] and steps[1] < steps[2] and steps[2] < steps[3], "the cloud slider's five steps get finer each way up %s" % str(steps))
 	# Missing settings: the defaults, or the low look with the old quality switch off.
 	var hq := Settings.high_quality
 	Lighting.overrides = {}
@@ -10135,7 +10137,7 @@ func _test_lighting_profile() -> void:
 	check(str(Lighting.option("gfx_gi")) == "ssil", "overrides win")
 	Lighting.overrides = {}
 	# Every variant of the sky shader compiles (a broken one has no uniforms).
-	for setting in ["off", "low", "high"]:
+	for setting in Graphics.CHOICES["gfx_clouds"]:
 		for fp in [true, false]:
 			var sh := CloudSky.make_shader(CloudSky.quality(setting, fp))
 			check(sh.get_shader_uniform_list().size() >= 18, "the %s sky shader compiles (%s)" % [setting, "Forward+" if fp else "compatibility"])

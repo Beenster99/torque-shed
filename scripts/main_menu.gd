@@ -628,11 +628,24 @@ func show_pause() -> void:
 	_free_rotate.button_pressed = Settings.free_rotate
 	_third_person.button_pressed = Settings.walk_third_person
 	_refresh_time_settings(true)
+	_refresh_debug()
 	refresh_retrieve()
 	_refresh_home()
 	_refresh_adventure()
 	show()
 	_resume.grab_focus()
+
+
+## The Debug tab is the host's alone: a player who has joined someone's shed doesn't see it
+## (and their bike isn't fixed up by itself).
+func _refresh_debug() -> void:
+	var client := Net.is_online() and not Net.is_host()
+	var at := _tabs.get_tab_idx_from_control(debug)
+	if client and _tabs.current_tab == at:
+		_tabs.current_tab = 0
+	_tabs.set_tab_hidden(at, client)
+	if client:
+		debug.auto_fix = false
 
 
 ## Shows "Back to the garage" while you're out in the world, greyed out (and saying why) when

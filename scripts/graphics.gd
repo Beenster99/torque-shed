@@ -51,7 +51,7 @@ const CHOICES := {
 	"gfx_shadows": QUALITY,
 	"gfx_gi": ["off", "ssil", "sdfgi"],
 	"gfx_volumetrics": ["off", "low", "high"],
-	"gfx_clouds": ["off", "low", "high"],
+	"gfx_clouds": MIRROR_LEVELS,
 	"gfx_driver": ["vulkan", "d3d12"],
 	"gfx_mirrors": MIRROR_LEVELS,
 }
@@ -68,7 +68,7 @@ const PRESETS := {
 		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 0.75, "gfx_upscaler": "fsr1",
 		"gfx_mirrors": "off"},
 	"medium": {"gfx_shadows": "medium", "gfx_detail": "medium", "gfx_draw_distance": 0.8, "gfx_gi": "ssil",
-		"gfx_volumetrics": "low", "gfx_clouds": "low", "gfx_ssr": false, "gfx_ssao": true, "gfx_glow": true,
+		"gfx_volumetrics": "low", "gfx_clouds": "medium", "gfx_ssr": false, "gfx_ssao": true, "gfx_glow": true,
 		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
 		"gfx_mirrors": "low"},
 	"high": {"gfx_shadows": "high", "gfx_detail": "high", "gfx_draw_distance": 1.0, "gfx_gi": "sdfgi",
@@ -76,7 +76,7 @@ const PRESETS := {
 		"gfx_msaa": "2x", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
 		"gfx_mirrors": "medium"},
 	"ultra": {"gfx_shadows": "ultra", "gfx_detail": "ultra", "gfx_draw_distance": 1.5, "gfx_gi": "sdfgi",
-		"gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true, "gfx_glow": true,
+		"gfx_volumetrics": "high", "gfx_clouds": "ultra", "gfx_ssr": true, "gfx_ssao": true, "gfx_glow": true,
 		"gfx_msaa": "4x", "gfx_taa": true, "gfx_screen_aa": "smaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
 		"gfx_mirrors": "ultra"},
 }

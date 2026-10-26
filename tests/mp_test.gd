@@ -25,6 +25,7 @@ extends Node
 ## The shed's petrol pump: the host stands Old Faithful by it with its tank low, the client lifts
 ## the nozzle and fills it (the host must see the nozzle in the client's figure's hand), then
 ## hangs it back up: both see the litres in the tank and the petrol in the business's books.
+## The Esc menu's Debug tab is there for the host and hidden from the client.
 
 var role := "host"
 var main: Node
@@ -58,6 +59,7 @@ func _ready() -> void:
 	var deadline := Time.get_ticks_msec() + 240000
 	var moved := false
 	var shed_ok := false
+	var debug_ok := false   # the Esc menu's Debug tab: the host's, hidden from the client
 	var start := Vector3.ZERO
 	var span := AABB()
 	var own := AABB()   # how far this side's own walker went (for the diagnostic)
@@ -778,7 +780,10 @@ func _ready() -> void:
 				Shed.request({"a": "home_answer", "offer": int(waiting[0]["id"]), "yes": true})
 		home_ok = home_ok or (home_cid != 0 and str(Collection.entry(home_cid)["owner"]) == "Test client" and Collection.offers().is_empty()
 			and home_log.size() == home_logged + 1 and absi(int(home_log[-1]["amt"])) == HOME_OFFER)
-		if rest_ok and copy_ok and home_ok:
+		if not debug_ok and Net.is_online():
+			main.menu._refresh_debug()
+			debug_ok = main.menu._tabs.is_tab_hidden(main.menu._tabs.get_tab_idx_from_control(main.menu.debug)) == (role == "client")
+		if rest_ok and copy_ok and home_ok and debug_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -795,8 +800,8 @@ func _ready() -> void:
 	print("MP note %s: helmet visors seen up both ways %s" % [role, visor_ok])
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s, petrol pump %s, collection offer %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok, pump_ok, home_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s, petrol pump %s, collection offer %s, debug tab %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok, pump_ok, home_ok, debug_ok])
 	get_tree().quit(0 if ok else 1)
 
 
