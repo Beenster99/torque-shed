@@ -1,6 +1,6 @@
 extends RefCounted
 ## The adventure road's junctions (AdventureJunctions): the real side roads, crossroads and roundabouts along a planned
-## road, traffic lights at the crossroads in town, the traffic at them, the police at a red light and the sat nav
+## road, traffic lights at the crossroads in town, the traffic at them and the sat nav
 ## through them. Run from tests/run_tests.gd: its _test_adv_roads_* functions hand over to these.
 
 const Rides := preload("res://tests/rides.gd")
@@ -380,74 +380,6 @@ func test_traffic_turns() -> void:
 	client.queue_free()
 	stream.queue_free()
 	await _frames(1)
-
-
-## Through a red light with the police there: they come after you, and it's a fine (£100, more
-## for each time that day). Through on green, nothing.
-func test_police_red() -> void:
-	Shed.adventure = {"id": 4242, "seed": 7, "km": 60.0, "theme": "varied", "riders": {}, "arrived": 0, "arrived_name": ""}
-	var found := _with_junction("lights")
-	if found.is_empty():
-		check(false, "a road with traffic lights")
-		return
-	var me := Shed.me()
-	var keep := Progress.money()
-	Progress.set_money(1000)
-	for want_red in [false, true]:
-		var sim := {me: {"s": 0.0, "v": 0.0}}
-		var w := _world_for(found)
-		var p := AdventurePolice.new()
-		p.world = w
-		p.rider_source = func() -> Array: return [{"peer": me, "s": sim[me]["s"], "v": sim[me]["v"]}]
-		t.add_child(p)
-		p.set_physics_process(false)
-		p.plan = []
-		var st: Dictionary = {}
-		for s in w.route.sites_of(AdventureJunctions.KIND):
-			if absf(float(s["s"]) - float(found[2]["s"])) < 1.0:
-				st = s
-		var js := float(st["s"])
-		# The clock where the main road's lights are red (or green) for a good while.
-		var clock := 0.0
-		while true:
-			var ok := true
-			for k in 20:
-				var x := AdventureJunctions.light_state(st, clock + k * 0.5).x
-				ok = ok and (x == AdventureJunctions.RED if want_red else x == AdventureJunctions.GREEN)
-			if ok:
-				break
-			clock += 0.5
-		AdventureJunctions.clock = clock
-		var id := p.spawn(js + 90.0, -1, false, 0.4)
-		sim[me]["s"] = js - 40.0
-		sim[me]["v"] = 9.0
-		for i in int(6.0 / DT):
-			sim[me]["s"] = float(sim[me]["s"]) + float(sim[me]["v"]) * DT
-			p.tick(DT)
-		var chased := p.chasing(me)
-		if not want_red:
-			check(not chased, "through the lights on green with the police there: nothing")
-		else:
-			check(chased and str(p.cars[id].get("why", "")) == "red" and p.messages.size() > 0 and "red light" in p.messages[-1],
-				"through a red light in front of a police car: \"%s\"" % (p.messages[-1] if p.messages.size() > 0 else ""))
-			# Stop, and the fine comes.
-			for i in int(60.0 / DT):
-				sim[me]["v"] = move_toward(float(sim[me]["v"]), 0.0, 5.0 * DT)
-				sim[me]["s"] = float(sim[me]["s"]) + float(sim[me]["v"]) * DT
-				p.tick(DT)
-				if not AdventurePolice.fines_of(me).is_empty() and int(AdventurePolice.fines_of(me)[-1]["paid"]) >= 0:
-					break
-			var fines := AdventurePolice.fines_of(me)
-			var f: Dictionary = fines[-1] if not fines.is_empty() else {}
-			check(int(f.get("amount", 0)) == 100 and str(f.get("why", "")) == "red" and Progress.money() == 900 and "running a red light" in p.messages[-1],
-				"pulled over and fined £%d: \"%s\"" % [int(f.get("amount", 0)), p.messages[-1] if p.messages.size() > 0 else ""])
-			check(AdventurePolice.line_for(id, p.cars[id]).length() > 0 and "red" in AdventurePolice.line_for(1, {"why": "red", "speed": 20.0}).to_lower(),
-				"the officer has his say about it")
-		p.queue_free()
-		w.free()
-	Progress.set_money(keep)
-	Shed.adventure = {}
-	await _frames(2)
 
 
 ## Building a chunk with a junction in it costs about what any other does.

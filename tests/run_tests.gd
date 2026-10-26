@@ -623,15 +623,6 @@ func _run_all() -> void:
 	await _t(&"_test_adv_traffic_takeover")
 	await _t(&"_test_adv_traffic_sounds")
 	await _t(&"_test_adv_traffic_perf")
-	print("The police on adventures (v0.14.0): patrols and speed traps, the 30 mph rule, chases, stops and fines")
-	await _t(&"_test_adv_police_spawn_rate")
-	await _t(&"_test_adv_police_rule")
-	await _t(&"_test_adv_police_chase")
-	await _t(&"_test_adv_police_caught")
-	await _t(&"_test_adv_police_outrun")
-	await _t(&"_test_adv_police_trap")
-	await _t(&"_test_adv_police_coop")
-	await _t(&"_test_adv_police_stream")
 	await _t(&"_test_adv_themes_scenery")
 	await _t(&"_test_adv_themes_stream")
 	await _t(&"_test_adv_themes_sky")
@@ -670,7 +661,6 @@ func _run_all() -> void:
 	await _t(&"_test_adv_bikers_nods")
 	await _t(&"_test_adv_bikers_sync")
 	await _t(&"_test_adv_bikers_cost")
-	await _t(&"_test_adv_roads_police_red")
 	await _t(&"_test_adv_roads_chunk_cost")
 	print("Order one of these, and copy its blueprint (v0.16.0): any bike looked at, the cafes' bikes, parked bikes with real builds")
 	await _t(&"_test_bike_copy_order")
@@ -22743,44 +22733,6 @@ func _test_adv_traffic_sounds() -> void:
 
 func _test_adv_traffic_perf() -> void:
 	await _adv_traffic().test_perf()
-# ---------------------------------------------------------------------------- the police on adventures (tests/adventure_police_tests.gd)
-
-func _adv_police() -> RefCounted:
-	return load("res://tests/adventure_police_tests.gd").new(self)
-
-
-func _test_adv_police_spawn_rate() -> void:
-	await _adv_police().test_spawn_rate()
-
-
-func _test_adv_police_rule() -> void:
-	await _adv_police().test_rule()
-
-
-func _test_adv_police_chase() -> void:
-	await _adv_police().test_chase()
-
-
-func _test_adv_police_caught() -> void:
-	await _adv_police().test_caught()
-
-
-func _test_adv_police_outrun() -> void:
-	await _adv_police().test_outrun()
-
-
-func _test_adv_police_trap() -> void:
-	await _adv_police().test_trap()
-
-
-func _test_adv_police_coop() -> void:
-	await _adv_police().test_coop()
-
-
-func _test_adv_police_stream() -> void:
-	await _adv_police().test_stream()
-
-
 # ---------------------------------------------------------------------------- adventure themes (tests/adventure_themes_tests.gd)
 
 func _adv_themes() -> RefCounted:
@@ -22935,10 +22887,6 @@ func _test_adv_roads_traffic_stops() -> void:
 
 func _test_adv_roads_traffic_turns() -> void:
 	await _adv_roads().test_traffic_turns()
-
-
-func _test_adv_roads_police_red() -> void:
-	await _adv_roads().test_police_red()
 
 
 func _test_adv_roads_chunk_cost() -> void:

@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Two halves. The highlights are the crew's, kept by the host in the shared state
 ## (Shed.adventure["log"], so every player has the same list): setting off, each stop visited,
-## the ways taken at forks, onto a new surface, the high points, police chases and fines,
+## the ways taken at forks, onto a new surface, the high points (old diaries may also hold police chases and fines),
 ## breakdowns and roadside fixes, picnics, sunrise and sunset, and arriving. Each has its time
 ## (the clock, and the day), how far along the road (km) and who. The photos are taken on each
 ## player's own machine (AdventurePhotos: automatically at the highlights they were part of, and

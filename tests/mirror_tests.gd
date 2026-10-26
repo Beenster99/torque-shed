@@ -228,8 +228,7 @@ func test_follows_glass() -> void:
 	await _frames(2)
 
 
-## Off: no viewports and nothing done each frame, the glass its plain shiny self again, the
-## police chase mirror still there; and on in first person the chase mirror isn't needed.
+## Off: no viewports and nothing done each frame, the glass its plain shiny self again.
 func test_off() -> void:
 	var was := Settings.gfx_mirrors
 	Settings.set_graphics("gfx_mirrors", "medium")
@@ -252,16 +251,6 @@ func test_off() -> void:
 	await _frames(3)
 	check(not Perf._frame.has("mirrors") and not Perf._frame.has("mirrors_gpu"), "the profiler sees nothing from it")
 	Perf.on = was_on
-	# The police chase mirror: dropped in first person while the bike's own are live.
-	var fake := {"bike": rig["bike"], "camera": ChaseCamera.new()}
-	(fake["camera"] as ChaseCamera).mode = ChaseCamera.Mode.HELMET
-	check(not AdventurePolice.own_mirrors_shown(fake), "Off, the police chase mirror is still shown")
-	Settings.set_graphics("gfx_mirrors", "low")
-	await _frames(2)
-	check(AdventurePolice.own_mirrors_shown(fake), "on, in first person, the bike's own mirrors take its place")
-	(fake["camera"] as ChaseCamera).mode = ChaseCamera.Mode.CHASE
-	check(not AdventurePolice.own_mirrors_shown(fake), "in the chase view (the glass too small to read) it's shown again")
-	(fake["camera"] as Node).free()
 	(rig["root"] as Node).queue_free()
 	Settings.set_graphics("gfx_mirrors", was)
 	await _frames(2)

@@ -550,7 +550,7 @@ func respawn() -> void:
 
 
 ## Makes the bike a ghost for `seconds`: see-through, and passing through other bikes, the
-## traffic and the police (it still rides on the ground and stops at walls), and nothing it
+## traffic (it still rides on the ground and stops at walls), and nothing it
 ## touches throws the rider off.
 func start_ghost(seconds := BikeGhost.TIME) -> void:
 	ghost_left = seconds
@@ -2024,8 +2024,7 @@ func indicate(which: int) -> String:
 	return ""
 
 
-## The stop lamp from the brakes as the bike uses them (the rider's, a menu's held brake or the
-## police's stop), and the indicators' flash, self-cancel and relay tick. They need the ignition
+## The stop lamp from the brakes as the bike uses them (the rider's, or a menu's held brake), and the indicators' flash, self-cancel and relay tick. They need the ignition
 ## (and the lights' fuse).
 func _step_lamps(delta: float) -> void:
 	var live := engine_on and str(faults.get("fuse", "")) != "lights"
