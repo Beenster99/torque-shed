@@ -117,7 +117,7 @@ const ACTIONS := [
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["indicate_left", "Indicate left (again to cancel)", ["ride"]], ["indicate_right", "Indicate right (again to cancel)", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
-	["look_back", "Look over your shoulder (hold)", ["ride"]],
+	["look_back", "Reverse view: tap to toggle, hold to look behind", ["ride"]],
 	["nod", "Nod to a biker (hold: wave)", ["ride"]], ["ride_ping", "Ping (riding or driving)", ["ride"]],
 	["tow", "Adventure: ask a mate for a tow, or let the strap go", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],

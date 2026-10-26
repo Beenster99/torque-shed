@@ -234,7 +234,7 @@ func test_nod_wave() -> void:
 	await _leave(main)
 
 
-## Holding look back turns the view round behind: over the left shoulder in first person, round in
+## Holding the reverse view turns the view round behind (a tap leaves it there till the next): over the left shoulder in first person, round in
 ## front of the bike looking back in the chase view, the rider's head turned. LB and RB together
 ## start the engine without looking back; LB alone holds the clutch in.
 func test_look_back_and_chord() -> void:
@@ -258,6 +258,17 @@ func test_look_back_and_chord() -> void:
 	await _ticks(Engine.physics_ticks_per_second)
 	check(cam.looking_back() < 0.02 and (-cam.global_basis.z).dot(fwd) > 0.5, "let go, you look ahead again")
 	cam.set_mode(ChaseCamera.Mode.CHASE)
+	# A tap turns it round and leaves it there; the next tap turns it back.
+	Input.action_press("look_back")
+	await _ticks(6)
+	Input.action_release("look_back")
+	await _ticks(Engine.physics_ticks_per_second)
+	check(cam.look_back and cam.looking_back() > 0.95, "a tap leaves the reverse view on")
+	Input.action_press("look_back")
+	await _ticks(6)
+	Input.action_release("look_back")
+	await _ticks(Engine.physics_ticks_per_second)
+	check(not cam.look_back and cam.looking_back() < 0.02, "and the next tap turns it off")
 	# The engine on LB and RB together.
 	bike.stop_engine()
 	await _ticks(3)
@@ -273,6 +284,7 @@ func test_look_back_and_chord() -> void:
 	_pad(JOY_BUTTON_RIGHT_SHOULDER, false)
 	await _ticks(Engine.physics_ticks_per_second * 2)
 	check(bike.engine_on and not bike.clutch_in and not Controls.chord_held(), "it fires, and the clutch is out again")
+	check(not cam.look_back, "letting go of the chord doesn't leave the reverse view on")
 	_pad(JOY_BUTTON_RIGHT_SHOULDER, true)
 	await _ticks(10)
 	check(cam.look_back and bike.engine_on, "RB on its own looks back, the engine left running")

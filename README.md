@@ -488,7 +488,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Weight back (wheelie) / forward | Shift / Ctrl | Left stick back / forward |
 | Shift up / down | E / Q | A / X |
 | Hold the clutch in: the throttle blips the revs in any gear, at any speed, without driving the back wheel (let go and it takes up smoothly) | Hold Z | Hold LB |
-| Look over your shoulder (while held) | Hold X | Hold RB |
+| Reverse view: tap to look behind until the next tap, or hold to look behind while held | X | RB |
 | Nod to a biker you pass; hold it to raise your left hand off the bar in a wave (the crew see both; a biker in the traffic nods back) | N (hold: wave) | Right stick click (hold: wave) |
 | Toggle auto-shift | U | |
 | Adventure: ask a mate for a tow when you've broken down, or let the strap go | T | (none) |
