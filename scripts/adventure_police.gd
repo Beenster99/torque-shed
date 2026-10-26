@@ -46,6 +46,10 @@ const LOSE_DIST := 600.0
 const LOSE_TIME := 20.0
 ## A chasing car's top speed (m/s, 130 mph) and how hard it speeds up and brakes; where it sits
 ## behind its rider once it's caught up.
+## A chasing car pulls out round traffic in its lane from PASS_LOOK m behind it, or PASS_LEAD s at the speed it closes
+## on it, whichever is further.
+const PASS_LOOK := 55.0
+const PASS_LEAD := 2.5
 const CHASE_TOP := 58.0
 const CHASE_ACCEL := 5.5
 const CHASE_BRAKE := 7.5
@@ -582,9 +586,12 @@ func _chase(b: Dictionary, st: Dictionary, r: Dictionary, delta: float) -> void:
 	var lane_to := lane
 	# Traffic in our lane between us and them: round it if the other side's clear, else behind it.
 	var others := driver.traffic()
+	var v := float(st["v"])
 	for o in others:
 		var ahead := (float(o["s"]) - s) * dir
-		if int(o["dir"]) != dir or ahead < -12.0 or ahead > 55.0 or ahead > gap or float(o["v"]) > want - 2.0:
+		# (looking further ahead the faster it closes on it, so it's out in time at any speed)
+		var look := maxf(PASS_LOOK, (v - float(o["v"])) * PASS_LEAD)
+		if int(o["dir"]) != dir or ahead < -12.0 or ahead > look or ahead > gap or float(o["v"]) > want - 2.0:
 			continue
 		var clear := true
 		for q in others:

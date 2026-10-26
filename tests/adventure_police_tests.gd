@@ -232,7 +232,8 @@ func test_chase() -> void:
 	var at := float(p.driver.state(id)["s"])
 	sim[1]["s"] = at + 300.0
 	sim[1]["v"] = float(p.driver.state(id)["v"])
-	stream._add({"s": at + 40.0, "dir": 1, "v": 12.0, "pace": 0.6, "kind": "lorry", "seed": 5, "ind": 0})
+	# (far enough ahead to see and get round at a chase's speed: on a straight it may be doing over 120 mph)
+	stream._add({"s": at + 150.0, "dir": 1, "v": 12.0, "pace": 0.6, "kind": "lorry", "seed": 5, "ind": 0})
 	var low := {"lane": INF}
 	_run(p, sim, 3.0, func():
 		stream.vehicles[0]["s"] = float(stream.vehicles[0]["s"]) + 12.0 * DT
