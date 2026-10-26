@@ -169,10 +169,44 @@ const BIN_NAMES := {"general": "General waste", "plastic": "Plastic recycling", 
 
 var parts := {}    # part id -> Dictionary of stats (with "id" and "kind" added)
 var by_kind := {}  # kind -> Array of part ids, in catalogue order
+## Parts taken out of the catalogue (data/retired_parts.json): old id -> the part that a save's
+## copy of it becomes (see current_id and migrate).
+var retired := {}
 
 
 func _ready() -> void:
 	load_catalogue("res://data/parts.json")
+	var r = JSON.parse_string(FileAccess.get_file_as_string("res://data/retired_parts.json"))
+	retired = r.get("parts", {}) if r is Dictionary else {}
+
+
+## The catalogue's id for a part a save calls `id`: the one that replaced it when it was taken out
+## of the catalogue (the tanks and fairings of old, each now one of ten), or `id` itself.
+func current_id(id: String) -> String:
+	return str(retired.get(id, id))
+
+
+## `v` (a save's shed, deep) with every retired part id in it swapped for the part that replaced
+## it, in values and in keys. A part keeps its own colour (items carry it), so an old red tank
+## is the new tank in that red.
+func migrate(v: Variant) -> Variant:
+	if v is String:
+		return retired.get(v, v)
+	if v is Array:
+		var out: Array = v.duplicate()
+		for i in out.size():
+			out[i] = migrate(out[i])
+		return out
+	if v is Dictionary:
+		var out: Dictionary = v.duplicate()
+		for k in v:
+			out[k] = migrate(v[k])
+			if k is String and retired.has(k):
+				if not out.has(retired[k]):
+					out[retired[k]] = out[k]
+				out.erase(k)
+		return out
+	return v
 
 
 func load_catalogue(path: String) -> void:
@@ -571,7 +605,7 @@ func sanitize_build(build: Dictionary) -> Dictionary:
 	var no_tail := false
 	var no_guard := false
 	for slot in SLOTS:
-		var id: String = str(build.get(slot, ""))
+		var id: String = current_id(str(build.get(slot, "")))
 		if id == "none" and is_optional(slot):
 			clean[slot] = id
 			continue

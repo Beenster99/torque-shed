@@ -695,7 +695,9 @@ func restore(data: Dictionary) -> bool:
 		_placed.clear()
 		last_saved = 0
 		return true
-	var players = data.get("players", {})
+	# Parts taken out of the catalogue since (the old tanks and fairings): the ones that replaced them.
+	shed = PartsDB.migrate(shed)
+	var players = PartsDB.migrate(data.get("players", {}))
 	if int(data.get("town", 0)) < TOWN_LAYOUT:
 		# Saved before the shed stood in the town with its yard behind it: what was out in the old
 		# yard in front goes to the same place in the yard behind, nothing is left in a building.
