@@ -19426,6 +19426,7 @@ func _test_pool_session() -> void:
 	if table == null:
 		main._leave()
 		main.queue_free()
+		SaveGame.slot_override = ""
 		return
 	var felt := table.global_position
 	w.place(Transform3D(Basis(), Vector3(felt.x, GarageUpgrades.LOFT_FLOOR + 0.05, felt.z + 1.7)))
@@ -19462,6 +19463,7 @@ func _test_pool_session() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_pool")
+	SaveGame.slot_override = ""   # (left set, the next session test played on in this test's slot)
 ## Parts the style builder (Shed.style_parts) can fit in `slot` on a bike of `style`: the
 ## style's reference part (Contracts.style_build) and every part of that kind made for it.
 static func _style_options(style: String, slot: String) -> Array:
