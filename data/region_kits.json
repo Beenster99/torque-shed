@@ -1,0 +1,159 @@
+{
+	"format": 1,
+	"about": "The region kits (RegionKit, RegionBuildings): how a region's buildings are made and coloured. Every country takes its region's kit from data/countries.json; a variant's 'set' replaces those fields where the cell's profile matches its 'when' (altitude bands, Koppen zones by their first letters, densities, coast), each matching variant in turn. Colours are hex.",
+	"default": {
+		"walls": ["#d9d1bd", "#b8a284", "#9a5240", "#e6e4dc"], "roofs": ["#403838", "#73332a", "#525760"],
+		"trim": "#e8e6e0", "door": ["#3f2416", "#2e3a44"], "glass": "#26333f",
+		"roof": "gable", "pitch": 0.55, "eaves": 0.35, "flat": 0.0, "parapet": false, "tanks": 0.0, "rebar": 0.0,
+		"chimney": 0.6, "shutters": [], "timber": "", "balcony": 0.0, "verandah": 0.0, "stilts": 0.0, "hut": 0.0,
+		"plinth": "", "bars": false,
+		"shop": {"fascia": ["#2b4a6b", "#7a2a24", "#2f5a3a"], "awning": ["#b83a32", "#2d5c8c", "#3d7a46"]},
+		"barn": ["#7d2e1f", "#5c5a52", "#4d604d"],
+		"variants": []
+	},
+	"regions": {
+		"british_isles": {
+			"name": "British Isles",
+			"walls": ["#a49a87", "#8d8578", "#b3a68c", "#e8e4d8", "#8c4a36"], "roofs": ["#3c3e44", "#46484e", "#6b3a2c"],
+			"trim": "#efede6", "door": ["#1f3a5c", "#5c1a1a", "#1d3d2a", "#2b2b2b"],
+			"roof": "gable", "pitch": 0.7, "eaves": 0.2, "chimney": 0.95, "plinth": "",
+			"shop": {"fascia": ["#1d3d2a", "#1f2f4a", "#5c1a1a", "#2b2b2b"], "awning": ["#1d3d2a", "#5c1a1a"]},
+			"barn": ["#6e6a5e", "#4f5a4a", "#8d8578"],
+			"variants": [
+				{"when": {"altitude": ["lowland"]}, "set": {"walls": ["#9a4a36", "#8c4430", "#e8e4d8", "#d8cfb8", "#a49a87"], "roofs": ["#3c3e44", "#7a3a2a", "#5a4038"]}}
+			]
+		},
+		"western_europe": {
+			"name": "Western Europe",
+			"walls": ["#ece6d8", "#e2d6bc", "#d8cbb0", "#f2efe8"], "roofs": ["#8a3a26", "#6a2e22", "#4a3c38"],
+			"trim": "#f0ece4", "door": ["#5a3a22", "#3a2a1e"],
+			"roof": "gable", "pitch": 0.75, "eaves": 0.4, "chimney": 0.4,
+			"shop": {"fascia": ["#2a3a4a", "#7a2a24", "#3a3a3a"], "awning": ["#a8322c", "#d0a020", "#3a5a8a"]},
+			"barn": ["#6a4a30", "#7a7468", "#5a3e2a"],
+			"variants": [
+				{"when": {"altitude": ["lowland"], "koppen": ["Cf"]}, "set": {
+					"walls": ["#8a3a2a", "#7a3428", "#9c4a34", "#6e3026", "#e8e2d4"], "roofs": ["#b85a2e", "#3a3a3e", "#9a4426"],
+					"pitch": 1.0, "eaves": 0.25, "trim": "#f4f2ec", "door": ["#2e4a3a", "#3a3a40", "#5a2a20"]}},
+				{"when": {"altitude": ["upland"]}, "set": {
+					"walls": ["#f2efe6", "#ece6d6", "#e8dfc8"], "roofs": ["#6a3a2a", "#8a4a30", "#4a3a34"],
+					"pitch": 0.42, "eaves": 1.3, "timber": "#6a4426", "balcony": 0.7, "shutters": ["#3a5a3a", "#7a3a2a"],
+					"chimney": 0.3}},
+				{"when": {"altitude": ["mountain", "high"]}, "set": {
+					"walls": ["#8e8a82", "#9a948a", "#7e7a72", "#a8a298"], "roofs": ["#34363c", "#3e4046", "#2e3034"],
+					"pitch": 1.05, "eaves": 0.3, "timber": "", "balcony": 0.15, "shutters": ["#5a4632", "#e8e4dc"],
+					"chimney": 0.8}},
+				{"when": {"koppen": ["Cs"]}, "set": {
+					"walls": ["#e8d8b8", "#dcc49a", "#f0e6d2", "#d8b890"], "roofs": ["#b0583a", "#a04a30", "#c06a44"],
+					"roof": "hip", "pitch": 0.38, "eaves": 0.35, "shutters": ["#5a7a8a", "#6a8a5a", "#e8e4dc"]}}
+			]
+		},
+		"nordic": {
+			"name": "Nordic",
+			"walls": ["#8c2a20", "#9a3424", "#d8b050", "#efece4", "#6a7a84"], "roofs": ["#2a2a2e", "#3a3a3e", "#7a3a2a"],
+			"trim": "#f4f2ec", "door": ["#2a3a4a", "#efece4"],
+			"roof": "gable", "pitch": 0.7, "eaves": 0.35, "chimney": 0.7, "plinth": "#5a5a58",
+			"shop": {"fascia": ["#2a3a4a", "#efece4", "#1d3d2a"], "awning": ["#2d5c8c", "#3a3a3e"]},
+			"barn": ["#8c2a20", "#9a3424", "#5c3020"]
+		},
+		"eastern_europe": {
+			"name": "Eastern Europe",
+			"walls": ["#e8dcb0", "#c8d4dc", "#e4e0d6", "#d8c8a0", "#b8c0b0", "#a8a49c"], "roofs": ["#4a6a4a", "#7a3a30", "#6a6e74", "#3a5a6a"],
+			"trim": "#f0ece4", "door": ["#3a4a5a", "#5a3a2a"],
+			"roof": "hip", "pitch": 0.55, "eaves": 0.45, "chimney": 0.5, "plinth": "#7a7672",
+			"shop": {"fascia": ["#2a4a8a", "#8a2a24", "#3a3a3a"], "awning": ["#2a4a8a", "#b83a32"]},
+			"barn": ["#6a6458", "#5a4a3a", "#7a7468"]
+		},
+		"mediterranean": {
+			"name": "Mediterranean",
+			"walls": ["#f4f0e6", "#ecdcb8", "#e2c08a", "#d89a6a", "#f2e4c8"], "roofs": ["#b0583a", "#a04a30", "#c06a44", "#985040"],
+			"trim": "#f6f4ee", "door": ["#4a3022", "#2e5a7a", "#3a5a3a"],
+			"roof": "hip", "pitch": 0.32, "eaves": 0.3, "flat": 0.2, "parapet": true, "chimney": 0.2,
+			"shutters": ["#3a6a4a", "#2e5a7a", "#6a4a2a", "#8a8a78"],
+			"shop": {"fascia": ["#3a3a3a", "#6a2a24", "#2e5a7a"], "awning": ["#2e6a8a", "#8a3a2a", "#d0a020", "#3a6a4a"]},
+			"barn": ["#b89a72", "#8a7a62", "#a87a5a"],
+			"variants": [
+				{"when": {"altitude": ["mountain", "high"]}, "set": {"walls": ["#a49a8a", "#b4aa98", "#9a8e7c"], "flat": 0.0, "pitch": 0.45}}
+			]
+		},
+		"north_africa_middle_east": {
+			"name": "North Africa and the Middle East",
+			"walls": ["#e2cfa6", "#d8bf90", "#ece2cc", "#c8a878"], "roofs": ["#d2bc92", "#c8b088"],
+			"trim": "#e8dcc4", "door": ["#2e6a6a", "#2a4a8a", "#6a3a2a", "#3a6a3a"],
+			"roof": "flat", "pitch": 0.0, "eaves": 0.0, "flat": 1.0, "parapet": true, "tanks": 0.25, "rebar": 0.3,
+			"chimney": 0.0, "bars": true,
+			"shop": {"fascia": ["#2e6a6a", "#8a2a24", "#2a4a8a", "#3a6a3a"], "awning": ["#d0a020", "#2e6a6a", "#b83a32", "#e8e4dc"]},
+			"barn": ["#b8986a", "#a88a62"],
+			"variants": [
+				{"when": {"altitude": ["upland", "mountain", "high"], "koppen": ["Cs", "BS", "Ds"]}, "set": {
+					"walls": ["#a8583a", "#b4664a", "#9a4e34", "#c07a58"], "roofs": ["#9a5038", "#a85a40"], "tanks": 0.05, "rebar": 0.15,
+					"trim": "#c88a68", "plinth": "#8a4430"}}
+			]
+		},
+		"sub_saharan_africa": {
+			"name": "Sub-Saharan Africa",
+			"walls": ["#c8945e", "#b4784a", "#e8dcc0", "#d8c8a0", "#a8c0b8", "#e0b8a0"], "roofs": ["#8a8e90", "#7a5a40", "#9a9ea0", "#6a4a3a"],
+			"trim": "#e8e0cc", "door": ["#2a4a6a", "#6a3a2a", "#3a6a3a"],
+			"roof": "tin", "pitch": 0.25, "eaves": 0.4, "flat": 0.15, "parapet": true, "chimney": 0.0, "hut": 0.25, "bars": true,
+			"shop": {"fascia": ["#d0a020", "#2a6a8a", "#b83a32", "#3a8a3a"], "awning": ["#d0a020", "#b83a32", "#2a6a8a"]},
+			"barn": ["#8a8e90", "#b4784a"],
+			"variants": [
+				{"when": {"density": ["town", "city"]}, "set": {"hut": 0.0}},
+				{"when": {"koppen": ["BW"]}, "set": {"walls": ["#d8bf90", "#c8a878", "#e2cfa6"], "roof": "flat", "flat": 0.8, "hut": 0.1}}
+			]
+		},
+		"north_america": {
+			"name": "North America",
+			"walls": ["#eeeeea", "#c8ccc8", "#a8b8c4", "#d8ccb0", "#e4dcc8", "#7a8a94"], "roofs": ["#3a3a3c", "#4a4440", "#5a5650", "#2e2e30"],
+			"trim": "#f6f6f2", "door": ["#7a2a24", "#2a3a4a", "#efefea"],
+			"roof": "gable", "pitch": 0.5, "eaves": 0.4, "chimney": 0.3, "verandah": 0.5, "plinth": "#8a8680",
+			"shutters": ["#2a3a4a", "#1d3d2a", "#3a3a3c"],
+			"shop": {"fascia": ["#7a2a24", "#2a3a4a", "#3a3a3a", "#efefea"], "awning": ["#2a5a8a", "#7a2a24", "#3a6a3a"]},
+			"barn": ["#8c2a20", "#9a3424", "#7a7468"]
+		},
+		"latin_america": {
+			"name": "Latin America",
+			"walls": ["#d8607a", "#3aa8a8", "#e8c040", "#c86a3a", "#f2ece0", "#8ab848", "#4a7ac0", "#e89a50"], "roofs": ["#9a9488", "#b0583a", "#8a8478"],
+			"trim": "#f2ece0", "door": ["#6a3a22", "#2a4a6a", "#3a6a3a"],
+			"roof": "flat", "pitch": 0.25, "eaves": 0.1, "flat": 0.75, "parapet": true, "tanks": 0.35, "rebar": 0.4,
+			"chimney": 0.0, "bars": true, "plinth": "#7a3a2a",
+			"shop": {"fascia": ["#e8c040", "#d8607a", "#3aa8a8", "#c83a32"], "awning": ["#e8c040", "#c83a32", "#3a8a5a", "#3a7ac0"]},
+			"barn": ["#b0583a", "#9a9488"]
+		},
+		"south_asia": {
+			"name": "South Asia",
+			"walls": ["#e8a8b8", "#90c8e0", "#b8d890", "#f0e8d0", "#e8c870", "#c8a8d8", "#e0e0d8"], "roofs": ["#9a968c", "#8a867c"],
+			"trim": "#f0ece0", "door": ["#2a6a8a", "#6a3a2a", "#3a6a3a"],
+			"roof": "flat", "pitch": 0.0, "eaves": 0.25, "flat": 0.9, "parapet": true, "tanks": 0.6, "rebar": 0.5,
+			"chimney": 0.0, "bars": true, "balcony": 0.3,
+			"shop": {"fascia": ["#d03a32", "#2a6ab0", "#e8b020", "#3a9a4a"], "awning": ["#2a6ab0", "#e8b020", "#d03a32"]},
+			"barn": ["#9a968c", "#b8986a"]
+		},
+		"east_asia": {
+			"name": "East Asia",
+			"walls": ["#ecebe6", "#d8d4c8", "#bfbcb4", "#e6e0d0", "#6a5444"], "roofs": ["#3a4048", "#4a525c", "#2e3238", "#5a6a7a"],
+			"trim": "#5a4434", "door": ["#5a4434", "#3a3a3c"],
+			"roof": "hip", "pitch": 0.48, "eaves": 0.7, "chimney": 0.0, "plinth": "#8a8680",
+			"shop": {"fascia": ["#c8302a", "#2a4a8a", "#efefea", "#2a6a4a"], "awning": ["#c8302a", "#2a4a8a", "#e8e4dc"]},
+			"barn": ["#5a5650", "#6a5444"]
+		},
+		"south_east_asia": {
+			"name": "South-East Asia",
+			"walls": ["#f0e8c8", "#c8e0d0", "#e8d0a0", "#a86a3a", "#d8b8d0", "#e4e4dc"], "roofs": ["#b84a30", "#2a6a8a", "#8a8e90", "#7a4a2a"],
+			"trim": "#f0ece0", "door": ["#6a3a22", "#2a4a6a"],
+			"roof": "gable", "pitch": 0.75, "eaves": 0.8, "chimney": 0.0, "stilts": 0.3, "bars": true,
+			"shop": {"fascia": ["#d03a32", "#e8b020", "#2a6ab0", "#3a9a4a"], "awning": ["#2a6ab0", "#d03a32", "#e8b020"]},
+			"barn": ["#7a4a2a", "#8a8e90"],
+			"variants": [
+				{"when": {"density": ["town", "city"]}, "set": {"stilts": 0.0, "roof": "flat", "flat": 0.6, "parapet": true, "tanks": 0.3}}
+			]
+		},
+		"australia_nz": {
+			"name": "Australia and New Zealand",
+			"walls": ["#f2f0e8", "#e4dcc4", "#c8d4d8", "#d8e0c8", "#b0a896", "#f0e0c0"], "roofs": ["#a8aca8", "#8a2e26", "#2e4a3a", "#3e4248", "#b8bcb8"],
+			"trim": "#f6f6f0", "door": ["#2a3a4a", "#7a2a24", "#efefea"],
+			"roof": "hip", "pitch": 0.38, "eaves": 0.55, "chimney": 0.3, "verandah": 0.6,
+			"shop": {"fascia": ["#2a3a4a", "#efefea", "#7a2a24"], "awning": ["#a8aca8", "#2e4a3a"]},
+			"barn": ["#a8aca8", "#8a2e26", "#7a7468"]
+		}
+	}
+}
