@@ -1,0 +1,23 @@
+{
+ "format": 1,
+ "views": ["road", "side", "back", "vista"],
+ "hour": 11.0,
+ "places": [
+  {"id": "dales", "title": "The Yorkshire Dales", "note": "Wensleydale, Hawes to Askrigg",
+   "from": [54.3045, -2.1975], "to": [54.3135, -2.0775]},
+  {"id": "bavaria", "title": "Bavaria", "note": "Oberammergau to Ettal",
+   "from": [47.5975, 11.0665], "to": [47.5690, 11.0940]},
+  {"id": "atlas", "title": "The High Atlas", "note": "Taddert up towards the Tizi n'Tichka",
+   "from": [31.3290, -7.3880], "to": [31.2900, -7.3780]},
+  {"id": "oaxaca", "title": "Oaxaca", "note": "Santa Lucia del Camino to El Tule",
+   "from": [17.0680, -96.6840], "to": [17.0466, -96.6363]},
+  {"id": "shodoshima", "title": "Shodoshima", "note": "Kusakabe round Uchinomi bay",
+   "from": [34.4760, 134.2620], "to": [34.4780, 134.2900]},
+  {"id": "coromandel", "title": "Coromandel", "note": "Route 25 down the coast south of Coromandel town",
+   "from": [-36.8075, 175.4955], "to": [-36.8578, 175.4473]},
+  {"id": "pyrenees", "title": "The Pyrenees", "note": "La Mongie to the Col du Tourmalet",
+   "from": [42.9100, 0.1800], "to": [42.9080, 0.1450]},
+  {"id": "polder", "title": "A Dutch polder", "note": "The Beemster, Middenbeemster to Zuidoostbeemster",
+   "from": [52.5480, 4.9120], "to": [52.5330, 4.9580]}
+ ]
+}
