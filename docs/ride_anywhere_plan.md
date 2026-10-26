@@ -196,8 +196,11 @@ planner's worker; a plan for an area is checked against its box, so a mate witho
 plan; entering a ride waits for the road a frame at a time instead of holding the game up; the wait at the start
 (`AdventureTrip.crew_waiting`). Tests fetch the Dales cells from a stand-in for GitHub on the machine.
 
-**Status.** Built (`claude/world-served`), and the workflow has baked its first two cells. Still to do: the UK and
-Japan baked; a cap on the cells kept; progress on the TV while an area's cells come.
+**Status.** Built (`claude/world-served`), and the workflow has baked its first two cells. The UK and Japan
+are baked. `claude/cells-kept`: the cells kept are capped (`CellStore.keep`, 400, about a gigabyte with their streams
+and trees: those used longest ago go, never one used this run), the live heights' map tiles too (`HeightTiles.keep`,
+10,000, about a gigabyte), and while a journey's road is got ready the screen says what it's getting, the parts of the
+world and the map tiles counted as they come.
 
 ### Step 4: the world on the TV
 
