@@ -1563,6 +1563,19 @@ func _test_garage_life() -> void:
 		and Shed.items[tank]["fluid"]["age"] == 0.0, "pouring a can of super fills the tank with fresh fuel")
 	check(Shed.items[petrol]["fluid"]["litres"] == 0.0 and Shed.check(me, {"a": "pour", "item": tank}).contains("empty"), "the can is empty afterwards")
 	Shed.request({"a": "bin"})
+	# The bigger cans: 20 litres of the same fuel, which fills a tank and has some left over.
+	Shed.request({"a": "order_part", "part": "unleaded_95_20l"})
+	var big := _newest("unleaded_95_20l")
+	check(big != 0 and absf(float(Shed.items[big]["fluid"]["litres"]) - 20.0) < 0.01 and Money.part_price("unleaded_95_20l") > Money.part_price("unleaded_95") * 3,
+		"a 20 litre can of unleaded arrives full, and costs about four of the little ones")
+	Shed.request({"a": "take", "item": big})
+	Shed.request({"a": "pour", "item": tank})
+	var room := PartsDB.fluid_capacity(Shed.items[tank]["part"])
+	check(Shed.items[tank]["fluid"]["type"] == "unleaded_95" and absf(float(Shed.items[tank]["fluid"]["litres"]) - minf(room, 25.0)) < 0.01
+		and float(Shed.items[big]["fluid"]["litres"]) > 0.0 and BikeBuild.OCTANE.has(Shed.build_of(barn).fuel_type),
+		"pouring it fills the %.0f L tank with plain unleaded and leaves %.1f L in the can" % [room, float(Shed.items[big]["fluid"]["litres"])])
+	Shed.request({"a": "bin"})
+	check(PartsDB.fluid_capacity("empty_jerry_can_20l") == 20.0 and PartsDB.fluid_capacity("race_fuel_25l") == 25.0, "there's a 20 litre empty can and a 25 litre drum of race fuel")
 	# Oil: draining needs a pan, crouching, and an engine; low oil hurts.
 	var ranger := _bike_named("Rusty Ranger")
 	var block: int = Shed.item_on(ranger, "engine")

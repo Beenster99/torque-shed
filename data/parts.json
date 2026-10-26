@@ -18624,6 +18624,25 @@
 				0.3
 			]
 		},
+		"unleaded_95_20l": {
+			"name": "Unleaded petrol (95), 20 litres",
+			"description": "Pump fuel in a big 20 litre jerry can: a few tank-fulls for the shed.",
+			"container": "Jerry can",
+			"litres": 20.0,
+			"power": 1.0,
+			"economy": 1.0,
+			"color": [
+				0.75,
+				0.12,
+				0.08
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.3
+			],
+			"grade": "unleaded_95"
+		},
 		"super_98": {
 			"name": "Super unleaded (98)",
 			"description": "Higher octane. A touch more power and a little further per tank.",
@@ -18641,6 +18660,25 @@
 				0.7,
 				0.35
 			]
+		},
+		"super_98_20l": {
+			"name": "Super unleaded (98), 20 litres",
+			"description": "Higher octane in a big 20 litre jerry can.",
+			"container": "Jerry can",
+			"litres": 20.0,
+			"power": 1.03,
+			"economy": 1.04,
+			"color": [
+				0.1,
+				0.35,
+				0.15
+			],
+			"liquid": [
+				0.8,
+				0.7,
+				0.35
+			],
+			"grade": "super_98"
 		},
 		"race_fuel": {
 			"name": "Race fuel (102)",
@@ -18660,11 +18698,49 @@
 				0.9
 			]
 		},
+		"race_fuel_25l": {
+			"name": "Race fuel (102), 25 litres",
+			"description": "Leaded race fuel in a 25 litre drum, for a race weekend.",
+			"container": "Race fuel drum",
+			"litres": 25.0,
+			"power": 1.07,
+			"economy": 0.92,
+			"color": [
+				0.1,
+				0.25,
+				0.75
+			],
+			"liquid": [
+				0.3,
+				0.45,
+				0.9
+			],
+			"grade": "race_fuel"
+		},
 		"empty_jerry_can": {
 			"name": "Empty jerry can",
 			"description": "For draining a tank. Holds 10 litres.",
 			"container": "Jerry can",
 			"litres": 10.0,
+			"empty": true,
+			"power": 1.0,
+			"economy": 1.0,
+			"color": [
+				0.55,
+				0.55,
+				0.5
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.3
+			]
+		},
+		"empty_jerry_can_20l": {
+			"name": "Empty 20 litre jerry can",
+			"description": "For draining a tank, or carrying a lot of fuel. Holds 20 litres.",
+			"container": "Jerry can",
+			"litres": 20.0,
 			"empty": true,
 			"power": 1.0,
 			"economy": 1.0,

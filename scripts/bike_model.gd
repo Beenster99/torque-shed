@@ -7101,8 +7101,12 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 	var pieces := []   # [mesh, material, position]
 	match str(p.get("container", "")):
 		"Jerry can":
-			var big := float(p["litres"]) > 6.0
-			size = Vector3(0.14 if big else 0.11, 0.38 if big else 0.3, 0.3 if big else 0.24)
+			var litres := float(p["litres"])
+			size = Vector3(0.11, 0.3, 0.24)
+			if litres > 15.0:
+				size = Vector3(0.17, 0.47, 0.35)
+			elif litres > 6.0:
+				size = Vector3(0.14, 0.38, 0.3)
 			pieces = [[_box_mesh(size), see, Vector3(0.0, size.y * 0.5, 0.0)],
 				[_box_mesh(Vector3(0.03, 0.04, size.z * 0.6)), body, Vector3(0.0, size.y + 0.02, 0.0)],
 				[_cyl_mesh(0.022, 0.05), dark, Vector3(0.0, size.y + 0.01, size.z * 0.38)]]
@@ -7137,10 +7141,12 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 				for i in n:
 					pieces.append([_box_mesh(Vector3(0.006, 0.004, 0.05)), liquid, Vector3(-0.07 + i * 0.012, 0.058, 0.0)])
 		"Race fuel drum":
-			size = Vector3(0.2, 0.3, 0.2)
-			pieces = [[_cyl_mesh(0.1, 0.3), see, Vector3(0.0, 0.15, 0.0)], [_cyl_mesh(0.02, 0.03), dark, Vector3(0.05, 0.315, 0.0)]]
+			# A 25 litre drum stands taller and wider than the 5 litre one.
+			var k := 1.0 if float(p["litres"]) < 10.0 else 1.6
+			size = Vector3(0.2, 0.3, 0.2) * k
+			pieces = [[_cyl_mesh(0.1 * k, 0.3 * k), see, Vector3(0.0, 0.15 * k, 0.0)], [_cyl_mesh(0.02 * k, 0.03 * k), dark, Vector3(0.05 * k, 0.315 * k, 0.0)]]
 			if level > 0.01:
-				pieces.append([_cyl_mesh(0.094, 0.29 * level), liquid, Vector3(0.0, 0.005 + 0.145 * level, 0.0)])
+				pieces.append([_cyl_mesh(0.094 * k, 0.29 * k * level), liquid, Vector3(0.0, (0.005 + 0.145 * level) * k, 0.0)])
 		"Oil bottle":
 			size = Vector3(0.11, 0.3, 0.17)
 			pieces = [[_box_mesh(Vector3(0.11, 0.26, 0.17)), see, Vector3(0.0, 0.13, 0.0)],

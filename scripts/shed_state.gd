@@ -4214,7 +4214,7 @@ func _transfer(from: Dictionary, into: Dictionary) -> float:
 	if moved <= 0.0:
 		return 0.0
 	var before := float(dst["litres"])
-	var src_type := str(src["type"]) if str(src["type"]) != "" else str(from["part"])
+	var src_type := PartsDB.fluid_grade(str(src["type"]) if str(src["type"]) != "" else str(from["part"]))
 	if before <= 0.001 or moved >= before:
 		dst["type"] = src_type
 	dst["age"] = (float(dst.get("age", 0.0)) * before + float(src.get("age", 0.0)) * moved) / (before + moved)
@@ -4995,7 +4995,7 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 		items[id]["lube_type"] = ""
 	if PartsDB.fluid_kind(part) != "":
 		var full: bool = PartsDB.is_fluid(part) and not PartsDB.get_part(part).get("empty", false)
-		items[id]["fluid"] = {"type": part if full else "", "litres": PartsDB.fluid_capacity(part) if full else 0.0, "age": 0.0}
+		items[id]["fluid"] = {"type": PartsDB.fluid_grade(part) if full else "", "litres": PartsDB.fluid_capacity(part) if full else 0.0, "age": 0.0}
 	return id
 
 
