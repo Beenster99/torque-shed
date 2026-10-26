@@ -175,8 +175,14 @@ func _night_stop(trip: AdventureTrip) -> bool:
 	var view: AdventureNeedsView = trip.needs
 	var bike_id := Shed.riding(Shed.me())
 	await _until(func(): return main.bike != null and Time.get_ticks_msec() - main._mounted_at > 800, 5.0)
-	main.bike.linear_velocity = Vector3.ZERO
-	main._get_off()
+	# Brought to a stop, then off: a bike still rolling from the ride in (or down in a heap) won't let
+	# its rider off on the first try, so keep at it for a moment.
+	var off := func() -> bool:
+		if main.bike != null:
+			main.bike.linear_velocity = Vector3.ZERO
+			main._get_off()
+		return main.bike == null
+	await _until(off, 5.0)
 	Progress.set_money(400)
 	await _ticks(3)
 	main.walker.place(bed.global_transform)
