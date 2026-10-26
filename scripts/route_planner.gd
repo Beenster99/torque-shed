@@ -16,6 +16,32 @@ const CHUNK := 128.0
 const RUN_OUT := 600.0
 const SNAP_M := 800.0
 const MIN_RADIUS := 10.0
+## How far (m, about: a Gaussian's sigma) the road's line is faired, by its class (fair_line): enough that no mapped
+## corner stays a corner, every bend a curve as wide as such a road would have, a street's tighter than a main road's.
+## A class not here takes FAIR_DEFAULT.
+const FAIR := {"motorway": 18.0, "trunk": 16.0, "primary": 13.0, "secondary": 11.0, "tertiary": 9.0, "unclassified": 7.0,
+	"residential": 5.0, "living_street": 4.0, "track": 6.0}
+const FAIR_DEFAULT := 7.0
+## A mapped corner turning more than this (radians) is first rounded into an arc this many times the road's fairing
+## (_fillet).
+const FILLET_TURN := 0.25
+const FILLET_RADIUS := 1.6
+## A bend the fairing leaves under MIN_RADIUS is faired again this many times as widely, for at most FAIR_ROUNDS rounds.
+const FAIR_WIDEN := 1.35
+const FAIR_ROUNDS := 10
+## The most (m) a bend is faired (any wider and a hairpin's two legs would be averaged into one another: what is still too
+## tight is pulled open instead, _relax).
+const FAIR_MOST := 30.0
+## The widths (m) the line is faired at (fair_line blends between them), and over how many points (2 m apart) either side
+## a change of width eases in.
+const FAIR_LEVELS: Array[float] = [3.0, 4.5, 6.5, 9.0, 13.0, 18.0, 24.0, 30.0]
+const FAIR_EASE := 10
+## A fork's other way starts at least FORK_LEAD knots before its junction with the main road (and ends as far after the
+## other), keeping the main road's own knots until FORK_EASE knots short of the junction (compose_way).
+const FORK_LEAD := 12
+const FORK_EASE := 8
+## How many points (2 m apart) of the way into a turning place count as part of it (only lightly faired).
+const TURN_MARK := 40
 const MAX_GRADE := 0.15
 ## Rounds of smoothing before it gives up on a bend (a needle of a corner may never open to the full radius; the road is
 ## still ridable, and the time spent is bounded).
@@ -23,7 +49,7 @@ const MAX_ROUNDS := 3000
 ## An out-and-back this long (m each way) or shorter, to a pin on a dead-end street, is left out of the route.
 const SPUR_M := 300.0
 ## The version of the planner, in every plan's hash: a change to how routes are made changes the hash.
-const VERSION := 7
+const VERSION := 8
 ## Rivers and streams this near the road (m, about) go into the pack.
 const STREAM_NEAR := 700.0
 ## A bridge's or a tunnel's ends are matched to the road within this (m) of them.
@@ -177,8 +203,8 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	var raw: PackedVector2Array = line["pts"]
 	var owner: PackedInt32Array = line["owner"]
 	var turns: Array = line["turns"]
-	# The road: smoothed, as knots.
-	var knots := smooth_line(raw)
+	# The road: faired and smoothed, as knots.
+	var knots := smooth_line(raw, MIN_RADIUS, fair_of(region, owner))
 	parts["smooth"] = Time.get_ticks_msec() - t0
 	if knots.size() < 12:
 		return _fail("That route is too short to ride.")
@@ -614,26 +640,44 @@ static func _bend(px: PackedFloat64Array, pz: PackedFloat64Array, i: int) -> flo
 	return 2.0 * cross / maxf(ab * bc * ac, 1e-9)
 
 
-## A smooth road through `pts`: knots STEP apart, no bend tighter than MIN_RADIUS. Only bends tighter than the
-## limit are touched (each round pulls their points, and a few either side, towards the middle of their neighbours,
-## until none is too tight) so gentle roads stay exactly as mapped; the ends stay put. Works only where the last
-## round changed something, so a long road costs little.
-static func smooth_line(pts: PackedVector2Array, min_radius := MIN_RADIUS) -> PackedVector2Array:
+## A smooth road through `pts`: knots STEP apart, faired (fair_line: `fair` is how far, in m, at each of `pts`; empty,
+## FAIR_DEFAULT all along) so no mapped corner stays a corner, then no bend tighter than `min_radius` (each round pulls
+## a too-tight bend's points, and a few either side, towards the middle of their neighbours, until none is); the ends
+## stay put. The rounds work only where the last one changed something, so a long road costs little.
+static func smooth_line(pts: PackedVector2Array, min_radius := MIN_RADIUS, fair := PackedFloat64Array()) -> PackedVector2Array:
 	var rx := PackedFloat64Array()
 	var rz := PackedFloat64Array()
-	for p in pts:
-		rx.append(p.x)
-		rz.append(p.y)
+	var rf := PackedFloat64Array()
+	for i in pts.size():
+		rx.append(pts[i].x)
+		rz.append(pts[i].y)
+		rf.append(fair[i] if fair.size() == pts.size() else FAIR_DEFAULT)
+	_fillet(rx, rz, rf, min_radius)
+	fair = rf
 	var fine := resample(rx, rz, 2.0)
 	var opened := _open_reversals(fine[0], fine[1], min_radius)
 	var px: PackedFloat64Array = opened[0]
 	var pz: PackedFloat64Array = opened[1]
 	var n := px.size()
 	var limit := 1.0 / min_radius
-	# A sharp tip (an out-and-back turned round at its end) is opened out first with a wide reach, which would take
-	# thousands of small rounds otherwise; then the small rounds finish the job.
+	var along := _fair_along(rx, rz, fair, n)
+	# The most each point may be faired: not at all where it is to be kept as it is (fair 0), and only lightly round a
+	# turning place (wider and its way out and way back would be averaged into one another).
+	var cap := PackedFloat64Array()
+	cap.resize(n)
+	var turning: PackedByteArray = opened[2]
+	for i in n:
+		cap[i] = 0.0 if along[i] <= 0.0 else (FAIR_LEVELS[0] if turning[i] != 0 else INF)
+	_fair_to_radius(px, pz, along, limit, cap)
+	# What is left too tight (a needle of a corner the fairing couldn't open within its rounds) is pulled open.
 	_relax(px, pz, limit * 3.0, 3)
+	_relax(px, pz, limit, 2)
 	_relax(px, pz, limit, 1)
+	# And faired lightly once more, so a bend that had to be pulled open flows like the rest (its radius a shade under).
+	var light := PackedFloat64Array()
+	light.resize(n)
+	light.fill(FAIR_LEVELS[0])
+	fair_line(px, pz, light, cap)
 	var knots := resample(px, pz, STEP, true)
 	var kx: PackedFloat64Array = knots[0]
 	var kz: PackedFloat64Array = knots[1]
@@ -643,14 +687,207 @@ static func smooth_line(pts: PackedVector2Array, min_radius := MIN_RADIUS) -> Pa
 	return out
 
 
+## Rounds each corner the map drew (a point where the line turns by more than FILLET_TURN) into a circular arc, in
+## place: as wide as the road's class would have (FILLET_RADIUS times its fairing, `fair`, and no tighter than
+## 1.2 `min_radius`, clear of the limit), or as wide as the line either side leaves room for (half of each piece to the next point), its
+## points 2 m apart. `fair` gets the corner's own for the new points. Points one on another are left as they are.
+static func _fillet(rx: PackedFloat64Array, rz: PackedFloat64Array, fair: PackedFloat64Array, min_radius: float) -> void:
+	var n := rx.size()
+	if n < 3:
+		return
+	var ox := PackedFloat64Array([rx[0]])
+	var oz := PackedFloat64Array([rz[0]])
+	var of := PackedFloat64Array([fair[0]])
+	for i in range(1, n - 1):
+		var p := Vector2(rx[i], rz[i])
+		var a := Vector2(rx[i - 1], rz[i - 1])
+		var b := Vector2(rx[i + 1], rz[i + 1])
+		var la := p.distance_to(a)
+		var lb := p.distance_to(b)
+		var turn := (p - a).angle_to(b - p) if la > 0.01 and lb > 0.01 else 0.0
+		if absf(turn) < FILLET_TURN or absf(turn) > PI - 0.2 or (fair[i - 1] <= 0.0 and fair[i] <= 0.0 and fair[i + 1] <= 0.0):
+			ox.append(p.x)
+			oz.append(p.y)
+			of.append(fair[i])
+			continue
+		var r := maxf(min_radius * 1.2, fair[i] * FILLET_RADIUS)
+		var half := tan(absf(turn) * 0.5)
+		var t := minf(r * half, minf(la, lb) * 0.5)
+		r = t / half
+		var da := (p - a) / la
+		var db := (b - p) / lb
+		var start := p - da * t
+		# The arc's middle is `r` off the line to the side it turns to.
+		var normal := Vector2(-da.y, da.x) * signf(turn)
+		var centre := start + normal * r
+		var from := start - centre
+		var steps := maxi(2, int(ceil(r * absf(turn) / 2.0)))
+		for q in steps + 1:
+			var at := centre + from.rotated(turn * float(q) / steps)
+			ox.append(at.x)
+			oz.append(at.y)
+			of.append(fair[i])
+	ox.append(rx[n - 1])
+	oz.append(rz[n - 1])
+	of.append(fair[n - 1])
+	rx.resize(ox.size())
+	rz.resize(oz.size())
+	fair.resize(of.size())
+	for i in ox.size():
+		rx[i] = ox[i]
+		rz[i] = oz[i]
+		fair[i] = of[i]
+
+
+## How far (m) to fair the road at each of the line's points (FAIR, by the class of the road each is on; `owner` is the
+## edge of each point, -1 for none).
+static func fair_of(region: RealRegion, owner: PackedInt32Array) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	out.resize(owner.size())
+	for i in owner.size():
+		out[i] = float(FAIR.get(region.class_of(owner[i]), FAIR_DEFAULT)) if owner[i] >= 0 else FAIR_DEFAULT
+	return out
+
+
+## The fairing of each of `n` points 2 m apart along the line through (rx, rz), from `fair` at each of those points (by
+## how far along it each is; empty, FAIR_DEFAULT all along). A change of road eases over a few points.
+static func _fair_along(rx: PackedFloat64Array, rz: PackedFloat64Array, fair: PackedFloat64Array, n: int) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	out.resize(n)
+	if fair.size() != rx.size() or rx.size() < 2:
+		out.fill(FAIR_DEFAULT)
+		return out
+	var j := 0
+	var run := 0.0
+	for i in n:
+		var at := i * 2.0
+		while j < rx.size() - 2 and run + Vector2(rx[j + 1] - rx[j], rz[j + 1] - rz[j]).length() < at:
+			run += Vector2(rx[j + 1] - rx[j], rz[j + 1] - rz[j]).length()
+			j += 1
+		out[i] = minf(fair[j], fair[j + 1])   # (at a change of road, the tighter of the two)
+	return out
+
+
+## Fairs the line through points (px, pz), 2 m apart, in place: each point moved to a weighted average of those round
+## it, near enough a Gaussian `fair[i]` m wide at point i, so every corner the map drew becomes a curve and the heading
+## never jumps from one point to the next. Gentle bends hardly move (a 50 m bend by under a metre faired 12 m); the
+## ends stay put. The line is faired whole at each of FAIR_LEVELS (three passes of a moving average: no wobbles where
+## the width changes, as a width changing point by point would make) and each point blended between the two levels
+## round its own width; the width eases along the road (FAIR_EASE) where it changes.
+static func fair_line(px: PackedFloat64Array, pz: PackedFloat64Array, fair: PackedFloat64Array, cap := PackedFloat64Array()) -> void:
+	var n := px.size()
+	if n < 5:
+		return
+	var sig := fair.duplicate()
+	var ease := PackedInt32Array()
+	ease.resize(n)
+	for i in n:
+		ease[i] = mini(FAIR_EASE, mini(i, n - 1 - i))
+	_box_pass(sig, ease)
+	if cap.size() == n:
+		for i in n:
+			sig[i] = minf(sig[i], cap[i])
+	var hi := -INF
+	for v in sig:
+		hi = maxf(hi, v)
+	# (level 0 is the line as it is: a point faired less than the first width blends from there)
+	var levels := PackedFloat64Array([0.0])
+	for L: float in FAIR_LEVELS:
+		if levels[levels.size() - 1] >= hi:
+			break
+		levels.append(L)
+	var lx: Array = []
+	var lz: Array = []
+	for L in levels:
+		if L <= 0.0:
+			lx.append(px.duplicate())
+			lz.append(pz.duplicate())
+			continue
+		var w := PackedInt32Array()
+		w.resize(n)
+		var k := maxi(int(round(sqrt(L * L / 4.0 + 0.25) - 0.5)), 0)   # (three passes of a box k points either side: sigma sqrt(k (k + 1)) points)
+		for i in n:
+			w[i] = mini(k, mini(i, n - 1 - i))
+		var ax := px.duplicate()
+		var az := pz.duplicate()
+		for pass_k in 3:
+			_box_pass(ax, w)
+			_box_pass(az, w)
+		lx.append(ax)
+		lz.append(az)
+	for i in range(1, n - 1):
+		var v := clampf(sig[i], levels[0], levels[levels.size() - 1])
+		var j := 0
+		while j < levels.size() - 2 and levels[j + 1] < v:
+			j += 1
+		var t := 0.0 if levels.size() < 2 or levels[j + 1] <= levels[j] else clampf((v - levels[j]) / (levels[j + 1] - levels[j]), 0.0, 1.0)
+		var j1 := mini(j + 1, levels.size() - 1)
+		px[i] = lerpf((lx[j] as PackedFloat64Array)[i], (lx[j1] as PackedFloat64Array)[i], t)
+		pz[i] = lerpf((lz[j] as PackedFloat64Array)[i], (lz[j1] as PackedFloat64Array)[i], t)
+
+
+## Fairs the line (px, pz) in place (fair_line, `fair` m at each point), and where that leaves a bend tighter than
+## `limit` (1 / radius) fairs it again from the line as it was, more widely there (FAIR_WIDEN times, easing back to
+## the road's own fairing either side), until no bend is: so the tightest bends are curves as smooth as the rest, the
+## way into them as long as they need. FAIR_ROUNDS at most.
+static func _fair_to_radius(px: PackedFloat64Array, pz: PackedFloat64Array, fair: PackedFloat64Array, limit: float,
+		cap := PackedFloat64Array()) -> void:
+	var n := px.size()
+	var ox := px.duplicate()
+	var oz := pz.duplicate()
+	var sig := fair.duplicate()
+	for round_k in FAIR_ROUNDS:
+		for i in n:
+			px[i] = ox[i]
+			pz[i] = oz[i]
+		fair_line(px, pz, sig, cap)
+		var widen := PackedFloat64Array()
+		widen.resize(n)
+		widen.fill(0.0)
+		var any := false
+		for i in range(2, n - 2):
+			if _bend(px, pz, i) > limit:
+				any = true
+				# Widen it over the bend and as far again either side (the sigma's reach), in points 2 m apart.
+				var reach := int(sig[i] * 1.5) + 4
+				for j in range(maxi(i - reach, 0), mini(i + reach, n - 1) + 1):
+					widen[j] = maxf(widen[j], minf(sig[i] * FAIR_WIDEN, FAIR_MOST))
+		if not any:
+			return
+		# Eased in and out (a moving average of the widening), never narrower than it was.
+		var w := PackedInt32Array()
+		w.resize(n)
+		for i in n:
+			w[i] = mini(6, mini(i, n - 1 - i))
+		_box_pass(widen, w)
+		for i in n:
+			sig[i] = maxf(sig[i], widen[i])
+
+
+## One pass of a moving average over `c` in place, `w[i]` points either side of point i.
+static func _box_pass(c: PackedFloat64Array, w: PackedInt32Array) -> void:
+	var n := c.size()
+	var sum := PackedFloat64Array()
+	sum.resize(n + 1)
+	sum[0] = 0.0
+	for i in n:
+		sum[i + 1] = sum[i] + c[i]
+	for i in range(1, n - 1):
+		var k := w[i]
+		if k > 0:
+			c[i] = (sum[i + k + 1] - sum[i - k]) / (2 * k + 1)
+
+
 ## Where the line goes out along a road and comes back the same way (a pin up a long dead-end road: its two halves lie on
 ## one another, and smoothing would only shorten the tip back), a turning place is made: a half circle of radius
 ## `radius` round the tip, and the way back lies alongside the way out (`2 * radius` to its right) and eases back onto
-## the road over the next 80 m. `px`, `pz` are 2 m apart; returns [xs, zs].
+## the road over the next 80 m. `px`, `pz` are 2 m apart; returns [xs, zs, turning: 1 for each point of a turning place
+## and the ways in and out of it].
 static func _open_reversals(px: PackedFloat64Array, pz: PackedFloat64Array, radius: float) -> Array:
 	var n := px.size()
 	var ox := PackedFloat64Array()
 	var oz := PackedFloat64Array()
+	var turning := PackedByteArray()
 	var i := 0
 	var lead := maxi(int(ceil(radius / 2.0)), 2)
 	var ease_pts := 40
@@ -664,12 +901,17 @@ static func _open_reversals(px: PackedFloat64Array, pz: PackedFloat64Array, radi
 		if not tip:
 			ox.append(px[i])
 			oz.append(pz[i])
+			turning.append(0)
 			i += 1
 			continue
-		# The way in ends `lead` points before the tip (those were already written: take them back off).
+		# The way in ends `lead` points before the tip (those were already written: take them back off), and the
+		# turning place's way in is marked as part of it (TURN_MARK points back).
 		var a := i - lead
 		ox.resize(ox.size() - lead)
 		oz.resize(oz.size() - lead)
+		turning.resize(ox.size())
+		for q in range(maxi(turning.size() - TURN_MARK, 0), turning.size()):
+			turning[q] = 1
 		var d := Vector2(px[a] - px[a - 4], pz[a] - pz[a - 4]).normalized()
 		var right := Vector2(-d.y, d.x)
 		var centre := Vector2(px[a], pz[a]) + right * radius
@@ -679,6 +921,7 @@ static func _open_reversals(px: PackedFloat64Array, pz: PackedFloat64Array, radi
 			var at := centre + from.rotated(ang)
 			ox.append(at.x)
 			oz.append(at.y)
+			turning.append(1)
 		# The way back, alongside, easing onto the road.
 		var back := i + lead
 		var shift := right * 2.0 * radius
@@ -687,8 +930,9 @@ static func _open_reversals(px: PackedFloat64Array, pz: PackedFloat64Array, radi
 			var off := shift * (1.0 - t)
 			ox.append(px[j] + off.x)
 			oz.append(pz[j] + off.y)
+			turning.append(1)
 		i = mini(back + ease_pts + 1, n)
-	return [ox, oz]
+	return [ox, oz, turning]
 
 
 ## Rounds of pulling the points of any bend tighter than `limit` (1 / radius), and `reach * 3` points either side, towards
@@ -1383,7 +1627,7 @@ static func plan_forks(region: RealRegion, steps: Array[Vector3i], xs: PackedFlo
 					continue
 				if _doubles_back(region, alt, xs, zs, kn[ja], kn[jb]):
 					continue
-				var trial := {"i0": (kn[ja] / CHUNK_KNOTS) * CHUNK_KNOTS, "i1": ceili(float(kn[jb]) / CHUNK_KNOTS) * CHUNK_KNOTS,
+				var trial := {"i0": _fork_start(kn[ja]), "i1": _fork_end(kn[jb]),
 					"ka": kn[ja], "kb": kn[jb], "alt": alt}
 				if int(trial["i1"]) >= xs.size() - 1:
 					continue
@@ -1398,8 +1642,8 @@ static func plan_forks(region: RealRegion, steps: Array[Vector3i], xs: PackedFlo
 			continue
 		var ja: int = found["ja"]
 		var jb: int = found["jb"]
-		var i0 := (kn[ja] / CHUNK_KNOTS) * CHUNK_KNOTS
-		var i1 := ceili(float(kn[jb]) / CHUNK_KNOTS) * CHUNK_KNOTS
+		var i0 := _fork_start(kn[ja])
+		var i1 := _fork_end(kn[jb])
 		if i1 >= xs.size() - 1 or i1 - i0 < CHUNK_KNOTS or (not out.is_empty() and i0 <= int(out[out.size() - 1]["i1"]) + CHUNK_KNOTS * 8):
 			at += 3000.0
 			continue
@@ -1446,6 +1690,16 @@ static func resample_count(pts: PackedVector2Array, n: int) -> PackedVector2Arra
 	return out
 
 
+## Where a fork's other way starts (a chunk boundary FORK_LEAD knots or more before the junction at knot `ka`, so it
+## has room to ease off the main road) and where it ends (as far after the junction at `kb`).
+static func _fork_start(ka: int) -> int:
+	return maxi((ka - FORK_LEAD) / CHUNK_KNOTS, 0) * CHUNK_KNOTS
+
+
+static func _fork_end(kb: int) -> int:
+	return ceili(float(kb + FORK_LEAD) / CHUNK_KNOTS) * CHUNK_KNOTS
+
+
 ## The other way's line ({pts: n a whole number of chunks and one, raw: the composed points, owner: the edge each came
 ## along}): from the main road's knot i0, along the main road to the junction where the two divide, along the other
 ## way to where they meet, and on along the main road to knot i1; smoothed like the main road and stretched a little
@@ -1469,15 +1723,24 @@ static func compose_way(region: RealRegion, fork: Dictionary, xs: PackedFloat64A
 	for k in range(kb, i1 + 1):
 		raw.append(Vector2(xs[k], zs[k]))
 		owner.append(main_owner[k] if k < main_owner.size() else -1)
-	var smooth := smooth_line(raw)
+	# The main road's own knots at either end, already faired, are kept as they are (fair 0) until FORK_EASE knots short
+	# of the junction, then faired more and more to it, so the way eases off the main road there and back onto it.
+	var fair := fair_of(region, owner)
+	var tail := raw.size() - 1 - (i1 - kb)
+	for k in raw.size():
+		var to_junction := (ka - i0) - k if k <= ka - i0 else (k - tail if k >= tail else -1)
+		if to_junction >= 0:
+			fair[k] *= clampf(1.0 - float(to_junction) / FORK_EASE, 0.0, 1.0)
+	var smooth := smooth_line(raw, MIN_RADIUS, fair)
 	var end := Vector2(xs[i1], zs[i1])
 	if smooth[smooth.size() - 1].distance_to(end) > 0.25:
 		smooth.append(end)
 	var length := _length_of(smooth)
 	var n_chunks := maxi(1, roundi(length / (STEP * CHUNK_KNOTS)))
 	var way := resample_count(smooth, n_chunks * CHUNK_KNOTS + 1)
+	var m := way.size() - 1
 	way[0] = Vector2(xs[i0], zs[i0])
-	way[way.size() - 1] = end
+	way[m] = end
 	return {"pts": way, "raw": raw, "owner": owner}
 
 

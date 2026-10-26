@@ -335,6 +335,25 @@ func test_traffic_turns() -> void:
 	check(off and int(signalled["ind"]) == -1 and pos.x < -20.0, "a car indicates left, turns off and drives away down the side road (%.0f m out)" % -pos.x)
 	var gone := _step(stream, 20.0, func(): return stream.find(int(car["seed"])).is_empty())
 	check(gone, "and is gone at its end, out of sight")
+	# The bend off the lane and onto the side road (and back) is one smooth curve: it leaves the lane along it, meets
+	# the side road along it, and turns a little at a time between (no snapping round at either end).
+	for out: bool in [true, false]:
+		var lane_s := 500.0 + (-1.0 if out else 1.0) * TrafficStream._bend_reach(stream.junctions[0])
+		var lane_fwd: Vector3 = stream._place({"s": lane_s, "dir": 1, "kind": "hatchback"})[1]
+		var worst := 0.0
+		var prev := Vector3.ZERO
+		var ends := []
+		var t := -TrafficStream.TURN_LEN
+		while t <= 4.0:
+			var fwd: Vector3 = stream._place_arm({"arm": 0, "k": 0, "t": t, "out": out, "dir": 1, "kind": "hatchback"})[1]
+			if prev != Vector3.ZERO:
+				worst = maxf(worst, rad_to_deg(prev.angle_to(fwd)))
+			if is_equal_approx(t, -TrafficStream.TURN_LEN):
+				ends.append(rad_to_deg(fwd.angle_to(lane_fwd)))
+			prev = fwd
+			t += 0.25
+		check(worst < 8.0 and ends[0] < 3.0, "turning %s a side road, the car turns smoothly: at most %.1f deg every 25 cm, %.1f deg off the lane where it leaves it"
+			% ["off down" if out else "out of", worst, ends[0]])
 	# Turning right waits for the oncoming car to pass.
 	var right: Dictionary = stream.find(stream.spawn_at("saloon", 482.0, 1, 5.0))
 	right["seen"] = 0

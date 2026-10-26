@@ -825,6 +825,74 @@ func _settle(cond: Callable) -> void:
 ## Bridges (tools/span_bake.py's spans): Hawes to Leyburn crosses becks and the Ure on stone bridges. The planner finds
 ## the road's bridges, lays each straight from end to end over what it crosses, and they're in the plan's hash; the ride
 ## leaves the land under a deck as it is and builds the bridge, parapets and all.
+## No corners: the road's heading turns smoothly from one knot to the next all along a ride (RoutePlanner.fair_line,
+## by the road's class), so a mapped corner is a curve and the traffic never snaps round one. Measured as the most the
+## turn changes from one knot to the next (the kink) and the sharpest bend, on both bundled tours and a fork's way.
+func test_corners() -> void:
+	for region_id in ["dales", "shodoshima"]:
+		var p := AdventurePlans.pack_for(AdventurePlans.tour(region_id))
+		var k := _kinks(p.x, p.z)
+		print("CORNERS %s: kink %.2f deg (99.9%% under %.2f), sharpest bend %.1f m, %d knots" % [region_id, k[0], k[1], k[2], p.x.size()])
+		check(k[1] < KINK_MAX and k[0] < KINK_WORST and k[2] >= RoutePlanner.MIN_RADIUS * 0.9,
+			"%s: no corners on the road, the turn changing at most %.2f deg from one knot to the next (99.9%% of knots; the worst %.2f), no bend under %.0f m (%.1f)"
+			% [region_id, k[1], k[0], RoutePlanner.MIN_RADIUS, k[2]])
+		for f: Dictionary in p.forks:
+			var kw := _kinks(PackedFloat64Array(f["way"]["x"]), PackedFloat64Array(f["way"]["z"]))
+			check(kw[0] < KINK_WORST, "%s: and a fork's other way has none either (the worst %.2f deg)" % [region_id, kw[0]])
+			break
+	# A right-angled corner, as a street's map has it, comes out a curve.
+	var corner := PackedVector2Array([Vector2(0, 0), Vector2(0, -100), Vector2(100, -100)])
+	var line := RoutePlanner.smooth_line(corner, RoutePlanner.MIN_RADIUS, PackedFloat64Array([5.0, 5.0, 5.0]))
+	var cx := PackedFloat64Array()
+	var cz := PackedFloat64Array()
+	for q in line:
+		cx.append(q.x)
+		cz.append(q.y)
+	var kc := _kinks(cx, cz)
+	var cut := Vector2(0, -100).distance_to(_nearest_on(line, Vector2(0, -100)))
+	check(kc[0] < 3.0 and kc[2] >= RoutePlanner.MIN_RADIUS * 0.9 and cut > 2.0 and cut < 7.0,
+		"a street's right-angled corner comes out a curve (kink %.2f deg, radius %.1f m, %.1f m inside the corner)" % [kc[0], kc[2], cut])
+
+
+## The most a turn may change from one knot to the next (degrees) and be no corner: at 99.9% of the knots, and at the
+## worst (the way into a hairpin at the tightest radius; before the fairing, 16 and 19 on the Dales' tour).
+const KINK_MAX := 2.5
+const KINK_WORST := 7.0
+
+
+## [the worst kink (deg), the 99.9th percentile kink, the sharpest bend's radius (m)] of the line through knots (xs, zs):
+## a kink is how much the turn at a knot differs from the turns either side of it.
+static func _kinks(xs: PackedFloat64Array, zs: PackedFloat64Array) -> Array:
+	var n := xs.size()
+	var turn := PackedFloat64Array()
+	for i in range(1, n - 1):
+		var a := Vector2(xs[i] - xs[i - 1], zs[i] - zs[i - 1])
+		var b := Vector2(xs[i + 1] - xs[i], zs[i + 1] - zs[i])
+		turn.append(a.angle_to(b) if a.length() > 0.01 and b.length() > 0.01 else 0.0)
+	var kinks := PackedFloat64Array()
+	var sharpest := INF
+	for i in range(1, turn.size() - 1):
+		kinks.append(rad_to_deg(absf(turn[i] - (turn[i - 1] + turn[i + 1]) * 0.5)))
+	for i in range(2, turn.size() - 2):
+		var over := absf(turn[i - 2] + turn[i - 1] + turn[i] + turn[i + 1] + turn[i + 2])
+		if over > 1e-4:
+			sharpest = minf(sharpest, 5.0 * Vector2(xs[i + 1] - xs[i], zs[i + 1] - zs[i]).length() / over)
+	var sorted := kinks.duplicate()
+	sorted.sort()
+	var worst := sorted[sorted.size() - 1] if not sorted.is_empty() else 0.0
+	var p999 := sorted[int(sorted.size() * 0.999)] if not sorted.is_empty() else 0.0
+	return [worst, p999, sharpest]
+
+
+static func _nearest_on(line: PackedVector2Array, p: Vector2) -> Vector2:
+	var best := line[0]
+	for i in line.size() - 1:
+		var q := Geometry2D.get_closest_point_to_segment(p, line[i], line[i + 1])
+		if q.distance_to(p) < best.distance_to(p):
+			best = q
+	return best
+
+
 func test_bridges() -> void:
 	var r := RealRegion.get_region("dales")
 	check(r != null and r.spans.size() > 50 and r.spans.all(func(sp): return int(sp[0]) in [0, 1]),
