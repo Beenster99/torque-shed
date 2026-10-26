@@ -265,6 +265,12 @@ func test_ride() -> void:
 	all.sort()
 	var sum := _summary(all)
 	var taken := w.route.decided.has(0) and int(w.route.choices.get(0, 0)) == 1
+	# The ride goes as fast as the frames do, and on a quick machine it can get ahead of the worker
+	# thread building the road: give it a moment to catch up along the way picked.
+	for i in 600:
+		if w.has_ground(fs + 600.0):
+			break
+		await t.get_tree().process_frame
 	print("    ADV RIDE PROFILE: %d frames, median %.2f ms, p99 %.2f, worst %.1f ms (at %.0f m / %.0f m), %d frames over the median by %.0f ms, %d over 33 ms; through the fork: worst %.1f ms, %d stutters; %s"
 		% [sum["n"], sum["median"], sum["p99"], sum["worst"], a[1], b[1], sum["spikes"], SPIKE_MS, sum["over33"], fork["worst"], fork["spikes"], w.timing_text()])
 	check(taken and w.has_ground(fs + 600.0), "the host's pick at the fork is taken, and the road built on along it (picks %s, chosen %s, ground %s, voted %s)"
