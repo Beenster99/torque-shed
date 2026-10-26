@@ -47,7 +47,7 @@ func _world(seed: int, region_id: String, spot: Dictionary) -> AdventureWorld:
 ## The scenery is the place's (PlaceLook, from the region's profile): Japan's evergreen woods and cedars round
 ## Shodoshima; oaks, sheep, stone walls and hedges in the Dales. Each theme's stops are built in its own style.
 func test_scenery() -> void:
-	var want := {"coastal": ["jungle_tree", "cypress"], "hills": ["oak", "sheep"]}
+	var want := {"coastal": ["jungle_tree", "cedar"], "hills": ["oak", "sheep"]}
 	var never := {"coastal": ["cactus", "snow_pine", "sheep"], "hills": ["cactus", "snow_pine", "mesa"]}
 	for region_id in REGIONS:
 		var theme: String = REGIONS[region_id]
