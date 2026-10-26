@@ -756,6 +756,21 @@ func test_sketch() -> void:
 		and first.size() == 3 and WorldMap.geo_of(first[2]).distance_to(Vector2(54.315, -2.15)) < 1e-3,
 		"300 km across, the TV fetches the sketch of the main roads in view and reads its lines (%s)" % str(view._sketch.keys()))
 	check(FileAccess.file_exists(store.path_join("sketch/b28_35.json")) and host.asked.has("/sketch/b28_35.json"), "and keeps it on disk")
+	# A touch on a main road of the sketch pins there, on the road; a touch away from any looks closer.
+	var pinned: Array = []
+	var looked: Array = []
+	view.asked_pin.connect(func(a: float, b: float, name: String): pinned.append([a, b, name]))
+	view.asked_view.connect(func(a: float, b: float, s: float): looked.append([a, b, s]))
+	if came:
+		var mid := WorldMap.geo_of((first[0] + first[1]) * 0.5)
+		# (at 300 km across a pixel is about 400 m: a touch 2 px off is still on the road, within a pixel of the middle)
+		view.click(view.to_screen(mid.x, mid.y) + Vector2(1, -2))
+		var on := Vector2(float(pinned[0][0]), float(pinned[0][1])) if pinned.size() == 1 else Vector2.INF
+		var off_px := view.to_screen(on.x, on.y).distance_to(view.to_screen(mid.x, mid.y)) if on != Vector2.INF else INF
+		check(pinned.size() == 1 and off_px < 2.5 and looked.is_empty(),
+			"a touch beside a main road of the sketch pins on the road (%s)" % str(pinned))
+		view.click(view.to_screen(mid.x + 1.0, mid.y + 1.5))
+		check(pinned.size() == 1 and looked.size() == 1, "and one nowhere near a road looks closer instead")
 	# Kept: not fetched again while the index names the same one.
 	host.asked.clear()
 	check((CellStore.sketch("28_35", index).get("cells", {}) as Dictionary).has("577_711") and not host.asked.has("/sketch/b28_35.json"), "the copy on disk is used while it is the one the index names")
