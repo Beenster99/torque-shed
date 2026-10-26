@@ -51,6 +51,11 @@ const DETAIL_SPAN := 4000000.0
 const MAX_LABELS := 28
 ## A touch on the world (not on roads) looks this many times closer there.
 const TOUCH_ZOOM := 4.0
+## A touch this near (px; on the big screen, more) a main road of the sketch pins on it.
+const SKETCH_TOUCH := 14.0
+const SKETCH_TOUCH_BIG := 22.0
+## A pin on the sketch is named after the town or city nearest it within this far (m).
+const SKETCH_NAME_M := 15000.0
 
 var lat := 30.0
 var lon := 0.0
@@ -564,7 +569,49 @@ func click(s: Vector2) -> void:
 		queue_redraw()
 		changed.emit()
 		return
+	if sketch_shown():
+		# On a main road of the sketch: pinned there (the plan finds the road itself once its cells come).
+		var on := sketch_road_at(s)
+		if on != Vector2.INF:
+			asked_pin.emit(on.x, on.y, sketch_name(on.x, on.y))
+			return
 	asked_view.emit(g.x, g.y, maxf(span / TOUCH_ZOOM, AdventureJourney.SPAN_MIN))
+
+
+## A name for a pin on the sketch at (lat, lon): the world's town or city nearest it within SKETCH_NAME_M, else "".
+static func sketch_name(at_lat: float, at_lon: float) -> String:
+	for p in WorldMap.places():
+		if WorldMap._ground_metres(at_lat, at_lon, float(p[1]), float(p[2])) <= SKETCH_NAME_M:
+			return str(p[0])   # (the most important first)
+	return ""
+
+
+## (lat, lon) on the main road of the sketch drawn nearest screen point `s`, within SKETCH_TOUCH; INF when none is.
+func sketch_road_at(s: Vector2) -> Vector2:
+	var k := _k()
+	var m0 := WorldMap.mercator(lat, lon)
+	var reach := SKETCH_TOUCH_BIG if big else SKETCH_TOUCH
+	var best := Vector2.INF
+	var best_d := reach
+	var at_m := m0 + (s - size * 0.5) / k
+	var pad := reach / k
+	for b in sketch_blocks():
+		var lines: Array = _sketch.get(b, [])
+		var boxes: PackedFloat32Array = _sketch_boxes.get(b, PackedFloat32Array())
+		for i in lines.size():
+			if int(lines[i][0]) == 2 and span > SKETCH_A_SPAN:
+				continue   # (not drawn this far out)
+			var e := i * 4
+			if boxes[e + 2] < at_m.x - pad or boxes[e] > at_m.x + pad or boxes[e + 3] < at_m.y - pad or boxes[e + 1] > at_m.y + pad:
+				continue
+			var line: PackedVector2Array = lines[i][1]
+			for j in line.size() - 1:
+				var q := Geometry2D.get_closest_point_to_segment(at_m, line[j], line[j + 1])
+				var d := (q - at_m).length() * k
+				if d < best_d:
+					best_d = d
+					best = q
+	return WorldMap.geo_of(best) if best != Vector2.INF else Vector2.INF
 
 
 # ---------------------------------------------------------------------------- drawing

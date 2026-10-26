@@ -196,8 +196,11 @@ planner's worker; a plan for an area is checked against its box, so a mate witho
 plan; entering a ride waits for the road a frame at a time instead of holding the game up; the wait at the start
 (`AdventureTrip.crew_waiting`). Tests fetch the Dales cells from a stand-in for GitHub on the machine.
 
-**Status.** Built (`claude/world-served`), and the workflow has baked its first two cells. Still to do: the UK and
-Japan baked; a cap on the cells kept; progress on the TV while an area's cells come.
+**Status.** Built (`claude/world-served`), and the workflow has baked its first two cells. The UK and Japan
+are baked. `claude/cells-kept`: the cells kept are capped (`CellStore.keep`, 400, about a gigabyte with their streams
+and trees: those used longest ago go, never one used this run), the live heights' map tiles too (`HeightTiles.keep`,
+10,000, about a gigabyte), and while a journey's road is got ready the screen says what it's getting, the parts of the
+world and the map tiles counted as they come.
 
 ### Step 4: the world on the TV
 
@@ -230,7 +233,7 @@ cells baked before were sketched by its "Sketch the main roads" workflow. `claud
 cell's land (Overture's coastline land, OpenStreetMap's, clipped to the cell and simplified to 15 m by
 `tools/coast_bake.py`, about a kilobyte a coastal cell) in its sketch block, drawn over Natural Earth's from 300 km
 across in; the cells baked before mapped by the world's "Map the coast" workflow (920 coastal cells, 832 all land).
-Pins still go down only where the roads are fetched, not on the sketch.
+`claude/sketch-pins`: a pin goes down on the sketch too (a touch on a main road drawn between 60 km and 1,500 km across pins on that road, named after the nearest town within 15 km; the plan finds the road there once the cells come).
 
 ### Step 5: consensus, and journeys kept
 

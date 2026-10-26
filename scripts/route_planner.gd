@@ -138,8 +138,8 @@ class Heap:
 
 ## Plans a route over `region`: `request` is {pins: [Vector2 (region x, z)] (two or more, in order), mode: "main" |
 ## "scenic" | "tracks" (default "main"), names: [String] (the pins' names, for the magazine), seed: int}. Returns
-## {ok, error, pack (a RealPack, or null), km, ms}.
-static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
+## {ok, error, pack (a RealPack, or null), km, ms}. `progress(done, total)` is called as a live region's map tiles come.
+static func plan(region: RealRegion, request: Dictionary, progress := Callable()) -> Dictionary:
 	var t0 := Time.get_ticks_msec()
 	var parts := {}
 	var pins: Array = request.get("pins", [])
@@ -193,7 +193,7 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	# The land under it: a live region's heights are fetched now, the tiles within reach of this road (RealTerrain.for_road).
 	var terrain := region.terrain.for_road(_every(knots, 16)) if region.terrain != null else null
 	if terrain != null and terrain.live:
-		var missing := terrain.fetch()
+		var missing := terrain.fetch(progress)
 		parts["fetch"] = Time.get_ticks_msec() - t0
 		if missing > 0:
 			return _fail("Couldn't get the lie of the land for that journey (%d map tiles): are you online?" % missing)

@@ -16,6 +16,8 @@ static var _done := {}
 ## key -> worker task id: plans being worked out.
 static var _tasks := {}
 static var _lock := Mutex.new()
+## key -> what a worker planning it is doing ("the map: 3 of 9 parts of the world"), while it does (progress_of).
+static var _progress := {}
 
 
 ## `v` as a plan this game can plan, or {} when it is not one (no such region, too few or too many pins, a pin off the map).
@@ -67,20 +69,45 @@ static func _request(plan: Dictionary) -> Dictionary:
 
 
 static func _run(plan: Dictionary) -> Dictionary:
+	var k := key(plan)
 	if str(plan["region"]).begins_with(RealRegion.AREA_PREFIX):
 		# An area of the world's cells: those the game hasn't got are fetched first (on this worker).
-		var why := RealRegion.fetch_area(str(plan["region"]))
+		_say(k, "the map")
+		var why := RealRegion.fetch_area(str(plan["region"]), func(done: int, total: int):
+			_say(k, "the map, %d of %d parts of the world" % [done, total]))
 		if why != "":
+			_say(k, "")
 			return {"ok": false, "error": why, "pack": null}
+	_say(k, "the roads, the rivers and the trees")
 	var region := RealRegion.get_region(str(plan["region"]))
 	if region == null:
 		return {"ok": false, "error": "This game doesn't have that part of the world.", "pack": null}
 	if str(plan.get("region_hash", "")) != "" and str(plan["region_hash"]) != region.hash:
 		return {"ok": false, "error": "Your copy of the %s map isn't the host's: update the game to join." % region.title, "pack": null}
-	var res := RoutePlanner.plan(region, _request(plan))
+	_say(k, "the road")
+	var res := RoutePlanner.plan(region, _request(plan), func(done: int, total: int):
+		_say(k, "the lie of the land, %d of %d map tiles" % [done, total]))
+	_say(k, "")
 	if bool(res["ok"]):
 		RealPack.register(res["pack"])
 	return res
+
+
+static func _say(k: String, what: String) -> void:
+	_lock.lock()
+	if what == "":
+		_progress.erase(k)
+	else:
+		_progress[k] = what
+	_lock.unlock()
+
+
+## What a worker planning `plan` is doing now ("the lie of the land, 40 of 120 map tiles"), or "" when none is.
+static func progress_of(plan: Dictionary) -> String:
+	_lock.lock()
+	var what := str(_progress.get(key(plan), ""))
+	_lock.unlock()
+	return what
 
 
 ## The road for `plan`, planned now if it is not ready (waits for it if a worker is on it); null with `why` unsaid

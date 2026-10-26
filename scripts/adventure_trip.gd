@@ -41,6 +41,8 @@ var _busy := false
 ## The road isn't ready on this machine yet (its cells and land being fetched, or the plan worked out on a worker):
 ## entering waits for it, a frame at a time, instead of holding the game up (see enter).
 var _preparing := false
+var _preparing_line := ""   # (the last said, and when: at most a few times a second)
+var _preparing_at := 0
 ## How long (s) the riders already on the road wait at the start for the rest of the crew to get it ready.
 const CREW_WAIT := 90.0
 var _arrive_sent := false
@@ -208,11 +210,17 @@ func enter() -> void:
 	var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
 	var res := AdventurePlans.result(AdventurePlans.clean(plan))
 	if res.is_empty():
-		if not _preparing:
+		# What it's doing, as it changes (the map's parts and tiles counted as they come).
+		var doing := AdventurePlans.progress_of(AdventurePlans.clean(plan))
+		var line := "Getting the road ready: %s..." % (doing if doing != "" else "the map and the lie of the land")
+		if not _preparing or (line != _preparing_line and Time.get_ticks_msec() - _preparing_at > 400):
 			_preparing = true
-			Shed.feedback.emit("Getting the road ready: the map and the lie of the land...", true)
+			_preparing_line = line
+			_preparing_at = Time.get_ticks_msec()
+			Shed.feedback.emit(line, true)
 		return   # (_process asks again till it is)
 	_preparing = false
+	_preparing_line = ""
 	var why := _mismatch_of(info, res)
 	if why != "":
 		_busy = false
