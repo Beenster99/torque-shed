@@ -45,6 +45,9 @@ var _preparing_line := ""   # (the last said, and when: at most a few times a se
 var _preparing_at := 0
 ## How long (s) the riders already on the road wait at the start for the rest of the crew to get it ready.
 const CREW_WAIT := 90.0
+## The screen gone black going to or from the road this long (s) means the trip there or back
+## stopped part way: the black lifts and it's tried again (see _watch_black).
+const STUCK_BLACK := 12.0
 var _arrive_sent := false
 ## The arrival moment: seconds into it, or -1 while it isn't playing; done once it's begun.
 var moment_t := -1.0
@@ -902,14 +905,33 @@ func _end_moment() -> void:
 			main.walker.camera.current = true
 
 
+var _black := 0.0   # how long the screen's been black (s)
+
+
 func _process(delta: float) -> void:
 	if moment_t >= 0.0:
 		_tick_moment(delta)
+	_watch_black(delta)
 	if _preparing and not _busy and int(Shed.adventure.get("id", 0)) == trip_id:
 		AdventurePlans.poll()
 		enter()
 	elif _preparing and int(Shed.adventure.get("id", 0)) != trip_id:
 		_preparing = false   # (the ride ended before this machine got to it)
+
+
+## Never left in the black: going out on the road or back to the shed happens in a blink behind
+## it, so black for STUCK_BLACK seconds means that stopped part way. The black lifts, and as
+## nothing's busy any more the next sync() carries on (home, if the ride's over).
+func _watch_black(delta: float) -> void:
+	_black = _black + delta if main and main._fade and main._fade.color.a > 0.5 else 0.0
+	if _black < STUCK_BLACK:
+		return
+	_black = 0.0
+	push_error("Stuck in the black going %s: lifted" % ("out" if trip_id != 0 else "home"))
+	_busy = false
+	main._fade_to(0.0)
+	if main.in_session:
+		sync()
 
 
 ## The names of the crew still getting the road ready (not on the ride yet) while the riders on it wait for them at the
