@@ -152,6 +152,8 @@ func _ready() -> void:
 	panel.add_child(col)
 	col.add_child(UITheme.title("TORQUE SHED", 46))
 	col.add_child(UITheme.label("Strip it. Clean it. Fix it. Ride it.", 16, Color(1, 1, 1, 0.6)))
+	# The build's version, so a tester always knows which one they're on (Simon, 2026-10-26).
+	col.add_child(UITheme.label("v" + str(ProjectSettings.get_setting("application/config/version", "")), 12, Color(1, 1, 1, 0.45)))
 
 	_start_box = VBoxContainer.new()
 	_start_box.add_theme_constant_override("separation", 10)
