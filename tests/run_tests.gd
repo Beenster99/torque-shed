@@ -20380,6 +20380,8 @@ func _test_town_plan() -> void:
 ## what was in the old yard to the yard behind.
 func _test_town_session() -> void:
 	SaveGame.slot_override = "test_town"
+	# Noon from the start: the town fills to the hour it comes in at, and earlier tests leave the clock anywhere.
+	Settings.time_of_day = 12.0
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
