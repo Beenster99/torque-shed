@@ -1,0 +1,131 @@
+{
+ "format": 1,
+ "cell": "569_723",
+ "lat": 52.375,
+ "lon": 4.875,
+ "guessed": false,
+ "country": "NL",
+ "country_name": "Netherlands",
+ "countries": [
+  [
+   "NL",
+   1.0
+  ]
+ ],
+ "region": "North Holland",
+ "region_code": "",
+ "koppen": "Cfb",
+ "cover": {
+  "grass": 0.5,
+  "crop": 0.18,
+  "water": 0.14,
+  "wetland": 0.04,
+  "urban": 0.12,
+  "forest": 0.02,
+  "shrub": 0.0,
+  "barren": 0.0,
+  "sand": 0.0,
+  "rock": 0.0
+ },
+ "sea": 0.05,
+ "coast": true,
+ "altitude": {
+  "min": -6,
+  "mean": -2,
+  "max": 8
+ },
+ "altitude_band": "lowland",
+ "built": 0.12,
+ "density": "town",
+ "climate": {
+  "temp_c": [
+   3.5,
+   3.8,
+   6.3,
+   9.4,
+   13.2,
+   15.8,
+   18,
+   17.8,
+   14.9,
+   11,
+   7.1,
+   4.2
+  ],
+  "temp_min_c": [
+   0.8,
+   0.6,
+   2.4,
+   4.6,
+   8.2,
+   11,
+   13.3,
+   13.1,
+   10.7,
+   7.6,
+   4.4,
+   1.6
+  ],
+  "temp_max_c": [
+   6.2,
+   7,
+   10.4,
+   14.3,
+   17.9,
+   20.5,
+   22.8,
+   22.6,
+   19.3,
+   14.8,
+   10,
+   6.8
+  ],
+  "rain_mm": [
+   70,
+   58,
+   56,
+   40,
+   52,
+   62,
+   76,
+   86,
+   82,
+   88,
+   85,
+   78
+  ],
+  "rain_days": [
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10
+  ],
+  "sun_h": [
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150
+  ]
+ },
+ "tint": null,
+ "sources": {
+  "note": "hand-made for T3's tests"
+ },
+ "hash": "fixture-polder"
+}

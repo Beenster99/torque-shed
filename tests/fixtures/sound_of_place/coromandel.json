@@ -1,0 +1,131 @@
+{
+ "format": 1,
+ "cell": "213_1422",
+ "lat": -36.875,
+ "lon": 175.625,
+ "guessed": false,
+ "country": "NZ",
+ "country_name": "New Zealand",
+ "countries": [
+  [
+   "NZ",
+   1.0
+  ]
+ ],
+ "region": "Waikato",
+ "region_code": "",
+ "koppen": "Cfb",
+ "cover": {
+  "forest": 0.62,
+  "grass": 0.26,
+  "shrub": 0.06,
+  "urban": 0.01,
+  "water": 0.01,
+  "sand": 0.04,
+  "crop": 0.0,
+  "barren": 0.0,
+  "wetland": 0.0,
+  "rock": 0.0
+ },
+ "sea": 0.4,
+ "coast": true,
+ "altitude": {
+  "min": 0,
+  "mean": 220,
+  "max": 892
+ },
+ "altitude_band": "lowland",
+ "built": 0.01,
+ "density": "rural",
+ "climate": {
+  "temp_c": [
+   19.5,
+   20,
+   18.5,
+   16,
+   13.5,
+   11.5,
+   10.5,
+   11,
+   12.5,
+   14,
+   16,
+   18
+  ],
+  "temp_min_c": [
+   15,
+   15.5,
+   14,
+   11.5,
+   9.5,
+   7.5,
+   6.5,
+   7,
+   8.5,
+   10,
+   11.5,
+   13.5
+  ],
+  "temp_max_c": [
+   24,
+   24.5,
+   23,
+   20.5,
+   17.5,
+   15.5,
+   14.5,
+   15,
+   16.5,
+   18.5,
+   20.5,
+   22.5
+  ],
+  "rain_mm": [
+   90,
+   100,
+   120,
+   130,
+   150,
+   170,
+   180,
+   160,
+   130,
+   110,
+   100,
+   100
+  ],
+  "rain_days": [
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10
+  ],
+  "sun_h": [
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150
+  ]
+ },
+ "tint": null,
+ "sources": {
+  "note": "hand-made for T3's tests"
+ },
+ "hash": "fixture-coromandel"
+}

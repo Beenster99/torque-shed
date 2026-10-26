@@ -23775,3 +23775,41 @@ func _test_ghost_remote() -> void:
 
 func _test_ghost_adventure() -> void:
 	await _ghosts().test_adventure()
+
+
+# ---------------------------------------------------------------------------- sound of place (tests/place_sound_tests.gd)
+
+func _place_sound() -> RefCounted:
+	return load("res://tests/place_sound_tests.gd").new(self)
+
+
+func _test_place_sound_eight_places() -> void:
+	_place_sound().test_eight_places()
+
+
+func _test_place_sound_rules() -> void:
+	_place_sound().test_rules()
+
+
+func _test_place_sound_mix() -> void:
+	_place_sound().test_mix()
+
+
+func _test_place_sound_due() -> void:
+	_place_sound().test_due()
+
+
+func _test_place_sound_radio() -> void:
+	_place_sound().test_radio()
+
+
+func _test_place_sound_files() -> void:
+	_place_sound().test_files()
+
+
+func _test_place_sound_ride() -> void:
+	_place_sound().test_ride()
+
+
+func _test_place_sound_with_profiles() -> void:
+	_place_sound().test_with_profiles()
