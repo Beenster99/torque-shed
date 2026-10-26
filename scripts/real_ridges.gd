@@ -50,6 +50,7 @@ func setup(w: AdventureWorld, t: RealTerrain) -> void:
 	terrain = t
 	_material = StandardMaterial3D.new()
 	_material.vertex_color_use_as_albedo = true
+	_material.vertex_color_is_srgb = true   # (as the land's: RealLand)
 	_material.roughness = 1.0
 	if w.route != null:
 		_land = (w.route.look["land"]["tarmac"] as Color).lerp(w.route.look.get("woods", WOODS), 0.55)

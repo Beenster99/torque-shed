@@ -280,6 +280,18 @@ static func choose(p: Dictionary, month: int) -> Dictionary:
 			crop = CROP[CROP_YEAR_MED[lm - 1]]
 		_:
 			crop = CROP[CROP_YEAR[lm - 1]]
+	# Farmland is a patchwork, field by field: some at the month's stage, some a month on, the rest grass or a green
+	# crop (outside the dry kits, where an unwatered field is the season's colour).
+	var next: Color = crop
+	match kit:
+		"tropical_dry", "tropical_wet", "arid":
+			pass
+		"mediterranean":
+			next = CROP[CROP_YEAR_MED[lm % 12]]
+		_:
+			next = CROP[CROP_YEAR[lm % 12]]
+	var ley: Color = CROP["green"].lerp(grass, 0.5)
+	look["crops"] = [crop, crop, next, ley, ley] if kit not in ["tropical_dry", "arid"] else [crop]
 	look["cover"] = {
 		"forest": [forest, 0.85], "crop": [crop, 0.7], "shrub": [(k["shrub"] as Color).lerp(k["dry"], (1.0 - green) * 0.5), 0.55],
 		"urban": [Color(0.52, 0.5, 0.46), 0.65], "sand": [AdventureChunk.BEACH, 0.8],

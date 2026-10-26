@@ -8,10 +8,12 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 1
+const VERSION := 2
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
+## A building stands at least this far past a road's verge (m), or it's left out (_over_road).
+const CLEAR := 1.0
 ## The deck's points across (edge, quarter, crown, quarter, edge), as the single-line road's.
 const ACROSS := 5
 ## The verge's skirt: from the verge's outer edge it runs this far further out and down under the land (m).
@@ -37,6 +39,9 @@ var hash := ""
 var pieces: Array[Dictionary] = []
 var junctions: Array[Dictionary] = []
 var buildings: Array = []
+## The trees and bushes standing in the block (RoadNet.dress): kind (AdventureProps.mesh) -> Array of Transform3D, from
+## the block's corner (anchor).
+var trees := {}
 ## The mesh and collision arrays the streamer commits (T6's own business; their shape may change freely).
 var arrays := {}
 var ms := 0.0
@@ -79,9 +84,12 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 		b.junctions.append(_public(j))
 	b.junctions.sort_custom(func(p, q): return int(p["node"]) < int(q["node"]))
 	for row: Array in n.buildings_in(k):
+		if b._over_road(row):
+			continue
 		var out := row.duplicate()
 		out.append(b._building_y(row))
 		b.buildings.append(out)
+	b._plant()
 	b._lay_out()
 	b.ms = (Time.get_ticks_usec() - t0) / 1000.0
 	return b
@@ -180,6 +188,121 @@ func _building_y(row: Array) -> float:
 	return y
 
 
+## Plants the block's trees (trees) from the net's dress: where the canopy map has woods, as many as its share of the
+## ground under trees and their crowns' size say, as tall as it has them (as AdventureChunk does along the planned road);
+## where there's no canopy map, by what covers the ground. None on a road or its verge, by a building, or in water.
+func _plant() -> void:
+	if net.dress.is_empty():
+		return
+	var t: RealTerrain = net.dress["terrain"]
+	var look: Dictionary = net.dress.get("look", {})
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([net.region.hash, "trees", key])
+	var broad := str(look.get("broad", "tree"))
+	var needle := str(look.get("needle", "pine"))
+	var autumn := float(look.get("autumn", 0.0))
+	var bush := "bush"
+	for kind: String in (look.get("plants", {}) as Dictionary):
+		if kind in AdventureChunk.BUSHES:
+			bush = kind
+			break
+	var o := anchor()
+	var step := AdventureChunk.CANOPY_STEP
+	var north := absf(t.lat0) > float(AdventureChunk.NEEDLE_ODDS["north_lat"])
+	var looks := int(SIZE / step)
+	for j in looks:
+		for i in looks:
+			var cx := rect.position.x + (i + 0.5) * step
+			var cz := rect.position.y + (j + 0.5) * step
+			var v := t.trees_at(cx, cz)
+			var share := 0.0
+			var tallest := 0.0
+			var leaf := 0
+			if v >= 0:
+				share = float((v >> 5) & 7) / 7.0
+				tallest = float(v & 31) * AdventureChunk.CANOPY_HEIGHT_STEP
+				leaf = (v >> 8) & 3
+			else:
+				# No canopy map here: what covers the ground says how wooded it is, the trees of a middling height.
+				var c := t.cover(cx, cz)
+				var cover := RealPack.COVER[c] if c >= 0 and c < RealPack.COVER.size() else ""
+				share = float((AdventureChunk.ODDS["trees"] as Dictionary).get(cover, 0.05)) * 0.6
+				tallest = rng.randf_range(9.0, 16.0)
+				if rng.randf() < float((AdventureChunk.ODDS["bushes"] as Dictionary).get(cover, 0.1)) * 0.35:
+					_stand(t, bush, cx + rng.randf_range(-7.0, 7.0), cz + rng.randf_range(-7.0, 7.0), 2.5, o, rng)
+			if share <= 0.0:
+				continue
+			var p_needle := 1.0 if leaf == 2 else (0.0 if leaf == 1 else (0.5 if leaf == 3 else
+				float(AdventureChunk.NEEDLE_ODDS["north" if north else "base"])))
+			if v < 0 and not north:
+				p_needle *= 0.5   # (odd trees in open country are mostly broadleaves)
+			var conifer := float(absi(hash([floori(cx / AdventureChunk.NEEDLE_PATCH), floori(cz / AdventureChunk.NEEDLE_PATCH)])) % 1000) / 1000.0 < p_needle
+			var crown: Array = AdventureChunk.CROWN_NEEDLE if conifer else AdventureChunk.CROWN_BROAD
+			var wide := float(crown[0]) * tallest + float(crown[1])
+			var many := minf(float(AdventureChunk.CANOPY_MOST), share * step * step / (wide * wide))
+			var n := int(many + rng.randf())
+			for k in n:
+				var kind := needle if (conifer if leaf != 3 else rng.randf() < 0.5) else (broad if share < 0.5 or rng.randf() < 0.4 else "tree")
+				if kind == "tree" and broad in ["jungle_tree", "acacia"]:
+					kind = broad
+				if kind in ["tree", "oak"] and autumn > 0.0 and rng.randf() < autumn:
+					kind = "autumn_tree"
+				var tall := maxf(3.0, tallest * rng.randf_range(0.65, 1.0))
+				var size: Array = AdventureChunk.TREE_SIZE.get(kind, [6.6, 5.2])
+				var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1])
+				var x := cx + rng.randf_range(-0.5, 0.5) * step
+				var z := cz + rng.randf_range(-0.5, 0.5) * step
+				_stand(t, kind, x, z, 6.0, o, rng, Vector3(across, tall / float(size[0]), across))
+
+
+## Stands one `kind` at region-frame (x, z) on the land (RoadNet.ground_at), at least `clear` m past any road's verge,
+## off the buildings and out of the water; `scale` its size.
+func _stand(t: RealTerrain, kind: String, x: float, z: float, clear: float, o: Vector3, rng: RandomNumberGenerator,
+		scale := Vector3.ONE) -> void:
+	if t.cover(x, z) == RealPack.WATER:
+		return
+	if not net._near(x, z).is_empty():
+		var on := net.locate(x, z)
+		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + clear):
+			return
+	for row: Array in buildings:
+		if Vector2(float(row[0]) - x, float(row[1]) - z).length() < maxf(float(row[2]), float(row[3])) * 0.75 + 2.0:
+			return
+	var bare := float(net.height.call(x, z))
+	if is_nan(bare):
+		return
+	var y := net.ground_at(x, z, bare) - 0.3   # (a little in: the land's mesh is coarser than the heights)
+	var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(scale), Vector3(x, y, z) - o)
+	if not trees.has(kind):
+		trees[kind] = []
+	(trees[kind] as Array).append(xf)
+
+
+## The region kit (T8's RegionKit) of the place the block's middle is in: how its buildings are built.
+func kit_of() -> Dictionary:
+	var r := net.region
+	var mid := rect.get_center()
+	var ll := RealRegion.from_frame(Vector2(r.frame_lat, r.frame_lon), mid.x, mid.y)
+	return RegionKit.choose(PlaceProfile.of_cell(RealRegion.cell_of(ll.x, ll.y)))
+
+
+## Whether building `row` stands on a road or its verge, or in a junction (the map's buildings and its roads are each
+## drawn a little off, and a road's own line wins).
+func _over_road(row: Array) -> bool:
+	var bx := float(row[0])
+	var bz := float(row[1])
+	var w := float(row[2])
+	var d := float(row[3])
+	var yaw := float(row[4])
+	for c: Vector2 in [Vector2.ZERO, Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5)]:
+		var px := bx + (c.x * w) * cos(yaw) + (c.y * d) * sin(yaw)
+		var pz := bz - (c.x * w) * sin(yaw) + (c.y * d) * cos(yaw)
+		var on := net.locate(px, pz)
+		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + CLEAR):
+			return true
+	return false
+
+
 ## Which road (x, z) is on (RoadNet.locate).
 func locate(x: float, z: float) -> Dictionary:
 	return net.locate(x, z)
@@ -205,9 +328,14 @@ func _lay_out() -> void:
 	_join_caps()
 	var houses := AdventureProps.new_arrays()
 	var o := anchor()
+	var kit := kit_of()
 	for row: Array in buildings:
-		AdventureProps.real_building(houses, Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o, float(row[2]),
-			float(row[3]), float(row[4]), float(row[5]), RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)])
+		var at := Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o
+		var kind := RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)]
+		if kit.is_empty():
+			AdventureProps.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind)
+		else:
+			RegionBuildings.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind, kit)
 	arrays["buildings"] = houses
 	for surf in arrays["deck"]:
 		_finish_grid(arrays["deck"][surf])
@@ -289,6 +417,9 @@ func _piece_mesh(p: Dictionary) -> void:
 	var surf := str(p["surface"])
 	var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
 	var verge_col: Color = AdventureSurface.VERGE_COLOR.get(surf, AdventureSurface.VERGE_COLOR["tarmac"])
+	var look: Dictionary = net.dress.get("look", {})
+	if look.has("verge"):
+		verge_col = (look["verge"] as Dictionary).get(surf, verge_col)   # (the place's own, as the land beside it is)
 	var e := float(p["width"]) * 0.5
 	var o := anchor()
 	var g := _deck_of(surf)

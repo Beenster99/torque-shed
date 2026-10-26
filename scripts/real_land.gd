@@ -19,6 +19,12 @@ extends Node3D
 ## net's, the roads cut and banked into it (roads.ground_at); the road blocks sit just above it. Blocks within NET_NEAR
 ## of the rider are at the near level, so their 8 m cells follow the cuttings.
 const NET_NEAR := 1100.0
+## In network mode the land is coloured as the land well away from a road is (the satellite's ground showing through:
+## PlaceLook.ground_share), wherever it is: the roads' own verges are the road blocks'.
+const NET_COLOUR_LAT := 60.0
+## And the satellite's ground takes only this share of what it would there: the land round a rider is near it, where the
+## place's own grass, crops and woods colour it, the satellite's only shading them.
+const NET_SATELLITE := 0.5
 
 ## The riders may leave the road and ride the land (the Esc > Debug network toggle sets it): AdventureTrip doesn't put
 ## a bike back on the road while a near block holds it up.
@@ -97,6 +103,7 @@ func setup(w: AdventureWorld, r: AdventureRoute) -> void:
 	terrain = r.real.terrain
 	_material = StandardMaterial3D.new()
 	_material.vertex_color_use_as_albedo = true
+	_material.vertex_color_is_srgb = true   # (the colours are the look's, as the chunks' land is: AdventureSurface.land_material)
 	_material.roughness = 1.0
 	_water_material = water_material()
 	if terrain != null and not terrain.ground_arrived.is_connected(_on_ground):
@@ -495,6 +502,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 				bare = route.base[k]
 			if net != null:
 				grid[g] = float(net.call("ground_at", x, z, bare)) if cut else bare
+				lats[g] = NET_COLOUR_LAT
 			elif d >= BAND_FAR:
 				grid[g] = bare
 			elif d < BAND_NEAR:
@@ -805,7 +813,7 @@ func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: Packe
 ## from the road means nothing), and a beach by the sea. Under water it's the bed's, where the water is drawn (`wet`), and
 ## the water's own blue where it isn't (the far level).
 func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, wet := true) -> Color:
-	var col := AdventureChunk._land_color(route, i, 3, lat, x, z, y)
+	var col := AdventureChunk._land_color(route, i, 3, lat, x, z, y, NET_SATELLITE if roads != null else 1.0)
 	if not wet and terrain.cover(x, z) == RealPack.WATER:
 		return col.lerp(FAR_WATER, 0.85)
 	if route.cover_at(x, z) == "":

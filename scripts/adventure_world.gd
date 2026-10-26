@@ -77,6 +77,8 @@ var land: RealLand
 var roads: RoadStreamer
 ## The region the network ride is on: the plan's (Shed.adventure), unless set before setup (the tests).
 var roads_region: RealRegion
+var _net_y := {}         # route knot -> the network road's height there (network_y)
+var _net_y_hint := -1
 var _box := _Results.new()
 var _tasks := {}         # chunk -> WorkerThreadPool task id
 var _ready_data := {}    # chunk -> built data waiting to be committed
@@ -166,6 +168,7 @@ func _start_network() -> bool:
 		return false
 	var t: RealTerrain = route.real.terrain
 	var net := RoadNet.new(roads_region, t.height, Callable(t, "ready") if t.has_method("ready") else Callable())
+	net.dress = {"terrain": t, "look": route.look}
 	roads = RoadStreamer.new()
 	roads.setup(self, net)
 	add_child(roads)
@@ -342,6 +345,29 @@ func transform_at(s: float, lat := 0.0) -> Transform3D:
 		if not on.is_empty() and bool(on["on_road"]):
 			y = float(on["y"])   # (the network's road, which the planned line only follows)
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(xz[0], y, xz[1]))
+
+
+## The network's road height under the planned road's knot `i` (the network ride: the planned line only follows the
+## network's roads, whose heights are their own), or NaN off the network or where it isn't laid out yet. Kept until the
+## ground under the roads sharpens (RoadStreamer.heights_changed).
+func network_y(i: int) -> float:
+	if roads == null:
+		return NAN
+	if _net_y.has(i):
+		return _net_y[i]
+	var on := roads.net.locate(route.px[i], route.pz[i], _net_y_hint)
+	if on.is_empty() or not bool(on["on_road"]):
+		return NAN
+	_net_y_hint = int(on["edge"])
+	var y := roads.net.road_y(int(on["edge"]), float(on["s"])) if int(on["node"]) < 0 else float(on["y"]) - RoadNet.CROWN
+	if roads.can_build(RoadBlock.key_of(route.px[i], route.pz[i])):
+		_net_y[i] = y   # (only once the ground there is final: before that it's a guess)
+	return y
+
+
+## Forgets the network heights under the planned road (network_y): the ground under them has sharpened.
+func forget_network_y() -> void:
+	_net_y.clear()
 
 
 ## The heading Bike.place wants for facing along the road at `s`.

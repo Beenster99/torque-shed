@@ -204,12 +204,27 @@ func test_heights() -> void:
 		jump = maxf(jump, absf(g - prev))
 		prev = g
 	check(jump < 1.0, "it eases out to the bare land without a step (the biggest a metre %.2f m)" % jump)
+	# In a cutting the land is held level with the road a cell's width past the verge, so the land's 8 m cells never
+	# lie over the deck; where it falls away it may fall from the verge.
+	var vee := func(_x: float, z: float) -> float: return 50.0 + absf(z - 100.0) * 0.5
+	var cut := RoadNet.new(cross(), vee)
+	var road := cut.road_y(int(hit["edge"]), float(hit["s"]))
+	var edge := 100.0 + cut.width_of(int(hit["edge"])) * 0.5 + RoadNet.VERGE
+	var held := cut.ground_at(300.0, edge + RoadNet.LAND_PAD - 0.5, float(vee.call(300.0, edge + RoadNet.LAND_PAD - 0.5)))
+	check(held <= road - RoadNet.UNDER + 0.01, "in a cutting the land is level with the road %.0f m past the verge (%.2f m against the road's %.2f)" % [RoadNet.LAND_PAD, held, road])
+	check(cut.ground_at(300.0, edge + RoadNet.LAND_PAD + 20.0, float(vee.call(300.0, edge + RoadNet.LAND_PAD + 20.0))) > road + 2.0, "then climbs its bank")
+	var dip := func(_x: float, z: float) -> float: return 50.0 - absf(z - 100.0) * 0.5
+	var bank := RoadNet.new(cross(), dip)
+	var below := bank.ground_at(300.0, edge + 6.0, float(dip.call(300.0, edge + 6.0)))
+	check(below < bank.road_y(int(hit["edge"]), float(hit["s"])) - 1.0, "on an embankment it falls away from the verge (%.2f m under the road 6 m out)" % (bank.road_y(int(hit["edge"]), float(hit["s"])) - below))
 
 
 ## A road crossing from one block into the next is in both, the two meeting at the seam; the same block twice is the
 ## same; every piece of road is in a block.
 func test_blocks() -> void:
 	var r := graph([[-300, 100], [300, 100], [300, 700]], [[0, 1, "primary"], [1, 2, "tertiary", 0, [400, 300, 350, 500]]])
+	# A house the map has standing on the road (drawn a little off), and one beside it.
+	r.buildings = [[100.0, 102.0, 9.0, 7.0, 0.0, 6.0, 0], [100.0, 125.0, 9.0, 7.0, 0.0, 6.0, 0]]
 	var net := RoadNet.new(r, flat)
 	var west := net.block(Vector2i(-1, 0))
 	var east := net.block(Vector2i(0, 0))
@@ -220,6 +235,7 @@ func test_blocks() -> void:
 		var seam := float(pw[0]["s1"]) - float(pe[0]["s0"])
 		check(seam > 0.0 and seam <= RoadBlock.SEAM * 2.0 + 0.01, "overlapping at the seam by %.3f m" % seam)
 		check(absf(float(pw[0]["s1"]) - 300.0 - RoadBlock.SEAM) < 0.01, "cut at x = 0, 300 m along it")
+	check(east.buildings.size() == 1 and is_equal_approx(float(east.buildings[0][1]), 125.0), "the house on the road is left out, the one beside it stands")
 	check(net.block(Vector2i(0, 0)).pieces == east.pieces and net.block(Vector2i(0, 0)).junctions == east.junctions, "the same block twice is the same")
 	# The bent street leaves block (0, 0) east and comes back: two pieces of it there, and one in (0, 1).
 	var covered := 0.0
@@ -277,6 +293,28 @@ func test_cell() -> void:
 	check(int(kinds.get("tee", 0)) > 5, "a village has its tees")
 	check(lost == 0, "every point along every piece is on a road at its height (%d of %d lost)" % [lost, tried])
 	check(worst_ms < 1500.0, "a block lays out on a worker in good time (worst %.0f ms)" % worst_ms)
+	# Dressed with the cell's own trees (its canopy map, or what covers the ground): none on a road or its verge.
+	check(r.terrain != null, "the cell has its terrain (cover and trees)")
+	if r.terrain == null:
+		return
+	net.dress = {"terrain": r.terrain, "look": {"broad": "oak", "needle": "pine"}}
+	var trees := 0
+	var on_road := 0
+	var tree_ms := 0.0
+	for dx in range(-1, 2):
+		var b := net.block(busiest + Vector2i(dx, 1))
+		tree_ms = maxf(tree_ms, b.ms)
+		for kind: String in b.trees:
+			for xf: Transform3D in b.trees[kind]:
+				trees += 1
+				var at := xf.origin + b.anchor()
+				var hit := net.locate(at.x, at.z)
+				if not hit.is_empty() and absf(float(hit["lat"])) < float(hit["width"]) * 0.5 + RoadNet.VERGE:
+					on_road += 1
+	print("  road net: %d trees in three blocks, worst block %.0f ms with them" % [trees, tree_ms])
+	check(trees > 50, "the land round the roads has its trees (%d in three blocks)" % trees)
+	check(on_road == 0, "none on a road or its verge (%d)" % on_road)
+	check(tree_ms < 2000.0, "and a block still lays out in good time (%.0f ms)" % tree_ms)
 
 
 ## The block's meshes: the deck and junctions facing up, indexed within bounds, with collision; lines on tarmac; a

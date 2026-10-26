@@ -13,6 +13,8 @@ const KEEP := 1500.0
 const MAX_TASKS := 2
 ## How far round a block the ground must be final before it's laid out (m): the farthest a road's height reaches.
 const READY_PAD := 128.0
+## A block's trees are drawn while the camera is this close to any of them (m).
+const TREES_REACH := 900.0
 
 var world: AdventureWorld
 var net: RoadNet
@@ -145,6 +147,8 @@ func has_ground(x: float, z: float) -> bool:
 
 
 func _on_ground_arrived(area: Rect2, _level := 0) -> void:
+	if world != null:
+		world.forget_network_y.call_deferred()
 	_lock.lock()
 	for k: Vector2i in blocks.keys() + _waiting.keys() + _tasks.keys():
 		if Rect2(Vector2(k) * RoadBlock.SIZE, Vector2.ONE * RoadBlock.SIZE).grow(READY_PAD).intersects(area):
@@ -195,6 +199,22 @@ func commit(b: RoadBlock) -> Node3D:
 		bmi.name = "Buildings"
 		bmi.mesh = AdventureProps.to_mesh(b.arrays["buildings"])
 		node.add_child(bmi)
+	for kind: String in b.trees:
+		var list: Array = b.trees[kind]
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.mesh = AdventureProps.mesh(kind)
+		multi.instance_count = list.size()
+		for k in list.size():
+			multi.set_instance_transform(k, list[k])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Trees_" + kind
+		mmi.multimesh = multi
+		if kind in AdventureChunk.BUSHES:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# (a block's trees go as one: drawn while any of the block is within reach)
+		AdventureChunk._range(mmi, TREES_REACH)
+		node.add_child(mmi)
 	for surf: String in b.arrays["faces"]:
 		var body := StaticBody3D.new()
 		body.name = "Body_" + surf

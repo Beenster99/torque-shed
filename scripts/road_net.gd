@@ -24,16 +24,21 @@ const VERGE := 1.5
 const BANK_SLOPE := 1.5
 const BANK_MIN := 4.0
 const BANK_MAX := 40.0
+## Where the land would rise past the road (a cutting, sidelong ground), it's held down level with the road this much
+## further out past the verge before its bank starts (m): the land is a grid of 8 m cells (RealLand's near level), and
+## a cell with a corner up the bank and another under the deck would lie over the road. A cell's diagonal and a little.
+const LAND_PAD := 12.0
 ## A tee with another on the far side of its main road within this distance (m) is a staggered junction.
 const STAGGER := 40.0
-## The heights along an edge are smoothed over this many STEPs, three times over (much like a bell curve some 50 m
-## across), then eased over EASE m at each end onto the height of the node there, which every road meeting there shares.
-const FAIR_STEPS := 7
+## The heights along an edge are smoothed over this many STEPs, three times over (much like a bell curve some 60 m
+## across: as the single-line ride's roads are, AdventureRoute.fair_heights), then eased over EASE m at each end onto
+## the height of the node there, which every road meeting there shares.
+const FAIR_STEPS := AdventureRoute.FAIR_KNOTS
 const EASE := 40.0
 ## The smoothed heights are worked out PAGE samples at a time, from the bare ones PAGE_PAD either side (as far as three
 ## passes of FAIR_STEPS reach).
 const PAGE := 64
-const PAGE_PAD := 9
+const PAGE_PAD := 27
 ## A junction's arm starts its plain road at least this far (m) past where its kerbs clear the arms either side, and at
 ## most MOUTH_MOST from the node (and never past half the edge).
 const FILLET := 3.0
@@ -54,6 +59,10 @@ var height: Callable
 var ready: Callable
 ## 12 hex of the block builder's version and the region's hash.
 var version_hash := ""
+## What the blocks dress the land round the roads with (RoadBlock.trees), or {} for bare land: {terrain: RealTerrain
+## (its canopy map, trees_at, and its cover), look: the place's look (PlaceLook: broad, needle, autumn)}. The ride sets
+## it; the tests leave it off.
+var dress := {}
 
 var _lock := Mutex.new()
 var _edges_by_block := {}   # Vector2i -> PackedInt32Array: the edges whose line's box (with GROUND_REACH) meets it
@@ -69,7 +78,7 @@ var _grids := {}            # Vector2i block -> {Vector2i cell -> PackedInt32Arr
 
 ## How far round a road the land is shaped by it (m past the centre line, at the widest).
 static func ground_reach() -> float:
-	return 4.0 + VERGE + BANK_MAX
+	return 4.0 + VERGE + LAND_PAD + BANK_MAX
 
 
 func _init(r: RealRegion, h: Callable, final := Callable()) -> void:
@@ -725,13 +734,14 @@ func ground_at(x: float, z: float, bare: float) -> float:
 	for ei in _near(x, z):
 		var pr := _project(ei, p)
 		var off := float(pr[2]) - width_of(ei) * 0.5 - VERGE
-		if off > BANK_MAX:
+		if off > BANK_MAX + LAND_PAD:
 			continue
 		var y := road_y(ei, float(pr[0])) - UNDER
 		var t := 1.0
-		if off > 0.0:
+		var from := 0.0 if bare <= y else LAND_PAD   # (land falling away may fall from the verge; rising land waits)
+		if off > from:
 			var bank := clampf(absf(bare - y) * BANK_SLOPE, BANK_MIN, BANK_MAX)
-			t = 1.0 - smoothstep(0.0, bank, off)
+			t = 1.0 - smoothstep(from, from + bank, off)
 		if t <= 0.0:
 			continue
 		most = maxf(most, t)

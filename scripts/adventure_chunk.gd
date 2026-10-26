@@ -230,7 +230,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 
 ## The land's colour at a vertex: its surface's (blended across a change of surface), patched
 ## by noise, the verge's beside the road (none over a tunnel), and greyer where it's steep.
-static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: float, z: float, y: float) -> Color:
+static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: float, z: float, y: float, sat := 1.0) -> Color:
 	var s := i * AdventureRoute.STEP
 	var here := route.surface_at_s(s)
 	var lands: Dictionary = route.look["land"]
@@ -251,16 +251,23 @@ static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: fl
 	elif k == 2:
 		col = col.lerp(route.look["verge"][here], 0.5)
 	if k > 1:
-		var tint: Array = (route.look.get("cover", COVER_TINT) as Dictionary).get(route.cover_at(x, z), [])
+		var cover := route.cover_at(x, z)
+		var tint: Array = (route.look.get("cover", COVER_TINT) as Dictionary).get(cover, [])
 		if not tint.is_empty():
-			col = col.lerp(tint[0] as Color, float(tint[1]) * (0.5 if k == 2 else 1.0))
+			var c: Color = tint[0]
+			var crops: Array = route.look.get("crops", [])
+			if cover == "crop" and crops.size() > 1:
+				# (field by field: route.patches' size of a field, PlaceLook "crops")
+				var f := float(route.look.get("field_m", 90.0)) * 1.5
+				c = crops[absi(hash([floori(x / f), floori(z / f)])) % crops.size()]
+			col = col.lerp(c, float(tint[1]) * (0.5 if k == 2 else 1.0))
 		# Further out, the satellite's own colour of the ground (PlaceLook).
 		var ground: Array = route.look.get("ground", [])
 		if not ground.is_empty():
 			var ll := RealRegion.from_frame(route.frame, x, z)
 			var g := PlaceLook.ground_at(ground, ll.x, ll.y)
 			if g.a > 0.0:
-				col = col.lerp(Color(g.r, g.g, g.b), PlaceLook.ground_share(lat) * g.a)
+				col = col.lerp(Color(g.r, g.g, g.b), PlaceLook.ground_share(lat) * g.a * sat)
 	# Snow above the place's snow line (PlaceLook), on the gentler ground.
 	if y > route.snow_line - 120.0 and route.look.has("snow_line"):
 		col = col.lerp(PlaceLook.SNOW, smoothstep(route.snow_line - 120.0, route.snow_line + 80.0, y) * 0.85)

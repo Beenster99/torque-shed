@@ -1,4 +1,4 @@
-# Road block: interface (T6), version 1
+# Road block: interface (T6), version 2
 
 Owner: T6 Road network core. Readers: T7 Satnav and journeys, T8 Regional kits (markings, buildings), T9 Co-op,
 T10 Life on the network, and T5 Terrain around the rider (the ground under the roads).
@@ -46,6 +46,8 @@ net.mouth(edge: int, node: int) -> float            # how far from node (m along
 net.locate(x: float, z: float, hint := -1) -> Dictionary   # which road am I on (below)
 net.ground_at(x: float, z: float, bare: float) -> float    # the land with the roads cut in (below)
 net.block(key: Vector2i) -> RoadBlock               # builds the block (pure: call it on a worker)
+net.dress: Dictionary                               # {terrain: RealTerrain, look: the place's look}: what blocks plant trees by
+                                                    # ({} plants none; the ride sets it)
 ```
 
 The net is read-only once made apart from its caches, which are locked, so one net is shared by every worker.
@@ -81,7 +83,8 @@ depend on it.
 `net.ground_at(x, z, bare)` takes the bare ground height at (x, z) and returns the land's height with the roads
 in it: just under the deck (`RoadNet.UNDER` m) across the carriageway and its verges, then eased back to `bare`
 over a cutting or embankment whose width grows with the height to make up (1 in 1.5 slopes, `RoadNet.BANK_MIN`
-to `RoadNet.BANK_MAX` m). Away from every road it returns `bare` unchanged. T5's land blocks call it for every
+to `RoadNet.BANK_MAX` m). Where the land rises past the road (a cutting) it's held level with the road
+`RoadNet.LAND_PAD` m further past the verge before its bank starts, so that no 8 m cell of the land lies over the deck. Away from every road it returns `bare` unchanged. T5's land blocks call it for every
 vertex near a road (`net.roads_near(rect: Rect2) -> bool` says whether a rectangle has any within reach); the
 road blocks draw only the deck, junctions, verges and their kerbs, so land and road meet without a strip owned
 by either.
@@ -98,6 +101,9 @@ block.hash: String              # 12 hex of VERSION, the region's hash and the k
 block.pieces: Array[Dictionary] # the roads (below)
 block.junctions: Array[Dictionary]
 block.buildings: Array          # RealRegion.buildings rows standing in the block, with their ground "y" appended
+                                # (none on a road, its verge or a junction: the map's line for the road wins)
+block.trees: Dictionary         # kind (AdventureProps.mesh) -> Array of Transform3D from the block's corner: the trees
+                                # and bushes on its land (net.dress), none on a road or its verge
 block.locate(x, z) -> Dictionary   # the same as net.locate
 block.arrays: Dictionary        # the mesh and collision arrays the streamer commits (T6's own; may change freely)
 block.ms: float                 # how long the build took on its worker
