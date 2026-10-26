@@ -809,7 +809,7 @@ func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, 
 	if not wet and terrain.cover(x, z) == RealPack.WATER:
 		return col.lerp(FAR_WATER, 0.85)
 	if route.cover_at(x, z) == "":
-		col = col.lerp(RealRidges.WOODS, 0.5)   # past the baked cover: about what the island is mostly
+		col = col.lerp(route.look.get("woods", RealRidges.WOODS), 0.5)   # past the baked cover: about what the place is mostly (its climate's woods)
 	col = col.lerp(Color(0.45, 0.43, 0.4), smoothstep(0.32, 0.62, 1.0 - normal.y) * 0.7)
 	if route.sea and y < AdventureTheme.SEA_Y + 5.0:
 		col = col.lerp(AdventureChunk.BEACH, 1.0 - smoothstep(AdventureTheme.SEA_Y + 2.0, AdventureTheme.SEA_Y + 5.0, y))

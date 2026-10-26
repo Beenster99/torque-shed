@@ -3660,6 +3660,10 @@ func _test_perf_steady() -> void:
 	Shed.changed.emit()
 	for i in 5:
 		await get_tree().process_frame
+	# (whatever is still to be put up from earlier, a crew member's home left by a test before this one, goes up first)
+	for i in 30:
+		Shed.changed.emit()
+		await get_tree().process_frame
 	# The shed changing over and over, with nothing to redraw: the same views, no more nodes.
 	var views := {}
 	for id in ws.bike_views:

@@ -52,7 +52,7 @@ func setup(w: AdventureWorld, t: RealTerrain) -> void:
 	_material.vertex_color_use_as_albedo = true
 	_material.roughness = 1.0
 	if w.route != null:
-		_land = (w.route.look["land"]["tarmac"] as Color).lerp(WOODS, 0.55)
+		_land = (w.route.look["land"]["tarmac"] as Color).lerp(w.route.look.get("woods", WOODS), 0.55)
 		_snow_line = w.route.snow_line
 		for k in range(0, w.route.px.size(), 16):
 			_road.append(Vector2(w.route.px[k], w.route.pz[k]))
