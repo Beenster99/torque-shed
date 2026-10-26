@@ -135,6 +135,13 @@ var build: BikeBuild
 
 # Rider inputs, set by the player controller or by tests.
 var throttle := 0.0
+## Cruise control (a dashboard with "cruise"): the speed it holds, m/s, 0 when it's off. The
+## brakes, the clutch, a crash or the engine stopping cancel it; opening the throttle further than
+## it holds rides faster for as long as you hold it open, then it settles back.
+var cruise_speed := 0.0
+var _cruise_i := 0.0   # the throttle it's found holds the speed (the controller's integral)
+## The slowest cruise control will hold (m/s): 30 km/h.
+const CRUISE_MIN := 8.33
 var front_brake := 0.0
 var rear_brake := 0.0
 var lean_input := 0.0      # -1 lean left .. 1 lean right
@@ -203,7 +210,7 @@ var _traction := 1.0
 var _crash_timer := 0.0
 var _base_com := Vector3.ZERO
 var _rider_shape_index := -1
-var _ragdoll: RigidBody3D
+var _ragdoll: RiderRagdoll
 var _starting := 0.0
 var _shift_from_rpm := 0.0
 var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
@@ -507,7 +514,7 @@ func shift_origin(d: Vector3) -> void:
 		if w.has("contact_pos"):
 			w["contact_pos"] = (w["contact_pos"] as Vector3) - d
 	if is_instance_valid(_ragdoll):
-		_ragdoll.global_position -= d
+		_ragdoll.shift(d)
 
 
 ## With the controls off (a menu up: the game never pauses, alone or in co-op) and the bike
@@ -543,7 +550,7 @@ func respawn() -> void:
 
 
 ## Makes the bike a ghost for `seconds`: see-through, and passing through other bikes, the
-## traffic and the police (it still rides on the ground and stops at walls), and nothing it
+## traffic (it still rides on the ground and stops at walls), and nothing it
 ## touches throws the rider off.
 func start_ghost(seconds := BikeGhost.TIME) -> void:
 	ghost_left = seconds
@@ -1151,7 +1158,11 @@ func _update_engine(delta: float) -> void:
 	# at 0 it goes exactly where the input is, snap shut included.
 	var smooth := clampf(assist * 2.0, 0.0, 1.0)
 	var rate := lerpf(1000.0, 5.0 if throttle > _throttle_eff else 8.0, smooth)
-	_throttle_eff = move_toward(_throttle_eff, throttle, rate * delta)
+	# A gentler ride mode (Tour, Wet) opens the throttle more softly, whoever's wrist it is.
+	var mode_rate := build.mode_throttle_rate()
+	if mode_rate > 0.0 and throttle > _throttle_eff:
+		rate = minf(rate, mode_rate)
+	_throttle_eff = move_toward(_throttle_eff, _cruise_throttle(delta), rate * delta)
 	var v_ground := maxf(absf(speed), 1.0)
 	var spin_ratio: float = (rear["omega"] * float(rear.get("r_eff", build.rear_radius)) - v_ground) / v_ground
 	var tc_target := 1.0
@@ -1182,7 +1193,7 @@ func _update_engine(delta: float) -> void:
 		var cap := deg_to_rad(lerpf(20.0, 4.0, minf(build.aid_strength("anti_wheelie"), 1.0)))
 		tc_target = minf(tc_target, clampf(1.0 - (pitch_angle - cap) * 12.0, 0.05, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
-	var torque := build.engine_torque(rpm) * _throttle_eff * _traction
+	var torque := build.engine_torque(rpm) * _throttle_eff * _traction * build.mode_power()
 	if heat:
 		torque *= heat.power   # a cold engine is a little down on power, an overheating one more so
 	if rpm >= build.redline:
@@ -1752,7 +1763,7 @@ static func _solve_spin(omega0: float, v_long: float, vden: float, r: float, kp:
 ## edge of grip, 0 lets it lock. Riding realism 0.5 and up looks after the front; ABS looks after
 ## its wheels whatever the setting.
 func _brake_care(is_front: bool) -> float:
-	if build.has_aid("abs"):
+	if build.abs_on(is_front):
 		return 1.0
 	if is_front:
 		return clampf(assist * 2.0, 0.0, 1.0)
@@ -1899,6 +1910,42 @@ func _check_crash() -> void:
 
 
 ## How steady the rider's hands and body are on one wheel: rider assist, plus the Balance skill.
+## The dash's next ride mode (see BikeBuild.RIDE_MODES). "" or why it can't.
+func next_ride_mode() -> String:
+	if build == null or not build.dash_features.has("modes"):
+		return "This dashboard has no ride modes."
+	if not build.has_ride_modes():
+		return "Ride modes need an ECU with rider aids (ABS, traction control...)."
+	build.ride_mode = BikeBuild.MODE_ORDER[(BikeBuild.MODE_ORDER.find(build.ride_mode) + 1) % BikeBuild.MODE_ORDER.size()]
+	return ""
+
+
+## Cruise control on at the speed you're doing now, or off again. "" or why it can't.
+func toggle_cruise() -> String:
+	if cruise_speed > 0.0:
+		cruise_speed = 0.0
+		return ""
+	if build == null or not build.dash_features.has("cruise"):
+		return "This dashboard has no cruise control."
+	if not engine_on or gear == NEUTRAL or speed < CRUISE_MIN or is_crashed:
+		return "Cruise control holds %d %s or more: get going in gear first." % [Units.speed_value(CRUISE_MIN), Units.speed_unit()]
+	cruise_speed = speed
+	_cruise_i = _throttle_eff
+	return ""
+
+
+## The throttle as cruise control works it: the rider's, or more to hold the set speed.
+func _cruise_throttle(delta: float) -> float:
+	if cruise_speed <= 0.0:
+		return throttle
+	if front_brake > 0.1 or rear_brake > 0.1 or clutch_in or is_crashed or not engine_on or not controls_enabled or gear == NEUTRAL:
+		cruise_speed = 0.0
+		return throttle
+	var err := cruise_speed - speed
+	_cruise_i = clampf(_cruise_i + err * 0.06 * delta, 0.0, 1.0)
+	return maxf(throttle, clampf(_cruise_i + err * 0.2, 0.0, 1.0))
+
+
 func _steadiness() -> float:
 	return lerpf(0.45, 1.0, assist) + 0.12 * float(skills.get("balance", 0))
 
@@ -1936,9 +1983,8 @@ func _spawn_ragdoll() -> void:
 	_ragdoll = RiderRagdoll.new()
 	get_parent().add_child(_ragdoll)
 	_ragdoll.dress(rider_gear, rider_color)
-	_ragdoll.global_transform = global_transform.translated_local(Vector3(0.0, build.seat_height, 0.0))
-	_ragdoll.linear_velocity = linear_velocity * 0.9 + Vector3.UP * 2.0
-	_ragdoll.angular_velocity = Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4))
+	_ragdoll.launch(global_transform.translated_local(Vector3(0.0, build.seat_height + 0.35, 0.0)), linear_velocity * 0.9 + Vector3.UP * 2.0,
+		Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4)))
 
 
 func _clear_ragdoll() -> void:
@@ -1977,8 +2023,7 @@ func indicate(which: int) -> String:
 	return ""
 
 
-## The stop lamp from the brakes as the bike uses them (the rider's, a menu's held brake or the
-## police's stop), and the indicators' flash, self-cancel and relay tick. They need the ignition
+## The stop lamp from the brakes as the bike uses them (the rider's, or a menu's held brake), and the indicators' flash, self-cancel and relay tick. They need the ignition
 ## (and the lights' fuse).
 func _step_lamps(delta: float) -> void:
 	var live := engine_on and str(faults.get("fuse", "")) != "lights"

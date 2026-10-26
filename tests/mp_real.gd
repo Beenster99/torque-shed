@@ -19,6 +19,7 @@ var main: Node
 
 func _ready() -> void:
 	Shed.demo_bikes = true
+	AdventureRoute.forks_on = true   # out of the game, kept working
 	AdventureTrip.instant = true
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--role="):

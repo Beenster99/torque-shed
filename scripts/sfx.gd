@@ -74,9 +74,10 @@ const RECORDED := {
 	"bell_chime": ["doorbellchime"],
 	"phone_ring": ["telephone1", "telephone2", "telephone3"],
 	"light_switch": ["lightswitch1a", "lightswitch1b", "lightswitch2", "lightswitch3"],
-	"shift_slick": ["gearshift1a", "gearshift1b", "gearshift1c"],
-	"shift_click": ["gearshift3", "gearshift4a", "gearshift1c"],
-	"shift_clunk": ["gearshift2", "gearshift4b"],
+	# Simon's four gear clunks, and lighter, quicker takes made from them for a click and a slick box.
+	"shift_slick": ["gearslick1", "gearslick2", "gearslick3", "gearslick4"],
+	"shift_click": ["gearclick1", "gearclick2", "gearclick3", "gearclick4"],
+	"shift_clunk": ["gearclunk1", "gearclunk2", "gearclunk3", "gearclunk4", "gearclunk5", "gearclunk6", "gearclunk7", "gearclunk8"],
 	"starter": ["starter1", "starter2", "starter3", "starter4"],
 	"starter_struggle": ["starterstruggle1", "starterstruggle2", "starterstruggle3", "starterstruggle4"],
 	"horn_disc": ["horn2", "horn4", "horn7"],

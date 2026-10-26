@@ -29,6 +29,7 @@ var bike_order_panel: BikeOrderPanel   # a bike's card: order one of these, or c
 var bike_copy: BikeCopyView     # which bike you're looking at, for that card ({order_bike})
 var home_panel: HomePanel       # a collection bike's card, from its information stand at its owner's house
 var home_offer: HomeOfferPanel  # someone's offer for a bike in your collection: accept or decline
+var bike_picker: AdventureBikePicker   # off on an adventure: which bike you're taking
 var _offer_check := 0.0
 var staff_panel: StaffPanel     # talking to one of the staff and giving them a job
 var staff_view: StaffView       # the garage's staff at work
@@ -75,9 +76,14 @@ var _safe_xf := Transform3D()
 var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
 ## The nod button held on the bike (s), and whether this hold has become a wave yet.
 var _nod_held := 0.0
+## The reverse view: latched on by a tap (see _rear_view_step), and how long the button's been held.
+var _rear_latched := false
+var _rear_held := 0.0
 var _waved := false
 ## Held this long (s), the nod button raises the left hand in a wave instead.
 const WAVE_HOLD := 0.35
+## A press of the reverse view button shorter than this (s) is a tap: it toggles the view.
+const REAR_TAP := 0.3
 var _fade: ColorRect        # the black that fades in and out going back to the garage
 var _going_home := false
 ## The bike you've just got off, and when (ticks, ms): online the shed still has you on it
@@ -117,13 +123,8 @@ func _ready() -> void:
 	hud_satnav = SatnavScreen.new()
 	hud_satnav.framed = true
 	hud_satnav.visible = false
-	hud_satnav.anchor_top = 1.0
-	hud_satnav.anchor_bottom = 1.0
-	hud_satnav.offset_left = 24.0
-	hud_satnav.offset_right = 24.0 + 300.0
-	hud_satnav.offset_top = -24.0 - 200.0
-	hud_satnav.offset_bottom = -24.0
 	ui.add_child(hud_satnav)
+	place_hud_satnav()
 	emote_bar = EmoteBar.new()
 	ui.add_child(emote_bar)
 	computer = PartsComputer.new()
@@ -210,6 +211,8 @@ func _ready() -> void:
 	home_offer.visible = false
 	ui.add_child(home_offer)
 	home_offer.closed.connect(func(): _capture_mouse(true))
+	bike_picker = AdventureBikePicker.new()
+	ui.add_child(bike_picker)
 	staff_panel = StaffPanel.new()
 	staff_panel.visible = false
 	ui.add_child(staff_panel)
@@ -459,9 +462,9 @@ func _end_session() -> void:
 	_capture_mouse(false)
 
 
-## A collection bike's card or an offer for one of yours is up.
+## A collection bike's card, an offer for one of yours or the adventure's bike picker is up.
 func _home_ui_open() -> bool:
-	return home_panel.visible or home_offer.visible
+	return home_panel.visible or home_offer.visible or (bike_picker != null and bike_picker.visible)
 
 
 ## Now and then, on foot with nothing else open: an offer for one of your bikes comes up to answer.
@@ -857,6 +860,8 @@ func _stop_riding() -> void:
 		_left_at = Time.get_ticks_msec()
 	riding_id = 0
 	camera.look_back = false
+	_rear_latched = false
+	_rear_held = 0.0
 	_nod_held = 0.0
 	if bike:
 		bike.queue_free()
@@ -900,6 +905,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			home_panel.close_dialog()
 		elif home_offer.visible:
 			home_offer.close_dialog()
+		elif bike_picker.visible:
+			bike_picker.pick(bike_picker.choices[0] if not bike_picker.choices.is_empty() else {})   # Esc: the first one
 		elif staff_panel.visible:
 			staff_panel.close_dialog()
 		elif paint_bench.visible:
@@ -966,6 +973,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("headlight"):
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
 		Shed.request({"a": "beam", "bike": riding_id, "beam": bike.beam})   # kept with the bike
+	elif event.is_action_pressed("ride_mode"):
+		var why := bike.next_ride_mode()
+		hud.flash(why if why != "" else "Ride mode: %s" % BikeBuild.mode_name(bike.build.ride_mode), 1.5, why != "")
+		if why == "":
+			Shed.request({"a": "ride_mode", "bike": riding_id, "mode": bike.build.ride_mode})   # kept with the bike
+	elif event.is_action_pressed("cruise"):
+		var why := bike.toggle_cruise()
+		hud.flash(why if why != "" else ("Cruise control: %s" % Units.kmh(bike.cruise_speed * 3.6) if bike.cruise_speed > 0.0 else "Cruise control off"), 1.5, why != "")
 	elif event.is_action_pressed("indicate_left") or event.is_action_pressed("indicate_right"):
 		var why := bike.indicate(-1 if event.is_action_pressed("indicate_left") else 1)
 		if why != "":
@@ -988,6 +1003,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				satnav._timer = 0.0   # the new page straight away
 		else:
 			hud.flash("No sat nav on this bike", 1.5)
+	elif event.is_action_pressed("satnav_zoom_in") or event.is_action_pressed("satnav_zoom_out"):
+		hud.flash(Satnav.zoom(-1 if event.is_action_pressed("satnav_zoom_in") else 1), 1.0)
+		if satnav:
+			satnav._timer = 0.0
+	elif event.is_action_pressed("satnav_satellite"):
+		Settings.satnav_satellite = not Settings.satnav_satellite
+		hud.flash("Sat nav: satellite view" if Settings.satnav_satellite else "Sat nav: map", 1.2)
+		if satnav:
+			satnav._timer = 0.0
+	elif event.is_action_pressed("satnav_portrait"):
+		Settings.satnav_portrait = not Settings.satnav_portrait
+		hud.flash("Sat nav: portrait" if Settings.satnav_portrait else "Sat nav: landscape", 1.2)
 	elif event.is_action_pressed("screen_up") or event.is_action_pressed("screen_down"):
 		_move_screen(0.2 if event.is_action_pressed("screen_up") else -0.2)
 	elif event.is_action_pressed("telemetry"):
@@ -1029,17 +1056,12 @@ func _physics_process_body(delta: float) -> void:
 				bike.throttle = 0.0
 				bike.front_brake = 1.0
 				bike.rear_brake = 1.0
-			if trip.police_hold():
-				# Pulled over by the police: off the throttle and braking to a stop, still steering.
-				bike.throttle = 0.0
-				bike.front_brake = maxf(bike.front_brake, 0.35)
-				bike.rear_brake = maxf(bike.rear_brake, 0.5)
 			# Tired out on an adventure the bars answer slower (see AdventureNeedsView.steer).
 			bike.lean_input = trip.needs.steer(_steer_input(stick.x, delta), delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
 			bike.clutch_in = Input.is_action_pressed("clutch")
 			# LB and RB together start the engine (Controls.PAD_CHORDS): no look back meanwhile.
-			camera.look_back = Input.is_action_pressed("look_back") and not Controls.chord_held()
+			camera.look_back = _rear_view_step(delta)
 			_nod_step(delta)
 			# The right stick swings the camera round, as the mouse does.
 			var look := Controls.stick(true)
@@ -1112,6 +1134,8 @@ func _physics_process_body(delta: float) -> void:
 	telemetry_overlay.bike = bike
 	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
 	hud_satnav.visible = bike != null and satnav != null and satnav.fitted() and bike.engine_on and Settings.satnav_hud and not menu.visible
+	if hud_satnav.visible:
+		place_hud_satnav()
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0
@@ -1334,6 +1358,41 @@ func _tow_step(delta: float) -> void:
 			hud.flash("At the stop: the tow strap's off.", 3.0)
 
 
+## The HUD's sat nav, as big and where the settings say (Settings.satnav_scale, satnav_x and
+## satnav_y), wide or standing tall (satnav_portrait), kept on the screen.
+func place_hud_satnav() -> void:
+	var r := hud_rect(get_viewport().get_visible_rect().size)
+	hud_satnav.position = r.position
+	hud_satnav.size = r.size
+
+
+## Where the HUD's sat nav goes on a screen `screen` big (see place_hud_satnav).
+static func hud_rect(screen: Vector2) -> Rect2:
+	var s := Vector2(200.0, 300.0) if Settings.satnav_portrait else Vector2(300.0, 200.0)
+	s *= Settings.satnav_scale
+	s = s.min(screen - Vector2(48.0, 48.0)).max(Vector2(60.0, 60.0))
+	var room := (screen - s - Vector2(48.0, 48.0)).max(Vector2.ZERO)
+	return Rect2(Vector2(24.0, 24.0) + room * Vector2(Settings.satnav_x, Settings.satnav_y), s)
+
+
+## The reverse view button on the bike: a tap turns the view round to look behind and leaves it
+## there till the next tap; held longer than REAR_TAP it looks behind only while it's held.
+## Whether to look behind now. (LB and RB together start the engine: no reverse view meanwhile.)
+func _rear_view_step(delta: float) -> bool:
+	var down := Input.is_action_pressed("look_back")
+	if Controls.chord_held() or (down and _rear_held < 0.0):
+		# Part of the engine chord: this press doesn't count (-1 until it's let go).
+		_rear_held = -1.0 if down or Controls.chord_held() else 0.0
+		return _rear_latched
+	if down:
+		_rear_held += delta
+		return true
+	if _rear_held > 0.0:
+		_rear_latched = not _rear_latched if _rear_held < REAR_TAP else false
+	_rear_held = 0.0
+	return _rear_latched
+
+
 ## The nod button on the bike: a tap nods to a biker you're passing, held it's a wave with the
 ## left hand off the bar (as soon as it's held long enough, WAVE_HOLD).
 func _nod_step(delta: float) -> void:
@@ -1473,7 +1532,13 @@ func _update_dash() -> void:
 		if b.dash_features.has("rpm"):
 			var seg := roundi(clampf(bike.rpm / b.redline, 0.0, 1.0) * 10.0)
 			revs = "\n" + "#".repeat(seg) + "-".repeat(10 - seg) + " %d rpm" % (roundi(bike.rpm / 100.0) * 100)
-		_dash.text = "%d %s   %s%s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(), gear, revs, gauge]
+		# The ride mode and cruise control, where the dash has them.
+		var tags := ""
+		if b.has_ride_modes():
+			tags += "  " + BikeBuild.mode_name(b.ride_mode).to_upper()
+		if bike.cruise_speed > 0.0:
+			tags += "  CRUISE"
+		_dash.text = "%d %s   %s%s\n%s%s" % [Units.speed_value(bike.speed), Units.speed_unit(), gear, revs, gauge, tags]
 	_dash.modulate = Color(1.0, 0.45, 0.3) if fuel < 0.15 else Color(0.75, 1.0, 0.85)
 
 

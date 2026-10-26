@@ -74,8 +74,6 @@ var _fork_timer := 0.0
 var _fork_due := {}          # forks we've told the host we're nearly at
 var _fork_choice := {}       # what the panel shows now (AdventureForks.choice)
 var _map: AdventureMap       # the paper map, made the first time it's opened
-## The police on the road (see AdventurePolice), while you're out here.
-var police: AdventurePolice
 var _nav_cache: Satnav.AdventureNav   # for the wrong-way warning on the HUD (see wrong_way)
 ## The trip computer for the whole ride, from setting off (see Satnav.computer).
 var computer := TripComputer.new()
@@ -163,11 +161,6 @@ func on_trip() -> bool:
 	return world != null
 
 
-## Whether the police are pulling you over (your throttle's cut and you brake, see Main).
-func police_hold() -> bool:
-	return police != null and is_instance_valid(police) and police.holding()
-
-
 ## Called whenever the shed changes: loads the adventure the host started, or brings you home
 ## from one that's over.
 func sync() -> void:
@@ -238,8 +231,21 @@ func enter() -> void:
 	moment_done = false
 	_started_at = Time.get_ticks_msec()
 	close_journey()
-	# The bike you're on, or the one you're standing by in the shed: the one you'd like to take.
+	# The bike you're on, or the one you're standing by in the shed: the one you'd like to take,
+	# unless you pick another (your own or the garage's).
 	var preferred: int = main.riding_id if main.bike else _nearest_bike()
+	var join := {"a": "adventure_join", "bike": preferred}
+	if not instant and main.bike_picker:
+		var list := AdventureBikePicker.choices_for(Shed.me(), preferred)
+		if list.size() > 1 or (list.size() == 1 and int(list[0]["bike"]) != preferred):
+			main._capture_mouse(false)
+			var c: Dictionary = await main.bike_picker.choose(list)
+			main._capture_mouse(true)
+			join = {"a": "adventure_join", "bike": int(c.get("bike", 0)), "home": int(c.get("home", 0)), "foot": c.is_empty()}
+			if main.bike and int(join["bike"]) != main.riding_id:
+				# Another bike: this one's left parked at the shed.
+				Shed.request({"a": "dismount", "bike": main.riding_id, "xf": main.garage_spot(main.riding_id)})
+				main._stop_riding()
 	if not instant:
 		await main._fade_to(1.0)
 	if main.recovery.driving:
@@ -256,10 +262,6 @@ func enter() -> void:
 	world.picks_taken.connect(_on_picks_taken)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
 	world.add_child(AdventureTraffic.new())   # cars, vans, lorries and buses both ways
-	police = AdventurePolice.new()
-	police.trip = self
-	police.world = world
-	world.add_child(police)
 	_sleep_town(true)
 	var from := maxf(0.0, start_s() - 120.0)
 	world.preload_range(from, from + 420.0)
@@ -273,7 +275,7 @@ func enter() -> void:
 		main.walker.place(side)
 	Daylight.adventure_rate = Adventure.day_rate()
 	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0)
-	Shed.request({"a": "adventure_join", "bike": preferred})
+	Shed.request(join)
 	computer.reset()
 	photos.begin()   # (a ride carried on picks its diary and trip computer up again)
 	if start_s() > 0.0:
@@ -355,7 +357,6 @@ func _unload() -> void:
 		world.origin_shifted.disconnect(_on_shift)
 		world.queue_free()
 		world = null
-	police = null
 	trip_id = 0
 	_sleep_town(false)
 	Daylight.adventure_rate = 0.0

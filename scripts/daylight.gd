@@ -346,7 +346,7 @@ func _cloud_noise() -> NoiseTexture2D:
 	return tex
 
 
-## The sky shader at a cloud setting ("off", "low", "high"; see CloudSky.quality()). Rebuilt
+## The sky shader at a cloud setting ("off" to "ultra"; see CloudSky.quality()). Rebuilt
 ## only when the quality actually changes.
 func set_cloud_quality(setting: String) -> void:
 	var q := CloudSky.quality(setting, Lighting.forward_plus())

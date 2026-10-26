@@ -20,7 +20,7 @@ const VIEW_MIX := {"rider": [0.75, 1.3], "chase": [1.0, 0.7], "remote": [1.0, 0.
 ## The recorded gear lever layered on each shift, by the gearbox's feel (Sfx "shift_<feel>"):
 ## [dB, lowest pitch, highest pitch]. The quickshifter's slick tick is light and high, a sports
 ## box clicks as recorded, a basic or old box clunks low and heavy.
-const SHIFT_FEEL := {"slick": [-10.0, 1.12, 1.24], "click": [-6.0, 0.95, 1.06], "clunk": [-3.0, 0.76, 0.88]}
+const SHIFT_FEEL := {"slick": [-8.0, 0.97, 1.05], "click": [-4.0, 0.96, 1.04], "clunk": [-1.0, 0.95, 1.03]}
 ## How loud each step of a gear change is (dB): into first the loudest clunk, finding neutral
 ## a soft click.
 const STEP_DB := {"first": 0.0, "low": -3.0, "high": -5.0, "down": -2.0, "neutral": -9.0}
@@ -410,10 +410,13 @@ func _shift(from: int, to: int) -> void:
 	var kind := "neutral" if step == "neutral" else "shift_" + step
 	if bank and bank.recorded_shots.has("shift") and step != "neutral":
 		kind = "shift"
-	if _play(_oneshot_en, kind, float(STEP_DB.get(step, -3.0)), _rng.randf_range(0.96, 1.04)):
-		gear_sounds += 1
-	# The lever: a light tick finding neutral, a clunk into first, else the box's own feel.
+	# The lever: a light tick finding neutral, a clunk into first, else the box's own feel. With
+	# its recording there (Simon's clunks), the made box sound is only a quiet body under it.
 	var feel := "slick" if step == "neutral" else ("clunk" if step == "first" else last_shift)
+	var sfx := get_node_or_null("/root/Sfx")
+	var under := -10.0 if sfx != null and not (sfx.call("recordings", "shift_" + feel) as Array).is_empty() else 0.0
+	if _play(_oneshot_en, kind, float(STEP_DB.get(step, -3.0)) + under, _rng.randf_range(0.96, 1.04)):
+		gear_sounds += 1
 	_lever_sound(feel, -8.0 if step == "neutral" else 0.0, lerpf(1.05, 0.93, EngineSynth.gear_heft(spec)))
 
 

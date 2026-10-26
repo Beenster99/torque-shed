@@ -20,8 +20,6 @@ signal weather_received(state: String, from: String, blend: float, wet: float)
 signal traffic_received(state: PackedFloat32Array)
 ## The host's traffic on an adventure's road (see AdventureTraffic and TrafficStream.pack).
 signal adv_traffic_received(state: PackedFloat32Array)
-## The host's police cars out on an adventure (see AdventurePolice.pack).
-signal police_received(state: PackedFloat32Array)
 
 ## Whether friends outside your network can reach your shed: "" (not hosting), "checking",
 ## "open" (the router opened the port for us via UPnP) or "closed" (it has to be forwarded by hand).
@@ -351,12 +349,3 @@ func _adv_traffic(state: PackedFloat32Array) -> void:
 	adv_traffic_received.emit(state)
 
 
-## Host only: the police cars on the adventure's road (see AdventurePolice), ten times a second.
-func send_police(state: PackedFloat32Array) -> void:
-	if is_host() and not players.is_empty():
-		_police.rpc(state)
-
-
-@rpc("authority", "call_remote", "unreliable_ordered")
-func _police(state: PackedFloat32Array) -> void:
-	police_received.emit(state)

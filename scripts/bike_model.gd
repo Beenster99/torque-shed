@@ -993,7 +993,7 @@ func _arm_type() -> String:
 ## triangulated rear end that looks rigid but moves as one with the shocks hidden underneath.
 ## A swingarm part of its own replaces it: a deep box-section arm, a banana arm curving up over
 ## the exhaust, a braced MX arm with its truss underneath and chain slider, a rigid hardtail rear
-## end, or a single-sided arm.
+## end, or a single-sided arm (plain, or the gull-wing kind curving over the exhaust).
 func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 	_swingarm = Node3D.new()
 	_swingarm.position = _pivot
@@ -1126,6 +1126,32 @@ func _draw_own_swingarm(kind: String, arm_x: float, mat: Material) -> bool:
 				_box(axle, Vector3(0.016, 0.075, 0.09), mat, _swingarm)   # the axle plate
 			var cross := _to_arm(Vector3(0.0, _seat_front.y - 0.06, _pivot.z + 0.12))
 			_tube(cross - Vector3(arm_x * 0.85, 0.0, 0.0), cross + Vector3(arm_x * 0.85, 0.0, 0.0), 0.013, mat, Vector3.ONE, _swingarm)
+		"single_gull":
+			# A modern streetfighter's single-sided arm: a deep cast beam down the chain side that
+			# bows up and out over the exhaust in a gull-wing curve, with lightening holes cast
+			# through it, an eccentric hub carrier at the axle for the chain adjustment and the
+			# wheel on one big centre nut, the right-hand side of the wheel left bare.
+			var x := -arm_x - 0.012
+			var secs := []
+			for k in 9:
+				var f := k / 8.0
+				secs.append({"c": Vector3(x - 0.018 * sin(f * PI), 0.035 * sin(pow(f, 0.8) * PI), lerpf(0.0, _arm_len - 0.03, f)),
+					"w": lerpf(0.045, 0.032, f), "up": lerpf(0.085, 0.06, f), "down": lerpf(0.07, 0.055, f), "n": 3.4})
+			_shell(secs, mat, false, 0.0, TAU, _swingarm).name = "SingleSidedArm"
+			for f in [0.3, 0.52, 0.72]:
+				var hole := _mesh_instance(_sphere(0.026 * (1.0 - f * 0.35)), dark,
+					Vector3(x - 0.018 * sin(f * PI) - 0.04, 0.035 * sin(pow(f, 0.8) * PI) + 0.005, _arm_len * f), _swingarm)
+				hole.scale = Vector3(0.25, 0.8, 1.5)
+				hole.name = "ArmHole"
+			var carrier := _mesh_instance(_cylinder(0.085, 0.06), mat, Vector3(x + 0.02, 0.0, _arm_len), _swingarm)
+			carrier.rotation.z = PI * 0.5
+			var ring := _mesh_instance(_torus(0.07, 0.006), steel, Vector3(x - 0.012, 0.0, _arm_len), _swingarm)
+			ring.rotation.z = PI * 0.5
+			var nut := _mesh_instance(_cylinder(0.038, 0.032, 0.035, 6), steel, Vector3(arm_x - 0.02, 0.0, _arm_len), _swingarm)
+			nut.rotation.z = PI * 0.5
+			nut.name = "CentreNut"
+			_box(Vector3(-arm_x * 0.5, 0.0, 0.04), Vector3(arm_x + 0.03, 0.075, 0.055), mat, _swingarm)
+			return true
 		_:
 			return false
 	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), mat, _swingarm)
@@ -2804,6 +2830,9 @@ func _draw_headlight() -> void:
 		"bugeye":
 			_bugeye_lamps(at, size, shell, lens, chrome)
 			face_r = 0.0
+		"triple":
+			_triple_lamps(at, size, shell, lens, lk)
+			face_r = 0.0
 		"nacelle":
 			# A round lamp sunk into a cowl that wraps back over the fork tops.
 			_shell([{"c": at + Vector3(0.0, 0.0, -size * 0.5), "w": size * 1.05, "up": size * 1.05, "n": 2.0},
@@ -2854,6 +2883,40 @@ func _draw_headlight() -> void:
 	if lk.get("brackets", false):
 		for side in [-1.0, 1.0]:
 			_tube(at + Vector3(size * 1.05 * side, 0.0, 0.0), Vector3(0.09 * side, -0.02, 0.0), 0.007, chrome, Vector3.ONE, _steer_node)
+
+
+## The modern Speed Triple's pair: two slim, angular LED lamps either side of the middle,
+## swept back and raised at their outer ends like narrowed eyes, each with a daytime running
+## light along its brow that's lit whenever the ignition is on (look "brow" false leaves it
+## off), on a cast bracket between them.
+func _triple_lamps(at: Vector3, size: float, shell: Material, lens: Material, lk: Dictionary) -> void:
+	var gap := size * 1.15
+	var black := _mat(Color(0.04, 0.04, 0.045), 0.5, 0.45)
+	var drl := _lamp(Color(0.92, 0.96, 1.0), 3.5, "drl")
+	var inner := _lamp(Color(0.85, 0.92, 1.0), 3.0, "head")
+	for side in [-1.0, 1.0]:
+		var c := at + Vector3(side * gap, size * 0.1, 0.0)
+		var b := Basis(Vector3.UP, -side * 0.38) * Basis(Vector3.BACK, -side * 0.3)
+		var body := _box(c + b * Vector3(0.0, 0.0, size * 0.45), Vector3(size * 1.9, size * 0.8, size * 1.3), shell, _steer_node)
+		body.basis = b
+		body.name = "TripleLamp"
+		# The housing tapers to a point at the outer end: a wedge cut on the slant over it.
+		var wedge := _box(c + b * Vector3(side * size * 0.95, -size * 0.12, size * 0.4), Vector3(size * 0.5, size * 0.55, size * 1.2), shell, _steer_node)
+		wedge.basis = b * Basis(Vector3.BACK, side * 0.6)
+		var glass := _box(c + b * Vector3(0.0, -size * 0.06, -size * 0.24), Vector3(size * 1.75, size * 0.52, 0.006), lens, _steer_node)
+		glass.basis = b
+		glass.name = "Lens"
+		# The projector's bright eye in the glass, nearer the middle.
+		var eye := _mesh_instance(_cylinder(size * 0.17, 0.004), inner, c + b * Vector3(-side * size * 0.4, -size * 0.08, -size * 0.25), _steer_node)
+		eye.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
+		if lk.get("brow", true):
+			var brow := _box(c + b * Vector3(0.0, size * 0.28, -size * 0.25), Vector3(size * 1.8, size * 0.07, 0.008), drl, _steer_node)
+			brow.basis = b
+			brow.name = "DRL"
+		# The bracket arm back to the fork leg.
+		_tube(c + b * Vector3(side * size * 0.3, -size * 0.2, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+	var bridge := _box(at + Vector3(0.0, -size * 0.05, size * 0.5), Vector3(gap * 1.2, size * 0.6, size * 0.9), black, _steer_node)
+	bridge.name = "LampBracket"
 
 
 ## An old-school rectangular headlight centred on `at` (steering space), `size` setting its scale:
@@ -6943,12 +7006,14 @@ static func assembly_display(parts: Dictionary, cond: Dictionary, unseen := {}) 
 	var model := BikeModel.new()
 	model.build_from(BikeBuild.new(build, cond), Color(0.55, 0.56, 0.58), fitted, cond, false)
 	model.strip_to(parts.keys())
-	# Off the bike, a part leaves behind the cables and hoses that ran to the rest of it.
+	# Off the bike, a part leaves behind the cables and hoses that ran to the rest of it, and a
+	# headlight or tail unit the little stock indicators the bike wears beside them.
 	for slot in model._slot_meshes:
 		for mi in (model._slot_meshes[slot] as Array).duplicate():
-			if (mi as Node).has_meta("bike_only"):
+			if (mi as Node).has_meta("bike_only") or model._stock_pieces.has(mi):
 				(model._slot_meshes[slot] as Array).erase(mi)
 				mi.free()
+	model._stock_pieces.clear()
 	var bounds := AABB()
 	var first := true
 	for slot in parts:
@@ -7036,8 +7101,12 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 	var pieces := []   # [mesh, material, position]
 	match str(p.get("container", "")):
 		"Jerry can":
-			var big := float(p["litres"]) > 6.0
-			size = Vector3(0.14 if big else 0.11, 0.38 if big else 0.3, 0.3 if big else 0.24)
+			var litres := float(p["litres"])
+			size = Vector3(0.11, 0.3, 0.24)
+			if litres > 15.0:
+				size = Vector3(0.17, 0.47, 0.35)
+			elif litres > 6.0:
+				size = Vector3(0.14, 0.38, 0.3)
 			pieces = [[_box_mesh(size), see, Vector3(0.0, size.y * 0.5, 0.0)],
 				[_box_mesh(Vector3(0.03, 0.04, size.z * 0.6)), body, Vector3(0.0, size.y + 0.02, 0.0)],
 				[_cyl_mesh(0.022, 0.05), dark, Vector3(0.0, size.y + 0.01, size.z * 0.38)]]
@@ -7072,10 +7141,12 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 				for i in n:
 					pieces.append([_box_mesh(Vector3(0.006, 0.004, 0.05)), liquid, Vector3(-0.07 + i * 0.012, 0.058, 0.0)])
 		"Race fuel drum":
-			size = Vector3(0.2, 0.3, 0.2)
-			pieces = [[_cyl_mesh(0.1, 0.3), see, Vector3(0.0, 0.15, 0.0)], [_cyl_mesh(0.02, 0.03), dark, Vector3(0.05, 0.315, 0.0)]]
+			# A 25 litre drum stands taller and wider than the 5 litre one.
+			var k := 1.0 if float(p["litres"]) < 10.0 else 1.6
+			size = Vector3(0.2, 0.3, 0.2) * k
+			pieces = [[_cyl_mesh(0.1 * k, 0.3 * k), see, Vector3(0.0, 0.15 * k, 0.0)], [_cyl_mesh(0.02 * k, 0.03 * k), dark, Vector3(0.05 * k, 0.315 * k, 0.0)]]
 			if level > 0.01:
-				pieces.append([_cyl_mesh(0.094, 0.29 * level), liquid, Vector3(0.0, 0.005 + 0.145 * level, 0.0)])
+				pieces.append([_cyl_mesh(0.094 * k, 0.29 * k * level), liquid, Vector3(0.0, (0.005 + 0.145 * level) * k, 0.0)])
 		"Oil bottle":
 			size = Vector3(0.11, 0.3, 0.17)
 			pieces = [[_box_mesh(Vector3(0.11, 0.26, 0.17)), see, Vector3(0.0, 0.13, 0.0)],

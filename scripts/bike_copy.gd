@@ -18,6 +18,8 @@ extends RefCounted
 ##                   the roller door straight away; whatever the delivery area hasn't room for
 ##                   waits on order (Shed.on_order) and comes as soon as there is room. The request
 ##                   carries "quality" (0 worn .. 1 new); the host checks it and prices it itself.
+##                   With "built" (the Bike shop's second-hand bikes, see BikeShop) a used one comes
+##                   built too, ready to ride, its parts as worn as its quality says (used_age).
 ##   copy_blueprint  keeps the bike as a blueprint (its parts, their colours, its paint and fit),
 ##                   named after it, to build from or order the usual way ({menu}, Blueprints).
 ##
@@ -139,6 +141,12 @@ static func used_cond(quality: float) -> Dictionary:
 	return {"wear": USED_WEAR * k, "rust": USED_RUST * k, "dirt": USED_DIRT * k}
 
 
+## How old a used bike that comes built is (Shed.deliver_ready_bike's age: rust, muck and
+## wear) at `quality`: 0 new, up to 0.8 at the worn end.
+static func used_age(quality: float) -> float:
+	return 0.0 if is_new(quality) else (1.0 - clampf(quality, 0.0, 1.0)) * 0.8
+
+
 ## What the slider calls `quality` ("Used").
 static func quality_name(quality: float) -> String:
 	for n in QUALITY_NAMES:
@@ -184,13 +192,16 @@ static func free_name(base: String) -> String:
 # ---------------------------------------------------------------------------- from this machine
 
 ## Orders one of the bike at `src` with this player's own money: the cash goes here first, then
-## the host delivers it (and hands back anything it didn't spend). Returns why not, or "".
-static func order(src: Dictionary, quality := 1.0) -> String:
+## the host delivers it (and hands back anything it didn't spend); `built` has a used one come
+## built, ready to ride. Returns why not, or "".
+static func order(src: Dictionary, quality := 1.0, built := false) -> String:
 	var plan := plan_of(src)
 	if plan.is_empty():
 		return "That bike has gone."
 	var cost := total(lines(plan, Shed.me(), quality))
 	var action := {"a": "copy_order", "src": src, "paid": cost, "quality": quality}
+	if built:
+		action["built"] = true
 	var why := Shed.check(Shed.me(), action)
 	if why != "":
 		return why
@@ -225,7 +236,7 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's nothing on it to order."
 			if paid < cost:
 				return "That's %s now: you paid %s." % [TvChannels.money_text(cost), TvChannels.money_text(paid)]
-			if is_new(quality) and Shed.ready_bike_place() == null:
+			if (is_new(quality) or bool(action.get("built", false))) and Shed.ready_bike_place() == null:
 				return "There's nowhere to leave it built: the yard by the roller door and every bay are full. Move a bike first, or order it used."
 		"copy_blueprint":
 			if Shed.blueprints.size() >= Shed.MAX_BLUEPRINTS:
@@ -247,13 +258,14 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if paid > cost:
 				Shed.give_cash(peer, paid - cost, "Order change")
 			var by := Shed.orderer_name(peer)
-			if used.is_empty():
-				# New: it comes built, ready to ride.
+			if used.is_empty() or bool(action.get("built", false)):
+				# New (or a second-hand bike): it comes built, ready to ride.
 				var place: Dictionary = Shed.ready_bike_place()
-				var id := Shed.deliver_ready_bike(plan, place, cost, by)
+				var id := Shed.deliver_ready_bike(plan, place, cost, by, used_age(quality))
 				var at := "in the yard by the roller door" if int(place["bay"]) < 0 else "in bay %d" % (int(place["bay"]) + 1)
-				return "Ordered one of %s for %s: it's %s, built and ready to ride with %d%% of a tank." % [str(plan["name"]),
-					TvChannels.money_text(cost), at, roundi(Shed.build_of(id).fuel_litres / maxf(Shed.build_of(id).fuel_capacity, 0.01) * 100.0)]
+				return "Bought %s for %s: it's %s, ready to ride with %d%% of a tank." % [str(Shed.bikes[id]["name"]) if used.is_empty() else
+					"a %s %s" % [quality_name(quality).to_lower(), str(plan["name"])], TvChannels.money_text(cost), at,
+					roundi(Shed.build_of(id).fuel_litres / maxf(Shed.build_of(id).fuel_capacity, 0.01) * 100.0)]
 			var colors: Dictionary = plan.get("colors", {})
 			var boxed := 0
 			for r in rows:

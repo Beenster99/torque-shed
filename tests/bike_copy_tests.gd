@@ -141,7 +141,7 @@ func test_built() -> void:
 	var same := true
 	for slot in plan["parts"]:
 		same = same and Contracts.current_parts(id)[slot] == str(plan["parts"][slot])
-	check(same and str(bike["name"]) == "Rusty Ranger", "the very build it was ordered from, by name")
+	check(same and str(bike["name"]).begins_with("Tester's"), "the very build it was ordered from, named for who ordered it (%s)" % bike["name"])
 	var colours_ok := true
 	var as_new := true
 	for slot in PartsDB.SLOTS:
@@ -555,7 +555,7 @@ func test_project_card() -> void:
 	card._go.pressed.emit()
 	await _frames(1)
 	var got: int = newest.call()
-	check(not card.visible and got != 0 and str(Shed.bikes[got]["name"]) == "New cruiser" and str(Shed.bikes[got].get("style_order", "")) == "cruiser"
+	check(not card.visible and got != 0 and str(Shed.bikes[got]["name"]).ends_with("'s cruiser") and str(Shed.bikes[got].get("style_order", "")) == "cruiser"
 		and Money.rideable(got) and half.call(got), "Order it: a new cruiser in a bay, ready to ride (%s)" % (str(Shed.bikes[got]["name"]) if got != 0 else "none"))
 	Shed.garage_money = 5
 	pc.open_bike_order()

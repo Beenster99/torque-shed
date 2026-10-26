@@ -10414,11 +10414,15 @@
 	"dashboard": {
 		"analog_speedo": {
 			"name": "Analogue speedo",
-			"description": "Single round speedo. Just your speed.",
+			"description": "Single round speedo, with a little LCD window in its face for the gear, trip, mpg and range.",
 			"mass": 0.5,
 			"style": "analog",
 			"features": [
-				"speed"
+				"speed",
+				"gear",
+				"trip",
+				"economy",
+				"range"
 			],
 			"color": [
 				0.85,
@@ -10435,12 +10439,16 @@
 		},
 		"twin_clocks": {
 			"name": "Twin clocks",
-			"description": "Speedo and rev counter side by side.",
+			"description": "Speedo and rev counter side by side, with LCD windows for the gear, trip, mpg and range.",
 			"mass": 0.8,
 			"style": "twin",
 			"features": [
 				"speed",
-				"rpm"
+				"rpm",
+				"gear",
+				"trip",
+				"economy",
+				"range"
 			],
 			"color": [
 				0.85,
@@ -10457,13 +10465,16 @@
 		},
 		"lcd_basic": {
 			"name": "LCD dash",
-			"description": "Speed, revs and a gear readout.",
+			"description": "Speed, revs and a gear readout, with trip, mpg and range.",
 			"mass": 0.4,
 			"style": "lcd",
 			"features": [
 				"speed",
 				"rpm",
-				"gear"
+				"gear",
+				"trip",
+				"economy",
+				"range"
 			],
 			"color": [
 				0.08,
@@ -10478,14 +10489,19 @@
 		},
 		"tft_colour": {
 			"name": "Colour TFT dash",
-			"description": "Full colour with a shift light.",
+			"description": "Full colour with a shift light, trip computer, cruise control and ride modes (Sport, Tour, Wet) on an ECU with rider aids.",
 			"mass": 0.6,
 			"style": "tft",
 			"features": [
 				"speed",
 				"rpm",
 				"gear",
-				"shift_light"
+				"shift_light",
+				"trip",
+				"economy",
+				"range",
+				"cruise",
+				"modes"
 			],
 			"color": [
 				0.08,
@@ -10501,7 +10517,7 @@
 		},
 		"race_logger": {
 			"name": "Race data logger",
-			"description": "Shift light, gear, revs and a top-speed log.",
+			"description": "Shift light, gear, revs, a top-speed log and the trip computer, with ride modes on an ECU with rider aids.",
 			"mass": 0.5,
 			"style": "race",
 			"features": [
@@ -10509,7 +10525,11 @@
 				"rpm",
 				"gear",
 				"shift_light",
-				"top_speed"
+				"top_speed",
+				"trip",
+				"economy",
+				"range",
+				"modes"
 			],
 			"color": [
 				0.15,
@@ -10519,6 +10539,62 @@
 			"styles": [
 				"race"
 			]
+		},
+		"tft_naked": {
+			"name": "Streetfighter TFT dash",
+			"description": "A slim 5 inch colour TFT for a modern naked: big gear readout, shift light, trip computer, cruise control and ride modes (Sport, Tour, Wet) on an ECU with rider aids.",
+			"mass": 0.5,
+			"style": "tft",
+			"features": [
+				"speed",
+				"rpm",
+				"gear",
+				"shift_light",
+				"trip",
+				"economy",
+				"range",
+				"cruise",
+				"modes"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"naked",
+				"sport",
+				"roader"
+			],
+			"price": 420
+		},
+		"tft_touring": {
+			"name": "Touring TFT dash",
+			"description": "A big 7 inch colour TFT: trip computer, range, cruise control and ride modes (Sport, Tour, Wet) on an ECU with rider aids. Easy to read at a glance on a long day.",
+			"mass": 0.9,
+			"style": "tft",
+			"features": [
+				"speed",
+				"rpm",
+				"gear",
+				"trip",
+				"economy",
+				"range",
+				"cruise",
+				"modes"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"tourer",
+				"adventure",
+				"roader",
+				"cruiser"
+			],
+			"price": 480
 		}
 	},
 	"engine": {
@@ -14768,6 +14844,54 @@
 				"classic"
 			],
 			"price": 130
+		},
+		"triple_led": {
+			"name": "Twin LED streetfighter headlights",
+			"description": "Two slim, angular LED lamps swept back like narrowed eyes, with daytime running lights along their brows. The look of today's big British triples.",
+			"type": "LED, twin",
+			"style": "twin",
+			"look": {
+				"lamp": "triple"
+			},
+			"lumens": 2800,
+			"mass": 1.1,
+			"size": 0.055,
+			"lightweight": true,
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"price": 185,
+			"styles": [
+				"naked",
+				"sport",
+				"roader"
+			]
+		},
+		"triple_led_rs": {
+			"name": "Twin LED streetfighter headlights, alloy",
+			"description": "The same angular LED pair in a brushed alloy housing, with bright running-light brows.",
+			"type": "LED, twin",
+			"style": "twin",
+			"look": {
+				"lamp": "triple",
+				"shell": "brushed"
+			},
+			"lumens": 3000,
+			"mass": 1.1,
+			"size": 0.058,
+			"lightweight": true,
+			"color": [
+				0.6,
+				0.61,
+				0.63
+			],
+			"price": 199,
+			"styles": [
+				"naked",
+				"sport"
+			]
 		}
 	},
 	"horn": {
@@ -18576,6 +18700,25 @@
 				0.3
 			]
 		},
+		"unleaded_95_20l": {
+			"name": "Unleaded petrol (95), 20 litres",
+			"description": "Pump fuel in a big 20 litre jerry can: a few tank-fulls for the shed.",
+			"container": "Jerry can",
+			"litres": 20.0,
+			"power": 1.0,
+			"economy": 1.0,
+			"color": [
+				0.75,
+				0.12,
+				0.08
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.3
+			],
+			"grade": "unleaded_95"
+		},
 		"super_98": {
 			"name": "Super unleaded (98)",
 			"description": "Higher octane. A touch more power and a little further per tank.",
@@ -18593,6 +18736,25 @@
 				0.7,
 				0.35
 			]
+		},
+		"super_98_20l": {
+			"name": "Super unleaded (98), 20 litres",
+			"description": "Higher octane in a big 20 litre jerry can.",
+			"container": "Jerry can",
+			"litres": 20.0,
+			"power": 1.03,
+			"economy": 1.04,
+			"color": [
+				0.1,
+				0.35,
+				0.15
+			],
+			"liquid": [
+				0.8,
+				0.7,
+				0.35
+			],
+			"grade": "super_98"
 		},
 		"race_fuel": {
 			"name": "Race fuel (102)",
@@ -18612,11 +18774,49 @@
 				0.9
 			]
 		},
+		"race_fuel_25l": {
+			"name": "Race fuel (102), 25 litres",
+			"description": "Leaded race fuel in a 25 litre drum, for a race weekend.",
+			"container": "Race fuel drum",
+			"litres": 25.0,
+			"power": 1.07,
+			"economy": 0.92,
+			"color": [
+				0.1,
+				0.25,
+				0.75
+			],
+			"liquid": [
+				0.3,
+				0.45,
+				0.9
+			],
+			"grade": "race_fuel"
+		},
 		"empty_jerry_can": {
 			"name": "Empty jerry can",
 			"description": "For draining a tank. Holds 10 litres.",
 			"container": "Jerry can",
 			"litres": 10.0,
+			"empty": true,
+			"power": 1.0,
+			"economy": 1.0,
+			"color": [
+				0.55,
+				0.55,
+				0.5
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.3
+			]
+		},
+		"empty_jerry_can_20l": {
+			"name": "Empty 20 litre jerry can",
+			"description": "For draining a tank, or carrying a lot of fuel. Holds 20 litres.",
+			"container": "Jerry can",
+			"litres": 20.0,
 			"empty": true,
 			"power": 1.0,
 			"economy": 1.0,
@@ -20122,6 +20322,51 @@
 				"roader"
 			],
 			"material": "metal"
+		},
+		"single_gull_alloy": {
+			"name": "Gull-wing single-sided swingarm",
+			"description": "A deep cast alloy single-sided arm that bows up and out over the exhaust, with lightening holes cast through it and an eccentric hub for the chain. The back wheel hangs off one big centre nut, the right-hand side left bare.",
+			"type": "Single-sided cast aluminium, gull-wing",
+			"arm": "single_gull",
+			"material": "metal",
+			"mass": 6.4,
+			"metal": 0.9,
+			"rough": 0.3,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"price": 540,
+			"styles": [
+				"naked",
+				"sport",
+				"roader",
+				"race"
+			]
+		},
+		"single_gull_black": {
+			"name": "Gull-wing single-sided swingarm, black",
+			"description": "The gull-wing single-sided arm in satin black, the right-hand side of the wheel left bare to show it off.",
+			"type": "Single-sided cast aluminium, gull-wing",
+			"arm": "single_gull",
+			"material": "metal",
+			"mass": 6.4,
+			"metal": 0.6,
+			"rough": 0.45,
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"price": 520,
+			"styles": [
+				"naked",
+				"sport",
+				"roader",
+				"tourer",
+				"cafe"
+			]
 		}
 	},
 	"steering_damper": {

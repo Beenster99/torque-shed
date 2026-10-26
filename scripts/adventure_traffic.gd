@@ -23,7 +23,7 @@ extends Node3D
 ## TrafficStream.pack: distances along the road, so each machine puts it in its own frame), with
 ## the lights' clock on the end ([..., clock, CLOCK_TAG]).
 ##
-## For the police (and anything else that drives in the traffic): AdventureTraffic.current.stream
+## For anything else that drives in the traffic: AdventureTraffic.current.stream
 ## is the TrafficStream; see its spawn_at / slot / take / release / remove_id.
 ##
 ## Other bikers ride the road too, and with the crew if you keep their pace (AdventureBikers, its

@@ -29,6 +29,8 @@ var _list := false
 func _ready() -> void:
 	# The old demo bikes these were written round (a player's new shed starts empty).
 	Shed.demo_bikes = true
+	# The roads' forks are out of the game but kept working (see AdventureRoute.forks_on).
+	AdventureRoute.forks_on = true
 	await get_tree().process_frame
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shard="):
@@ -520,6 +522,7 @@ func _run_all() -> void:
 	await _t(&"_test_kit_grip")
 	await _t(&"_test_kit_toolbox")
 	await _t(&"_test_kit_satnav")
+	await _t(&"_test_kit_satnav_views")
 	await _t(&"_test_kit_fuel")
 	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
 	await _t(&"_test_adventure_route")
@@ -556,6 +559,7 @@ func _run_all() -> void:
 	await _t(&"_test_planner_world_map")
 	await _t(&"_test_real_pack")
 	await _t(&"_test_real_levels")
+	await _t(&"_test_real_no_forks")
 	await _t(&"_test_real_forks")
 	await _t(&"_test_real_fork_ride")
 	await _t(&"_test_real_stops")
@@ -623,15 +627,6 @@ func _run_all() -> void:
 	await _t(&"_test_adv_traffic_takeover")
 	await _t(&"_test_adv_traffic_sounds")
 	await _t(&"_test_adv_traffic_perf")
-	print("The police on adventures (v0.14.0): patrols and speed traps, the 30 mph rule, chases, stops and fines")
-	await _t(&"_test_adv_police_spawn_rate")
-	await _t(&"_test_adv_police_rule")
-	await _t(&"_test_adv_police_chase")
-	await _t(&"_test_adv_police_caught")
-	await _t(&"_test_adv_police_outrun")
-	await _t(&"_test_adv_police_trap")
-	await _t(&"_test_adv_police_coop")
-	await _t(&"_test_adv_police_stream")
 	await _t(&"_test_adv_themes_scenery")
 	await _t(&"_test_adv_themes_stream")
 	await _t(&"_test_adv_themes_sky")
@@ -670,7 +665,6 @@ func _run_all() -> void:
 	await _t(&"_test_adv_bikers_nods")
 	await _t(&"_test_adv_bikers_sync")
 	await _t(&"_test_adv_bikers_cost")
-	await _t(&"_test_adv_roads_police_red")
 	await _t(&"_test_adv_roads_chunk_cost")
 	print("Order one of these, and copy its blueprint (v0.16.0): any bike looked at, the cafes' bikes, parked bikes with real builds")
 	await _t(&"_test_bike_copy_order")
@@ -680,6 +674,9 @@ func _run_all() -> void:
 	await _t(&"_test_bike_copy_quality")
 	await _t(&"_test_bike_copy_quality_card")
 	await _t(&"_test_bike_copy_built")
+	await _t(&"_test_bike_shop_for_sale")
+	await _t(&"_test_bike_shop_buy_used")
+	await _t(&"_test_bike_shop_configurator")
 	await _t(&"_test_bike_copy_project_card")
 	print("Bike collections: your own bikes on show at your house, bought, ridden out, offered for and sold back")
 	await _t(&"_test_collection_slots")
@@ -687,6 +684,7 @@ func _run_all() -> void:
 	await _t(&"_test_collection_ring")
 	await _t(&"_test_collection_buy")
 	await _t(&"_test_collection_take")
+	await _t(&"_test_collection_adventure_pick")
 	await _t(&"_test_collection_offers")
 	await _t(&"_test_collection_sell")
 	await _t(&"_test_collection_stats")
@@ -736,6 +734,9 @@ func _run_all() -> void:
 	await _t(&"_test_phone_screen")
 	await _t(&"_test_phone_buy_fit_save")
 	print("Simon's v0.20.0 round: twin bug-eye headlights and big old-school square ones")
+	await _t(&"_test_dash_catalogue")
+	await _t(&"_test_dash_modes")
+	await _t(&"_test_dash_cruise")
 	await _t(&"_test_headlight_catalogue")
 	await _t(&"_test_headlight_builds")
 	await _t(&"_test_headlight_lit")
@@ -881,7 +882,7 @@ func _test_catalogue() -> void:
 	check(BikeBuild.new({"tank": "touring_23"}).bike_mass > BikeBuild.new({"tank": "peanut_9"}).bike_mass + 5.0,
 		"a big tank carries more fuel weight")
 	check(b.front_rebound > b.front_bump and b.rear_rebound > b.rear_bump, "suspension has separate bump and rebound damping")
-	check(BikeBuild.new({"dashboard": "analog_speedo"}).dash_features == ["speed"]
+	check(not BikeBuild.new({"dashboard": "analog_speedo"}).dash_features.has("rpm")
 		and BikeBuild.new({"dashboard": "race_logger"}).dash_features.has("shift_light"), "the dashboard decides what the speedo shows")
 	check(PartsDB.dependents("engine").has("exhaust") and PartsDB.dependents("engine").has("final_drive")
 		and not PartsDB.dependents("engine").has("head"), "exhaust and chain come off before the engine; its head goes with it")
@@ -1194,15 +1195,40 @@ func _test_all_builds_ride() -> void:
 
 
 func _test_crash_and_respawn() -> void:
-	var r := await ride({}, 2.0, func(b, t):
+	var before := {"doll": false}
+	var r := await ride({}, 2.5, func(b, t):
+		b.throttle = 0.5
+		if t < 0.5 and b._ragdoll != null:
+			before["doll"] = true
 		if t > 0.5 and not b.is_crashed:
 			b.crash())
 	var bike: Bike = r["bike"]
 	check(bike.is_crashed, "crash puts the bike into the crashed state")
+	# The ragdoll's only there for a crash: arms and legs jointed on, still on the body after two
+	# seconds of tumbling.
+	var doll := bike._ragdoll
+	var torn := []
+	if doll != null:
+		for l in RiderRagdoll.LIMBS:
+			var limb: RigidBody3D = doll.limbs[l[0]]
+			var half := (l[2] as Vector3).distance_to(l[1]) * 0.5
+			var root_end: Vector3 = limb.global_transform * Vector3(0.0, -half, 0.0)
+			var anchor: Vector3
+			if l[5][0] == "":
+				anchor = doll.global_transform * (l[1] as Vector3)
+			else:
+				var p: RigidBody3D = doll.limbs[l[5][0]]
+				var p_half := (RiderRagdoll.LIMBS.filter(func(x): return x[0] == l[5][0])[0][2] as Vector3).distance_to(
+					RiderRagdoll.LIMBS.filter(func(x): return x[0] == l[5][0])[0][1]) * 0.5
+				anchor = p.global_transform * Vector3(0.0, p_half, 0.0)
+			if not root_end.is_finite() or root_end.distance_to(anchor) > 0.15:
+				torn.append("%s %.2f m" % [l[0], root_end.distance_to(anchor)])
+	check(not before["doll"] and doll != null and doll.pieces().size() == 9 and doll.find_children("Joint*", "ConeTwistJoint3D", false, false).size() == 8
+		and torn.is_empty(), "the rider's thrown off only in the crash, arms and legs jointed on and still attached as they tumble %s" % str(torn))
 	bike.respawn()
 	for i in 120:
 		await get_tree().physics_frame
-	check(not bike.is_crashed and absf(bike.lean_angle) < deg_to_rad(8.0), "respawn puts the bike back upright")
+	check(not bike.is_crashed and absf(bike.lean_angle) < deg_to_rad(8.0) and not is_instance_valid(doll), "respawn puts the bike back upright, the ragdoll gone")
 	await _done(r)
 
 
@@ -1564,6 +1590,19 @@ func _test_garage_life() -> void:
 		and Shed.items[tank]["fluid"]["age"] == 0.0, "pouring a can of super fills the tank with fresh fuel")
 	check(Shed.items[petrol]["fluid"]["litres"] == 0.0 and Shed.check(me, {"a": "pour", "item": tank}).contains("empty"), "the can is empty afterwards")
 	Shed.request({"a": "bin"})
+	# The bigger cans: 20 litres of the same fuel, which fills a tank and has some left over.
+	Shed.request({"a": "order_part", "part": "unleaded_95_20l"})
+	var big := _newest("unleaded_95_20l")
+	check(big != 0 and absf(float(Shed.items[big]["fluid"]["litres"]) - 20.0) < 0.01 and Money.part_price("unleaded_95_20l") > Money.part_price("unleaded_95") * 3,
+		"a 20 litre can of unleaded arrives full, and costs about four of the little ones")
+	Shed.request({"a": "take", "item": big})
+	Shed.request({"a": "pour", "item": tank})
+	var room := PartsDB.fluid_capacity(Shed.items[tank]["part"])
+	check(Shed.items[tank]["fluid"]["type"] == "unleaded_95" and absf(float(Shed.items[tank]["fluid"]["litres"]) - minf(room, 25.0)) < 0.01
+		and float(Shed.items[big]["fluid"]["litres"]) > 0.0 and BikeBuild.OCTANE.has(Shed.build_of(barn).fuel_type),
+		"pouring it fills the %.0f L tank with plain unleaded and leaves %.1f L in the can" % [room, float(Shed.items[big]["fluid"]["litres"])])
+	Shed.request({"a": "bin"})
+	check(PartsDB.fluid_capacity("empty_jerry_can_20l") == 20.0 and PartsDB.fluid_capacity("race_fuel_25l") == 25.0, "there's a 20 litre empty can and a 25 litre drum of race fuel")
 	# Oil: draining needs a pan, crouching, and an engine; low oil hurts.
 	var ranger := _bike_named("Rusty Ranger")
 	var block: int = Shed.item_on(ranger, "engine")
@@ -2245,7 +2284,7 @@ func _test_round5_shed() -> void:
 
 func _test_round5_models() -> void:
 	# The clocks face the rider, and dial clocks have needles that move.
-	for dash in ["analog_speedo", "twin_clocks", "lcd_basic", "tft_colour", "race_logger"]:
+	for dash in PartsDB.by_kind["dashboard"]:
 		var m := BikeModel.new()
 		add_child(m)
 		m.build_from(BikeBuild.new({"dashboard": dash}))
@@ -5247,8 +5286,9 @@ func _test_key_bindings() -> void:
 	check(tab.warning().contains("Right mouse") and tab.warning().contains("Ping") and tab.warning().contains("on foot"),
 		"the Key bindings tab warns about it (%s)" % tab.warning())
 	Settings.rebind("ping", _key(KEY_G))
+	Settings.rebind("cruise", _key(KEY_H))   # swapped with the horn (O is cruise control when riding, by default)
 	Settings.rebind("horn", _key(KEY_O))
-	check(Settings.clashes().is_empty(), "a key that orders a bike on foot can sound the horn when riding: no clash")
+	check(Settings.clashes().is_empty(), "a key that orders a bike on foot can sound the horn when riding: no clash %s" % str(Settings.clashes()))
 	Settings.rebind("spray_finish", _key(KEY_G))
 	check(Settings.clashes().any(func(c): return [c["a"], c["b"]].has("spray_finish") and [c["a"], c["b"]].has("ping")),
 		"a spray key clashes with an on-foot one")
@@ -10110,6 +10150,8 @@ func _test_lighting_profile() -> void:
 	p = Lighting.profile(best, false)
 	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
 	check(not bool(CloudSky.quality("low", false)["volumetric"]), "compatibility at low: the old flat clouds")
+	var steps: Array = ["low", "medium", "high", "ultra"].map(func(q): return int(CloudSky.quality(q, true)["steps"]))
+	check(steps[0] < steps[1] and steps[1] < steps[2] and steps[2] < steps[3], "the cloud slider's five steps get finer each way up %s" % str(steps))
 	# Missing settings: the defaults, or the low look with the old quality switch off.
 	var hq := Settings.high_quality
 	Lighting.overrides = {}
@@ -10123,7 +10165,7 @@ func _test_lighting_profile() -> void:
 	check(str(Lighting.option("gfx_gi")) == "ssil", "overrides win")
 	Lighting.overrides = {}
 	# Every variant of the sky shader compiles (a broken one has no uniforms).
-	for setting in ["off", "low", "high"]:
+	for setting in Graphics.CHOICES["gfx_clouds"]:
 		for fp in [true, false]:
 			var sh := CloudSky.make_shader(CloudSky.quality(setting, fp))
 			check(sh.get_shader_uniform_list().size() >= 18, "the %s sky shader compiles (%s)" % [setting, "Forward+" if fp else "compatibility"])
@@ -11334,8 +11376,8 @@ func _test_recorded_sounds() -> void:
 	es._process(1.0 / 60.0)
 	es.gear = 3
 	es._process(1.0 / 60.0)
-	check(es.lever_sounds == 1 and Sfx.recordings("shift_slick").has(es._lever.stream) and es._lever.pitch_scale > 1.1,
-		"a quickshift adds the recorded lever's slick tick, pitched up")
+	check(es.lever_sounds == 1 and Sfx.recordings("shift_slick").has(es._lever.stream) and Sfx.recordings("shift_clunk").size() == 8,
+		"a quickshift plays the slick take of the recorded gear change (eight clunks for the others)")
 	es.queue_free()
 	# The phone: a few rings, from the reception and the extension in the shed.
 	var calls := Sfx.phone_calls
@@ -13494,8 +13536,16 @@ func _test_filler_parts() -> void:
 		check(am._arm_type() == str(PartsDB.get_part(id)["arm"]) and am.slot_bounds("swingarm").size.z > 0.3,
 			"%s hangs off the pivot as its own swingarm (%s)" % [id, str(am.slot_bounds("swingarm").size)])
 		am.free()
-	check(arms.has("box_section") and arms.has("banana") and arms.has("braced_mx") and arms.has("hardtail") and arms.has("single"),
-		"box-section, banana, braced MX, hardtail and single-sided swingarms (%s)" % str(arms.keys()))
+	check(arms.has("box_section") and arms.has("banana") and arms.has("braced_mx") and arms.has("hardtail") and arms.has("single") and arms.has("single_gull"),
+		"box-section, banana, braced MX, hardtail and single-sided swingarms, plain and gull-wing (%s)" % str(arms.keys()))
+	var gull := BikeModel.new()
+	add_child(gull)
+	gull.build_from(BikeBuild.new({"swingarm": "single_gull_alloy"}))
+	var gb := gull.slot_bounds("swingarm")
+	check(gull.find_children("SingleSidedArm*", "", true, false).size() == 1 and gull.find_children("ArmHole*", "", true, false).size() == 3
+		and gull.find_children("CentreNut*", "", true, false).size() == 1 and gb.position.x < -0.15,
+		"the gull-wing arm is one beam down the left with holes cast through it, the wheel on a centre nut (%s)" % str(gb))
+	gull.free()
 	var ht := BikeModel.new()
 	add_child(ht)
 	ht.build_from(BikeBuild.new({"swingarm": "hardtail_chrome"}))
@@ -15977,8 +16027,10 @@ func _test_style_bike_orders() -> void:
 	var bike := 0
 	for id in Shed.bikes:
 		bike = id
-	check(bike != 0 and str(Shed.bikes[bike]["name"]) == "Cruiser project" and str(Shed.bikes[bike].get("style_order", "")) == "cruiser",
-		"ordering a cruiser brings one to a bay (%s)" % (str(Shed.bikes[bike]["name"]) if bike != 0 else "none"))
+	check(bike != 0 and str(Shed.bikes[bike]["name"]) == "%s's cruiser" % str(Shed.crew[me]["name"]) and str(Shed.bikes[bike].get("style_order", "")) == "cruiser",
+		"ordering a cruiser brings one to a bay, named after whoever ordered it (%s)" % (str(Shed.bikes[bike]["name"]) if bike != 0 else "none"))
+	check(Shed.owned_name(str(Shed.crew[me]["name"]), {}, "cruiser") == "%s's cruiser 2" % str(Shed.crew[me]["name"])
+		and Shed.owned_name("Sam", {}, "mx") == "Sam's MX bike", "a second one is numbered, and the style reads as it's said")
 	var parts_now := Contracts.current_parts(bike)
 	check(str(PartsDB.detect_style(parts_now)["style"]) == "cruiser", "it's a cruiser: %s" % PartsDB.style_text(parts_now))
 	var worn := 0
@@ -22093,6 +22145,91 @@ func _test_kit_satnav() -> void:
 	await get_tree().process_frame
 
 
+## The sat nav as you like it: the satellite view (a picture from straight above, under the map,
+## gone again when it's turned off), the zoom keys' steps, portrait on the HUD showing further
+## ahead, and the HUD's copy sized and placed where the settings say, always on the screen.
+func _test_kit_satnav_views() -> void:
+	var saved := [Settings.satnav_satellite, Settings.satnav_zoom, Settings.satnav_portrait, Settings.satnav_scale, Settings.satnav_x, Settings.satnav_y]
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new(_kit_build()))
+	world.add_child(bike)
+	var spawn: Transform3D = world.spawn_point(0)
+	bike.place(spawn.origin, spawn.basis.get_euler().y)
+	bike.engine_on = true
+	var nav := Satnav.new(bike, world)
+	add_child(nav)
+	await get_tree().process_frame
+	Settings.satnav_satellite = true
+	Settings.satnav_zoom = 1.0
+	nav._timer = 0.0
+	nav._tick(0.01)
+	for i in 3:
+		await get_tree().process_frame
+	var sat: Dictionary = nav.screen.view.get("sat", {})
+	var cam_down := nav._sat_cam != null and (-nav._sat_cam.global_basis.z).dot(Vector3.DOWN) > 0.99
+	check(nav.sat_viewport != null and sat.get("tex") == nav.sat_viewport.get_texture() and cam_down
+		and float(sat["metres"]) > nav.screen.span and nav._sat_cam.projection == Camera3D.PROJECTION_ORTHOGONAL,
+		"satellite view: a camera straight down over the bike takes the picture under the map (%.0f m across)" % float(sat.get("metres", 0.0)))
+	check(nav.sat_viewport.size == Vector2i(Satnav.SAT_PX, Satnav.SAT_PX) and nav.sat_viewport.world_3d == bike.get_world_3d(),
+		"it's a %d px picture of the world the bike's in" % Satnav.SAT_PX)
+	Settings.satnav_satellite = false
+	nav._timer = 0.0
+	nav._tick(0.01)
+	check(nav.sat_viewport == null and not nav.screen.view.has("sat"), "turned off, the camera goes and the map is plain again")
+	# Zoom: the keys' steps, and the map's span follows.
+	var spans := []
+	for dir in [0, 1, -1, -1]:
+		if dir != 0:
+			Satnav.zoom(dir)
+		nav.screen.span = SatnavScreen.SPAN_SLOW * Settings.satnav_zoom
+		spans.append(Settings.satnav_zoom)
+	check(spans[1] > spans[0] and spans[2] == spans[0] and spans[3] < spans[0], "zooming out and in steps the map's span %s" % str(spans))
+	# Portrait: tall, and further ahead in view at the same zoom.
+	Settings.satnav_zoom = 1.0
+	var wide := SatnavScreen.new()
+	wide.size = Vector2(300, 200)
+	var tall := SatnavScreen.new()
+	tall.size = Vector2(200, 300)
+	for s in [wide, tall]:
+		add_child(s)
+		s.span = SatnavScreen.SPAN_SLOW
+		s.view = {"pos": Vector2.ZERO, "fwd": Vector2(0, -1)}
+	var ahead := Vector2(0, -150)
+	check(tall._scale() == wide._scale() and tall.to_screen(ahead).y > 0.0 and wide.to_screen(ahead).y < 0.0,
+		"standing tall the same scale shows 150 m ahead, which is off the top when it's wide")
+	wide.queue_free()
+	tall.queue_free()
+	# Where the HUD's copy sits.
+	var screen := Vector2(1920, 1080)
+	Settings.satnav_portrait = false
+	Settings.satnav_scale = 1.0
+	Settings.satnav_x = 0.0
+	Settings.satnav_y = 1.0
+	var home := preload("res://scripts/main.gd").hud_rect(screen)
+	check(home == Rect2(24, 1080 - 24 - 200, 300, 200), "as it comes: 300 x 200 in the bottom left corner (%s)" % home)
+	Settings.satnav_portrait = true
+	Settings.satnav_scale = 2.0
+	Settings.satnav_x = 1.0
+	Settings.satnav_y = 0.0
+	var moved := preload("res://scripts/main.gd").hud_rect(screen)
+	check(moved.size == Vector2(400, 600) and moved.end.x == 1920 - 24 and moved.position.y == 24,
+		"twice the size, standing tall, in the top right corner (%s)" % moved)
+	Settings.satnav_scale = 9.0
+	check(Rect2(Vector2.ZERO, screen).encloses(preload("res://scripts/main.gd").hud_rect(screen)), "however big it's set it stays on the screen")
+	Settings.satnav_satellite = saved[0]
+	Settings.satnav_zoom = saved[1]
+	Settings.satnav_portrait = saved[2]
+	Settings.satnav_scale = saved[3]
+	Settings.satnav_x = saved[4]
+	Settings.satnav_y = saved[5]
+	nav.queue_free()
+	world.queue_free()
+	await get_tree().process_frame
+
+
 ## Fuel: the engine burns it by throttle and size, an empty tank stops it, and at a pump you fill
 ## up, paid out of your own money, the shed's tank filled to match.
 func _test_kit_fuel() -> void:
@@ -22385,6 +22522,10 @@ func _test_real_pack() -> void:
 	_real().test_pack()
 
 
+func _test_real_no_forks() -> void:
+	_real().test_no_forks()
+
+
 func _test_real_forks() -> void:
 	_real().test_forks()
 
@@ -22634,44 +22775,6 @@ func _test_adv_traffic_sounds() -> void:
 
 func _test_adv_traffic_perf() -> void:
 	await _adv_traffic().test_perf()
-# ---------------------------------------------------------------------------- the police on adventures (tests/adventure_police_tests.gd)
-
-func _adv_police() -> RefCounted:
-	return load("res://tests/adventure_police_tests.gd").new(self)
-
-
-func _test_adv_police_spawn_rate() -> void:
-	await _adv_police().test_spawn_rate()
-
-
-func _test_adv_police_rule() -> void:
-	await _adv_police().test_rule()
-
-
-func _test_adv_police_chase() -> void:
-	await _adv_police().test_chase()
-
-
-func _test_adv_police_caught() -> void:
-	await _adv_police().test_caught()
-
-
-func _test_adv_police_outrun() -> void:
-	await _adv_police().test_outrun()
-
-
-func _test_adv_police_trap() -> void:
-	await _adv_police().test_trap()
-
-
-func _test_adv_police_coop() -> void:
-	await _adv_police().test_coop()
-
-
-func _test_adv_police_stream() -> void:
-	await _adv_police().test_stream()
-
-
 # ---------------------------------------------------------------------------- adventure themes (tests/adventure_themes_tests.gd)
 
 func _adv_themes() -> RefCounted:
@@ -22828,10 +22931,6 @@ func _test_adv_roads_traffic_turns() -> void:
 	await _adv_roads().test_traffic_turns()
 
 
-func _test_adv_roads_police_red() -> void:
-	await _adv_roads().test_police_red()
-
-
 func _test_adv_roads_chunk_cost() -> void:
 	await _adv_roads().test_chunk_cost()
 
@@ -22865,6 +22964,22 @@ func _test_bike_copy_quality() -> void:
 
 func _test_bike_copy_quality_card() -> void:
 	await _bike_copy().test_quality_card()
+
+
+func _bike_shop() -> RefCounted:
+	return load("res://tests/bike_shop_tests.gd").new(self)
+
+
+func _test_bike_shop_for_sale() -> void:
+	_bike_shop().test_for_sale()
+
+
+func _test_bike_shop_buy_used() -> void:
+	_bike_shop().test_buy_used()
+
+
+func _test_bike_shop_configurator() -> void:
+	await _bike_shop().test_configurator()
 
 
 func _test_bike_copy_built() -> void:
@@ -23113,6 +23228,24 @@ func _test_phone_buy_fit_save() -> void:
 	_phone_t().test_buy_fit_save()
 
 
+# ---------------------------------------------------------------------------- dashboards' trip computer, ride modes and cruise (tests/dash_tests.gd)
+
+func _dash_t() -> RefCounted:
+	return load("res://tests/dash_tests.gd").new(self)
+
+
+func _test_dash_catalogue() -> void:
+	_dash_t().test_catalogue()
+
+
+func _test_dash_modes() -> void:
+	await _dash_t().test_modes()
+
+
+func _test_dash_cruise() -> void:
+	await _dash_t().test_cruise()
+
+
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
 
 func _headlights() -> RefCounted:
@@ -23299,6 +23432,10 @@ func _test_collection_ring() -> void:
 
 func _test_collection_buy() -> void:
 	_collection().test_buy()
+
+
+func _test_collection_adventure_pick() -> void:
+	_collection().test_adventure_pick()
 
 
 func _test_collection_take() -> void:

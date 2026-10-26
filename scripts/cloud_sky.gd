@@ -1,15 +1,16 @@
 class_name CloudSky
 extends RefCounted
 ## The sky shader: the day-night gradient, sun and moon discs, stars, and the clouds. With the
-## cloud setting (Settings.gfx_clouds) on "low" or "high" the clouds are raymarched through a
+## cloud setting (Settings.gfx_clouds) on "low" to "ultra" the clouds are raymarched through a
 ## real layer of sky 1.5 to 3.3 km up: lit by the sun (or the moon) with bright silver edges
 ## towards it and dark, heavy bases, thicker and lower in rain, drifting with the wind. "off"
 ## (and "low" on the compatibility renderer) keeps the old flat painted cloud layer, which is
 ## also what the reflections and ambient light always use (it's far cheaper there).
 ##
 ## The shader is built from one source with #defines for the quality (Daylight swaps it when the
-## setting changes): Forward+ raymarches at half resolution ("high", 28 steps) or quarter
-## resolution ("low", 14 steps) and blends the result over the full-resolution sky.
+## setting changes): Forward+ raymarches at quarter resolution ("low", 14 steps; "medium", 20 and
+## drifting) or half resolution ("high", 28 steps; "ultra", 44 with finer shading towards the
+## sun) and blends the result over the full-resolution sky.
 
 static var _detail: NoiseTexture3D
 
@@ -22,8 +23,13 @@ static func quality(setting: String, forward_plus: bool) -> Dictionary:
 	if not forward_plus:
 		# The compatibility renderer has no low-resolution sky passes: fewer steps at full size.
 		return {"volumetric": true, "steps": 16, "light_steps": 3, "res": "full", "wind": true}
-	if setting == "low":
-		return {"volumetric": true, "steps": 14, "light_steps": 2, "res": "quarter", "wind": false}
+	match setting:
+		"low":
+			return {"volumetric": true, "steps": 14, "light_steps": 2, "res": "quarter", "wind": false}
+		"medium":
+			return {"volumetric": true, "steps": 20, "light_steps": 3, "res": "quarter", "wind": true}
+		"ultra":
+			return {"volumetric": true, "steps": 44, "light_steps": 6, "res": "half", "wind": true}
 	return {"volumetric": true, "steps": 28, "light_steps": 4, "res": "half", "wind": true}
 
 

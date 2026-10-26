@@ -525,6 +525,13 @@ func test_diary_files() -> void:
 	book.open_shelf()
 	check(book._shelf.visible and not book._book.visible and book._shelf_grid.get_child_count() == 1, "the shelf: one diary")
 	book.queue_free()
+	# The shed's diary shelf: the newest face out with the ride's snapshot on its cover.
+	check(AdventureDiary.cover_photo(back) == "p001.jpg", "the cover's snapshot is the first still, not the clip")
+	var case := DiaryShelf.new()
+	t.add_child(case)
+	await _frames(1)
+	check(case.count() == 1 and case.find_child("FaceOut", true, false) != null and case.find_child("Snapshot", true, false) != null
+		and case.use_text({}).contains("Dales Rally Weekender"), "on the shed's shelf, face out with its snapshot (%s)" % case.use_text({}))
 	# Only the latest are kept.
 	for i in AdventureDiary.MAX_DIARIES + 2:
 		var e := d.duplicate(true)
@@ -533,6 +540,10 @@ func test_diary_files() -> void:
 		e["photos"] = []
 		AdventureDiary.save_diary(e)
 	check(AdventureDiary.list().size() == AdventureDiary.MAX_DIARIES and AdventureDiary.load_diary(id).is_empty(), "no more than %d diaries kept, the oldest gone" % AdventureDiary.MAX_DIARIES)
+	await _frames(1)
+	var spines := case.find_children("Spine*", "", true, false).size()
+	check(case.count() == AdventureDiary.MAX_DIARIES and spines == AdventureDiary.MAX_DIARIES - 1, "the shelf restocks itself: %d diaries, %d spines" % [case.count(), spines])
+	case.queue_free()
 	_wipe(ROOT)
 	AdventureDiary.root = "user://diaries"
 

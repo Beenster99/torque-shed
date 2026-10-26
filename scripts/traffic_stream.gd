@@ -23,7 +23,7 @@ extends Node3D
 ## road may only exist round the focus (a streamed road): nothing is asked for further than
 ## `reach` from it, nor outside s_min..s_max.
 ##
-## Scripted drivers (the police): spawn_at() puts a given kind in at s going dir and returns its
+## Scripted drivers: spawn_at() puts a given kind in at s going dir and returns its
 ## id; slot(id) reads where it is; take(id) hands back its live entry, which the stream then
 ## leaves alone (no driving, no despawning) while the taker writes its s, v, dir, lat (m right of
 ## the centre line, NAN for its lane), ind (-1 left, 0, 1 right) and aux (a small whole number

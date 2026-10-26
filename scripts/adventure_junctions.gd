@@ -21,8 +21,7 @@ extends RefCounted
 ## The main road through a roundabout is the "straight on" exit: clockwise round from where you
 ## come in, it's the 1st exit with no arm on your left, the 2nd with one (exit_number). The sat nav
 ## says so (instruction). The road is widened into a ring round the island (widen), and the
-## traffic's lanes swing round it (swing). Riding through a red light near a police car is an
-## offence (see AdventurePolice).
+## traffic's lanes swing round it (swing).
 
 const KIND := "crossing"
 const TYPES: Array[String] = ["tee", "cross", "lights", "mini", "roundabout"]

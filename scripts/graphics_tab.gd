@@ -110,7 +110,8 @@ func _build_quality(body: VBoxContainer) -> void:
 		+ "illumination that bounces sun, sky and lamp light around the shed, so this switch turns SDFGI on (off uses SSIL).")
 	var vol := [["off", "Off"], ["low", "Low"], ["high", "High"]]
 	_option(body, "gfx_volumetrics", "Volumetric fog and light", vol)
-	_option(body, "gfx_clouds", "Volumetric clouds", vol)
+	_steps(body, "gfx_clouds", "Volumetric clouds", [["off", "Off (flat painted clouds)"], ["low", "Low"], ["medium", "Medium"],
+		["high", "High"], ["ultra", "Ultra"]])
 	_check(body, "gfx_ssr", "Screen-space reflections")
 	_check(body, "gfx_ssao", "Ambient occlusion (SSAO)")
 	_check(body, "gfx_glow", "Glow and bloom")

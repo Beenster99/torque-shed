@@ -6,6 +6,7 @@ extends RefCounted
 var t: Node   # the test runner: check(), get_tree(), _bike_named()
 
 const FRIEND := 77
+const Rides := preload("res://tests/rides.gd")
 
 
 func _init(runner: Node) -> void:
@@ -243,6 +244,44 @@ func test_buy() -> void:
 	check(said.contains("full") and said.contains("level 3") and Shed.bikes.has(more), "a fourth is refused: full, and it says when another slot comes (%s)" % said)
 	Progress.profile["xp"] = Progress.xp_for_level(3)
 	check(Collection.buy(more) == "" and Collection.count_of(who) == 4, "at level 3 there's room for a fourth")
+	Progress.profile = saved
+	Shed.stop()
+
+
+## Off on an adventure each player picks their bike: their own (one at home among them) or the
+## garage's, or goes on foot. One picked from home comes out of the collection for the ride; the
+## picker takes the first choice by itself when nobody picks.
+func test_adventure_pick() -> void:
+	Shed.start_new("Tester", 43)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	var me := Shed.me()
+	var who := Collection.name_of(me)
+	var cid := _buy_one()
+	var faithful: int = t._bike_named("Old Faithful")
+	var list := AdventureBikePicker.choices_for(me, faithful)
+	var mine: Array = list.filter(func(c): return int(c["home"]) == cid)
+	check(not list.is_empty() and int(list[0]["bike"]) == faithful and list[0]["kind"] == "garage" and mine.size() == 1 and mine[0]["kind"] == "personal",
+		"the choices: the garage's bike you're by first, your own at home among them (%s)" % str(list.map(func(c): return AdventureBikePicker.line_of(c))))
+	Shed._add_crew(FRIEND, "Pal")
+	var theirs := AdventureBikePicker.choices_for(FRIEND)
+	check(theirs.all(func(c): return int(c["home"]) == 0), "a mate isn't offered your bikes at home")
+	Adventure.start(Rides.plan(30.0), 12)
+	Shed.request({"a": "adventure_join", "bike": 0, "home": cid, "foot": false})
+	var id := Shed.riding(me)
+	check(id != 0 and int(Collection.entry(cid).get("out", 0)) == id and Collection.owner_of_bike(id) == who,
+		"picked from home: it's out of the collection and you're on it (%d)" % id)
+	Shed._apply(FRIEND, {"a": "adventure_join", "bike": 0, "home": 0, "foot": true})
+	check(Shed.riding(FRIEND) == 0 and Shed.adventure["riders"].has(FRIEND), "a mate who picks on foot comes along walking")
+	var picker := AdventureBikePicker.new()
+	t.add_child(picker)
+	var got := {"c": null}
+	var ask := func(): got["c"] = await picker.choose(list)
+	ask.call()
+	check(picker.visible and picker._list.get_children().filter(func(n): return n is Button).size() == list.size() + 1, "the picker lists every choice and on foot")
+	picker._left = 0.0
+	picker._process(0.1)
+	check(not picker.visible and got["c"] is Dictionary and int(got["c"]["bike"]) == faithful, "nobody picks: the first choice is taken")
+	picker.queue_free()
 	Progress.profile = saved
 	Shed.stop()
 

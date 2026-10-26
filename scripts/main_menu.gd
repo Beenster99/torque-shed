@@ -92,9 +92,12 @@ var _time_note: Label
 var _weather: OptionButton
 var _weather_now: Label
 var debug: DebugTab
+var _satnav_checks := []    # [CheckBox, Settings key] for the sat nav (see _build_satnav_settings)
+var _satnav_sliders := []   # [HSlider, Settings key]
 var money: MoneyTab
 var staff: StaffTab
 var shop: ShopTab
+var bike_shop: BikeShopTab   # whole bikes: second hand or new
 ## Gameplay: riders look into the corner (Settings.look_into_corner).
 var look_corner: CheckBox
 ## Profile: your riding style (see RiderStyle), and what it's like.
@@ -364,7 +367,7 @@ func _build_garage() -> void:
 	shop_floor.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
 
 
-## Your panel (the profile picture, top right): who you are, your Character, and the Shop.
+## Your panel (the profile picture, top right): who you are, your Character, the Shop and the Bike shop.
 func _build_profile() -> void:
 	_profile_tabs = _panel_tabs("Profile")
 	var me := _scroll_tab("Profile", _profile_tabs)
@@ -379,6 +382,7 @@ func _build_profile() -> void:
 	buttons.add_theme_constant_override("separation", 10)
 	buttons.add_child(_button("Character: level, tools and skills", func(): _profile_tabs.current_tab = 1))
 	buttons.add_child(_button("Shop: improve your rider's gear", func(): _profile_tabs.current_tab = 2))
+	buttons.add_child(_button("Bike shop: buy a bike", func(): _profile_tabs.current_tab = 3))
 	me.add_child(buttons)
 	_build_style_choice(me)
 	me.add_child(_profile_note())
@@ -387,6 +391,9 @@ func _build_profile() -> void:
 	# Rider gear and shed trinkets bought with your own money (see ShopTab).
 	shop = ShopTab.new()
 	_profile_tabs.add_child(shop)
+	# Whole bikes bought with your own money: second hand, or new from the configurator (see BikeShop).
+	bike_shop = BikeShopTab.new()
+	_profile_tabs.add_child(bike_shop)
 
 
 ## The Rider style choice on the Profile tab: how you sit on the bike and move on it through a
@@ -555,6 +562,62 @@ func _build_riding_settings(settings: VBoxContainer) -> void:
 	nav.button_pressed = Settings.satnav_hud
 	nav.toggled.connect(func(v): Settings.satnav_hud = v)
 	settings.add_child(nav)
+	_build_satnav_settings(settings)
+
+
+## The sat nav as you like it: the satellite view, portrait or landscape, and the HUD's copy's
+## size, place and zoom (each with its key while riding too).
+func _build_satnav_settings(settings: VBoxContainer) -> void:
+	var sat := CheckBox.new()
+	Controls.bind_text(sat, "Sat nav satellite view: the map over a live picture from above ({satnav_satellite})")
+	sat.button_pressed = Settings.satnav_satellite
+	sat.toggled.connect(func(v): Settings.satnav_satellite = v)
+	settings.add_child(sat)
+	_satnav_checks.append([sat, "satnav_satellite"])
+	var tall := CheckBox.new()
+	Controls.bind_text(tall, "Sat nav on the HUD stands tall (portrait), not wide ({satnav_portrait})")
+	tall.button_pressed = Settings.satnav_portrait
+	tall.toggled.connect(func(v): Settings.satnav_portrait = v)
+	settings.add_child(tall)
+	_satnav_checks.append([tall, "satnav_portrait"])
+	for row in [["satnav_scale", "Sat nav on the HUD: size", Settings.SATNAV_SCALE[0], Settings.SATNAV_SCALE[1], 0.05, "%d%%", 100.0],
+			["satnav_x", "Sat nav on the HUD: left to right", 0.0, 1.0, 0.01, "%d%%", 100.0],
+			["satnav_y", "Sat nav on the HUD: top to bottom", 0.0, 1.0, 0.01, "%d%%", 100.0],
+			["satnav_zoom", "Sat nav zoom (further out to the right; {satnav_zoom_in} / {satnav_zoom_out} riding)", Settings.SATNAV_ZOOM[0], Settings.SATNAV_ZOOM[1], 0.05, "x%.2f", 1.0]]:
+		var key: String = row[0]
+		var label := UITheme.label("", 15)
+		Controls.bind_text(label, str(row[1]))
+		settings.add_child(label)
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 10)
+		var s := HSlider.new()
+		s.min_value = float(row[2])
+		s.max_value = float(row[3])
+		s.step = float(row[4])
+		s.custom_minimum_size.x = 320.0
+		s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var shown := UITheme.label("", 14, UITheme.ACCENT)
+		var fmt: String = row[5]
+		var mult: float = row[6]
+		var put := func(v: float) -> void:
+			shown.text = fmt % (roundi(v * mult) if fmt.begins_with("%d") else v)
+		s.value = float(Settings.get(key))
+		put.call(s.value)
+		s.value_changed.connect(func(v):
+			Settings.set(key, v)
+			put.call(v))
+		line.add_child(s)
+		line.add_child(shown)
+		settings.add_child(line)
+		_satnav_sliders.append([s, key])
+
+
+## Puts the sat nav controls back in step with Settings (its keys change them while riding).
+func _refresh_satnav_settings() -> void:
+	for c in _satnav_checks:
+		(c[0] as CheckBox).set_pressed_no_signal(bool(Settings.get(str(c[1]))))
+	for c in _satnav_sliders:
+		(c[0] as HSlider).set_value_no_signal(float(Settings.get(str(c[1]))))
 
 
 ## What a Riding realism setting does, in a few words.
@@ -628,11 +691,25 @@ func show_pause() -> void:
 	_free_rotate.button_pressed = Settings.free_rotate
 	_third_person.button_pressed = Settings.walk_third_person
 	_refresh_time_settings(true)
+	_refresh_debug()
+	_refresh_satnav_settings()
 	refresh_retrieve()
 	_refresh_home()
 	_refresh_adventure()
 	show()
 	_resume.grab_focus()
+
+
+## The Debug tab is the host's alone: a player who has joined someone's shed doesn't see it
+## (and their bike isn't fixed up by itself).
+func _refresh_debug() -> void:
+	var client := Net.is_online() and not Net.is_host()
+	var at := _tabs.get_tab_idx_from_control(debug)
+	if client and _tabs.current_tab == at:
+		_tabs.current_tab = 0
+	_tabs.set_tab_hidden(at, client)
+	if client:
+		debug.auto_fix = false
 
 
 ## Shows "Back to the garage" while you're out in the world, greyed out (and saying why) when

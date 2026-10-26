@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Two halves. The highlights are the crew's, kept by the host in the shared state
 ## (Shed.adventure["log"], so every player has the same list): setting off, each stop visited,
-## the ways taken at forks, onto a new surface, the high points, police chases and fines,
+## the ways taken at forks, onto a new surface, the high points (old diaries may also hold police chases and fines),
 ## breakdowns and roadside fixes, picnics, sunrise and sunset, and arriving. Each has its time
 ## (the clock, and the day), how far along the road (km) and who. The photos are taken on each
 ## player's own machine (AdventurePhotos: automatically at the highlights they were part of, and
@@ -59,6 +59,8 @@ const MAX_DIARIES := 40
 
 ## Where this machine keeps its diaries; the tests point it elsewhere.
 static var root := "user://diaries"
+## Goes up whenever a diary on this machine is saved or deleted (the shed's diary shelf restocks then).
+static var revision := 0
 
 
 static func _is_host(peer: int) -> bool:
@@ -284,6 +286,7 @@ static func save_diary(d: Dictionary) -> bool:
 	f.close()
 	if fresh:
 		_trim()   # a new one on the shelf: the oldest off the end
+	revision += 1
 	return true
 
 
@@ -350,16 +353,22 @@ static func list() -> Array:
 		var d := load_diary(sub)
 		if d.is_empty():
 			continue
-		var cover := ""
-		for p in d["photos"]:
-			if not bool(p.get("clip", false)):
-				cover = folder(sub).path_join(str(p["file"]))
-				break
+		var still := cover_photo(d)
+		var cover := folder(sub).path_join(still) if still != "" else ""
 		out.append({"id": sub, "title": d["title"], "dest": d["dest"], "date": d["date"], "done": d["done"], "km": d["km"],
 			"photo": str((d["photo"] as Dictionary).get("key", "")), "cover": cover, "photos": (d["photos"] as Array).size(),
 			"highlights": (d["log"] as Array).size(), "saved_at": int(d["saved_at"]), "journey": d["journey"]})
 	out.sort_custom(func(a, b): return int(a["saved_at"]) > int(b["saved_at"]))
 	return out
+
+
+## The snapshot on diary `d`'s cover: its first photo that's a still (not a clip or a film), as
+## its file in the diary's folder; "" when it has none.
+static func cover_photo(d: Dictionary) -> String:
+	for p in d.get("photos", []):
+		if p is Dictionary and not bool(p.get("clip", false)) and not bool(p.get("movie", false)) and str(p.get("file", "")) != "":
+			return str(p["file"])
+	return ""
 
 
 ## The diary of the adventure the shed-wall photo `key` was taken on ("" when this machine hasn't one).
@@ -390,6 +399,7 @@ static func delete(id: String) -> bool:
 		for f in d.get_files():
 			d.remove(f)
 	DirAccess.remove_absolute(dir)
+	revision += 1
 	return true
 
 

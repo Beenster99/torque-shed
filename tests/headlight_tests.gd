@@ -1,5 +1,5 @@
 extends RefCounted
-## The twin bug-eye headlights and the old-school square headlights, run from tests/run_tests.gd
+## The twin bug-eye headlights, the old-school square headlights and the angular LED streetfighter pair, run from tests/run_tests.gd
 ## (its _test_headlight_* functions hand over to these).
 
 var t: Node   # the test runner: check(), ride(), get_tree()
@@ -9,6 +9,8 @@ const LAMPS := {
 	"bugeye_twin": {"styles": ["naked", "sport"], "lenses": 2},
 	"square_chrome": {"styles": ["classic", "tourer", "cafe"], "lenses": 1},
 	"square_xl": {"styles": ["tourer", "adventure", "scrambler", "classic"], "lenses": 1},
+	"triple_led": {"styles": ["naked", "sport", "roader"], "lenses": 2},
+	"triple_led_rs": {"styles": ["naked", "sport"], "lenses": 2},
 }
 
 
@@ -69,8 +71,9 @@ func test_catalogue() -> void:
 			and price >= 60 and price <= 200 and float(p["mass"]) >= 0.8 and float(p["mass"]) <= 2.4,
 			"%s is a headlight: %d lm, £%d, %.1f kg (the others weigh %.1f to %.1f kg)" % [PartsDB.part_name(id), int(p["lumens"]), price, float(p["mass"]), lo, hi])
 		check(PartsDB.styles_of(id) == LAMPS[id]["styles"], "%s suits %s" % [PartsDB.part_name(id), PartsDB.styles_text(id)])
-	check(not PartsDB.part_name("bugeye_twin").to_lower().contains("triumph") and not PartsDB.part_name("bugeye_twin").to_lower().contains("speed triple"),
-		"the bug-eyes go by what they look like, not a maker's name")
+	for id in ["bugeye_twin", "triple_led", "triple_led_rs"]:
+		check(not PartsDB.part_name(id).to_lower().contains("triumph") and not PartsDB.part_name(id).to_lower().contains("speed triple"),
+			"%s goes by what it looks like, not a maker's name" % PartsDB.part_name(id))
 	Shed.start_new("Tester", 64)
 	var pc := PartsComputer.new()
 	t.add_child(pc)
@@ -121,6 +124,23 @@ func test_builds() -> void:
 		"the bug-eyes are a pair on a bracket under a little fly-screen, which makes way for a fitted fairing")
 	bare.free()
 	shielded.free()
+	var tri := _model({"frame": "naked_trellis_green", "headlight": "triple_led"})
+	var brows: Array = tri.find_children("DRL*", "", true, false)
+	var drl_off := brows.all(func(mi): return not ((mi as MeshInstance3D).material_override as StandardMaterial3D).emission_enabled)
+	tri.set_lights(true, false)
+	check(tri.find_children("TripleLamp*", "", true, false).size() == 2 and brows.size() == 2 and drl_off
+		and brows.all(func(mi): return ((mi as MeshInstance3D).material_override as StandardMaterial3D).emission_enabled),
+		"the streetfighter pair are two angular lamps whose running-light brows come on with the ignition")
+	tri.free()
+	# In the shop (and loose on the bench) a headlight or tail unit is just the lamp: the little
+	# stock indicators a bike wears beside them stay on the bike.
+	for id in ["round_7", "triple_led"]:
+		var shown := BikeModel.part_display(id, {})
+		var lm: BikeModel = shown.get_meta("model")
+		var ambers: Array = lm._lamps.filter(func(l): return str(l["group"]).begins_with("ind")).map(func(l): return l["mat"])
+		var worn: Array = lm._slot_meshes["headlight"].filter(func(mi): return ambers.has((mi as MeshInstance3D).material_override))
+		check(worn.is_empty() and lm._stock_pieces.is_empty(), "%s in the shop has no indicators on it (%d amber pieces, %d stock)" % [PartsDB.part_name(id), worn.size(), lm._stock_pieces.size()])
+		shown.free()
 	var chrome := _model({"headlight": "square_chrome"})
 	var xl := _model({"headlight": "square_xl"})
 	var cb: Array = chrome.find_children("Bezel*", "", true, false)

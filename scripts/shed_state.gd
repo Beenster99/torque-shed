@@ -96,7 +96,7 @@ const BEAD_LEAK := 0.02
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
 ## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
 ## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs},
-## beam (where its headlight switch was left: see beam_of)}
+## beam (where its headlight switch was left: see beam_of), ride_mode (the dash's: see mode_of)}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot", "floor" (ref is then the Transform3D it was put down at)
@@ -796,7 +796,9 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 	if float(bike.get("tune_reach", 0.0)) > 0.0:
 		# Tuned by someone with Fine Tuning: the map, ignition and limiter go further.
 		tune["reach"] = float(bike["tune_reach"])
-	return BikeBuild.new(parts, cond, tune)
+	var b := BikeBuild.new(parts, cond, tune)
+	b.ride_mode = mode_of(bike_id)
+	return b
 
 
 ## A bike's tune gathered from where each setting is kept (see TUNE_HOME), for BikeBuild.
@@ -2877,6 +2879,11 @@ func check(peer: int, action: Dictionary) -> String:
 				return "How much?"
 			if fuel_space(ridden) < 0.05:
 				return "The tank's full."
+		"ride_mode":
+			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
+				return "You're not riding that bike."
+			if not BikeBuild.MODE_ORDER.has(str(action.get("mode", "?"))):
+				return "There's no such ride mode."
 		"beam":
 			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
 				return "You're not riding that bike."
@@ -3874,6 +3881,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Filled up with %.1f L of unleaded" % put
 		"beam":
 			bikes[bike_id]["beam"] = int(action["beam"])   # the headlight switch stays where it's left
+		"ride_mode":
+			bikes[bike_id]["ride_mode"] = str(action["mode"])   # so is the dash's ride mode
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			var fairing := item_on(ridden, "fairing")
@@ -4172,6 +4181,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if style != "":
 				bikes[id]["style_order"] = style
 				bikes[id]["ordered_by"] = str(c.get("name", ""))
+			bikes[id]["name"] = owned_name(str(c.get("name", "")), Contracts.current_parts(id) if style == "" else {}, style, id)
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
 			if age != 0.0:
 				arrival_puncture(id, "project")
@@ -4214,7 +4224,7 @@ func _transfer(from: Dictionary, into: Dictionary) -> float:
 	if moved <= 0.0:
 		return 0.0
 	var before := float(dst["litres"])
-	var src_type := str(src["type"]) if str(src["type"]) != "" else str(from["part"])
+	var src_type := PartsDB.fluid_grade(str(src["type"]) if str(src["type"]) != "" else str(from["part"]))
 	if before <= 0.001 or moved >= before:
 		dst["type"] = src_type
 	dst["age"] = (float(dst.get("age", 0.0)) * before + float(src.get("age", 0.0)) * moved) / (before + moved)
@@ -4995,7 +5005,7 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 		items[id]["lube_type"] = ""
 	if PartsDB.fluid_kind(part) != "":
 		var full: bool = PartsDB.is_fluid(part) and not PartsDB.get_part(part).get("empty", false)
-		items[id]["fluid"] = {"type": part if full else "", "litres": PartsDB.fluid_capacity(part) if full else 0.0, "age": 0.0}
+		items[id]["fluid"] = {"type": PartsDB.fluid_grade(part) if full else "", "litres": PartsDB.fluid_capacity(part) if full else 0.0, "age": 0.0}
 	return id
 
 
@@ -5163,11 +5173,12 @@ func ready_bike_place():
 
 ## Host: a new bike built to `plan` (as BikeCopy.plan_of gives it: its parts in their colours, its
 ## paint and fit), ready to ride (_ready_to_ride), left at `place` (ready_bike_place) on its
-## stand, with what was paid for it (for Sales) and who ordered it. Returns its id.
-func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: String) -> int:
+## stand, with what was paid for it (for Sales) and who ordered it; `age` (0..1) wears it in, for a
+## second-hand one (see BikeCopy.used_age). Returns its id.
+func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: String, age := 0.0) -> int:
 	var bay := int(place.get("bay", -1))
 	var paint = plan.get("paint") if plan.get("paint") is Color else null
-	var id := _new_bike(plan.get("parts", {}), maxi(bay, 0), str(plan.get("name", "Bike")), 0.0, paint)
+	var id := _new_bike(plan.get("parts", {}), maxi(bay, 0), str(plan.get("name", "Bike")), clampf(age, 0.0, 1.0), paint)
 	var bike: Dictionary = bikes[id]
 	var colors: Dictionary = plan.get("colors", {}) if plan.get("colors") is Dictionary else {}
 	for slot in colors:
@@ -5181,6 +5192,7 @@ func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: Stri
 	bike["stand"] = "" if bay >= 0 else _rest_stand(id)
 	bike["bought"] = paid
 	bike["ordered_by"] = by
+	bike["name"] = owned_name(by, plan.get("parts", {}) if plan.get("parts") is Dictionary else {}, "", id)
 	_ready_to_ride(id)
 	Contracts.refresh_delivered(id)
 	return id
@@ -5225,6 +5237,26 @@ func _random_bike(bay: int, age := -1.0) -> int:
 	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9) if age < 0.0 else age)
+
+
+## The name an ordered bike gets: whose it is and what it is ("Simon's cafe racer"), its
+## style as ordered or else the one its parts make it most like, numbered when there's already
+## one by that name ("Simon's cafe racer 2"). `except` is the bike being named.
+func owned_name(who: String, parts: Dictionary, style := "", except := 0) -> String:
+	if style == "":
+		style = str(PartsDB.detect_style(parts)["style"])
+	var what := PartsDB.style_noun(style) if style != "" else "bike"
+	var base := "%s's %s" % [who if who != "" else "The garage", what]
+	var taken := {}
+	for b in bikes:
+		if int(b) != except:
+			taken[str(bikes[b]["name"])] = true
+	if not taken.has(base):
+		return base
+	var n := 2
+	while taken.has("%s %d" % [base, n]):
+		n += 1
+	return "%s %d" % [base, n]
 
 
 ## How many goes _style_parts has at a build, keeping the one most true to the style.
@@ -5346,6 +5378,13 @@ func _on_player_left(id: int) -> void:
 ## never had it touched has its lights off.
 func beam_of(bike_id: int) -> int:
 	return clampi(int(bikes.get(bike_id, {}).get("beam", 0)), 0, Bike.BEAM_FOG)
+
+
+## The ride mode bike `bike_id`'s dash was left in (see BikeBuild.RIDE_MODES), kept with the bike
+## like its headlight switch; "" (Custom: the dyno desk's levels) until someone picks one.
+func mode_of(bike_id: int) -> String:
+	var m := str(bikes.get(bike_id, {}).get("ride_mode", ""))
+	return m if BikeBuild.RIDE_MODES.has(m) else ""
 
 
 ## A bike's own fit for its parts (see GeoGizmo): slot -> {p, r, s}. Never shared between bikes.

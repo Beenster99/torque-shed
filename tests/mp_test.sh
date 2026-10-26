@@ -2,18 +2,18 @@
 # Starts a host and a client on this machine and checks each sees the other's bike move.
 # Then a second pair rides an adventure together (tests/mp_adventure.gd), a third breaks down
 # on one and fixes it at the roadside (a mate swapping its pads from the toolbox), then tows (tests/mp_wrench.gd), a fourth eats, sits
-# and sleeps on one (tests/mp_needs.gd), a fifth meets the police on one (tests/mp_police.gd),
-# a sixth starts one along a planned journey and arrives at its destination together (tests/mp_dest.gd),
-# a seventh keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
-# an eighth rides with one of the other bikers on an adventure (tests/mp_bikers.gd),
-# a ninth rides a real road with a fork, taking the other way together (tests/mp_real.gd), and a tenth plans a
+# and sleeps on one (tests/mp_needs.gd),
+# a fifth starts one along a planned journey and arrives at its destination together (tests/mp_dest.gd),
+# a sixth keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
+# a seventh rides with one of the other bikers on an adventure (tests/mp_bikers.gd),
+# an eighth rides a real road with a fork, taking the other way together (tests/mp_real.gd), and a ninth plans a
 # journey together on the Route planner and rides it (tests/mp_journey.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
 # Each pair: its scene, and how it runs (the other bikers' pair runs at the real frame rate). Pass pair names
 # (tests/mp_test.sh mp_real mp_journey) to run just those: CI runs them spread over several machines.
-ALL="mp_test mp_adventure mp_wrench mp_needs mp_police mp_dest mp_diary mp_bikers mp_real mp_journey"
+ALL="mp_test mp_adventure mp_wrench mp_needs mp_dest mp_diary mp_bikers mp_real mp_journey"
 failed=""
 for pair in ${*:-$ALL}; do
 	if [ ! -f "tests/$pair.tscn" ]; then

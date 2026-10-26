@@ -366,8 +366,8 @@ func test_limits() -> void:
 	for s in range(0, int(r.length), 128):
 		var kmh := p.limit_at(float(s))
 		seen[int(kmh)] = true
-		ok = ok and kmh >= 20.0 and kmh <= 120.0 and absf(AdventurePolice.limit_at(r, float(s)) * 3.6 - kmh) < 0.01
-	check(ok and seen.size() >= 2, "the police go by the real road's limits (%s km/h along it)" % str(seen.keys()))
+		ok = ok and kmh >= 20.0 and kmh <= 120.0
+	check(ok and seen.size() >= 2, "the real road has its limits (%s km/h along it)" % str(seen.keys()))
 	check(p.region == "jp", "the limits are the country's (%s)" % p.region)
 	var signs := r.sites_of("limit")
 	var wrong := 0
@@ -389,6 +389,18 @@ func test_limits() -> void:
 
 
 ## Real forks: a second way the crew can vote for, planned as a road of its own, joining the main road at both ends.
+## In the game the roads don't fork: a baked tour's ways stay unbuilt, with no signposts or junctions for them
+## (the tests turn AdventureRoute.forks_on on to keep the machinery working).
+func test_no_forks() -> void:
+	var p := Rides.tour_pack(EPIC)
+	AdventureRoute.forks_on = false
+	var r := AdventureRoute.new()
+	r.plan_real(p, 7, 23.0)
+	AdventureRoute.forks_on = true
+	check(p.forks.size() >= 1 and r.forks.is_empty() and r.sites_of("fork").is_empty() and r.next_fork(0.0) < 0,
+		"with forks off the Dales' %d forks aren't on the road (%d planned, %d signposts)" % [p.forks.size(), r.forks.size(), r.sites_of("fork").size()])
+
+
 func test_forks() -> void:
 	var p := Rides.tour_pack(EPIC)
 	check(p != null and p.forks.size() >= 1 and p.max_km() > 60.0, "the tour of the Dales has forks (%d) over %.0f km" % [p.forks.size(), p.max_km()])
@@ -437,7 +449,7 @@ func test_forks() -> void:
 		"its chunks, names and limits follow the path (%.1f km, was %.1f)" % [r.total / 1000.0, main_total / 1000.0])
 	var mid_s := float(fk["s"]) + float(ways[1]["len"]) * 0.5
 	check(r.road_name_at(mid_s) == str(ways[1]["name"]) or r.road_name_at(mid_s) != "", "the sat nav names the road it is on (%s)" % r.road_name_at(mid_s))
-	check(r.limit_kmh_at(mid_s) > 0.0 and AdventurePolice.limit_at(r, mid_s) > 5.0, "and the police go by its limit (%.0f km/h)" % r.limit_kmh_at(mid_s))
+	check(r.limit_kmh_at(mid_s) > 5.0, "and it has its own limit (%.0f km/h)" % r.limit_kmh_at(mid_s))
 	# Its chunks build: the other way has none of the real buildings, the road beyond the rejoin has the main road's.
 	var c_mid := AdventureRoute.chunk_of(mid_s)
 	var alt_chunk := AdventureChunk.build(r, c_mid)

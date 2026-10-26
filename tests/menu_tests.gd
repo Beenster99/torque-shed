@@ -78,8 +78,8 @@ func test_layout() -> void:
 		"adventures, project bikes and blueprints moved to the garage's panel")
 	menu._profile_badge.pressed.emit()
 	await _frames(1)
-	check(menu.open_panel() == menu._profile_tabs and _tab_names(menu._profile_tabs) == ["Profile", "Character", "Shop"],
-		"the profile picture opens your profile, character and shop")
+	check(menu.open_panel() == menu._profile_tabs and _tab_names(menu._profile_tabs) == ["Profile", "Character", "Shop", "Bike shop"],
+		"the profile picture opens your profile, character, shop and bike shop")
 	check(menu._profile_info.text.contains("Your cash"), "with your profile information")
 	menu._profile_badge.pressed.emit()
 	check(menu.open_panel() == null, "clicking it again closes it")

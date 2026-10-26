@@ -259,6 +259,12 @@ func fluid_kind(id: String) -> String:
 	return str(FLUID_HOLDERS.get(k, ""))
 
 
+## The grade a fluid container holds: its own id, or for a bigger can of the same fuel the
+## grade it's filled with ("grade"), so the fuel poured from it is the same fuel.
+func fluid_grade(id: String) -> String:
+	return str(get_part(id).get("grade", id))
+
+
 ## How many litres a part holds: a tank its capacity, an engine its sump, a master cylinder
 ## its reservoir and brake line, a container what it says on the label.
 func fluid_capacity(id: String) -> float:
@@ -361,7 +367,7 @@ func spec_line(id: String) -> String:
 		"handlebars":
 			bits = [p["style"], "%d mm wide" % int(p["width"])]
 		"dashboard":
-			bits = [", ".join(p["features"]).replace("_", " ")]
+			bits = [", ".join(p["features"].map(func(f): return str(BikeBuild.DASH_FEATURE_NAMES.get(f, str(f).replace("_", " ")))))]
 		"engine":
 			bits = [p["type"], "%d cc" % int(p["displacement"]), "%.0f x %.1f mm" % [p["bore"], p["stroke"]],
 				"redline %d" % int(p["redline"])]
