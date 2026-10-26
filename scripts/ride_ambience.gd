@@ -31,6 +31,8 @@ var _month := 1
 ## The worker fetching the baked profile (-1 when there's none), and what it found.
 var _task := -1
 var _baked := {}
+## The bike's radio, tuned to this country's stations (made on a real ride, see start).
+var radio: RideRadio
 
 
 ## The adventure being ridden, if any (Sfx asks, so it needn't know the adventure's classes itself).
@@ -41,6 +43,9 @@ static func current_world() -> Node:
 ## Starts on `adventure` with the place's guessed profile, then takes the baked one when a worker has it.
 func start(adventure: AdventureWorld) -> void:
 	world = adventure
+	radio = RideRadio.new()
+	radio.name = "Radio"
+	add_child(radio)
 	setup(profile_of(adventure))
 	var where := frame_of(adventure)
 	if where != Vector2.INF and ResourceLoader.exists(PROFILES):
@@ -62,6 +67,8 @@ func setup(place: Dictionary, month := 0) -> void:
 	_month = month if month > 0 else int(Time.get_date_dict_from_system()["month"])
 	density = str(place.get("density", "rural"))
 	chosen = PlaceSound.choose(profile, _month)
+	if radio:
+		radio.set_country(str(chosen.get("radio", "")))
 	# Out on the road nothing is heard through walls: the outdoor bus is left open.
 	var bus := AudioServer.get_bus_index("AmbOut")
 	if bus >= 0:

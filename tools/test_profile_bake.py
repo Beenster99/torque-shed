@@ -115,6 +115,16 @@ class ProfileBakeTests(unittest.TestCase):
         self.assertIn("tint", p["sources"])
         self.assertEqual(pb.to_srgb([0, 10000]).tolist(), [0, 255])
 
+    def test_a_countrys_own_name_wins_over_its_sovereigns(self):
+        feats = [{"properties": {"ADMIN": "Sint Maarten", "NAME": "Sint Maarten", "SOVEREIGNT": "Netherlands", "ISO_A2": "SX"}},
+                 {"properties": {"ADMIN": "Netherlands", "NAME": "Netherlands", "SOVEREIGNT": "Netherlands", "ISO_A2_EH": "NL"}},
+                 {"properties": {"ADMIN": "Greenland", "SOVEREIGNT": "Denmark", "ISO_A2": "GL"}}]
+        codes = pb.country_codes(feats, {"Netherlands", "Sint Maarten", "Denmark", "Curacao"})
+        self.assertEqual(codes["Netherlands"], "NL")
+        self.assertEqual(codes["Sint Maarten"], "SX")
+        self.assertEqual(codes["Denmark"], "GL")       # (no country of its own in the list: its sovereign's is better than none)
+        self.assertEqual(codes["Curacao"], "CW")       # (an alias)
+
     def test_tile_names_are_worldcovers(self):
         self.assertEqual(pb.WorldCover.tile_name(54.1, -1.9, 3)[0], "N54W003")
         self.assertEqual(pb.WorldCover.tile_name(31.1, -7.9, 3)[0], "N30W009")
