@@ -10898,8 +10898,9 @@ func _test_gear_clunks() -> void:
 		es._process(1.0 / 60.0)
 		es.gear = 1
 		es._process(1.0 / 60.0)
-		var first_ok: bool = es.gear_sounds == 1 and es.last_step == "first" and es.bank.oneshots["shift_first"].has(es._oneshot_en[0].stream)
-		check(first_ok, "with the engine off, into first still clunks (%s, %d)" % [sp["layout"], es.gear_sounds])
+		var made := es._oneshot_en.any(func(p): return p.playing)
+		var first_ok: bool = es.gear_sounds == 1 and es.last_step == "first" and Sfx.recordings("shift_clunk").has(es._lever.stream) and not made
+		check(first_ok, "with the engine off, into first still clunks: Simon's recording and no made sound (%s, %d)" % [sp["layout"], es.gear_sounds])
 		es.running = true
 		es.rpm = float(sp["redline"]) * 0.7
 		es.throttle = 1.0
@@ -10911,8 +10912,8 @@ func _test_gear_clunks() -> void:
 			steps.append(es.last_step)
 		for i in 30:
 			es._process(1.0 / 60.0)
-		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0,
-			"every change up and down the box clicks or clunks, with the lever, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
+		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0 and not es._oneshot_en.any(func(p): return p.playing),
+			"every change up and down the box is one of the recorded clicks or clunks, nothing made, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
 		check(steps == ["low", "low", "high", "high", "down", "down", "down", "first", "neutral"], "each change sounds its step %s" % str(steps))
 		es.queue_free()
 	await get_tree().process_frame
