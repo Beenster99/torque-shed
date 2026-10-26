@@ -49,6 +49,8 @@ static func make(host: Node, spec: Dictionary, stats: Dictionary, dir: String) -
 		if str(p.get("error", "")) != "":
 			info += "Couldn't be laid out:\n%s" % p["error"]
 		else:
+			if str(p.get("profile", "")) != "":
+				info += "%s\n" % p["profile"]
 			info += "%s km ride, %s\nlaid out in %.1f s\nmemory %.0f MB, video %.0f MB\n%d nodes" % [
 				p.get("km", 0), p.get("theme", ""), float(p.get("load_s", 0.0)), float(p.get("static_mb", 0.0)),
 				float(p.get("video_mb", 0.0)), int(p.get("nodes", 0))]

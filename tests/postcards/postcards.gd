@@ -204,6 +204,10 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	var pack: RealPack = res["pack"]
 	got["plan_s"] = snappedf((Time.get_ticks_msec() - t0) / 1000.0, 0.1)
 	got["km"] = snappedf(pack.max_km(), 0.01)
+	var a: Array = place["from"]
+	var prof := PlaceProfile.of_cell(RealRegion.cell_of(float(a[0]), float(a[1])))
+	got["profile"] = "%s · %s · %s · %s%s" % [prof.get("country", "?"), prof.get("koppen", "?"), prof.get("altitude_band", "?"),
+		prof.get("density", "?"), " (guessed)" if bool(prof.get("guessed", false)) else ""]
 	got["theme"] = pack.theme
 	if fetch:
 		return got   # (planning fetched the ride's heights: that's all a fetch is for)

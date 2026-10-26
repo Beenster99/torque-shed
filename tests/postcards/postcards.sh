@@ -34,7 +34,8 @@ HOME_DIR="$(mktemp -d)"
 trap 'rm -rf "$HOME_DIR"' EXIT
 
 godot_run() {
-	local run=(env XDG_DATA_HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR" "$GODOT" --path . --audio-driver Dummy
+	# (cut off at ten minutes: a script that fails to load leaves Godot waiting for ever)
+	local run=(timeout 600 env XDG_DATA_HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR" "$GODOT" --path . --audio-driver Dummy
 		res://tests/postcards/postcards.tscn -- "$@")
 	if [ -z "${DISPLAY:-}" ]; then
 		xvfb-run -a -s "-screen 0 1280x720x24" "${run[@]}"
