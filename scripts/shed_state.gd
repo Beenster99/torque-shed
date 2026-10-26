@@ -4172,6 +4172,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if style != "":
 				bikes[id]["style_order"] = style
 				bikes[id]["ordered_by"] = str(c.get("name", ""))
+			bikes[id]["name"] = owned_name(str(c.get("name", "")), Contracts.current_parts(id) if style == "" else {}, style, id)
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
 			if age != 0.0:
 				arrival_puncture(id, "project")
@@ -5181,6 +5182,7 @@ func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: Stri
 	bike["stand"] = "" if bay >= 0 else _rest_stand(id)
 	bike["bought"] = paid
 	bike["ordered_by"] = by
+	bike["name"] = owned_name(by, plan.get("parts", {}) if plan.get("parts") is Dictionary else {}, "", id)
 	_ready_to_ride(id)
 	Contracts.refresh_delivered(id)
 	return id
@@ -5225,6 +5227,26 @@ func _random_bike(bay: int, age := -1.0) -> int:
 	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9) if age < 0.0 else age)
+
+
+## The name an ordered bike gets: whose it is and what it is ("Simon's cafe racer"), its
+## style as ordered or else the one its parts make it most like, numbered when there's already
+## one by that name ("Simon's cafe racer 2"). `except` is the bike being named.
+func owned_name(who: String, parts: Dictionary, style := "", except := 0) -> String:
+	if style == "":
+		style = str(PartsDB.detect_style(parts)["style"])
+	var what := PartsDB.style_noun(style) if style != "" else "bike"
+	var base := "%s's %s" % [who if who != "" else "The garage", what]
+	var taken := {}
+	for b in bikes:
+		if int(b) != except:
+			taken[str(bikes[b]["name"])] = true
+	if not taken.has(base):
+		return base
+	var n := 2
+	while taken.has("%s %d" % [base, n]):
+		n += 1
+	return "%s %d" % [base, n]
 
 
 ## How many goes _style_parts has at a build, keeping the one most true to the style.

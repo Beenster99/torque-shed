@@ -555,7 +555,7 @@ func test_project_card() -> void:
 	card._go.pressed.emit()
 	await _frames(1)
 	var got: int = newest.call()
-	check(not card.visible and got != 0 and str(Shed.bikes[got]["name"]) == "New cruiser" and str(Shed.bikes[got].get("style_order", "")) == "cruiser"
+	check(not card.visible and got != 0 and str(Shed.bikes[got]["name"]).ends_with("'s cruiser") and str(Shed.bikes[got].get("style_order", "")) == "cruiser"
 		and Money.rideable(got) and half.call(got), "Order it: a new cruiser in a bay, ready to ride (%s)" % (str(Shed.bikes[got]["name"]) if got != 0 else "none"))
 	Shed.garage_money = 5
 	pc.open_bike_order()

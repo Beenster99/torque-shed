@@ -15997,8 +15997,10 @@ func _test_style_bike_orders() -> void:
 	var bike := 0
 	for id in Shed.bikes:
 		bike = id
-	check(bike != 0 and str(Shed.bikes[bike]["name"]) == "Cruiser project" and str(Shed.bikes[bike].get("style_order", "")) == "cruiser",
-		"ordering a cruiser brings one to a bay (%s)" % (str(Shed.bikes[bike]["name"]) if bike != 0 else "none"))
+	check(bike != 0 and str(Shed.bikes[bike]["name"]) == "%s's cruiser" % str(Shed.crew[me]["name"]) and str(Shed.bikes[bike].get("style_order", "")) == "cruiser",
+		"ordering a cruiser brings one to a bay, named after whoever ordered it (%s)" % (str(Shed.bikes[bike]["name"]) if bike != 0 else "none"))
+	check(Shed.owned_name(str(Shed.crew[me]["name"]), {}, "cruiser") == "%s's cruiser 2" % str(Shed.crew[me]["name"])
+		and Shed.owned_name("Sam", {}, "mx") == "Sam's MX bike", "a second one is numbered, and the style reads as it's said")
 	var parts_now := Contracts.current_parts(bike)
 	check(str(PartsDB.detect_style(parts_now)["style"]) == "cruiser", "it's a cruiser: %s" % PartsDB.style_text(parts_now))
 	var worn := 0
