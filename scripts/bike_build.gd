@@ -46,6 +46,11 @@ const FORK_LINK := {"leading_link": 0.3}
 ## How far each frame style leans before something hard touches down (footboards, pipes, the
 ## frame), degrees: a low cruiser grounds out long before its tyres give up.
 const LEAN_CLEARANCE := {"softail": 31.0, "cruiser": 32.0, "chopper": 30.0}
+## How much quicker than the ordinary bike a bike of each style rolls from one lean to the other
+## (Bike.LEAN_RATE_MAX times this): a light, short bike with a low front and narrow clip-ons flicks
+## through a chicane where a cruiser or a tourer lumbers over. A bike that is only mostly one of
+## these gets a share of it (see flick, FLICK_STYLES).
+const FLICK := {"race": 3.0, "sport": 2.8, "naked": 2.2}
 ## How much stiffer a spring gets towards the end of its travel, for a part in the catalogue
 ## without its own "progression": the rate at the bottom is (1 + 3 x this) times the rate at the top.
 ## Forks by style, shocks by their type (air springs ramp up hardest, linkages next).
@@ -200,6 +205,8 @@ var fork_path := Vector3(0.0, 0.9, 0.42)
 var fork_link := 0.0
 ## How far the bike leans before it grounds out (see LEAN_CLEARANCE), rad.
 var lean_clearance := deg_to_rad(52.0)
+## How quickly the bike rolls between leans, as a multiple of an ordinary bike's (see FLICK).
+var flick := 1.0
 ## The swingarm: its pivot (bike space, the back wheel fully extended at (0, 0, wheelbase / 2)),
 ## and its length, m. The back axle swings up round it.
 var swing_pivot := Vector3(0.0, 0.16, 0.1)
@@ -435,6 +442,7 @@ func _compute() -> void:
 	fork_path = Vector3(0.0, cos(path_rake), sin(path_rake))
 	fork_link = float(fork.get("link", FORK_LINK.get(fork_style, 0.0)))
 	lean_clearance = deg_to_rad(float(frame.get("clearance", LEAN_CLEARANCE.get(str(frame.get("style", "")), 52.0))))
+	flick = flick_of(parts)
 	# The swingarm pivots where the frame says (the same point the bike's drawn with).
 	var geo: Dictionary = frame.get("geo", {})
 	swing_pivot = Vector3(0.0, float(geo.get("pivot_y", 0.16)), float(frame["wheelbase"]) * 0.5 - float(geo.get("arm", 0.6)))
@@ -835,6 +843,18 @@ static func parts_trail(build: Dictionary) -> float:
 	var radius := float(wheel.get("diameter", 17.0)) * 0.0127 + float(tyre.get("width", 120.0)) / 1000.0 * float(tyre.get("aspect", 0.7))
 	var offset := float(fork.get("offset", FORK_OFFSET.get(str(fork.get("style", "")), 0.04)))
 	return trail_of(radius, float(frame.get("rake_deg", 25.0)), offset)
+
+
+## How quickly a bike built of `parts` rolls between leans, as a multiple of an ordinary bike's: a
+## proper sports, race or naked bike gets all of its style's FLICK, a bike that is mostly one (its
+## style all over, short of proper) a share of it by how much of it agrees, and anything else 1.
+static func flick_of(parts: Dictionary) -> float:
+	var d := PartsDB.detect_style(parts)
+	var st := str(d.get("style", ""))
+	if not FLICK.has(st):
+		return 1.0
+	var share := clampf(float(d.get("coherence", 0.0)) / PartsDB.PROPER_STYLE, 0.0, 1.0)
+	return 1.0 + (float(FLICK[st]) - 1.0) * share
 
 
 ## Bikes that turn up already built (project bikes, customers' bikes) were put together by
