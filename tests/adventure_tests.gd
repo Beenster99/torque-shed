@@ -134,7 +134,8 @@ func test_frames() -> void:
 	var d := w.shift_origin_to(p)
 	var q := p - d
 	var hit := w.locate_local(q)
-	check(absf(float(hit["s"]) - 31234.5) < 0.05 and absf(float(hit["lat"]) - 1.25) < 0.05 and q.length() < 7000.0,
+	# (to 10 cm along: on a bend a point off the middle line is found along it to within its offset times the bend)
+	check(absf(float(hit["s"]) - 31234.5) < 0.1 and absf(float(hit["lat"]) - 1.25) < 0.05 and q.length() < 7000.0,
 		"after shifting 31 km the same point is the same place on the road (%.2f m, %.2f m right), near the anchor" % [float(hit["s"]), float(hit["lat"])])
 	check(fmod(w.origin.x, 1.0) == 0.0 and fmod(w.origin.z, 1.0) == 0.0, "the origin is whole metres (%s)" % str(w.origin))
 	# Another machine, whose origin is somewhere else.
@@ -145,7 +146,7 @@ func test_frames() -> void:
 	var theirs := AdventureWorld.untag(w.tag_state(mine), other.origin)
 	var at := Vector3(theirs[2], theirs[3], theirs[4])
 	var ohit := other.route.locate(float(at.x) + other.origin.x, float(at.z) + other.origin.z)
-	check(theirs.size() == mine.size() and absf(float(ohit["s"]) - 31234.5) < 0.05 and absf(float(ohit["lat"]) - 1.25) < 0.05,
+	check(theirs.size() == mine.size() and absf(float(ohit["s"]) - 31234.5) < 0.1 and absf(float(ohit["lat"]) - 1.25) < 0.05,
 		"a rider's snapshot lands on the same spot in another player's frame (%.2f m, %.2f m right)" % [float(ohit["s"]), float(ohit["lat"])])
 	var walk := PackedFloat32Array([0.0, q.x, q.y, q.z, 0.3, 0.0, 0.0])
 	var wt := AdventureWorld.untag(w.tag_state(walk), other.origin)

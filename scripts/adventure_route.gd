@@ -360,6 +360,14 @@ func _fair_way(hs: PackedFloat64Array, i0: int, i1: int) -> PackedFloat64Array:
 		out[k] += (1.0 - smoothstep(0.0, ease, k)) * (d0 + g0 * k) + (1.0 - smoothstep(0.0, ease, j)) * (d1 + g1 * j)
 	out[0] = ph[i0]
 	out[n - 1] = ph[i1]
+	# The easing adds a grade of its own: on a climb already at the planner's limit it would be steeper than any road
+	# the planner lays, so it is held to that limit (the ends as they are).
+	var lim := RoutePlanner.MAX_GRADE * STEP
+	for _round in 2:
+		for k in range(1, n - 1):
+			out[k] = clampf(out[k], out[k - 1] - lim, out[k - 1] + lim)
+		for k in range(n - 2, 0, -1):
+			out[k] = clampf(out[k], out[k + 1] - lim, out[k + 1] + lim)
 	return out
 
 
@@ -720,7 +728,7 @@ static func _fair_spans(h: PackedFloat64Array, spans: Array) -> PackedFloat64Arr
 	return out
 
 
-## The lie of the land: the road's height averaged over 200 m either way.
+## The lie of the land: the road's height averaged over 200 m either way (before a fork, only as far as the fork).
 func _lie_of_land() -> void:
 	var n := ph.size()
 	base.resize(n)
@@ -728,9 +736,20 @@ func _lie_of_land() -> void:
 	sums.resize(n + 1)
 	for i in n:
 		sums[i + 1] = sums[i] + ph[i]
+	# (not past the next fork: the land before it comes out the same whichever way is taken there)
+	var fork_knots := PackedInt32Array()
+	for f in forks.size():
+		var fs := fork_s(f)
+		if fs < INF:
+			fork_knots.append(int(fs / STEP))
+	var next := 0
 	for i in n:
+		while next < fork_knots.size() and fork_knots[next] < i:
+			next += 1
 		var a := maxi(0, i - 50)
 		var b := mini(n, i + 51)
+		if next < fork_knots.size():
+			b = mini(b, fork_knots[next] + 1)
 		base[i] = (sums[b] - sums[a]) / float(b - a)
 
 ## Marks a site (a fuel station, a town, a stop, a fork) at `s` metres on `side` (1 the right,
@@ -1081,7 +1100,12 @@ func inside_reach(i: int, side: int) -> float:
 	var out := INF
 	var dix := cos(hd[i]) * side
 	var diz := sin(hd[i]) * side
-	for j in range(maxi(0, i - REACH_KNOTS), mini(hd.size(), i + REACH_KNOTS + 1)):
+	# (not past the next fork: the land before it comes out the same whichever way is taken there)
+	var upto := mini(hd.size(), i + REACH_KNOTS + 1)
+	var fork_at := _next_fork_s(i)
+	if fork_at < INF:
+		upto = mini(upto, int(fork_at / STEP) + 1)
+	for j in range(maxi(0, i - REACH_KNOTS), upto):
 		if j == i:
 			continue
 		var djx := cos(hd[j]) * side
@@ -1102,7 +1126,8 @@ func inside_reach(i: int, side: int) -> float:
 ## to about where it's nearer another stretch of the road than this one (each stretch has the
 ## land on its own side of the line halfway between them, overlapping a little), so the land
 ## of two stretches never lies in two sheets at different heights, one floating over the other.
-## Stretches past the first undecided fork don't count (they may never be built).
+## Stretches past the first undecided fork don't count (they may never be built), nor, before a fork, any past it,
+## taken or not: the land before a fork comes out the same whichever way is taken there.
 ## Worked out once a knot (chunks are built on worker threads, so the cache is locked).
 func land_reach(i: int, side: int) -> float:
 	var key := i * 2 + (side + 1) / 2
@@ -1114,7 +1139,7 @@ func land_reach(i: int, side: int) -> float:
 	var out := inside_reach(i, side)
 	var dx := cos(hd[i]) * side
 	var dz := sin(hd[i]) * side
-	var end := stream_end()
+	var end := minf(stream_end(), _next_fork_s(i))
 	var cx := int(floor(px[i] / REACH_GRID))
 	var cz := int(floor(pz[i] / REACH_GRID))
 	var rings := int(ceil(2.0 * float(AdventureChunk.LAND_OUT[-1]) / REACH_GRID))
@@ -1140,6 +1165,15 @@ func land_reach(i: int, side: int) -> float:
 	_reach_known[key] = out
 	_reach_lock.unlock()
 	return out
+
+
+## Where the next fork from knot `i` on (one starting at it too) starts along the path (m), or INF where there's none.
+func _next_fork_s(i: int) -> float:
+	for f in forks.size():
+		var fs := fork_s(f)
+		if fs >= i * STEP:
+			return fs
+	return INF
 
 
 ## Whether another stretch of the road (a bend doubling back, not the road beside knot `i`) runs

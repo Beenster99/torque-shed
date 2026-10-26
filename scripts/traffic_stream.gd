@@ -734,11 +734,18 @@ func _place_arm(d: Dictionary) -> Array:
 	var js := float(jn["s"])
 	var dir := int(d["dir"])
 	var lane_s := js + (-1.0 if out else 1.0) * dir * _bend_reach(jn)
-	var p0: Vector3 = _place({"s": lane_s, "dir": dir, "kind": d["kind"]})[0]
-	var p1: Vector3 = _place({"s": js, "dir": dir, "kind": d["kind"]})[0]
+	var lane: Array = _place({"s": lane_s, "dir": dir, "kind": d["kind"]})
+	var p0: Vector3 = lane[0]
 	var u := clampf(1.0 + t / TURN_LEN, 0.0, 1.0)   # 0 in the lane, 1 at the mouth
-	var pos := p0 * (1.0 - u) * (1.0 - u) + p1 * 2.0 * (1.0 - u) * u + mouth * u * u
-	var tangent := (p1 - p0) * 2.0 * (1.0 - u) + (mouth - p1) * 2.0 * u
+	# A curve that leaves the lane along it and meets the side road along it (from the lane towards the mouth: on the
+	# way out the way it's driven, on the way in backwards), so the vehicle never snaps round at either end.
+	var along_lane: Vector3 = (lane[1] as Vector3) * (1.0 if out else -1.0)
+	var reach := p0.distance_to(mouth) * 0.4
+	var c1 := p0 + along_lane * reach
+	var c2 := mouth - fwd * reach
+	var v := 1.0 - u
+	var pos := p0 * v * v * v + c1 * 3.0 * v * v * u + c2 * 3.0 * v * u * u + mouth * u * u * u
+	var tangent := (c1 - p0) * 3.0 * v * v + (c2 - c1) * 6.0 * v * u + (mouth - c2) * 3.0 * u * u
 	tangent.y = 0.0
 	if tangent.length() < 0.01:
 		tangent = travel
