@@ -277,3 +277,121 @@ func test_cell() -> void:
 	check(int(kinds.get("tee", 0)) > 5, "a village has its tees")
 	check(lost == 0, "every point along every piece is on a road at its height (%d of %d lost)" % [lost, tried])
 	check(worst_ms < 1500.0, "a block lays out on a worker in good time (worst %.0f ms)" % worst_ms)
+
+
+## The block's meshes: the deck and junctions facing up, indexed within bounds, with collision; lines on tarmac; a
+## roundabout's island; the debug ground when asked for.
+func test_meshes() -> void:
+	var net := RoadNet.new(tee(), flat)
+	var b := net.block(Vector2i(0, 0))
+	var deck: Dictionary = b.arrays["deck"].get("tarmac", {})
+	check(not deck.is_empty(), "a tarmac deck")
+	if deck.is_empty():
+		return
+	var v: PackedVector3Array = deck["v"]
+	var idx: PackedInt32Array = deck["i"]
+	check(v.size() > 100 and idx.size() % 3 == 0 and idx.size() > 0, "%d vertices, %d triangles" % [v.size(), idx.size() / 3])
+	var worst := INF
+	var out_of := 0
+	for k in range(0, idx.size(), 3):
+		if idx[k] >= v.size() or idx[k + 1] >= v.size() or idx[k + 2] >= v.size():
+			out_of += 1
+			continue
+		# Stored clockwise (Godot's front faces): the normal of (a, c, b) is the face's.
+		var n := (v[idx[k + 2]] - v[idx[k]]).cross(v[idx[k + 1]] - v[idx[k]]).normalized()
+		worst = minf(worst, n.y)
+	check(out_of == 0, "every index is a vertex")
+	check(worst > 0.9, "every triangle of road faces up (the least %.2f)" % worst)
+	check((deck["n"] as PackedVector3Array).size() == v.size() and (deck["uv"] as PackedVector2Array).size() == v.size() and (deck["c"] as PackedColorArray).size() == v.size(), "a normal, uv and colour each")
+	check((b.arrays["faces"]["tarmac"] as PackedVector3Array).size() == idx.size(), "its collision is the same triangles")
+	check((b.arrays["faces"].get("grass", PackedVector3Array()) as PackedVector3Array).size() > 0, "the verges have collision (grass)")
+	check((b.arrays["lines"]["v"] as PackedVector3Array).size() > 0, "white lines on the tarmac")
+	# The deck under the tee's middle is at the junction's height (a ray down finds it).
+	var hit := _down(b, Vector3(100.5, 20.0, 100.5) - b.anchor())
+	check(not is_nan(hit) and absf(hit - 10.0) < 0.1, "the junction's surface is there at its height (%.2f)" % hit)
+	var road := _down(b, Vector3(300.0, 20.0, 101.0) - b.anchor())
+	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
+	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
+	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
+	check(not b.arrays.has("ground"), "no ground of its own unless asked")
+	net.debug_ground = true
+	var gb := net.block(Vector2i(0, 0))
+	check(gb.arrays.has("ground") and (gb.arrays["ground"]["v"] as PackedVector3Array).size() == 65 * 65, "the debug ground: a grid of 8 m cells over the block")
+
+
+## The height of the first collision triangle of block `b` straight under local `p` (NAN if none).
+static func _down(b: RoadBlock, p: Vector3) -> float:
+	var best := NAN
+	for surf in b.arrays["faces"]:
+		var f: PackedVector3Array = b.arrays["faces"][surf]
+		for k in range(0, f.size(), 3):
+			var hit = Geometry3D.ray_intersects_triangle(p, Vector3.DOWN, f[k], f[k + 1], f[k + 2])
+			if hit != null and (is_nan(best) or float(hit.y) > best):
+				best = float(hit.y)
+	return best
+
+
+## The network ride (AdventureWorld.network), where riding is the point: a ride on a bundled region streams the road
+## blocks round the rider, a bike set down on a road well off the planned one rides on it, and the planned road only
+## answers near it.
+func test_ride() -> void:
+	var plan := AdventurePlans.sample(20.0)
+	var region := RealRegion.get_region(str(plan["region"]))
+	var was := AdventureWorld.network
+	AdventureWorld.network = true
+	var w := AdventureWorld.new()
+	w.roads_region = region
+	w.setup(AdventurePlans.pack_for(plan), 1, 20.0)
+	AdventureWorld.network = was
+	check(w.roads != null and w.land == null, "the network ride streams road blocks (and no RealLand till T5's follows the network)")
+	if w.roads == null:
+		w.free()
+		return
+	# A junction 400 m and more off the planned road, with a road out of it.
+	var net := w.roads.net
+	var start := -1
+	for n in region.node_count():
+		var p := region.node_pos[n]
+		var hit := w.route.locate(p.x, p.y)
+		if region.adjacent[n].size() >= 3 and (hit.is_empty() or absf(float(hit["lat"])) > 400.0) and absf(p.x) < 3000.0 and absf(p.y) < 3000.0:
+			start = n
+			break
+	check(start >= 0, "a junction well off the planned road")
+	if start < 0:
+		w.free()
+		return
+	var arm: Dictionary = net.junction_of(start)["arms"][0]
+	var m: Vector3 = arm["mouth"]
+	var h := float(arm["heading"])
+	var bike := Bike.new()
+	var focus := [Vector3.ZERO]
+	w.focus = func(): return [bike.position if bike.is_inside_tree() else focus[0]]
+	t.add_child(w)
+	w.shift_origin_to(w.to_local_pos(m.x, 0.0, m.z))
+	var at := w.to_local_pos(m.x, 0.0, m.z) + Vector3(sin(h), 0.0, -cos(h)) * 6.0
+	focus[0] = at
+	w.roads.preload_round([Vector2(m.x, m.z)], 300.0)
+	check(w.roads.has_ground(m.x, m.z), "its block is in the world under the rider")
+	var on := net.locate(m.x + sin(h) * 6.0, m.z - cos(h) * 6.0)
+	bike.setup(BikeBuild.new({}))
+	w.add_child(bike)
+	bike.place(Vector3(at.x, float(on.get("y", m.y)) + 0.4, at.z), -h)
+	bike.engine_on = true
+	bike.assist = 1.0
+	check(w.surface_local(at) == net.region.surface_of(int(arm["edge"])), "the surface under it is its road's (%s)" % w.surface_local(at))
+	check(w.locate_local(at).is_empty(), "the planned road doesn't answer this far off it")
+	var lowest := INF
+	var start_pos := bike.position
+	for i in 480:
+		bike.throttle = 0.5
+		await t.get_tree().physics_frame
+		var xz := w.route_xz(bike.position)
+		var hit := net.locate(xz[0], xz[1])
+		if not hit.is_empty():
+			lowest = minf(lowest, bike.position.y - float(hit["y"]))
+	var ridden := Vector2(bike.position.x - start_pos.x, bike.position.z - start_pos.z).length()
+	check(lowest > -0.6, "it rides on the road, not through it (lowest %.2f m from the deck)" % lowest)
+	check(ridden > 15.0, "and goes (%.0f m in 4 s)" % ridden)
+	check(w.roads.blocks.size() >= 1 and w.chunks.is_empty(), "blocks, and none of the planned road's chunks (%d blocks)" % w.roads.blocks.size())
+	w.queue_free()
+	await t.get_tree().process_frame

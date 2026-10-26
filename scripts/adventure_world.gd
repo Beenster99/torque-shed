@@ -46,6 +46,12 @@ signal origin_shifted(delta: Vector3)
 signal picks_taken
 
 static var current: AdventureWorld
+## The network ride (Esc > Debug > "Road network (test)", Ride Anywhere v2): a ride set up while it's on streams the
+## road blocks of its whole region round each rider (RoadStreamer) instead of the planned road's chunks, and the planned
+## road is only advice (found only within NETWORK_ADVICE of it). Per machine, for testing: co-op on the network is T9's.
+static var network := false
+## On the network ride the planned road answers locate_local only this close to it (m), so riding off it is riding on.
+const NETWORK_ADVICE := 60.0
 
 var route: AdventureRoute
 ## The route frame point at the local frame's zero (whole metres, y always 0): local = route - origin.
@@ -67,6 +73,10 @@ var horizon: MeshInstance3D
 var ridges: RealRidges
 ## The land beyond the road's own chunks, on a real road (see RealLand), or null.
 var land: RealLand
+## The road network round each rider on the network ride (see network), or null.
+var roads: RoadStreamer
+## The region the network ride is on: the plan's (Shed.adventure), unless set before setup (the tests).
+var roads_region: RealRegion
 var _box := _Results.new()
 var _tasks := {}         # chunk -> WorkerThreadPool task id
 var _ready_data := {}    # chunk -> built data waiting to be committed
@@ -135,10 +145,30 @@ func setup(pack: RealPack, seed := 1, km := 0.0) -> void:
 	ridges.setup(self, route.real.terrain)
 	add_child(ridges)
 	ridges.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
+	if network and _start_network():
+		return   # (no RealLand: the blocks lay out a ground of their own until the land follows the network, T5)
 	land = RealLand.new()
 	land.setup(self, route)
 	add_child(land)
 	land.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
+
+
+## Starts the road network round the riders (the network ride): false when the ride's region isn't known.
+func _start_network() -> bool:
+	if roads_region == null:
+		var plan = Shed.adventure.get("plan", {})
+		var id := str((plan as Dictionary).get("region", "")) if plan is Dictionary else ""
+		roads_region = RealRegion.get_region(id) if id != "" else null
+	if roads_region == null:
+		push_warning("Network ride: the ride's region isn't known; riding the planned road.")
+		return false
+	var t: RealTerrain = route.real.terrain
+	var net := RoadNet.new(roads_region, t.height, Callable(t, "ready") if t.has_method("ready") else Callable())
+	net.debug_ground = true
+	roads = RoadStreamer.new()
+	roads.setup(self, net)
+	add_child(roads)
+	return true
 
 
 ## Takes the ways picked at the forks ({fork: way}, see AdventureForks): the road from each newly
@@ -259,6 +289,8 @@ func route_xz(p: Vector3) -> PackedFloat64Array:
 func locate_local(p: Vector3, who := "") -> Dictionary:
 	var xz := route_xz(p)
 	var hit := route.locate(xz[0], xz[1], int(_hints.get(who, -1)) if who != "" else -1)
+	if roads != null and not hit.is_empty() and absf(float(hit["lat"])) > NETWORK_ADVICE:
+		return {}
 	if who != "" and not hit.is_empty():
 		_hints[who] = int(hit["i"])
 	return hit
@@ -304,6 +336,10 @@ func transform_at(s: float, lat := 0.0) -> Transform3D:
 	var e := route.width_at_s(s) * 0.5
 	var f := clampf(lat / maxf(e, 0.1), -1.0, 1.0)
 	var y := route.height_at_s(s) + AdventureChunk.CROWN * (1.0 - f * f)
+	if roads != null:
+		var on := roads.net.locate(xz[0], xz[1])
+		if not on.is_empty() and bool(on["on_road"]):
+			y = float(on["y"])   # (the network's road, which the planned line only follows)
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(xz[0], y, xz[1]))
 
 
@@ -316,6 +352,8 @@ func heading_at(s: float) -> float:
 ## along it, on the left half and facing on towards the destination. null when `p` is on the
 ## road (or nowhere near it), so it's picked up where it lies.
 func back_on_road(p: Vector3):
+	if roads != null:
+		return _back_on_network(p)
 	var hit := locate_local(p, "respawn")
 	if hit.is_empty():
 		return null
@@ -324,6 +362,21 @@ func back_on_road(p: Vector3):
 		return null
 	s = clampf(s, 2.0, minf(route.total, route.stream_end()) - 20.0)
 	return transform_at(s, -route.width_at_s(s) * 0.25)
+
+
+## back_on_road on the network ride: the nearest road's left half, facing along it (a to b).
+func _back_on_network(p: Vector3):
+	var xz := route_xz(p)
+	var hit := roads.net.locate(xz[0], xz[1])
+	if hit.is_empty():
+		return null
+	if bool(hit["on_road"]) or (absf(float(hit["lat"])) <= float(hit["width"]) * 0.5 + OFF_ROAD and p.y > float(hit["y"]) - 5.0):
+		return null
+	var ei := int(hit["edge"])
+	var s := float(hit["s"])
+	var h := float(hit["heading"])
+	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (-float(hit["width"]) * 0.25)
+	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(at.x, roads.net.road_y(ei, s) + RoadNet.CROWN, at.y))
 
 
 ## Where player `slot` starts: two by two on the left half of the road behind the start banner.
@@ -336,6 +389,10 @@ func start_xf(slot: int) -> Transform3D:
 
 ## The surface at local `p`: the road's, or the land's beside it (see AdventureSurface).
 func surface_local(p: Vector3) -> String:
+	if roads != null:
+		var xz := route_xz(p)
+		var on := roads.net.locate(xz[0], xz[1])
+		return roads.net.region.surface_of(int(on["edge"])) if not on.is_empty() and bool(on["on_road"]) else "grass"
 	var hit := locate_local(p, "surface")
 	if hit.is_empty():
 		return "grass"
@@ -389,6 +446,8 @@ func shift_origin_to(p: Vector3) -> Vector3:
 	origin = new_origin
 	for c in chunks:
 		place_chunk(chunks[c])
+	if roads != null:
+		roads.place()
 	_follow_horizon(p - delta)
 	if ridges != null:
 		ridges.place()
@@ -448,7 +507,8 @@ func _process(delta: float) -> void:
 		return
 	var pt := Perf.t0()
 	var t0 := Time.get_ticks_usec()
-	stream()
+	if roads == null:
+		stream()   # (the network ride's blocks stream themselves: RoadStreamer)
 	stats["stream_ms_max"] = maxf(float(stats["stream_ms_max"]), (Time.get_ticks_usec() - t0) / 1000.0)
 	# The tunnel roof over the camera, eased so the light doesn't snap at a portal.
 	var cam := get_viewport().get_camera_3d() if get_viewport() else null
@@ -603,6 +663,13 @@ func _stop_committing() -> void:
 
 ## Builds and commits every chunk from `s0` to `s1` metres at once (the start, behind a fade).
 func preload_range(s0: float, s1: float) -> void:
+	if roads != null:
+		var at: Array[Vector2] = []
+		for s in [s0, (s0 + s1) * 0.5, s1]:
+			var xz := route.xz_at(clampf(s, 0.0, route.total), 0.0)
+			at.append(Vector2(xz[0], xz[1]))
+		roads.preload_round(at, 300.0)
+		return
 	for c in range(maxi(0, AdventureRoute.chunk_of(s0)), mini(last_buildable_chunk(), AdventureRoute.chunk_of(s1)) + 1):
 		if not chunks.has(c):
 			var data := AdventureChunk.build(route, c)
@@ -612,6 +679,9 @@ func preload_range(s0: float, s1: float) -> void:
 
 ## Whether the chunk under `s` is in the world (its collision there to ride on).
 func has_ground(s: float) -> bool:
+	if roads != null:
+		var xz := route.xz_at(clampf(s, 0.0, route.total), 0.0)
+		return roads.has_ground(xz[0], xz[1])
 	return chunks.has(AdventureRoute.chunk_of(s))
 
 

@@ -180,6 +180,13 @@ func _ready() -> void:
 		_button("Needs: tired and hungry", func(): Shed.request({"a": "needs_debug", "food": 0.15, "drink": 0.2, "rest": 0.05})),
 		_button("Needs: topped up", func(): Shed.request({"a": "needs_debug", "food": 1.0, "drink": 1.0, "rest": 1.0})),
 	]))
+	# Ride Anywhere v2's road network (see AdventureWorld.network): this machine's next ride streams every road round you.
+	var net_toggle := CheckButton.new()
+	net_toggle.name = "RoadNetworkToggle"
+	net_toggle.text = "Road network (test): my next ride builds every road and junction round me, plan or no plan"
+	net_toggle.button_pressed = AdventureWorld.network
+	net_toggle.toggled.connect(func(on): AdventureWorld.network = on)
+	box.add_child(net_toggle)
 	_adv_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
 	_adv_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_adv_note)

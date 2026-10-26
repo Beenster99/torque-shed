@@ -441,6 +441,8 @@
 	"_test_road_kinds": 40,
 	"_test_road_lean": 2112,
 	"_test_road_locate": 30,
+	"_test_road_meshes": 200,
+	"_test_road_ride": 6000,
 	"_test_road_traffic": 15975,
 	"_test_round5_models": 42781,
 	"_test_round5_riding": 2480,

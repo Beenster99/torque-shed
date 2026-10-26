@@ -22535,6 +22535,14 @@ func _test_road_cell() -> void:
 	_roads().test_cell()
 
 
+func _test_road_meshes() -> void:
+	_roads().test_meshes()
+
+
+func _test_road_ride() -> void:
+	await _roads().test_ride()
+
+
 func _planner() -> RefCounted:
 	return load("res://tests/route_planner_tests.gd").new(self)
 

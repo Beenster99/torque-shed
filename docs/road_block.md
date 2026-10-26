@@ -158,4 +158,7 @@ the two arms of the junction's through road: the widest pair nearest straight on
 
 Esc > Debug > "Road network (test)". Off (the default), the ride is v1's single line, unchanged. On, a new ride
 streams road blocks round each rider instead of the line's chunks, and the planned route is drawn on the map only.
-It's per machine for now (co-op on the network is T9's).
+It's per machine for now (co-op on the network is T9's). The streamer is `RoadStreamer` (scripts/road_streamer.gd,
+`AdventureWorld.roads`): blocks within 1.1 km of any rider, kept to 1.5 km, laid out on two workers, one put in a
+frame, laid out again on the terrain's `ground_arrived`. Until T5's land follows the network, each block lays out a
+plain 8 m ground of its own under its roads (`RoadNet.debug_ground`), and the ride has no RealLand.
