@@ -58,7 +58,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Godot, and Vulkan drawn on the processor (no graphics card here)
         run: |
-          dpkg -s mesa-vulkan-drivers xvfb > /dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers xvfb > /dev/null; }
+          # (usually ten seconds; a slow mirror once took ten minutes, so each try is cut off at two and tried again)
+          for try in 1 2 3; do
+            dpkg -s mesa-vulkan-drivers xvfb > /dev/null 2>&1 && break
+            timeout 120 sh -c "sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers xvfb > /dev/null" || true
+          done
           curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
           unzip -q godot.zip
           sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
@@ -87,7 +91,11 @@ jobs:
           path: parts
       - name: Install Godot
         run: |
-          dpkg -s mesa-vulkan-drivers xvfb > /dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers xvfb > /dev/null; }
+          # (usually ten seconds; a slow mirror once took ten minutes, so each try is cut off at two and tried again)
+          for try in 1 2 3; do
+            dpkg -s mesa-vulkan-drivers xvfb > /dev/null 2>&1 && break
+            timeout 120 sh -c "sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers xvfb > /dev/null" || true
+          done
           curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
           unzip -q godot.zip
           sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
