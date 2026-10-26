@@ -183,3 +183,15 @@ func test_ride() -> void:
 	amb._rechoose("city")
 	check(float(amb.chosen["layers"]["market_maghreb"]["day"]) > 0.8 and float(amb.chosen["layers"]["traffic"]["day"]) > 0.5, "riding into town: the souk and the horns")
 	amb.queue_free()
+
+
+func test_with_profiles() -> void:
+	# The game's own place profiles (PlaceProfile): even a guessed one, offline, gives the place its sounds.
+	var fes := PlaceSound.choose(PlaceProfile.guess(34.06, -4.98), 7)
+	var tokyo := PlaceSound.choose(PlaceProfile.guess(35.68, 139.75), 7)
+	var dales := PlaceSound.choose(PlaceProfile.guess(54.2, -2.1), 7)
+	check(fes["events"].has("call_to_prayer") and fes["radio"] == "MA", "a guessed profile at Fès hears the call to prayer and Moroccan radio")
+	check(tokyo["events"].has("temple_bell") and tokyo["layers"].has("birds_east_asia"), "Tokyo hears the temple bell and Japan's birds")
+	check(not dales["events"].has("call_to_prayer") and dales["radio"] == "GB", "the Dales are British")
+	var parsed := PlaceSound.choose(PlaceProfile.parse(profile("atlas")), 7)
+	check(heard(parsed) == heard(PlaceSound.choose(profile("atlas"), 7)), "and a profile read through PlaceProfile.parse sounds the same as the example")

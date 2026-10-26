@@ -23809,3 +23809,7 @@ func _test_place_sound_files() -> void:
 
 func _test_place_sound_ride() -> void:
 	_place_sound().test_ride()
+
+
+func _test_place_sound_with_profiles() -> void:
+	_place_sound().test_with_profiles()
