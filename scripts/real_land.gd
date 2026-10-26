@@ -10,7 +10,19 @@ extends Node3D
 ## chunk's land exactly), or the bare real heights away from the road. A block is a mesh of its own, laid out on a
 ## worker thread when it comes within range and re-laid at another level as the rider nears or leaves it.
 ##
-## Where the heights come from is the RealTerrain's alone, so land streamed from the net later needs nothing here.
+## Where the heights come from is the RealTerrain's alone: it follows the riders (RealTerrain.follow_riders, driven
+## from here), and where its tiles come in later (ground_arrived) the blocks there are laid out again. The near blocks
+## carry collision of their own, so a bike that leaves the road is held up by the land wherever the riders go.
+
+## Network mode (set_roads: T6's RoadNet, behind the Esc > Debug toggle): there are no road chunks, so the land is
+## drawn everywhere, the strip beside the road too, and wherever a road is near (roads.roads_near) its height is the
+## net's, the roads cut and banked into it (roads.ground_at); the road blocks sit just above it. Blocks within NET_NEAR
+## of the rider are at the near level, so their 8 m cells follow the cuttings.
+const NET_NEAR := 1100.0
+
+## The riders may leave the road and ride the land (the Esc > Debug network toggle sets it): AdventureTrip doesn't put
+## a bike back on the road while a near block holds it up.
+static var roam := false
 
 ## A block is this big (m) on a side: the same as the fine tiles.
 const BLOCK := 512.0
@@ -66,6 +78,12 @@ var _at := Vector2(INF, INF)
 var _epoch := 0        # changes when the road does (a way picked at a fork): older work is thrown away
 var _touch := {}       # Vector2i -> true for the blocks the road is near (worked out once a road, see _near_road)
 var _touch_done := false
+var _redo := {}        # Vector2i -> true: its ground came in while it was being laid out, so it's laid out again
+var _was := Vector3(INF, INF, 0.0)   # where the rider was (x, z) and when (s), for its way (follow_riders)
+var _way := Vector2.ZERO
+## The road network in network mode (set_roads), else null: anything with roads_near(rect: Rect2) -> bool and
+## ground_at(x, z, bare) -> float (RoadNet, interfaces/road-block.md). Read by the workers.
+var roads: Object = null
 ## No new blocks are started while this is set (a fork's way is being put together, and the road is about to change
 ## under them: see AdventureWorld.apply_picks_soon), and those being laid out stop where they are (the swap lays every
 ## block out again: reset), so the road can be swapped without waiting on any. Read by the workers.
@@ -81,6 +99,8 @@ func setup(w: AdventureWorld, r: AdventureRoute) -> void:
 	_material.vertex_color_use_as_albedo = true
 	_material.roughness = 1.0
 	_water_material = water_material()
+	if terrain != null and not terrain.ground_arrived.is_connected(_on_ground):
+		terrain.ground_arrived.connect(_on_ground)
 
 
 static var _water_mat: StandardMaterial3D
@@ -131,12 +151,15 @@ func reset() -> void:
 	_blocks.clear()
 	_touch.clear()
 	_touch_done = false
+	_redo.clear()
 	_at = Vector2(INF, INF)
 
 
 ## Keeps the blocks round route-frame (x, z): lays out the ones that come in range (on worker threads, put in by
 ## _process), re-levels those that change, and drops those past the far range.
 func follow(x: float, z: float) -> void:
+	if terrain != null and terrain.live:
+		terrain.follow_riders(riders(x, z))
 	if Vector2(x, z).distance_to(_at) < 48.0:
 		return
 	_at = Vector2(x, z)
@@ -152,7 +175,7 @@ func follow(x: float, z: float) -> void:
 			var lod := _lod_for(d, have)
 			if lod < 0:
 				continue
-			if lod > 0 and _near_road(key):
+			if lod > 0 and (_near_road(key) if roads == null else d <= NET_NEAR):
 				lod = 0
 			if have != lod and not _tasks.has(key):
 				want.append({"key": key, "lod": lod, "d": d})
@@ -164,6 +187,59 @@ func follow(x: float, z: float) -> void:
 			if mi != null:
 				mi.queue_free()
 			_blocks.erase(key)
+
+
+## The crew for the terrain (RealTerrain.follow_riders): you at route-frame (x, z) going your way, then everyone else the
+## world follows (its focus) where they are.
+func riders(x: float, z: float) -> Array:
+	var now := Time.get_ticks_msec() / 1000.0
+	var moved := Vector2(x - _was.x, z - _was.y)
+	if not is_finite(_was.x) or moved.length() > 400.0:
+		_was = Vector3(x, z, now)
+		_way = Vector2.ZERO
+	elif moved.length() >= 16.0 and now > _was.z:
+		_way = moved / (now - _was.z)
+		_was = Vector3(x, z, now)
+	var out: Array = [Vector4(x, z, _way.x, _way.y)]
+	if world != null and world.focus.is_valid():
+		var spots: Array = world.focus.call()
+		for k in range(1, spots.size()):
+			var p: Vector3 = spots[k]
+			out.append(Vector4(p.x + world.origin.x, p.z + world.origin.z, 0.0, 0.0))
+	return out
+
+
+## New tiles came in over `area` (RealTerrain.ground_arrived): the blocks there are laid out again (the old ones stay
+## till the new are in).
+func _on_ground(area: Rect2, _level: int) -> void:
+	var b0 := Vector2i(floori(area.position.x / BLOCK), floori(area.position.y / BLOCK))
+	var b1 := Vector2i(floori(area.end.x / BLOCK), floori(area.end.y / BLOCK))
+	var any := false
+	for key: Vector2i in _blocks:
+		if key.x >= b0.x and key.x <= b1.x and key.y >= b0.y and key.y <= b1.y:
+			_blocks[key]["lod"] = -1
+			any = true
+	for key: Vector2i in _tasks:
+		if key.x >= b0.x and key.x <= b1.x and key.y >= b0.y and key.y <= b1.y:
+			_redo[key] = true
+			any = true
+	if any:
+		_at = Vector2(INF, INF)
+
+
+## Draws the land for the road network `net` (network mode, see roads), or for the planned road again (null): every
+## block is laid out again.
+func set_roads(net: Object) -> void:
+	hold = true
+	reset()
+	roads = net
+	hold = false
+
+
+## Whether a near block's land (with its collision) is laid out under route-frame (x, z).
+func holds(x: float, z: float) -> bool:
+	var key := Vector2i(floori(x / BLOCK), floori(z / BLOCK))
+	return _blocks.has(key) and _blocks[key]["mi"] != null and (_blocks[key]["mi"] as Node).has_node("Ground")
 
 
 ## Whether the road is within ROAD_NEAR of the middle of block `key`. The blocks it's near are marked in one go along
@@ -209,9 +285,10 @@ func _process(_delta: float) -> void:
 		_tasks[key] = {"lod": lod, "id": WorkerThreadPool.add_task(func():
 			var arrays = _block_arrays(key, lod)
 			var water = _water_arrays(key, lod) if arrays != null else null
+			var shape = _ground_shape(arrays) if arrays != null and lod == 0 else null
 			_lock.lock()
 			if epoch == _epoch:
-				_done[key] = {"lod": lod, "arrays": arrays, "water": water}
+				_done[key] = {"lod": lod, "arrays": arrays, "water": water, "shape": shape}
 			_lock.unlock())}
 	if _tasks.is_empty():
 		return
@@ -231,12 +308,23 @@ func _process(_delta: float) -> void:
 		var mi: MeshInstance3D = null
 		if got["arrays"] != null:
 			mi = _make_mesh(key, got["arrays"], got.get("water"))
+			if got.get("shape") != null:
+				var body := StaticBody3D.new()
+				body.name = "Ground"
+				body.collision_layer = 1
+				body.set_meta("surface", "grass")
+				var cs := CollisionShape3D.new()
+				cs.shape = got["shape"]
+				body.add_child(cs)
+				mi.add_child(body)
 			add_child(mi)
 			_place(key, mi)
 			put += 1
 		if old != null:
 			old.queue_free()
-		_blocks[key] = {"lod": int(got["lod"]), "mi": mi}
+		_blocks[key] = {"lod": -1 if _redo.has(key) else int(got["lod"]), "mi": mi}
+		if _redo.erase(key):
+			_at = Vector2(INF, INF)
 
 
 ## Puts every block where the world's origin has it (after a shift).
@@ -288,6 +376,23 @@ func _make_mesh(key: Vector2i, arrays: Array, water = null) -> MeshInstance3D:
 
 
 # ---------------------------------------------------------------------------- laying a block out
+
+## The collision of a near block's land: its ground's triangles (not the skirts), as the mesh has them. Any thread.
+static func _ground_shape(arrays: Array) -> ConcavePolygonShape3D:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var grid := CELLS[0] + 1
+	var faces := PackedVector3Array()
+	for t in range(0, idx.size(), 3):
+		if idx[t] < grid * grid and idx[t + 1] < grid * grid and idx[t + 2] < grid * grid:
+			faces.append_array([verts[idx[t]], verts[idx[t + 1]], verts[idx[t + 2]]])
+	if faces.is_empty():
+		return null
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	shape.set_faces(faces)
+	return shape
+
 
 ## The knot (and its distance) nearest (x, z) among the knots of `ids` (every few knots of the road): [distance, knot].
 static func _nearest_of(route: AdventureRoute, ids: PackedInt32Array, x: float, z: float) -> Array:
@@ -348,8 +453,10 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var near := PackedInt32Array()
 	var lo := Vector2(ox - BAND_FAR - sp, oz - BAND_FAR - sp)
 	var hi := Vector2(ox + BLOCK + BAND_FAR + sp, oz + BLOCK + BAND_FAR + sp)
+	var net: Object = roads
+	var cut := net != null and bool(net.call("roads_near", Rect2(ox - sp, oz - sp, BLOCK + sp * 2.0, BLOCK + sp * 2.0)))
 	for k in range(0, route.px.size(), 4):
-		if route.px[k] >= lo.x and route.px[k] <= hi.x and route.pz[k] >= lo.y and route.pz[k] <= hi.y:
+		if net == null and route.px[k] >= lo.x and route.px[k] <= hi.x and route.pz[k] >= lo.y and route.pz[k] <= hi.y:
 			near.append(k)
 	var mid := _centre(key)
 	var hint := 0
@@ -386,7 +493,9 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			var bare := route.ground_at(x, z)
 			if is_nan(bare):
 				bare = route.base[k]
-			if d >= BAND_FAR:
+			if net != null:
+				grid[g] = float(net.call("ground_at", x, z, bare)) if cut else bare
+			elif d >= BAND_FAR:
 				grid[g] = bare
 			elif d < BAND_NEAR:
 				grid[g] = bare - 4.0   # under the chunks' own land
@@ -497,7 +606,7 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 	if not any and not streams:
 		return null
 	var near := PackedInt32Array()
-	for k in range(0, route.px.size(), 4):
+	for k in range(0, route.px.size() if roads == null else 0, 4):
 		if route.px[k] >= ox - WATER_ROAD - sp and route.px[k] <= ox + BLOCK + WATER_ROAD + sp \
 				and route.pz[k] >= oz - WATER_ROAD - sp and route.pz[k] <= oz + BLOCK + WATER_ROAD + sp:
 			near.append(k)
@@ -700,7 +809,7 @@ func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, 
 	if not wet and terrain.cover(x, z) == RealPack.WATER:
 		return col.lerp(FAR_WATER, 0.85)
 	if route.cover_at(x, z) == "":
-		col = col.lerp(RealRidges.WOODS, 0.5)   # past the baked cover: about what the island is mostly
+		col = col.lerp(route.look.get("woods", RealRidges.WOODS), 0.5)   # past the baked cover: about what the place is mostly (its climate's woods)
 	col = col.lerp(Color(0.45, 0.43, 0.4), smoothstep(0.32, 0.62, 1.0 - normal.y) * 0.7)
 	if route.sea and y < AdventureTheme.SEA_Y + 5.0:
 		col = col.lerp(AdventureChunk.BEACH, 1.0 - smoothstep(AdventureTheme.SEA_Y + 2.0, AdventureTheme.SEA_Y + 5.0, y))

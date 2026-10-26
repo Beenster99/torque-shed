@@ -643,6 +643,11 @@ func _keep_on_road(hit: Dictionary) -> void:
 	var s: float = hit["s"]
 	var road_h := world.route.height_at_s(s)
 	var lost := absf(float(hit["lat"])) > 75.0 or bike.global_position.y < road_h - 25.0 or not world.has_ground(s)
+	if lost and RealLand.roam and world.land != null:
+		# Riding the land off the road: put back only when there's no land under you, or you've fallen through it.
+		var xz := world.route_xz(bike.global_position)
+		var ground := world.route.real.terrain.height(xz[0], xz[1]) if world.route.real != null else NAN
+		lost = not world.land.holds(xz[0], xz[1]) or is_nan(ground) or bike.global_position.y < ground - 10.0
 	if lost and Time.get_ticks_msec() - _put_back_at > 1500:
 		_put_back_at = Time.get_ticks_msec()
 		var xf := world.transform_at(s, -world.route.width_at_s(s) * 0.25)
