@@ -243,6 +243,15 @@ class Places:
         with open(fetch(self.NE % name, os.path.join(cache, "naturalearth", name + ".geojson"))) as f:
             return json.load(f)
 
+    def nearest_country(self, lat, lon, reach=0.5):
+        """The index of the country nearest (lat, lon) within `reach` degrees, or -1."""
+        from shapely.geometry import Point
+        pt = Point(lon, lat)
+        k = self.ctree.nearest(pt)
+        if k is None or self.countries[int(k)][0].distance(pt) > reach:
+            return -1
+        return int(k)
+
     def at(self, lats, lons):
         """For each point: (on land, country index or -1, region index or -1)."""
         from shapely import points
@@ -447,6 +456,12 @@ class Sources:
         for k, num in zip(*np.unique(country[country >= 0], return_counts=True)):
             _, code, name = self.places.countries[int(k)]
             countries.append((code, name, num / float(len(country))))
+        if not countries and sea < 1.0:
+            # (a speck of land the countries' coarser outlines miss: the nearest country's)
+            k = self.places.nearest_country((s + n) / 2.0, (w + e) / 2.0)
+            if k >= 0:
+                _, code, name = self.places.countries[k]
+                countries.append((code, name, 1.0 - sea))
         reg = ("", "")
         if countries:
             main = max(countries, key=lambda c: c[2])[0]
@@ -464,8 +479,11 @@ class Sources:
         # The coast: sea in the cell and land too, or land in the cell at its edge with the sea just over it.
         coast = 0.0 < sea < 1.0
         mid_lat, mid_lon = (s + n) / 2.0, (w + e) / 2.0
+        codes = self.koppen.codes(s, w, n, e)
+        if sea < 1.0 and koppen_of(codes) == "":
+            codes = self.koppen.codes(s - 0.25, w - 0.25, n + 0.25, e + 0.25)   # (an islet the map has as sea)
         return {
-            "countries": countries, "region": reg, "koppen": self.koppen.codes(s, w, n, e),
+            "countries": countries, "region": reg, "koppen": codes,
             "cover": self.cover.counts(s, w, n, e), "sea": sea, "coast": coast, "heights": heights,
             "climate": self.climate.at(mid_lat, mid_lon) if sea < 1.0 else None,
         }, (self.cover.tint(s, w, n, e) if self.with_tint and sea < 1.0 else None)
@@ -486,6 +504,9 @@ def bake_world(index_path, out, sources, only=None, workers=8, log=print):
     todo, kept = [], 0
     for cell in sorted(index["cells"]):
         if only and cell not in only:
+            continue
+        if only:
+            todo.append(cell)   # (cells asked for by name are made again whatever their key)
             continue
         path = os.path.join(out, "profile", "c%s.json" % cell)
         if os.path.exists(path) and cell in index.get("profiles", {}):
