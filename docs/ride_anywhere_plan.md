@@ -230,7 +230,7 @@ cells baked before were sketched by its "Sketch the main roads" workflow. `claud
 cell's land (Overture's coastline land, OpenStreetMap's, clipped to the cell and simplified to 15 m by
 `tools/coast_bake.py`, about a kilobyte a coastal cell) in its sketch block, drawn over Natural Earth's from 300 km
 across in; the cells baked before mapped by the world's "Map the coast" workflow (920 coastal cells, 832 all land).
-Pins still go down only where the roads are fetched, not on the sketch.
+`claude/sketch-pins`: a pin goes down on the sketch too (a touch on a main road drawn between 60 km and 1,500 km across pins on that road, named after the nearest town within 15 km; the plan finds the road there once the cells come).
 
 ### Step 5: consensus, and journeys kept
 
