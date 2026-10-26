@@ -2045,19 +2045,23 @@ func _clear_ragdoll() -> void:
 
 
 ## Snapshot for the network: position, rotation, velocity, steering, wheels, engine, then the
-## horn, gear, burnout, headlight switch, the stop lamp [25] and indicators [26], and the
-## seconds left of a respawn's ghost [27] (see BikeGhost).
+## horn, gear, burnout, headlight switch, the stop lamp [25] and indicators [26], the seconds
+## left of a respawn's ghost [27] (see BikeGhost) and, while the rider's thrown off, where every
+## piece of them is [28...] (RiderRagdoll.pose), so everyone sees the same tumble.
 func get_net_state() -> PackedFloat32Array:
 	var q := global_transform.basis.get_rotation_quaternion()
 	var p := global_position
 	var v := linear_velocity
-	return PackedFloat32Array([
+	var s := PackedFloat32Array([
 		p.x, p.y, p.z, q.x, q.y, q.z, q.w, v.x, v.y, v.z,
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
 		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
 		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout, float(beam),
 		1.0 if lamps.braking else 0.0, float(lamps.side), ghost_left,
 	])
+	if is_crashed and is_instance_valid(_ragdoll):
+		s.append_array(_ragdoll.pose(p))
+	return s
 
 
 ## The indicator switch: `which` -1 left or 1 right. The same side again cancels it, the other

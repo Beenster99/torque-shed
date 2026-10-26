@@ -1229,6 +1229,31 @@ func _test_crash_and_respawn() -> void:
 				torn.append("%s %.2f m" % [l[0], root_end.distance_to(anchor)])
 	check(not before["doll"] and doll != null and doll.pieces().size() == 9 and doll.find_children("Joint*", "ConeTwistJoint3D", false, false).size() == 8
 		and torn.is_empty(), "the rider's thrown off only in the crash, arms and legs jointed on and still attached as they tumble %s" % str(torn))
+	# The other players see the same tumble: the pose goes in the snapshot, and their copy of the bike puts a
+	# rider (solid to nothing, not simulated) just so, gone once the rider's up again.
+	var state := bike.get_net_state()
+	var was: Array = [] if doll == null else doll.pieces().map(func(p): return (p as Node3D).global_position)   # (it tumbles on meanwhile)
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Crasher", bike.build, Color.RED)
+	rb.push_state(state)
+	rb.push_state(state)
+	await get_tree().physics_frame
+	var off := 0.0
+	var seen: RiderRagdoll = rb._ragdoll
+	if seen != null and doll != null:
+		for i in doll.pieces().size():
+			off = maxf(off, (was[i] as Vector3).distance_to((seen.pieces()[i] as Node3D).global_position))
+	check(state.size() == RemoteBike.RAGDOLL_AT + RiderRagdoll.POSE_SIZE and seen != null and off < 0.01 and seen.collision_layer == 0
+		and seen.freeze and seen.find_children("Joint*", "", false, false).is_empty(),
+		"the other players see the rider thrown off where they are on the crasher's game (%.3f m out)" % off)
+	var up := state.slice(0, RemoteBike.RAGDOLL_AT)
+	up[17] = 0.0
+	rb._snapshots.clear()
+	rb.push_state(up)
+	await get_tree().physics_frame
+	check(not is_instance_valid(seen), "and theirs is gone when the crasher's picked up")
+	rb.queue_free()
 	bike.respawn()
 	for i in 120:
 		await get_tree().physics_frame
@@ -10899,8 +10924,9 @@ func _test_gear_clunks() -> void:
 		es._process(1.0 / 60.0)
 		es.gear = 1
 		es._process(1.0 / 60.0)
-		var first_ok: bool = es.gear_sounds == 1 and es.last_step == "first" and es.bank.oneshots["shift_first"].has(es._oneshot_en[0].stream)
-		check(first_ok, "with the engine off, into first still clunks (%s, %d)" % [sp["layout"], es.gear_sounds])
+		var made := es._oneshot_en.any(func(p): return p.playing)
+		var first_ok: bool = es.gear_sounds == 1 and es.last_step == "first" and Sfx.recordings("shift_clunk").has(es._lever.stream) and not made
+		check(first_ok, "with the engine off, into first still clunks: Simon's recording and no made sound (%s, %d)" % [sp["layout"], es.gear_sounds])
 		es.running = true
 		es.rpm = float(sp["redline"]) * 0.7
 		es.throttle = 1.0
@@ -10912,8 +10938,8 @@ func _test_gear_clunks() -> void:
 			steps.append(es.last_step)
 		for i in 30:
 			es._process(1.0 / 60.0)
-		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0,
-			"every change up and down the box clicks or clunks, with the lever, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
+		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0 and not es._oneshot_en.any(func(p): return p.playing),
+			"every change up and down the box is one of the recorded clicks or clunks, nothing made, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
 		check(steps == ["low", "low", "high", "high", "down", "down", "down", "first", "neutral"], "each change sounds its step %s" % str(steps))
 		es.queue_free()
 	await get_tree().process_frame
@@ -17957,6 +17983,9 @@ func _test_shop_buy_in_view() -> void:
 	var menu := MainMenu.new()
 	add_child(menu)
 	await get_tree().process_frame
+	var version := menu.find_child("Version", true, false) as Label
+	check(version != null and version.text == "v" + str(ProjectSettings.get_setting("application/config/version")) and version.text.count(".") == 2,
+		"the start screen says which build this is (%s)" % (version.text if version else "none"))
 	menu.show_pause()
 	menu.open_tab(menu.shop)
 	var screen := get_viewport().get_visible_rect()

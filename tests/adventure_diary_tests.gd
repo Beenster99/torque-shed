@@ -578,6 +578,15 @@ func test_diary_ride() -> void:
 	var home := await _until(func(): return not trip.on_trip() and trip.diary_open(), 15.0)
 	check(home and trip.diary.diary.get("id", "") == id, "Ride home: back at the shed the diary's open")
 	trip.close_diary()
+	# Never left in the black: a trip there or back that stopped part way (a script error, say) lifts it.
+	await main._fade_to(1.0)
+	trip._busy = true
+	trip._watch_black(AdventureTrip.STUCK_BLACK - 1.0)
+	var held: bool = main._fade.color.a > 0.9
+	trip._watch_black(1.5)
+	await _until(func(): return main._fade.color.a < 0.01, 5.0)
+	check(held and main._fade.color.a < 0.01 and not trip._busy and not trip.on_trip(),
+		"a screen stuck black going home lifts after %.0f s" % AdventureTrip.STUCK_BLACK)
 	# From the photo on the shed wall.
 	var fid := 0
 	for f in Shed.furniture:

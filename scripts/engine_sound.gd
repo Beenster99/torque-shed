@@ -411,31 +411,34 @@ func _shift(from: int, to: int) -> void:
 	if bank and bank.recorded_shots.has("shift") and step != "neutral":
 		kind = "shift"
 	# The lever: a light tick finding neutral, a clunk into first, else the box's own feel. With
-	# its recording there (Simon's clunks), the made box sound is only a quiet body under it.
+	# its recording there (Simon's clunks) that's all you hear; the made box sound is only for a
+	# game without them.
 	var feel := "slick" if step == "neutral" else ("clunk" if step == "first" else last_shift)
 	var sfx := get_node_or_null("/root/Sfx")
-	var under := -10.0 if sfx != null and not (sfx.call("recordings", "shift_" + feel) as Array).is_empty() else 0.0
-	if _play(_oneshot_en, kind, float(STEP_DB.get(step, -3.0)) + under, _rng.randf_range(0.96, 1.04)):
+	var recorded := sfx != null and not (sfx.call("recordings", "shift_" + feel) as Array).is_empty()
+	if not recorded and _play(_oneshot_en, kind, float(STEP_DB.get(step, -3.0)), _rng.randf_range(0.96, 1.04)):
 		gear_sounds += 1
-	_lever_sound(feel, -8.0 if step == "neutral" else 0.0, lerpf(1.05, 0.93, EngineSynth.gear_heft(spec)))
+	if _lever_sound(feel, -8.0 if step == "neutral" else 0.0, lerpf(1.05, 0.93, EngineSynth.gear_heft(spec))) and recorded:
+		gear_sounds += 1
 
 
 ## The recorded gear lever and selector for this feel ("slick", "click", "clunk") on top of the
 ## made shift sound: a different take each time (Sfx picks them), pitched to the feel and by
-## `pitch` (lower for a heavier box), `db` louder or quieter.
-func _lever_sound(feel: String, db := 0.0, pitch := 1.0) -> void:
+## `pitch` (lower for a heavier box), `db` louder or quieter. Whether it played.
+func _lever_sound(feel: String, db := 0.0, pitch := 1.0) -> bool:
 	var sfx := get_node_or_null("/root/Sfx")
 	if _lever == null or sfx == null or not sfx.has_method("pick"):
-		return
+		return false
 	var s: AudioStream = sfx.call("pick", "shift_" + feel)
 	if s == null:
-		return
+		return false
 	var f: Array = SHIFT_FEEL.get(feel, SHIFT_FEEL["click"])
 	_lever.stream = s
 	_lever.volume_db = float(f[0]) + db + volume_db
 	_lever.pitch_scale = _rng.randf_range(float(f[1]), float(f[2])) * pitch
 	_lever.play()
 	lever_sounds += 1
+	return true
 
 
 ## An overrun pop or a backfire crack (or a bang), with the flame for the loud ones.
