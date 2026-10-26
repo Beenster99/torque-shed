@@ -19434,6 +19434,7 @@ func _test_pool_session() -> void:
 	if table == null:
 		main._leave()
 		main.queue_free()
+		SaveGame.slot_override = ""
 		return
 	var felt := table.global_position
 	w.place(Transform3D(Basis(), Vector3(felt.x, GarageUpgrades.LOFT_FLOOR + 0.05, felt.z + 1.7)))
@@ -19470,6 +19471,7 @@ func _test_pool_session() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_pool")
+	SaveGame.slot_override = ""   # (left set, the next session test played on in this test's slot)
 ## Parts the style builder (Shed.style_parts) can fit in `slot` on a bike of `style`: the
 ## style's reference part (Contracts.style_build) and every part of that kind made for it.
 static func _style_options(style: String, slot: String) -> Array:
@@ -20378,6 +20380,8 @@ func _test_town_plan() -> void:
 ## what was in the old yard to the yard behind.
 func _test_town_session() -> void:
 	SaveGame.slot_override = "test_town"
+	# Noon from the start: the town fills to the hour it comes in at, and earlier tests leave the clock anywhere.
+	Settings.time_of_day = 12.0
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -22533,6 +22537,42 @@ func _test_store_download() -> void:
 
 func _test_region_land() -> void:
 	_region().test_land()
+
+
+func _roads() -> RefCounted:
+	return load("res://tests/road_block_tests.gd").new(self)
+
+
+func _test_road_block_interface() -> void:
+	_roads().test_interface()
+
+
+func _test_road_kinds() -> void:
+	_roads().test_kinds()
+
+
+func _test_road_locate() -> void:
+	_roads().test_locate()
+
+
+func _test_road_heights() -> void:
+	_roads().test_heights()
+
+
+func _test_road_blocks() -> void:
+	_roads().test_blocks()
+
+
+func _test_road_cell() -> void:
+	_roads().test_cell()
+
+
+func _test_road_meshes() -> void:
+	_roads().test_meshes()
+
+
+func _test_road_ride() -> void:
+	await _roads().test_ride()
 
 
 func _planner() -> RefCounted:
