@@ -7,7 +7,8 @@ rig (postcards.gd) reads it offline and the postcards only change when the game 
 
 A cell the world's store (Beenster99/torque-shed-world) has is copied from there; one it hasn't is baked here with the
 game's own tools, as the store's bake workflow does (tools/region_bake.py --cell, coast_bake, span_bake, sketch_bake,
-stream_bake, tree_bake). A cell already in world/ is left alone (delete its folder to bake it again). The heights come
+stream_bake, tree_bake). A cell already in world/ is left alone (delete its folder to bake it again); its profile comes from the store when the
+store has one (profile/cROW_COL.json). The heights come
 after, from the rig itself: postcards.sh --fetch.
 
 Needs numpy, Pillow and pyarrow for a bake. Downloads are kept under --cache (the project's shared folder by default)."""
@@ -63,6 +64,9 @@ def copy_from_store(cell, store, entries):
         write_json(os.path.join(entries, "c%s.streams" % cell), {"cell": cell, "streams": s["streams"]})
     if cell in store.get("trees", {}):
         write_json(os.path.join(entries, "c%s.trees" % cell), json.loads(get(STORE + "tree/c%s.json" % cell)))
+    if cell in store.get("profiles", {}):
+        # (the place profile, Place profiles' file of its own: interfaces/profile.md)
+        put(os.path.join(WORLD, "profile", "c%s.json" % cell), json.loads(get(STORE + "profile/c%s.json" % cell)))
     row, col = (int(v) for v in cell.split("_"))
     block = "%d_%d" % (row // 20, col // 20)
     if block in store.get("sketches", {}):
@@ -108,12 +112,12 @@ def write_json(path, v):
 
 def write_index(release):
     """world/index.json naming every cell here and the hash of its streams, trees and sketch block, as CellStore reads."""
-    index = {"format": 1, "release": release, "cells": {}, "sketches": {}, "streams": {}, "trees": {}}
+    index = {"format": 1, "release": release, "cells": {}, "sketches": {}, "streams": {}, "trees": {}, "profiles": {}}
     for d in sorted(glob.glob(os.path.join(WORLD, "c*_*"))):
         if os.path.exists(os.path.join(d, "region.json")):
             with open(os.path.join(d, "region.json")) as f:
                 index["cells"][os.path.basename(d)[1:]] = {"hash": json.load(f).get("hash", "")}
-    for key, folder in (("streams", "stream"), ("trees", "tree")):
+    for key, folder in (("streams", "stream"), ("trees", "tree"), ("profiles", "profile")):
         for p in sorted(glob.glob(os.path.join(WORLD, folder, "c*.json"))):
             with open(p) as f:
                 index[key][os.path.basename(p)[1:-5]] = text_hash(f.read())
@@ -176,6 +180,8 @@ def main(argv=None):
             cell = "%d_%d" % cell_of(*p["from"])
             if os.path.exists(os.path.join(WORLD, "c" + cell, "region.json")):
                 print("%s: c%s already here" % (p["id"], cell))
+                if cell in store.get("profiles", {}):
+                    put(os.path.join(WORLD, "profile", "c%s.json" % cell), json.loads(get(STORE + "profile/c%s.json" % cell)))
                 continue
             e = store["cells"].get(cell)
             if isinstance(e, dict) and not e.get("empty"):
