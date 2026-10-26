@@ -65,6 +65,7 @@ const FAR_CUTOFF := 1100.0
 ## ones: each file is a variant, picked without repeats like the made ones. A sound with no
 ## recording (or whose files are missing) is synthesised as before.
 const RECORDINGS_DIR := "res://audio/sfx/"
+const RIDE_AMBIENCE := "res://scripts/ride_ambience.gd"
 const RECORDED := {
 	"ratchet": ["wrench1", "wrench2", "wrench3", "wrench4"],
 	"blast": ["sandblaster1", "sandblaster2", "sandblaster3", "sandblaster4"],
@@ -133,7 +134,8 @@ var _once_of := {}      # a looping stream's instance id -> its play-once copy (
 var _route_timer := 0.0
 var _preset := {}       # the reverb settings shown now, easing toward the room's
 var _ambience: Node
-var _ride_ambience: RideAmbience
+## The ride's ambience while out on an adventure (RideAmbience, loaded only then), else null.
+var _ride_ambience: Node
 var _amb_timer := 0.0
 
 
@@ -763,16 +765,24 @@ func _keep_ambience() -> void:
 		_ambience.name = "Ambience"
 		add_child(_ambience)
 		_ambience.setup(workshop)
-	# Out on an adventure: the sound of the place being ridden through, made afresh for each ride.
-	var world := AdventureWorld.current
+	# Out on an adventure: the sound of the place being ridden through, made afresh for each ride. Its script is loaded
+	# only on a ride, so the adventure's classes aren't pulled in with Sfx when the game starts.
+	var world: Node = null
+	if int(Shed.adventure.get("id", 0)) != 0:
+		world = load(RIDE_AMBIENCE).current_world()
 	if _ride_ambience and (world == null or _ride_ambience.world != world or not world.is_inside_tree()):
 		_ride_ambience.queue_free()
 		_ride_ambience = null
 	if world and world.is_inside_tree() and _ride_ambience == null and synth_done:
-		_ride_ambience = RideAmbience.new()
+		_ride_ambience = load(RIDE_AMBIENCE).new()
 		_ride_ambience.name = "RideAmbience"
 		add_child(_ride_ambience)
 		_ride_ambience.start(world)
+
+
+## Whether the ride's ambience is playing (out on an adventure): the shed's outdoor sounds stay quiet meanwhile.
+func riding() -> bool:
+	return _ride_ambience != null
 
 
 ## The shed's ambience node while there's a shed (SfxAmbience), else null.

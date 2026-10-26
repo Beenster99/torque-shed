@@ -28,6 +28,14 @@ var _rng := RandomNumberGenerator.new()
 var _look := 0.0
 var _hour := -1.0
 var _month := 1
+## The worker fetching the baked profile (-1 when there's none), and what it found.
+var _task := -1
+var _baked := {}
+
+
+## The adventure being ridden, if any (Sfx asks, so it needn't know the adventure's classes itself).
+static func current_world() -> Node:
+	return AdventureWorld.current
 
 
 ## Starts on `adventure` with the place's guessed profile, then takes the baked one when a worker has it.
@@ -37,13 +45,11 @@ func start(adventure: AdventureWorld) -> void:
 	var where := frame_of(adventure)
 	if where != Vector2.INF and ResourceLoader.exists(PROFILES):
 		var script: GDScript = load(PROFILES)
-		WorkerThreadPool.add_task(func():
-			var baked: Dictionary = script.at(where.x, where.y)
-			_take_profile.call_deferred(baked))
+		_task = WorkerThreadPool.add_task(func(): _baked = script.at(where.x, where.y))
 
 
 func _take_profile(baked: Dictionary) -> void:
-	if not is_inside_tree() or baked.is_empty() or bool(baked.get("guessed", true)):
+	if baked.is_empty() or bool(baked.get("guessed", true)):
 		return
 	var here := density
 	setup(baked, _month)
@@ -66,6 +72,9 @@ func setup(place: Dictionary, month := 0) -> void:
 
 
 func _exit_tree() -> void:
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
 	for id in players:
 		if is_instance_valid(players[id]):
 			players[id].stop()
@@ -78,6 +87,10 @@ func _process(delta: float) -> void:
 
 
 func _process_body(delta: float) -> void:
+	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
+		_take_profile(_baked)
 	if chosen.is_empty():
 		return
 	_look -= delta
@@ -204,11 +217,15 @@ static func profile_of(adventure: AdventureWorld) -> Dictionary:
 	return load(PROFILES).guess(frame.x, frame.y)
 
 
-## The (lat, lon) middle of an adventure's real region, or Vector2.INF when it isn't on real roads.
+## The (lat, lon) middle of the region an adventure was planned in (its plan's region, kept in Shed.adventure), or
+## Vector2.INF when it isn't on real roads.
 static func frame_of(adventure: AdventureWorld) -> Vector2:
 	if adventure == null or adventure.route == null or adventure.route.real == null:
 		return Vector2.INF
-	return RealRegion.frame_of(adventure.route.real.region)
+	var plan = Shed.adventure.get("plan", {})
+	var region := str(plan.get("region", "")) if plan is Dictionary else ""
+	var frame := RealRegion.frame_of(region) if region != "" else Vector2.INF
+	return frame if frame != Vector2.INF else RealRegion.frame_of(adventure.route.real.region)
 
 
 ## A Vorbis file's channel count, from its identification header (the tests keep the beds mono).
