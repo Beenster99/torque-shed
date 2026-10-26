@@ -1231,6 +1231,7 @@ func _test_crash_and_respawn() -> void:
 	# The other players see the same tumble: the pose goes in the snapshot, and their copy of the bike puts a
 	# rider (solid to nothing, not simulated) just so, gone once the rider's up again.
 	var state := bike.get_net_state()
+	var was: Array = [] if doll == null else doll.pieces().map(func(p): return (p as Node3D).global_position)   # (it tumbles on meanwhile)
 	var rb := RemoteBike.new()
 	add_child(rb)
 	rb.setup("Crasher", bike.build, Color.RED)
@@ -1241,7 +1242,7 @@ func _test_crash_and_respawn() -> void:
 	var seen: RiderRagdoll = rb._ragdoll
 	if seen != null and doll != null:
 		for i in doll.pieces().size():
-			off = maxf(off, (doll.pieces()[i] as Node3D).global_position.distance_to((seen.pieces()[i] as Node3D).global_position))
+			off = maxf(off, (was[i] as Vector3).distance_to((seen.pieces()[i] as Node3D).global_position))
 	check(state.size() == RemoteBike.RAGDOLL_AT + RiderRagdoll.POSE_SIZE and seen != null and off < 0.01 and seen.collision_layer == 0
 		and seen.freeze and seen.find_children("Joint*", "", false, false).is_empty(),
 		"the other players see the rider thrown off where they are on the crasher's game (%.3f m out)" % off)
