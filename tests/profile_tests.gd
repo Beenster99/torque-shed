@@ -74,6 +74,8 @@ func test_guess() -> void:
 	check(PlaceProfile.month(south, 1)["temp_c"] > PlaceProfile.month(south, 7)["temp_c"] and south["country"] == "AU",
 		"in the south January is summer (Melbourne)")
 	check(PlaceProfile.guess(-40.0, -30.0)["country"] == "", "mid-ocean is no country")
+	var polder := PlaceProfile.guess(52.54, 4.93)
+	check(polder["country"] == "NL" and polder["country_name"] == "Netherlands", "the Beemster is in the Netherlands, not Sint Maarten (%s)" % polder["country"])
 	check(PlaceProfile.guess(54.3, -1.9, {"sea": true})["coast"], "a cell its region.json says has the sea has a coast")
 	check(PlaceProfile.band(310.0, PlaceProfile.ALTITUDE_BANDS) == "upland" and PlaceProfile.band(0.03, PlaceProfile.DENSITIES) == "village",
 		"the bands are the baker's")
