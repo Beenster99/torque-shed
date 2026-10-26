@@ -71,8 +71,19 @@ const NO_HANDS_RATE := 1.0        # ... and N m s per radian per kg against the 
 const NO_HANDS_MAX := 70.0        # N m: as much as a few centimetres of body shift can do
 const RIDER_FEEL := 0.035        # s: how quickly the rider feels the bike's lean change
 const LEAN_RATE_GAIN := 3.0      # per second: how briskly the rider rolls the bike towards the lean they want
-const LEAN_RATE_MAX := 1.0       # rad/s: the quickest they roll it in or out of a lean
-const LEAN_CATCH := 2.0          # rad/s^2: how hard they reckon they can stop a roll, so they ease off in time
+const LEAN_RATE_MAX := 1.0       # rad/s: the quickest they roll an ordinary bike in or out of a lean (times BikeBuild.flick)
+const LEAN_CATCH := 2.0          # rad/s^2: how hard they reckon they can stop a roll, so they ease off in time (times flick squared)
+## Flicking a quick bike from one lean to the other, the rider pushes the bars harder than they
+## tip it in: by this much of the bike's extra flick (BikeBuild.flick less 1) while the bike is
+## still leaned the other way (fully with FLICK_CROSS radians of it still to cross), so a race
+## bike's rider puts well over 100 N m through the clip-ons through a chicane and a tourer's doesn't.
+const FLICK_PUSH := 1.0
+const FLICK_CROSS := 0.2
+## The quick bikes' flick fades out as the tyres' grip falls from dry tarmac's to this share of it.
+const FLICK_GRIP_FROM := 0.75
+## ... and comes back over this many seconds once the grip does: a rider who has just felt the
+## tyres slide doesn't throw the bike about the moment they bite again.
+const FLICK_REGAIN := 1.5
 const STEER_CATCH := 30.0        # rad of bar per rad/s of roll, times speed squared: steering into a fall to catch it
 const STEER_CATCH_FAST := 0.8    # ... and this much more by BAR_PUSH_FULL (see _fast), against the front wheel's spin
 ## The most of the tyres' grip the rider uses for a steady lean, keeping the rest in hand.
@@ -197,6 +208,8 @@ var trail_springs := 0.1    # the trail with the bike pitched on its springs as 
 var wobble := 0.0           # how far the bars are shaking either way about where they're pointing, rad
 var speed := 0.0           # forward speed, m/s
 var lean_angle := 0.0      # radians, positive = leaning right
+var _dry_mu := -1.0        # the tyres' grip on dry tarmac, worked out the first time it's needed (see _flick)
+var _flick_share := 1.0    # how much of the bike's flick the rider is using just now (see _update_flick)
 var lean_rate := 0.0
 var pitch_angle := 0.0     # radians, positive = nose up
 var is_crashed := false
@@ -270,6 +283,8 @@ const SOLID_MASK := 1 | 2 | 4
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
+	_dry_mu = -1.0
+	_flick_share = 1.0
 	add_to_group("ridden_bike")   # shed TVs follow whoever is out riding
 	build = new_build
 	mass = build.total_mass
@@ -670,7 +685,8 @@ func _physics_process_body(delta: float) -> void:
 	# Hanging off: riding, the rider moves their body to the inside of the turn they're asking
 	# for, which carries the centre of mass over so the bike itself needs a little less lean.
 	var hang_to := lean_input * HANG_OFF * clampf((absf(speed) - 3.0) / 5.0, 0.0, 1.0) if controls_enabled else 0.0
-	_hang = move_toward(_hang, hang_to, delta * 0.4)
+	# A quick bike's rider moves across it as quickly as it rolls (see _flick).
+	_hang = move_toward(_hang, hang_to, delta * 0.4 * _flick())
 	center_of_mass = _base_com + Vector3(_hang * BikeBuild.RIDER_MASS / mass, 0.0, -shift)
 
 	_update_feet(delta)
@@ -881,6 +897,7 @@ func _max_steer() -> float:
 ## that aim, firmly enough to point a front that pulls back hard, and give a little. At walking
 ## pace, feet down, they just point the bars.
 func _update_steering(delta: float) -> void:
+	_update_flick(delta)
 	var v := absf(speed)
 	var before := steer
 	var target := _target_lean()
@@ -919,8 +936,12 @@ func _update_steering(delta: float) -> void:
 		# with long trail fights back harder, so they tip it in more slowly (a short-trail front
 		# is twitchy).
 		var push := clampf(pow(0.09 / maxf(build.trail * cos(rake), 0.02), 2.0), 0.5, 1.3)
-		var r_want := clampf(err * LEAN_RATE_GAIN, -LEAN_RATE_MAX, LEAN_RATE_MAX)
-		var stop := sqrt(2.0 * LEAN_CATCH * absf(err))
+		# A quick bike (a sports, race or naked bike: BikeBuild.flick) rolls that much faster, and
+		# its rider can stop a roll that much more sharply, so it flicks through a chicane.
+		var flick := _flick()
+		var rate_max := LEAN_RATE_MAX * flick
+		var r_want := clampf(err * LEAN_RATE_GAIN, -rate_max, rate_max)
+		var stop := sqrt(2.0 * LEAN_CATCH * flick * flick * absf(err))
 		r_want = clampf(r_want, -stop, stop) * push
 		# Then they steer into the lean as fast as it's going faster than that (out of it to speed
 		# it up): the faster the bike, the less bar it takes.
@@ -950,6 +971,10 @@ func _update_steering(delta: float) -> void:
 		var lever := float(build.part("handlebars").get("width", 720.0)) / 720.0
 		var hold := lerpf(ARM_HOLD_SLOW, ARM_HOLD, riding) * lever
 		var most := bar_strength(v)
+		if not direct_bars and v >= 2.0:
+			# Flicking a quick bike over from the other lean, they push harder (see FLICK_PUSH).
+			var cross := clampf(-signf(target) * _seen[1] / FLICK_CROSS, 0.0, 1.0) if target != 0.0 else 0.0
+			most *= 1.0 + FLICK_PUSH * (_flick() - 1.0) * cross
 		if direct_bars:
 			# The input is the push itself: the right grip forward (steer right) turns the bars
 			# left, which leans the bike right, and the trail then swings the front into the lean.
@@ -997,6 +1022,32 @@ func _update_steering(delta: float) -> void:
 	# A shake is the bars moving quickly about where they're pointing on the whole.
 	_steer_slow = lerpf(_steer_slow, steer, 1.0 - exp(-delta / 0.08))
 	wobble = maxf(absf(steer - _steer_slow), wobble * exp(-delta / 0.3))
+
+
+## How quickly the rider can roll the bike between leans just now, as a multiple of an ordinary
+## bike's: the bike's own flick (BikeBuild.flick), times how much of it they're using (see
+## _update_flick).
+func _flick() -> float:
+	return 1.0 + (build.flick - 1.0) * _flick_share
+
+
+## A quick bike's rider uses all its flick while its tyres have the grip of dry tarmac, none of it
+## as the grip under them falls away: nobody flicks a sports bike about on grass, gravel or a wet
+## road, and standing one up quickly doesn't save a slide the tyres have already lost. Once the
+## grip comes back, so does their nerve, over FLICK_REGAIN seconds.
+func _update_flick(delta: float) -> void:
+	if build.flick <= 1.0 or wheels.is_empty():
+		return
+	if _dry_mu < 0.0:
+		_dry_mu = minf(surface_grip(build, true, "tarmac"), surface_grip(build, false, "tarmac"))
+	var mu := INF
+	for w: Dictionary in wheels:
+		if w["contact"]:
+			mu = minf(mu, surface_grip(build, bool(w["is_front"]), str(w["surface"]), Weather.wetness()))
+	if mu == INF:
+		return   # in the air: as they were
+	var share := clampf((mu / maxf(_dry_mu, 0.01) - FLICK_GRIP_FROM) / (1.0 - FLICK_GRIP_FROM), 0.0, 1.0)
+	_flick_share = share if share < _flick_share else move_toward(_flick_share, share, delta / FLICK_REGAIN)
 
 
 ## The most the rider pushes on the bars at `v` m/s, N m: their arms through the bars' leverage at

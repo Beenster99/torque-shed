@@ -386,6 +386,7 @@ func _run_all() -> void:
 	await _t(&"_test_sprocket_size")
 	await _t(&"_test_steering_wobble")
 	await _t(&"_test_turn_in")
+	await _t(&"_test_flick")
 	await _t(&"_test_steering_telemetry")
 	await _t(&"_test_bars_no_wiggle")
 	await _t(&"_test_direct_bars_course")
@@ -15266,6 +15267,43 @@ func _test_steering_wobble() -> void:
 		"with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 0.1 s, %.1f after 2 s)" % [roundi(40.0 * 3.6), bad["at"][0], bad["at"][3]])
 	var cured := await _bar_kick(_merge(SHORT_TRAIL_BIKE, {"steering_damper": "damper_rotary_race"}), 40.0, false)
 	check(not cured["crashed"] and cured["at"][2] < cured["at"][0], "a steering damper on it calms it (%.2f deg after 1 s)" % cured["at"][2])
+
+
+func _test_flick() -> void:
+	# Sports, race and naked bikes flick from one lean to the other (a chicane) far quicker than
+	# a cruiser does: the rider rolls them faster and pushes the bars harder through the flip.
+	check(BikeBuild.flick_of(Contracts.style_build("sport")) >= 2.5 and BikeBuild.flick_of(Contracts.style_build("race")) >= 2.5
+		and BikeBuild.flick_of(Contracts.style_build("naked")) >= 2.0 and is_equal_approx(BikeBuild.flick_of(Contracts.style_build("cruiser")), 1.0)
+		and is_equal_approx(BikeBuild.flick_of(Contracts.style_build("tourer")), 1.0),
+		"a sports bike flicks %.1f times as quickly as an ordinary bike, a race bike %.1f, a naked %.1f, a cruiser %.1f and a tourer %.1f"
+		% [BikeBuild.flick_of(Contracts.style_build("sport")), BikeBuild.flick_of(Contracts.style_build("race")),
+			BikeBuild.flick_of(Contracts.style_build("naked")), BikeBuild.flick_of(Contracts.style_build("cruiser")),
+			BikeBuild.flick_of(Contracts.style_build("tourer"))])
+	var half: Dictionary = Contracts.style_build("sport")
+	half.merge({"tank": "teardrop_14", "saddle": "ribbed_bench", "handlebars": "flat_bar", "tail": "classic_mudguard", "fairing": "none",
+		"front_mudguard": "chrome_classic", "exhaust": "straight_pipe"}, true)
+	var h := BikeBuild.flick_of(half)
+	check(h > 1.0 and h < BikeBuild.flick_of(Contracts.style_build("sport")),
+		"a sports bike with a classic tank, seat and bars on it (%s) gets a share of it (%.2f)" % [PartsDB.style_text(half), h])
+	var times := {}
+	for st in ["sport", "race", "naked", "cruiser"]:
+		var mark := {"t": -1.0, "over": -1.0}
+		var r := await ride(Contracts.style_build(st), 10.0, func(b, t):
+			b.assist = 0.0
+			_hold_speed(b, 25.0)
+			b.lean_input = 0.0 if t < 3.0 else (Bike.ROAD_INPUT if t < 6.5 else -Bike.ROAD_INPUT)
+			if t < 6.5 and b.lean_angle > deg_to_rad(25.0):
+				mark["over"] = t
+			if t >= 6.5 and mark["t"] < 0.0 and b.lean_angle < -deg_to_rad(20.0):
+				mark["t"] = t - 6.5)
+		times[st] = mark["t"]
+		check(not r["crashed"] and mark["over"] > 0.0 and mark["t"] > 0.0,
+			"the %s leans 25 deg into the first bend and flicks over to 20 deg the other way in %.2f s" % [st, mark["t"]])
+		await _done(r)
+	check(float(times["sport"]) < 0.8 and float(times["race"]) < 0.8 and float(times["naked"]) < 1.0,
+		"at 90 km/h the sports bike flips in %.2f s, the race bike %.2f s, the naked %.2f s" % [times["sport"], times["race"], times["naked"]])
+	check(float(times["cruiser"]) > float(times["sport"]) * 1.5 and float(times["cruiser"]) > float(times["naked"]) * 1.25,
+		"the cruiser takes %.2f s, far longer than any of them" % times["cruiser"])
 
 
 func _test_turn_in() -> void:
