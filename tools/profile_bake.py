@@ -546,22 +546,31 @@ def bake_world(index_path, out, sources, only=None, workers=8, log=print):
     return len(made), kept
 
 
+def country_codes(features, names):
+    """{name: ISO code} for each of `names` (as Natural Earth's towns name countries) from Natural Earth's countries
+    (`features`). A country's own names win over its sovereign's: Sint Maarten's sovereign is the Netherlands, and must
+    not give the Netherlands its code."""
+    codes = {k: v for k, v in COUNTRY_ALIASES.items() if k in names}
+    for keys in (("ADMIN", "NAME", "NAME_LONG", "GEOUNIT"), ("SOVEREIGNT",)):
+        for feat in features:
+            p = feat["properties"]
+            code = p.get("ISO_A2_EH") or p.get("ISO_A2") or ""
+            if code in ("", "-99"):
+                continue
+            for key in keys:
+                if p.get(key) in names and p[key] not in codes:
+                    codes[p[key]] = code
+    return codes
+
+
 def write_countries(places, cache, out):
     """The country codes of the countries data/world/places.json names ({name: ISO code}): the game's guess at the
     country of a cell with no profile goes by the nearest town."""
     with open(places) as f:
         names = {p[4] for p in json.load(f)}
-    codes = {k: v for k, v in COUNTRY_ALIASES.items() if k in names}
     with open(fetch(Places.NE % "ne_10m_admin_0_countries",
                     os.path.join(cache, "naturalearth", "ne_10m_admin_0_countries.geojson"))) as f:
-        for feat in json.load(f)["features"]:
-            p = feat["properties"]
-            code = p.get("ISO_A2_EH") or p.get("ISO_A2") or ""
-            if code in ("", "-99"):
-                continue
-            for key in ("ADMIN", "NAME", "NAME_LONG", "GEOUNIT", "SOVEREIGNT"):
-                if p.get(key) in names and p[key] not in codes:
-                    codes[p[key]] = code
+        codes = country_codes(json.load(f)["features"], names)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(dict(sorted(codes.items())), f, ensure_ascii=False, separators=(",", ":"))
         f.write("\n")
