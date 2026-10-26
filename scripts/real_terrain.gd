@@ -19,6 +19,14 @@ extends RefCounted
 ## the sea given a floor (in HeightTiles), and the ground levelled under each building. Its cover is still baked. A
 ## ride's terrain is its own view (for_road): the tiles of each level it uses are those within a set reach of its road,
 ## fixed by the road alone, so every machine that plans the same road gets the same heights whatever else it has on disk.
+## Round the riders it takes in more as they go (follow_riders): a ring round each, a strip ahead of it, fetched on a
+## worker and let go again once every rider is well past, so the ground keeps coming off the planned road and memory
+## stays flat. Readers ask by position only (interfaces/terrain.md in the project's ride-anywhere-v2 folder):
+## height, ready, sea_at; ground_arrived says where new tiles have sharpened it.
+
+## Tiles came in round the riders: the heights over route-frame `area` from live level `level` may have changed (they
+## were the coarser level's). On the main thread.
+signal ground_arrived(area: Rect2, level: int)
 
 class Level:
 	extends RefCounted
@@ -52,8 +60,35 @@ const LIVE_SPACING := [4.0, 32.0, 128.0]
 const LIVE_REACH := [1000.0, 6000.0, 18000.0]
 ## Where a live level's tiles end, it is eased into the next over this many of its pixels (of 512).
 const LIVE_EASE_PX := 48.0
-## The tiles of each level a ride uses: [{Vector3i: true}, ...], or empty for any on disk (the map's own view).
+## The tiles of each level a ride uses: [{Vector3i: true}, ...], or empty for any on disk (the map's own view). The
+## planned road's (_base) and those taken in round the riders (_ring). Changed on the main thread under _lock, read
+## under it anywhere.
 var uses: Array = []
+var _base: Array = []    # [{Vector3i: true}, ...] the road's, kept all ride
+var _ring := {}          # Vector3i -> level, taken in round the riders
+## The fetch rule round the riders (follow_riders), by level: a ring of LIVE_REACH round each, a strip AHEAD of it
+## (AHEAD_WIDE either side) along its way once it's moving faster than MOVING, and a tile let go once every rider is
+## further than KEEP from it (and from AHEAD down its way).
+const AHEAD := [3000.0, 6000.0, 0.0]
+const AHEAD_WIDE := [600.0, 3000.0, 0.0]
+const AHEAD_STEP := 500.0
+const KEEP := [1500.0, 9000.0, 27000.0]
+const MOVING := 2.0
+## follow_riders works again once a rider has moved this far (m) or turned this much (radians).
+const MOVE_AGAIN := 64.0
+const TURN_AGAIN := 0.5
+## How far (m) from every rider a worked-out ridge tile (_ridge_tiles) is let go.
+const RIDGE_KEEP := 40000.0
+## Fetches the tiles round the riders (keys, progress): HeightTiles.fetch; the tests put in their own.
+static var fetcher := Callable()
+## Whether the fetching round the riders is on a worker (false: in follow_riders itself, the tests).
+var threaded := true
+var _riders_at: Array = []   # [Vector4] where the riders were when it last worked
+var _job := -1               # the worker fetching round the riders, or -1
+var _job_keys: Array[Vector3i] = []
+var _job_moved := false      # the riders moved on while it fetched: work again once it's done
+var _last_riders: Array = []
+var _asked := {}             # Vector2i -> true: the cells whose profile has been read for their sea (know_sea_under)
 ## The buildings (RealRegion.buildings rows) whose ground the live heights level, filed in PAD_CELL squares.
 const PAD_CELL := 64.0
 const PAD_MARGIN := 2.5
@@ -255,7 +290,7 @@ func ridge_lowered() -> bool:
 ## How many fine tiles are held (for tests).
 func loaded_count() -> int:
 	if live:
-		return (uses[0] as Dictionary).size() if not uses.is_empty() else 0
+		return held()["uses"][0] if not uses.is_empty() else 0
 	if levels.is_empty():
 		return 0
 	_lock.lock()
@@ -291,11 +326,13 @@ func for_road(road: PackedVector2Array) -> RealTerrain:
 	t._pad_grid = _pad_grid
 	t._cover_cells = _cover_cells
 	t._tree_cells = _tree_cells
+	t._asked = _asked
 	for li in zooms.size():
 		var set := {}
 		for k in HeightTiles.keys_near(road, LIVE_REACH[li], zooms[li], lat0, lon0):
 			set[k] = true
-		t.uses.append(set)
+		t._base.append(set)
+		t.uses.append(set.duplicate())
 	return t
 
 
@@ -304,10 +341,11 @@ func for_road(road: PackedVector2Array) -> RealTerrain:
 func widen(more: PackedVector2Array) -> void:
 	if uses.is_empty():
 		return
+	_lock.lock()
 	for li in zooms.size():
 		for k in HeightTiles.keys_near(more, LIVE_REACH[li], zooms[li], lat0, lon0):
+			(_base[li] as Dictionary)[k] = true
 			(uses[li] as Dictionary)[k] = true
-	_lock.lock()
 	_ridge_tiles = {}
 	_lock.unlock()
 
@@ -315,15 +353,336 @@ func widen(more: PackedVector2Array) -> void:
 ## Every tile this ride uses, finest first (for HeightTiles.fetch).
 func used_keys() -> Array[Vector3i]:
 	var out: Array[Vector3i] = []
+	_lock.lock()
 	for set: Dictionary in uses:
 		for k: Vector3i in set:
 			out.append(k)
+	_lock.unlock()
 	return out
 
 
-## Fetches the tiles this ride uses that aren't on disk yet (blocks: a worker's job). Returns how many it couldn't get.
+## Fetches the tiles this ride uses that aren't on disk yet (blocks: a worker's job), and first the place profiles of the
+## cells under its fine and middle levels, so their sea is known before a tile is read (know_sea). Returns how many
+## tiles it couldn't get.
 func fetch(progress := Callable()) -> int:
-	return HeightTiles.fetch(used_keys(), progress) if live else 0
+	if not live:
+		return 0
+	var keys := used_keys()
+	know_sea_under(keys)
+	return HeightTiles.fetch(keys, progress)
+
+
+## Reads the place profile of each cell under the fine and middle levels' tiles of `keys` and tells HeightTiles whether
+## it has sea (HeightTiles.know_sea). Blocks on the network the first time for a cell: a worker's job.
+func know_sea_under(keys: Array[Vector3i]) -> void:
+	var cells := {}
+	for k in keys:
+		if zooms.size() > 1 and k.x != zooms[0] and k.x != zooms[1]:
+			continue
+		for c in cells_under(k):
+			cells[c] = true
+	for c: Vector2i in cells:
+		_lock.lock()
+		var asked := _asked.has(c)
+		_asked[c] = true
+		_lock.unlock()
+		if asked:
+			continue
+		# (a guessed profile only knows the sea where the game has the cell: none of it is taken, the sea stays as it was)
+		var p := PlaceProfile.of_cell(c)
+		if not bool(p.get("guessed", true)):
+			HeightTiles.know_sea(c, float(p.get("sea", 0.0)) > 0.0 or bool(p.get("coast", false)))
+
+
+func _was_asked(c: Vector2i) -> bool:
+	_lock.lock()
+	var yes := _asked.has(c)
+	_lock.unlock()
+	return yes
+
+
+## The cells (RealRegion.cell_of) tile `key` lies over.
+static func cells_under(key: Vector3i) -> Array[Vector2i]:
+	var b := HeightTiles.geo_box(key)
+	var lo := RealRegion.cell_of(b.x, b.y)
+	var hi := RealRegion.cell_of(b.z - 1e-9, b.w - 1e-9)
+	var out: Array[Vector2i] = []
+	for r in range(lo.x, hi.x + 1):
+		for c in range(lo.y, hi.y + 1):
+			out.append(Vector2i(r, c))
+	return out
+
+
+## Whether the sea may be anywhere along the ride: false once the place profiles of every cell under its road's fine
+## tiles are known and none has any (a polder below sea level is no reason to draw the sea). A baked region: true.
+func has_sea() -> bool:
+	if not live or _base.is_empty():
+		return true
+	var any := false
+	for k: Vector3i in _base[0]:
+		for c in cells_under(k):
+			any = true
+			if HeightTiles.sea_in(c) != 0:
+				return true
+	return not any
+
+
+# ---------------------------------------------------------------------------- asked by position
+
+## [lat, lon] in degrees of route-frame (x, z) (doubles: a Vector2's floats are half a metre out).
+func to_geo(x: float, z: float) -> PackedFloat64Array:
+	return PackedFloat64Array([lat0 - z / _m.x, lon0 + x / _m.y])
+
+
+## Route-frame (x, z) of (lat, lon).
+func from_geo(lat: float, lon: float) -> Vector2:
+	return Vector2((lon - lon0) * _m.y, -(lat - lat0) * _m.x)
+
+
+## Whether the heights over route-frame `area` are final at live level `level` (0 fine, 1 middle, 2 ridge): every tile of
+## it there is in. Always for baked land.
+func ready(area: Rect2, level := 0) -> bool:
+	if not live:
+		return true
+	if level < 0 or level >= zooms.size():
+		return false
+	var zm := zooms[level]
+	var a := to_geo(area.position.x, area.position.y)
+	var b := to_geo(area.end.x, area.end.y)
+	for ty in range(floori(HeightTiles.mercator_y(a[0], zm)), floori(HeightTiles.mercator_y(b[0], zm)) + 1):
+		for tx in range(floori(HeightTiles.mercator_x(a[1], zm)), floori(HeightTiles.mercator_x(b[1], zm)) + 1):
+			var key := Vector3i(zm, tx, ty)
+			if not _uses(level, key) or not HeightTiles.has(key):
+				return false
+	return true
+
+
+## Whether route-frame (x, z) is open sea: under the shore in a cell whose profile has sea (HeightTiles.know_sea).
+## Baked land: at or under the sea's level there.
+func sea_at(x: float, z: float) -> bool:
+	if not live:
+		var h := height(x, z)
+		return not is_nan(h) and h <= 0.0 and cover(x, z) != RealPack.WATER
+	var g := to_geo(x, z)
+	for li in zooms.size():
+		var zm := zooms[li]
+		var mx := HeightTiles.mercator_x(g[1], zm)
+		var my := HeightTiles.mercator_y(g[0], zm)
+		var key := Vector3i(zm, floori(mx), floori(my))
+		var t: HeightTiles.Tile = HeightTiles.tile(key) if _uses(li, key) else null
+		if t != null:
+			return t.is_sea(clampi(int((mx - key.y) * t.size), 0, t.size - 1), clampi(int((my - key.z) * t.size), 0, t.size - 1))
+	return false
+
+
+## Route-frame box of tile `key`.
+func key_box(key: Vector3i) -> Rect2:
+	var b := HeightTiles.geo_box(key)
+	var nw := from_geo(b.z, b.y)
+	var se := from_geo(b.x, b.w)
+	return Rect2(nw, se - nw)
+
+
+# ---------------------------------------------------------------------------- round the riders
+
+## The tiles wanted round `riders` ([Vector4(x, z, vx, vz)], route frame) at each of `zooms`: per level, the ring of
+## `reach[li]` round each rider, then the strip `ahead[li]` long (`wide[li]` either side) down the way of each that is
+## moving, nearest first. Pure: the fetch rule.
+static func ring_keys(riders: Array, zms: PackedInt32Array, lat: float, lon: float, reach: Array, ahead: Array, wide: Array) -> Array:
+	var out: Array = []
+	var m := metres_per_degree(lat)
+	for li in zms.size():
+		var ring := PackedVector2Array()
+		var strip := PackedVector2Array()
+		for r: Vector4 in riders:
+			ring.append(Vector2(r.x, r.y))
+			var v := Vector2(r.z, r.w)
+			if v.length() > MOVING and float(ahead[li]) > 0.0:
+				var d := AHEAD_STEP
+				while d <= float(ahead[li]) + 1.0:
+					strip.append(Vector2(r.x, r.y) + v.normalized() * d)
+					d += AHEAD_STEP
+		var found := {}
+		var list: Array[Vector3i] = []
+		for k in HeightTiles.keys_near(ring, float(reach[li]), zms[li], lat, lon):
+			found[k] = true
+			list.append(k)
+		var more: Array[Vector3i] = []
+		if not strip.is_empty():
+			for k in HeightTiles.keys_near(strip, float(wide[li]), zms[li], lat, lon):
+				if not found.has(k):
+					found[k] = true
+					more.append(k)
+		var near := func(a: Vector3i, b: Vector3i) -> bool:
+			return _nearest_rider(riders, a, zms[li], lat, lon, m) < _nearest_rider(riders, b, zms[li], lat, lon, m)
+		list.sort_custom(near)
+		more.sort_custom(near)
+		list.append_array(more)
+		out.append(list)
+	return out
+
+
+## How far (m) the middle of tile `key` is from the nearest of `riders`.
+static func _nearest_rider(riders: Array, key: Vector3i, zm: int, lat: float, lon: float, m: Vector2) -> float:
+	var b := HeightTiles.geo_box(key)
+	var mid := Vector2(((b.y + b.w) * 0.5 - lon) * m.y, -((b.x + b.z) * 0.5 - lat) * m.x)
+	var best := INF
+	for r: Vector4 in riders:
+		best = minf(best, mid.distance_to(Vector2(r.x, r.y)))
+	return best
+
+
+## Keeps the ground coming round `riders` ([Vector4(x, z, vx, vz)], route frame, m and m/s; your own first): takes in
+## the tiles of the ring and strip round them (ring_keys) that are on disk, has the rest fetched on a worker, and lets go
+## those every rider is past KEEP of. Emits ground_arrived for each tile taken in. Main thread; cheap to call every frame.
+func follow_riders(riders: Array) -> void:
+	if not live or uses.is_empty() or riders.is_empty():
+		return
+	_last_riders = riders
+	if _job >= 0:
+		if not WorkerThreadPool.is_task_completed(_job):
+			_job_moved = _job_moved or _moved(riders)
+			return
+		WorkerThreadPool.wait_for_task_completion(_job)
+		_job = -1
+		_take(_job_keys, riders)
+		if not _job_moved and not _moved(riders):
+			return
+	elif not _moved(riders):
+		return
+	_job_moved = false
+	_riders_at = riders.duplicate()
+	var want := ring_keys(riders, zooms, lat0, lon0, LIVE_REACH, AHEAD, AHEAD_WIDE)
+	var keep := ring_keys(riders, zooms, lat0, lon0, KEEP, AHEAD, AHEAD_WIDE)
+	# Let go of what every rider is past.
+	var keep_set := {}
+	for li in keep.size():
+		for k: Vector3i in keep[li]:
+			keep_set[k] = true
+	var gone: Array[Vector3i] = []
+	for k: Vector3i in _ring:
+		if not keep_set.has(k):
+			gone.append(k)
+	if not gone.is_empty():
+		_lock.lock()
+		for k in gone:
+			var li: int = _ring[k]
+			_ring.erase(k)
+			if not (_base[li] as Dictionary).has(k):
+				(uses[li] as Dictionary).erase(k)
+		_lock.unlock()
+	_forget_far_ridges(riders)
+	# Take in what's to hand; fetch the rest, nearest first.
+	var to_hand: Array[Vector3i] = []
+	var fetch: Array[Vector3i] = []
+	for li in want.size():
+		for k: Vector3i in want[li]:
+			if _uses(li, k):
+				continue
+			if HeightTiles.has(k) and (li == 2 or cells_under(k).all(_was_asked)):
+				to_hand.append(k)
+			else:
+				fetch.append(k)
+	_take(to_hand, riders)
+	if fetch.is_empty():
+		return
+	_job_keys = fetch
+	if not threaded:
+		_fetch_job(fetch)
+		_take(fetch, riders)
+		return
+	_job = WorkerThreadPool.add_task(_fetch_job.bind(fetch), false, "Terrain round the riders")
+
+
+## The worker's part: the profiles of the cells under the tiles first (their sea), then the tiles, nearest first.
+func _fetch_job(keys: Array[Vector3i]) -> void:
+	know_sea_under(keys)
+	var order: Array[Vector3i] = keys.duplicate()
+	order.reverse()   # (HeightTiles.fetch starts from the end)
+	if fetcher.is_valid():
+		fetcher.call(order, Callable())
+	else:
+		HeightTiles.fetch(order)
+
+
+## Takes in those of `keys` that are on disk now and still wanted (within KEEP of a rider), and says where.
+func _take(keys: Array[Vector3i], riders: Array) -> void:
+	var m := _m
+	var got: Array[Vector3i] = []
+	_lock.lock()
+	for k in keys:
+		var li := zooms.find(k.x)
+		if li < 0 or (uses[li] as Dictionary).has(k) or not HeightTiles.has(k):
+			continue
+		if _nearest_rider(riders, k, k.x, lat0, lon0, m) > float(KEEP[li]) + float(AHEAD[li]) + key_box(k).size.length():
+			continue
+		_ring[k] = li
+		(uses[li] as Dictionary)[k] = true
+		got.append(k)
+	_lock.unlock()
+	for k in got:
+		var li := zooms.find(k.x)
+		var box := key_box(k)
+		var grow := box.size.x * LIVE_EASE_PX / 512.0
+		if li == 2:
+			_forget_ridges(box.grow(grow))
+		ground_arrived.emit(box.grow(grow), li)
+
+
+## Whether any rider has moved MOVE_AGAIN or turned TURN_AGAIN since follow_riders last worked (or the crew changed).
+func _moved(riders: Array) -> bool:
+	if riders.size() != _riders_at.size():
+		return true
+	for i in riders.size():
+		var a: Vector4 = riders[i]
+		var b: Vector4 = _riders_at[i]
+		if Vector2(a.x, a.y).distance_to(Vector2(b.x, b.y)) > MOVE_AGAIN:
+			return true
+		var va := Vector2(a.z, a.w)
+		var vb := Vector2(b.z, b.w)
+		if (va.length() > MOVING) != (vb.length() > MOVING):
+			return true
+		if va.length() > MOVING and absf(angle_difference(va.angle(), vb.angle())) > TURN_AGAIN:
+			return true
+	return false
+
+
+## Lets go of the worked-out ridge tiles over `area`, so they are worked out again from the new tiles.
+func _forget_ridges(area: Rect2) -> void:
+	var size := ridge_cells() * ridge_spacing()
+	_lock.lock()
+	for key: Vector2i in _ridge_tiles.keys():
+		if Rect2(key.x * size, key.y * size, size, size).intersects(area):
+			_ridge_tiles.erase(key)
+	_lock.unlock()
+
+
+## Lets go of the worked-out ridge tiles every rider is RIDGE_KEEP from.
+func _forget_far_ridges(riders: Array) -> void:
+	var size := ridge_cells() * ridge_spacing()
+	_lock.lock()
+	for key: Vector2i in _ridge_tiles.keys():
+		var mid := Vector2((key.x + 0.5) * size, (key.y + 0.5) * size)
+		if riders.all(func(r: Vector4): return mid.distance_to(Vector2(r.x, r.y)) > RIDGE_KEEP):
+			_ridge_tiles.erase(key)
+	_lock.unlock()
+
+
+## How many tiles of each level the ride holds now, and how many it took in round the riders (for tests and the debug
+## overlay): {uses: [fine, middle, ridge], ring: n}.
+func held() -> Dictionary:
+	_lock.lock()
+	var out := {"uses": uses.map(func(d: Dictionary): return d.size()), "ring": _ring.size()}
+	_lock.unlock()
+	return out
+
+
+## Waits for the worker fetching round the riders (the tests, and before the ride is let go).
+func settle() -> void:
+	if _job >= 0:
+		WorkerThreadPool.wait_for_task_completion(_job)
+		_job = -1
+		_take(_job_keys, _last_riders)
 
 
 ## Fetches the middle and ridge levels' tiles over route-frame `area` (the map's picture of a live region). Blocks.
@@ -431,13 +790,18 @@ func set_buildings(rows: Array) -> void:
 ## The tile of live level `li` under (lat, lon) that the ride uses, or (-1, -1, -1).
 func _live_key(li: int, lat: float, lon: float) -> Vector3i:
 	var key := Vector3i(zooms[li], floori(HeightTiles.mercator_x(lon, zooms[li])), floori(HeightTiles.mercator_y(lat, zooms[li])))
-	if not uses.is_empty() and not (uses[li] as Dictionary).has(key):
+	if not uses.is_empty() and not _uses(li, key):
 		return Vector3i(-1, -1, -1)
 	return key
 
 
 func _uses(li: int, key: Vector3i) -> bool:
-	return (uses[li] as Dictionary).has(key) if not uses.is_empty() else HeightTiles.has(key)
+	if uses.is_empty():
+		return HeightTiles.has(key)
+	_lock.lock()
+	var yes := (uses[li] as Dictionary).has(key)
+	_lock.unlock()
+	return yes
 
 
 func _live_height(x: float, z: float) -> float:

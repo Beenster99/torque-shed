@@ -41,6 +41,7 @@ var _snow_line := INF
 var _at := Vector2(INF, INF)
 ## The road every 16th knot, for easing the ridge down under the land blocks (RealLand) along it.
 var _road := PackedVector2Array()
+var _stale := {}    # Vector2i -> the block made before its tiles came in, shown till the new one replaces it
 
 
 func setup(w: AdventureWorld, t: RealTerrain) -> void:
@@ -51,10 +52,28 @@ func setup(w: AdventureWorld, t: RealTerrain) -> void:
 	_material.vertex_color_use_as_albedo = true
 	_material.roughness = 1.0
 	if w.route != null:
-		_land = (w.route.look["land"]["tarmac"] as Color).lerp(WOODS, 0.55)
+		_land = (w.route.look["land"]["tarmac"] as Color).lerp(w.route.look.get("woods", WOODS), 0.55)
 		_snow_line = w.route.snow_line
 		for k in range(0, w.route.px.size(), 16):
 			_road.append(Vector2(w.route.px[k], w.route.pz[k]))
+	if t != null and not t.ground_arrived.is_connected(_on_ground):
+		t.ground_arrived.connect(_on_ground)
+
+
+## New ridge-level tiles came in over `area` (RealTerrain.ground_arrived): the skyline there is made again (the old
+## blocks stay till the new are in), and any block that had nothing there is asked again.
+func _on_ground(area: Rect2, level: int) -> void:
+	if level != 2:
+		return
+	var size := BLOCK * terrain.ridge_spacing()
+	var any := false
+	for key: Vector2i in _blocks.keys():
+		if Rect2(key.x * size, key.y * size, size, size).intersects(area):
+			_stale[key] = _blocks[key]
+			_blocks.erase(key)
+			any = true
+	if any:
+		_at = Vector2(INF, INF)
 
 
 func _exit_tree() -> void:
@@ -90,6 +109,11 @@ func follow(x: float, z: float) -> void:
 			if mi != null:
 				mi.queue_free()
 			_blocks.erase(key)
+	for key: Vector2i in _stale.keys():
+		if not _queue.has(key) and not _tasks.has(key):
+			if _stale[key] != null:
+				(_stale[key] as Node).queue_free()
+			_stale.erase(key)
 
 
 func _process(_delta: float) -> void:
@@ -118,6 +142,10 @@ func _process(_delta: float) -> void:
 			add_child(mi)
 			_place(key, mi)
 			put += 1
+		var old = _stale.get(key)
+		_stale.erase(key)
+		if old != null:
+			(old as Node).queue_free()
 		_blocks[key] = mi
 
 
@@ -126,6 +154,9 @@ func place() -> void:
 	for key: Vector2i in _blocks:
 		if _blocks[key] != null:
 			_place(key, _blocks[key])
+	for key: Vector2i in _stale:
+		if _stale[key] != null:
+			_place(key, _stale[key])
 
 
 func block_count() -> int:

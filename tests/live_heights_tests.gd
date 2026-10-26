@@ -26,12 +26,18 @@ func _offline(dirs: Array[String] = [FIXTURES]) -> void:
 	HeightTiles.dirs = dirs
 	HeightTiles.offline = true
 	HeightTiles.reset()
+	_cells_were = CellStore.offline
+	CellStore.offline = true   # (the place profiles, for the sea: guessed, so the sea is as it always was)
+
+
+var _cells_were := false
 
 
 func _restore() -> void:
 	HeightTiles.dirs = ["res://data/heights"]
 	HeightTiles.offline = false
 	HeightTiles.reset()
+	CellStore.offline = _cells_were
 
 
 ## Shodoshima's terrain made live: the same region, its heights from the map tiles (its buildings levelled).

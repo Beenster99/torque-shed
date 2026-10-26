@@ -249,7 +249,7 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	pack.title = region.title
 	pack.credits = region.credits
 	pack.theme = region.theme
-	pack.sea = region.sea
+	pack.sea = region.sea and (terrain == null or terrain.has_sea())   # (a polder below sea level has none: its profile says)
 	pack.region = region.country
 	pack.step = STEP
 	pack.x = xs

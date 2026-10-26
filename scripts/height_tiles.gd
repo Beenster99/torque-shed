@@ -22,7 +22,8 @@ const AT_ONCE := 6
 const TIMEOUT_MS := 30000
 ## Ground at or under this (m) is sea (Mapterhorn holds 0 over the sea); a tile with fewer sea pixels than SEA_MIN
 ## has a pond or a harbour, not sea. The sea is given a floor that slopes down from the shore to SEA_DEPTH, as the
-## baker does (route_bake.shape_sea).
+## baker does (route_bake.shape_sea). Only in a cell whose place profile has sea, though, once that's known
+## (know_sea): land below sea level in a cell with none (a polder) is land at its own height.
 const SEA_ABS := 0.4
 const SEA_MIN := 400
 const SEA_DEPTH := 35.0
@@ -42,6 +43,9 @@ static var _lock := Mutex.new()
 static var _mem := {}        # Vector3i(z, x, y) -> Tile
 static var _missing := {}    # Vector3i -> true: not on disk when last looked (fetch() clears it)
 static var _tick := 0
+## Whether each cell (RealRegion.cell_of: Vector2i(row, col)) has sea, from its place profile (know_sea). A cell not in
+## here is taken to have it, as before profiles: ground at or under SEA_ABS is sea.
+static var _sea_cells := {}
 
 
 class Tile:
@@ -55,9 +59,16 @@ class Tile:
 	func at(i: int, j: int) -> float:
 		var o := (j * size + i) * 3
 		var h := rgb[o] * 256.0 + rgb[o + 1] + rgb[o + 2] / 256.0 - 32768.0
-		if h <= SEA_ABS and not sea.is_empty():
+		if h <= SEA_ABS and not sea.is_empty() and sea[j * size + i] > 0:
 			h = -(2.0 + (SEA_DEPTH - 2.0) * clampf(sea[j * size + i] / 255.0 * 1.6, 0.0, 1.0))
 		return h
+
+	## Whether pixel (i, j) is open sea.
+	func is_sea(i: int, j: int) -> bool:
+		if sea.is_empty() or sea[j * size + i] == 0:
+			return false
+		var o := (j * size + i) * 3
+		return rgb[o] * 256.0 + rgb[o + 1] + rgb[o + 2] / 256.0 - 32768.0 <= SEA_ABS
 
 
 ## The smallest zoom whose pixels are no coarser than `spacing` metres at latitude `lat` (route_bake.tile_zoom).
@@ -92,7 +103,7 @@ static func tile(key: Vector3i) -> Tile:
 		return null
 	_lock.unlock()
 	var bytes := _read(key)
-	t = decode(bytes) if not bytes.is_empty() else null
+	t = decode(bytes, key) if not bytes.is_empty() else null
 	_lock.lock()
 	if t == null:
 		_missing[key] = true
@@ -126,8 +137,8 @@ static func has(key: Vector3i) -> bool:
 	return false
 
 
-## A tile from its file's bytes (webp or png): null when they are no good.
-static func decode(bytes: PackedByteArray) -> Tile:
+## A tile from its file's bytes (webp or png): null when they are no good. `key` places it, for which cells have sea.
+static func decode(bytes: PackedByteArray, key := Vector3i(-1, -1, -1)) -> Tile:
 	var img := Image.new()
 	var err := img.load_webp_from_buffer(bytes) if bytes.slice(8, 12).get_string_from_ascii() == "WEBP" else img.load_png_from_buffer(bytes)
 	if err != OK or img.get_width() != img.get_height() or img.get_width() < 2:
@@ -136,20 +147,25 @@ static func decode(bytes: PackedByteArray) -> Tile:
 	var t := Tile.new()
 	t.size = img.get_width()
 	t.rgb = img.get_data()
-	t.sea = _sea_mask(t)
+	t.sea = _sea_mask(t, key)
 	return t
 
 
-## The tile's sea, smoothed so the floor slopes down from the shore: empty when it has none (or only a pond).
-static func _sea_mask(t: Tile) -> PackedByteArray:
+## The tile's sea, smoothed so the floor slopes down from the shore: empty when it has none (or only a pond). Ground at
+## or under SEA_ABS is sea only in a cell that has sea (know_sea); a pixel in one that hasn't is 0 (land), and one of
+## the sea at least 1.
+static func _sea_mask(t: Tile, key := Vector3i(-1, -1, -1)) -> PackedByteArray:
 	var n := t.size * t.size
+	var allowed := _sea_allowed(t.size, key)   # (empty: everywhere)
+	if allowed.size() == 1:
+		return PackedByteArray()   # (no cell under it has sea)
 	var mask := PackedByteArray()
 	mask.resize(n)
 	var count := 0
 	var limit := int((SEA_ABS + 32768.0) * 256.0)
 	for p in n:
 		var o := p * 3
-		if t.rgb[o] * 65536 + t.rgb[o + 1] * 256 + t.rgb[o + 2] <= limit:
+		if t.rgb[o] * 65536 + t.rgb[o + 1] * 256 + t.rgb[o + 2] <= limit and (allowed.is_empty() or allowed[p] != 0):
 			mask[p] = 255
 			count += 1
 	if count <= SEA_MIN * t.size * t.size / (512 * 512):
@@ -157,7 +173,84 @@ static func _sea_mask(t: Tile) -> PackedByteArray:
 	var img := Image.create_from_data(t.size, t.size, false, Image.FORMAT_L8, mask)
 	img.resize(SEA_CELLS, SEA_CELLS, Image.INTERPOLATE_BILINEAR)
 	img.resize(t.size, t.size, Image.INTERPOLATE_CUBIC)
-	return img.get_data()
+	var out := img.get_data()
+	for p in n:
+		if mask[p] != 0:
+			out[p] = maxi(out[p], 1)
+		elif not allowed.is_empty() and allowed[p] == 0:
+			out[p] = 0   # (the smoothing reaches over the cell's edge: none of it on the land)
+	return out
+
+
+## Which pixels of tile `key` (`size` a side) lie in a cell that may have sea: empty when they all may (or the tile isn't
+## placed), a single 0 when none may, else size x size of 0 or 1.
+static func _sea_allowed(size: int, key: Vector3i) -> PackedByteArray:
+	if key.x < 0:
+		return PackedByteArray()
+	_lock.lock()
+	var known := _sea_cells.duplicate()
+	_lock.unlock()
+	if known.is_empty():
+		return PackedByteArray()
+	var scale := float(1 << key.x)
+	var rows := PackedInt32Array()
+	var cols := PackedInt32Array()
+	rows.resize(size)
+	cols.resize(size)
+	for j in size:
+		rows[j] = floori((lat_of(key.z + (j + 0.5) / size, key.x) + 90.0) / RealRegion.CELL_DEG)
+	for i in size:
+		cols[i] = floori(((key.y + (i + 0.5) / size) / scale * 360.0) / RealRegion.CELL_DEG)
+	var seen := {}
+	for r in range(rows[size - 1], rows[0] + 1):
+		for c in range(cols[0], cols[size - 1] + 1):
+			seen[known.get(Vector2i(r, c), true)] = true
+	if not seen.has(false):
+		return PackedByteArray()
+	if not seen.has(true):
+		return PackedByteArray([0])
+	var out := PackedByteArray()
+	out.resize(size * size)
+	for j in size:
+		for i in size:
+			out[j * size + i] = 1 if known.get(Vector2i(rows[j], cols[i]), true) else 0
+	return out
+
+
+## Says whether cell `cell` (RealRegion.cell_of) has sea, from its place profile (sea > 0, or a coast). Tiles over it
+## that were read before are read again, so their sea follows. Any thread; call it before the cell's tiles are sampled.
+static func know_sea(cell: Vector2i, has_sea: bool) -> void:
+	_lock.lock()
+	var was = _sea_cells.get(cell)
+	_sea_cells[cell] = has_sea
+	if (was != null and bool(was) == has_sea) or (was == null and has_sea):
+		_lock.unlock()
+		return   # (no tile read so far is any different)
+	for k: Vector3i in _mem.keys():
+		var b := geo_box(k)   # (south, west, north, east)
+		var s := RealRegion.CELL_DEG
+		if b.z > cell.x * s - 90.0 and b.x < (cell.x + 1) * s - 90.0 and b.w > cell.y * s - 180.0 and b.y < (cell.y + 1) * s - 180.0:
+			_mem.erase(k)
+	_lock.unlock()
+
+
+## Whether cell `cell` has sea: 1 yes, 0 no, -1 not known yet (taken as yes).
+static func sea_in(cell: Vector2i) -> int:
+	_lock.lock()
+	var v = _sea_cells.get(cell)
+	_lock.unlock()
+	return -1 if v == null else (1 if v else 0)
+
+
+## The latitude of the top of row `y` (fractional) of the grid of tiles at `zoom` (mercator_y's inverse).
+static func lat_of(y: float, zoom: int) -> float:
+	return rad_to_deg(atan(sinh(PI * (1.0 - 2.0 * y / float(1 << zoom)))))
+
+
+## Tile `key`'s box in degrees: Vector4(south, west, north, east).
+static func geo_box(key: Vector3i) -> Vector4:
+	var scale := float(1 << key.x)
+	return Vector4(lat_of(key.z + 1, key.x), key.y / scale * 360.0 - 180.0, lat_of(key.z, key.x), (key.y + 1) / scale * 360.0 - 180.0)
 
 
 static func _forget_oldest() -> void:
@@ -331,9 +424,10 @@ static func _poll(c: Dictionary) -> int:
 	return -1   # (disconnected, or a connection or TLS error)
 
 
-## Forgets every decoded tile and what was missing (the tests, after changing `dirs`).
+## Forgets every decoded tile, what was missing and which cells have sea (the tests, after changing `dirs`).
 static func reset() -> void:
 	_lock.lock()
 	_mem.clear()
 	_missing.clear()
+	_sea_cells.clear()
 	_lock.unlock()

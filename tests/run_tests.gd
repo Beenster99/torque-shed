@@ -582,6 +582,10 @@ func _run_all() -> void:
 	await _t(&"_test_live_pads")
 	await _t(&"_test_live_same")
 	await _t(&"_test_live_ride")
+	await _t(&"_test_terrain_by_position")
+	await _t(&"_test_terrain_ring")
+	await _t(&"_test_terrain_polder")
+	await _t(&"_test_terrain_off_plan")
 	await _t(&"_test_cells_grid")
 	await _t(&"_test_cells_stitch")
 	await _t(&"_test_cells_same_road")
@@ -3655,6 +3659,10 @@ func _test_perf_steady() -> void:
 	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
 	Shed.changed.emit()
 	for i in 5:
+		await get_tree().process_frame
+	# (whatever is still to be put up from earlier, a crew member's home left by a test before this one, goes up first)
+	for i in 30:
+		Shed.changed.emit()
 		await get_tree().process_frame
 	# The shed changing over and over, with nothing to redraw: the same views, no more nodes.
 	var views := {}
@@ -22469,6 +22477,26 @@ func _test_live_same() -> void:
 
 func _test_live_ride() -> void:
 	await _live().test_ride()
+
+
+func _terrain() -> RefCounted:
+	return load("res://tests/terrain_ring_tests.gd").new(self)
+
+
+func _test_terrain_by_position() -> void:
+	_terrain().test_by_position()
+
+
+func _test_terrain_ring() -> void:
+	_terrain().test_ring()
+
+
+func _test_terrain_polder() -> void:
+	_terrain().test_polder()
+
+
+func _test_terrain_off_plan() -> void:
+	await _terrain().test_off_plan()
 
 
 func _real() -> RefCounted:
