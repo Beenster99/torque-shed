@@ -96,11 +96,8 @@ func _process(delta: float) -> void:
 
 
 func _process_body(delta: float) -> void:
-	# Out on an adventure the place's own sounds play (RideAmbience): the shed's stay at home.
-	if AdventureWorld.current != null:
-		for p in [_tone, _hum, _wind, _birds, _crickets, _town]:
-			_fade(p, 0.0, delta, -80.0)
-		return
+	# Out on an adventure the place's own sounds play (RideAmbience): the shed's outdoors stays at home.
+	var home := 0.0 if AdventureWorld.current != null else 1.0
 	var room := Sfx.listener_room
 	var indoors := room != ""
 	var kind: String = Sfx.ROOM_KIND.get(room, "outside")
@@ -116,10 +113,10 @@ func _process_body(delta: float) -> void:
 	# Outside: wind and traffic always; birds by day, crickets at night, both hushed by rain.
 	var dark := Daylight.darkness()
 	var rain := Weather.current.rain if Weather.current else 0.0
-	_fade(_wind, 1.0, delta, -8.0)
-	_fade(_birds, (1.0 - dark) * (1.0 - rain * 0.85) * _bird_burst(delta), delta, BIRD_DB)
-	_fade(_crickets, dark * (1.0 - rain * 0.7), delta, -14.0)
-	_fade(_town, town_level(Sfx.listener_pos, dark, rain), delta, TOWN_DB)
+	_fade(_wind, home, delta, -8.0)
+	_fade(_birds, home * (1.0 - dark) * (1.0 - rain * 0.85) * _bird_burst(delta), delta, BIRD_DB)
+	_fade(_crickets, home * dark * (1.0 - rain * 0.7), delta, -14.0)
+	_fade(_town, home * town_level(Sfx.listener_pos, dark, rain), delta, TOWN_DB)
 	_muffle_outdoors(indoors, room, delta)
 	_compressor(delta)
 	_creaks(delta, room, kind)
