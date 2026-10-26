@@ -96,6 +96,11 @@ func _process(delta: float) -> void:
 
 
 func _process_body(delta: float) -> void:
+	# Out on an adventure the place's own sounds play (RideAmbience): the shed's stay at home.
+	if AdventureWorld.current != null:
+		for p in [_tone, _hum, _wind, _birds, _crickets, _town]:
+			_fade(p, 0.0, delta, -80.0)
+		return
 	var room := Sfx.listener_room
 	var indoors := room != ""
 	var kind: String = Sfx.ROOM_KIND.get(room, "outside")

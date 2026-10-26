@@ -1,0 +1,131 @@
+{
+ "format": 1,
+ "cell": "498_896",
+ "lat": 34.375,
+ "lon": 134.125,
+ "guessed": false,
+ "country": "JP",
+ "country_name": "Japan",
+ "countries": [
+  [
+   "JP",
+   1.0
+  ]
+ ],
+ "region": "Kagawa",
+ "region_code": "",
+ "koppen": "Cfa",
+ "cover": {
+  "forest": 0.55,
+  "crop": 0.12,
+  "grass": 0.08,
+  "urban": 0.12,
+  "water": 0.02,
+  "shrub": 0.11,
+  "barren": 0.0,
+  "sand": 0.0,
+  "wetland": 0.0,
+  "rock": 0.0
+ },
+ "sea": 0.45,
+ "coast": true,
+ "altitude": {
+  "min": 0,
+  "mean": 180,
+  "max": 816
+ },
+ "altitude_band": "lowland",
+ "built": 0.12,
+ "density": "town",
+ "climate": {
+  "temp_c": [
+   5.5,
+   6,
+   9,
+   14,
+   19,
+   22.5,
+   26.5,
+   28,
+   24.5,
+   19,
+   13,
+   8
+  ],
+  "temp_min_c": [
+   2,
+   2.5,
+   5,
+   10,
+   15,
+   19,
+   23.5,
+   24.5,
+   21,
+   15,
+   9.5,
+   4.5
+  ],
+  "temp_max_c": [
+   9.5,
+   10,
+   13.5,
+   19,
+   23.5,
+   26.5,
+   30.5,
+   32,
+   28.5,
+   23,
+   17,
+   12
+  ],
+  "rain_mm": [
+   40,
+   50,
+   85,
+   90,
+   120,
+   160,
+   140,
+   90,
+   160,
+   100,
+   55,
+   40
+  ],
+  "rain_days": [
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10,
+   10
+  ],
+  "sun_h": [
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150,
+   150
+  ]
+ },
+ "tint": null,
+ "sources": {
+  "note": "hand-made for T3's tests"
+ },
+ "hash": "fixture-shodoshima"
+}

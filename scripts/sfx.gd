@@ -133,6 +133,7 @@ var _once_of := {}      # a looping stream's instance id -> its play-once copy (
 var _route_timer := 0.0
 var _preset := {}       # the reverb settings shown now, easing toward the room's
 var _ambience: Node
+var _ride_ambience: RideAmbience
 var _amb_timer := 0.0
 
 
@@ -762,6 +763,16 @@ func _keep_ambience() -> void:
 		_ambience.name = "Ambience"
 		add_child(_ambience)
 		_ambience.setup(workshop)
+	# Out on an adventure: the sound of the place being ridden through, made afresh for each ride.
+	var world := AdventureWorld.current
+	if _ride_ambience and (world == null or _ride_ambience.world != world or not world.is_inside_tree()):
+		_ride_ambience.queue_free()
+		_ride_ambience = null
+	if world and world.is_inside_tree() and _ride_ambience == null and synth_done:
+		_ride_ambience = RideAmbience.new()
+		_ride_ambience.name = "RideAmbience"
+		add_child(_ride_ambience)
+		_ride_ambience.start(world)
 
 
 ## The shed's ambience node while there's a shed (SfxAmbience), else null.
