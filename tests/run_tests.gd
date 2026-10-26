@@ -680,6 +680,7 @@ func _run_all() -> void:
 	await _t(&"_test_collection_ring")
 	await _t(&"_test_collection_buy")
 	await _t(&"_test_collection_take")
+	await _t(&"_test_collection_adventure_pick")
 	await _t(&"_test_collection_offers")
 	await _t(&"_test_collection_sell")
 	await _t(&"_test_collection_stats")
@@ -23381,6 +23382,10 @@ func _test_collection_ring() -> void:
 
 func _test_collection_buy() -> void:
 	_collection().test_buy()
+
+
+func _test_collection_adventure_pick() -> void:
+	_collection().test_adventure_pick()
 
 
 func _test_collection_take() -> void:

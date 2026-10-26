@@ -223,8 +223,21 @@ func enter() -> void:
 	moment_done = false
 	_started_at = Time.get_ticks_msec()
 	close_journey()
-	# The bike you're on, or the one you're standing by in the shed: the one you'd like to take.
+	# The bike you're on, or the one you're standing by in the shed: the one you'd like to take,
+	# unless you pick another (your own or the garage's).
 	var preferred: int = main.riding_id if main.bike else _nearest_bike()
+	var join := {"a": "adventure_join", "bike": preferred}
+	if not instant and main.bike_picker:
+		var list := AdventureBikePicker.choices_for(Shed.me(), preferred)
+		if list.size() > 1 or (list.size() == 1 and int(list[0]["bike"]) != preferred):
+			main._capture_mouse(false)
+			var c: Dictionary = await main.bike_picker.choose(list)
+			main._capture_mouse(true)
+			join = {"a": "adventure_join", "bike": int(c.get("bike", 0)), "home": int(c.get("home", 0)), "foot": c.is_empty()}
+			if main.bike and int(join["bike"]) != main.riding_id:
+				# Another bike: this one's left parked at the shed.
+				Shed.request({"a": "dismount", "bike": main.riding_id, "xf": main.garage_spot(main.riding_id)})
+				main._stop_riding()
 	if not instant:
 		await main._fade_to(1.0)
 	if main.recovery.driving:
@@ -254,7 +267,7 @@ func enter() -> void:
 		main.walker.place(side)
 	Daylight.adventure_rate = Adventure.day_rate()
 	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0)
-	Shed.request({"a": "adventure_join", "bike": preferred})
+	Shed.request(join)
 	computer.reset()
 	photos.begin()   # (a ride carried on picks its diary and trip computer up again)
 	if start_s() > 0.0:

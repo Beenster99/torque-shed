@@ -29,6 +29,7 @@ var bike_order_panel: BikeOrderPanel   # a bike's card: order one of these, or c
 var bike_copy: BikeCopyView     # which bike you're looking at, for that card ({order_bike})
 var home_panel: HomePanel       # a collection bike's card, from its information stand at its owner's house
 var home_offer: HomeOfferPanel  # someone's offer for a bike in your collection: accept or decline
+var bike_picker: AdventureBikePicker   # off on an adventure: which bike you're taking
 var _offer_check := 0.0
 var staff_panel: StaffPanel     # talking to one of the staff and giving them a job
 var staff_view: StaffView       # the garage's staff at work
@@ -210,6 +211,8 @@ func _ready() -> void:
 	home_offer.visible = false
 	ui.add_child(home_offer)
 	home_offer.closed.connect(func(): _capture_mouse(true))
+	bike_picker = AdventureBikePicker.new()
+	ui.add_child(bike_picker)
 	staff_panel = StaffPanel.new()
 	staff_panel.visible = false
 	ui.add_child(staff_panel)
@@ -459,9 +462,9 @@ func _end_session() -> void:
 	_capture_mouse(false)
 
 
-## A collection bike's card or an offer for one of yours is up.
+## A collection bike's card, an offer for one of yours or the adventure's bike picker is up.
 func _home_ui_open() -> bool:
-	return home_panel.visible or home_offer.visible
+	return home_panel.visible or home_offer.visible or (bike_picker != null and bike_picker.visible)
 
 
 ## Now and then, on foot with nothing else open: an offer for one of your bikes comes up to answer.
@@ -902,6 +905,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			home_panel.close_dialog()
 		elif home_offer.visible:
 			home_offer.close_dialog()
+		elif bike_picker.visible:
+			bike_picker.pick(bike_picker.choices[0] if not bike_picker.choices.is_empty() else {})   # Esc: the first one
 		elif staff_panel.visible:
 			staff_panel.close_dialog()
 		elif paint_bench.visible:

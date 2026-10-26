@@ -16,8 +16,8 @@ extends RefCounted
 ##
 ## Actions (Shed.request): adventure_start {plan, seed, title} (the host, from the route planner:
 ## any shed TV tuned to the Route planner channel, see RouteTv) and adventure_end (the host: "Ride home"
-## once everyone's at the destination), adventure_join {bike: the one you'd like} (each player, on
-## loading it) and adventure_arrive (the first there: everyone's brought to the destination, gets
+## once everyone's at the destination), adventure_join {bike: the one you'd like, or home: one of
+## their own from their collection, or foot: true to walk} (each player, on loading it, from AdventureBikePicker) and adventure_arrive (the first there: everyone's brought to the destination, gets
 ## XP, and the photo goes up on the shed wall); adventure_photo {photo} (the host: a photo from
 ## their own album hung in this shed, see AdventureDest.hang_album);
 ## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
@@ -152,8 +152,15 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"adventure_join":
 			var riders: Dictionary = Shed.adventure["riders"]
 			var bike := Shed.riding(peer)
-			if bike == 0:
-				bike = _bike_for(peer, int(action.get("bike", 0)), riders)
+			var preferred := int(action.get("bike", 0))
+			var cid := int(action.get("home", 0))
+			if bike == 0 and cid != 0 and Collection.check(peer, {"a": "home_take", "bike": cid}) == "":
+				# One of their own from home: out of the collection for the ride (as home_take).
+				Collection.apply(peer, {"a": "home_take", "bike": cid})
+				Shed.homes_touched()
+				preferred = int(Collection.entry(cid).get("out", 0))
+			if bike == 0 and not bool(action.get("foot", false)):
+				bike = _bike_for(peer, preferred, riders)
 				if bike != 0:
 					Shed.bikes[bike]["rider"] = peer
 					Shed.bikes[bike]["stand"] = ""
