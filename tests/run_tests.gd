@@ -5285,8 +5285,9 @@ func _test_key_bindings() -> void:
 	check(tab.warning().contains("Right mouse") and tab.warning().contains("Ping") and tab.warning().contains("on foot"),
 		"the Key bindings tab warns about it (%s)" % tab.warning())
 	Settings.rebind("ping", _key(KEY_G))
+	Settings.rebind("cruise", _key(KEY_H))   # swapped with the horn (O is cruise control when riding, by default)
 	Settings.rebind("horn", _key(KEY_O))
-	check(Settings.clashes().is_empty(), "a key that orders a bike on foot can sound the horn when riding: no clash")
+	check(Settings.clashes().is_empty(), "a key that orders a bike on foot can sound the horn when riding: no clash %s" % str(Settings.clashes()))
 	Settings.rebind("spray_finish", _key(KEY_G))
 	check(Settings.clashes().any(func(c): return [c["a"], c["b"]].has("spray_finish") and [c["a"], c["b"]].has("ping")),
 		"a spray key clashes with an on-foot one")
