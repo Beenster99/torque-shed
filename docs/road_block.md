@@ -76,7 +76,9 @@ road runs straight from the land at one end to the land at the other, over the v
 into it. Where a bridge crosses another road without meeting it (an overpass), its deck climbs to leave
 `RoadNet.HEADROOM` m (16 ft 6 in) over that road, level for `RoadNet.CROWN_FLAT` m either side of it and falling
 away at `RoadNet.RAMP` (one in twenty) on banks of its own, so a dual carriageway's overbridges and the slip roads
-up to them are ridden as they are. The road under it stays on the land. Out on a bridge `ground_at` leaves the land
+up to them are ridden as they are. Such a bridge runs on past the map's ends of it (often its abutments' faces)
+until it clears the road under it, that road's verges and the land held level with it. The road under it stays on
+the land. Out on a bridge `ground_at` leaves the land
 as it is, only ever `RoadNet.BRIDGE_DEPTH` m or more under the deck; the block draws a stone parapet each side (walls
 to ride into), the deck's sides and underside, and piers down to the land where it's well below, and no verges.
 

@@ -432,9 +432,17 @@ func test_bridges() -> void:
 			var n := (f[k + 1] - f[k]).cross(f[k + 2] - f[k]).normalized()
 			parapet = parapet or (absf(n.y) < 0.1 and f[k].x + b.anchor().x > 70.0 and f[k].x + b.anchor().x < 130.0)
 	check(parapet, "and its parapets are walls to ride into")
+	# A bridge the map has in two, meeting at a node out over the valley (a slip road joining it there): no abutment
+	# in the air at the join, the deck carries on through it.
+	var two := graph([[-300, 100], [100, 100], [300, 100]], [[0, 1, "primary"], [1, 2, "primary"]])
+	two.spans = [[0, 60.0, 100.0, 100.0, 100.0], [0, 100.0, 100.0, 140.0, 100.0]]
+	var tn := RoadNet.new(two, valley)
+	check(tn.bridge_at(0, tn.length_of(0) - 2.0) >= 1.0 and tn.bridge_at(1, 2.0) >= 1.0,
+		"a bridge in two carries on through the node between them (%.2f, %.2f)" % [tn.bridge_at(0, tn.length_of(0) - 2.0), tn.bridge_at(1, 2.0)])
+	check(is_equal_approx(tn.ground_at(98.0, 100.0, float(valley.call(98.0, 100.0))), float(valley.call(98.0, 100.0))), "and the valley floor under the join is left as it is")
 	# Over another road on the flat: the bridge climbs to clear it, gently, and the road under it stays on the land.
 	var o := graph([[-300, 100], [300, 100], [100, -200], [100, 400]], [[0, 1, "primary"], [2, 3, "secondary"]])
-	o.spans = [[0, 40.0, 100.0, 160.0, 100.0]]
+	o.spans = [[0, 88.0, 100.0, 112.0, 100.0]]   # (as the map often has them: the abutments' faces, the road between)
 	var over := RoadNet.new(o, flat)
 	var top := over.road_y(0, float(over.locate(100.0, 100.0, 0)["s"]))
 	check(top >= 10.0 + RoadNet.HEADROOM + RoadNet.BRIDGE_DEPTH, "it climbs to clear the road under it (its deck %.2f m up)" % (top - 10.0))
@@ -446,6 +454,12 @@ func test_bridges() -> void:
 	var under := over.locate(100.0, 100.0, 1)
 	check(int(under["edge"]) == 1 and absf(float(under["y"]) - 10.0) < 0.1, "the road under it is on the land, found from itself")
 	check(over.bridge_at(1, float(under["s"])) <= 0.0, "and isn't a bridge itself")
+	var clear := over.width_of(1) * 0.5 + RoadNet.VERGE + RoadNet.LAND_PAD
+	var mid_s := float(over.locate(100.0, 100.0, 0)["s"])
+	check(over.bridge_at(0, mid_s - clear) >= 1.0 and over.bridge_at(0, mid_s + clear) >= 1.0,
+		"the bridge runs on over the road's verges and the land held level with it, not just the map's short span")
+	var o_land := over.ground_at(100.0 - clear + 1.0, 100.0, 10.0)
+	check(o_land <= 10.01, "where the land under it stays down with the road beneath (%.2f)" % o_land)
 
 
 ## The height of the first collision triangle of block `b` straight under local `p` (NAN if none).

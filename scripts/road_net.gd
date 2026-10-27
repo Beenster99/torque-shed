@@ -101,6 +101,8 @@ var _junction := {}         # node -> Dictionary ({} for a plain join)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
 var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
 var _decks := {}            # edge -> Dictionary: its bridges' heights (_deck_plan)
+var _mapped_of := {}        # edge -> PackedInt32Array: its bridges as the map has them (_mapped)
+var _over := {}             # edge -> Array of Vector4: the roads its bridges cross (_crossings)
 var _grids := {}            # Vector2i block -> {Vector2i cell -> {edge -> PackedInt32Array of its line's pieces}}
 
 
@@ -565,11 +567,47 @@ func _fair_page(edge: int, page: int) -> PackedFloat32Array:
 	return res
 
 
-## Edge `edge`'s bridges: the map's (the region's spans of kind 0, RoutePlanner.spans_along) that it runs along, as
-## its samples [first, last, ...].
+## Edge `edge`'s bridges: the map's (_mapped), each run on over any road it crosses (_crossings) far enough to clear that
+## road, its verges and the land held level with it (a bridge's ends on the map are often its abutments' faces, short
+## of the land the road under it is cut into), as its samples [first, last, ...].
 func bridges_of(edge: int) -> PackedInt32Array:
 	_lock.lock()
 	var got = _bridges.get(edge)
+	_lock.unlock()
+	if got != null:
+		return got
+	var mapped := _mapped(edge)
+	var out := PackedInt32Array()
+	var over := []
+	if not mapped.is_empty():
+		var n := samples_of(edge)
+		var sp := length_of(edge) / float(n - 1)
+		var spans: Array[Vector2i] = []
+		for k in range(0, mapped.size() - 1, 2):
+			spans.append(Vector2i(mapped[k], mapped[k + 1]))
+			for hit: Vector4 in _crossings(edge, sp * mapped[k], sp * mapped[k + 1]):
+				over.append(hit)
+				spans.append(Vector2i(maxi(0, floori((hit.z - hit.w) / sp)), mini(n - 1, ceili((hit.z + hit.w) / sp))))
+		spans.sort()
+		for sv in spans:
+			var m := out.size()
+			if m >= 2 and sv.x <= out[m - 1]:
+				out[m - 1] = maxi(out[m - 1], sv.y)
+			else:
+				out.append(sv.x)
+				out.append(sv.y)
+	_lock.lock()
+	_over[edge] = over
+	_bridges[edge] = out
+	_lock.unlock()
+	return out
+
+
+## Edge `edge`'s bridges as the map has them (the region's spans of kind 0, RoutePlanner.spans_along), as its samples
+## [first, last, ...].
+func _mapped(edge: int) -> PackedInt32Array:
+	_lock.lock()
+	var got = _mapped_of.get(edge)
 	_lock.unlock()
 	if got != null:
 		return got
@@ -586,7 +624,7 @@ func bridges_of(edge: int) -> PackedInt32Array:
 	var out := RoutePlanner.spans_along(region, xs, zs, 0)
 	_snap_ends(out, xs, zs)
 	_lock.lock()
-	_bridges[edge] = out
+	_mapped_of[edge] = out
 	_lock.unlock()
 	return out
 
@@ -631,7 +669,11 @@ static func _nearest_sample(p: Vector2, xs: PackedFloat64Array, zs: PackedFloat6
 ## How far edge `edge` is out onto a bridge `s` m along it: 1 out over what it crosses, easing from 0 over DECK_EASE
 ## samples at each end (its abutments, where the land comes up to it), 0 off it.
 func bridge_at(edge: int, s: float) -> float:
-	var b := bridges_of(edge)
+	return _deck_weight(edge, bridges_of(edge), s)
+
+
+## How far out onto bridges `b` (edge `edge`'s samples [first, last, ...]) it is `s` m along: see bridge_at.
+func _deck_weight(edge: int, b: PackedInt32Array, s: float) -> float:
 	if b.is_empty():
 		return 0.0
 	var n := samples_of(edge)
@@ -640,9 +682,28 @@ func bridge_at(edge: int, s: float) -> float:
 	for k in range(0, b.size() - 1, 2):
 		var i0 := float(b[k])
 		var i1 := float(b[k + 1])
-		if f > i0 and f < i1:
-			w = maxf(w, clampf(minf(f - i0, i1 - f) / minf(DECK_EASE, (i1 - i0) * 0.5), 0.0, 1.0))
+		if f < i0 or f > i1:
+			continue
+		# (no abutment at an end where the bridge carries on through the node into another road's)
+		var from_a := f - i0 if b[k] > 0 or not _deck_on(edge, region.edge_a[edge]) else INF
+		var from_b := i1 - f if b[k + 1] < n - 1 or not _deck_on(edge, region.edge_b[edge]) else INF
+		var ease := minf(DECK_EASE, (i1 - i0) * 0.5) if from_a < INF and from_b < INF else float(DECK_EASE)
+		w = maxf(w, clampf(minf(from_a, from_b) / maxf(ease, 0.5), 0.0, 1.0))
 	return w
+
+
+## Whether another road at node `node` (than edge `edge`) is on one of the map's bridges right up to it.
+func _deck_on(edge: int, node: int) -> bool:
+	for ei in region.adjacent[node]:
+		if ei == edge:
+			continue
+		var b := _mapped(ei)
+		if b.is_empty():
+			continue
+		var last := samples_of(ei) - 1
+		if (region.edge_a[ei] == node and b[0] == 0) or (region.edge_b[ei] == node and b[b.size() - 1] == last):
+			return true
+	return false
 
 
 ## Edge `edge`'s bridges' heights: {"level": [[first sample, last, height there, there], ...] (each straight from the
@@ -654,7 +715,11 @@ func _deck_plan(edge: int) -> Dictionary:
 	_lock.unlock()
 	if got != null:
 		return got
-	var b := bridges_of(edge)
+	var b := _mapped(edge)
+	bridges_of(edge)   # (finds the roads it crosses: _over)
+	_lock.lock()
+	var over: Array = _over.get(edge, [])
+	_lock.unlock()
 	var plan := {"level": [], "lifts": PackedVector2Array()}
 	var final := true
 	if not b.is_empty():
@@ -664,12 +729,11 @@ func _deck_plan(edge: int) -> Dictionary:
 			var p1 := point_at(edge, sp * b[k + 1])
 			(plan["level"] as Array).append([b[k], b[k + 1], float(height.call(p0.x, p0.y)), float(height.call(p1.x, p1.y))])
 			final = final and _final(p0, STEP) and _final(p1, STEP)
-			for hit: Vector3 in _crossings(edge, sp * b[k], sp * b[k + 1]):
-				var y := float(height.call(hit.x, hit.y)) + HEADROOM + HEADROOM_PAD + BRIDGE_DEPTH
-				var lifts: PackedVector2Array = plan["lifts"]
-				lifts.append(Vector2(hit.z / sp, y))
-				plan["lifts"] = lifts   # (a packed array is a copy: put back)
-				final = final and _final(Vector2(hit.x, hit.y), STEP)
+		var lifts := PackedVector2Array()
+		for hit: Vector4 in over:
+			lifts.append(Vector2(hit.z / sp, float(height.call(hit.x, hit.y)) + HEADROOM + HEADROOM_PAD + BRIDGE_DEPTH))
+			final = final and _final(Vector2(hit.x, hit.y), STEP)
+		plan["lifts"] = lifts
 	if final:
 		_lock.lock()
 		_decks[edge] = plan
@@ -678,7 +742,9 @@ func _deck_plan(edge: int) -> Dictionary:
 
 
 ## The other roads crossing edge `edge`'s line between `s0` and `s1` m along it without meeting it (an overpass: not
-## near a node of either), and not on a bridge of their own there: [Vector3(x, z, s along edge), ...].
+## near a node of either), and not on a bridge of their own there: [Vector4(x, z, s along edge, how far either side of
+## it (m along edge) the bridge must run to clear that road, its verges and the land held level with it, and then
+## ease onto its abutments), ...].
 func _crossings(edge: int, s0: float, s1: float) -> Array:
 	var out := []
 	var line := line_of(edge)
@@ -717,9 +783,11 @@ func _crossings(edge: int, s0: float, s1: float) -> Array:
 					var meets := false
 					for q: Vector2 in ends + [region.node_pos[region.edge_a[oe]], region.node_pos[region.edge_b[oe]]]:
 						meets = meets or q.distance_to(at) < 6.0
-					if meets or bridge_at(oe, _cum_of(oe)[j - 1] + ol[j - 1].distance_to(at)) > 0.0:
+					if meets or _deck_weight(oe, _mapped(oe), _cum_of(oe)[j - 1] + ol[j - 1].distance_to(at)) > 0.0:
 						continue
-					out.append(Vector3(at.x, at.y, s))
+					var cross := absf((line[i] - a).normalized().cross((ol[j] - ol[j - 1]).normalized()))
+					var clear := (width_of(oe) * 0.5 + VERGE + LAND_PAD) / maxf(cross, 0.35) + width_of(edge) * 0.5 + DECK_EASE * STEP
+					out.append(Vector4(at.x, at.y, s, clear))
 	return out
 
 
