@@ -629,5 +629,6 @@
 	"_test_net_plan": 4000,
 	"_test_net_world": 9000,
 	"_test_net_flats": 300,
-	"_test_net_sites": 12000
+	"_test_net_sites": 12000,
+	"_test_net_saves": 30
 }

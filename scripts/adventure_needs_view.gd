@@ -452,7 +452,14 @@ func take(spot: Dictionary) -> String:
 		_paid_for = str(spot["key"])
 	perch = {"kind": kind, "node": spot["node"], "place": int(spot["place"]), "key": str(spot["key"]), "s": float(spot.get("s", 0.0))}
 	_perch_since = Time.get_ticks_msec()
-	Shed.request({"a": "needs_sit" if kind == "seat" else "needs_bed", "key": perch["key"], "s": perch["s"], "on": true})
+	var req := {"a": "needs_sit" if kind == "seat" else "needs_bed", "key": perch["key"], "s": perch["s"], "on": true}
+	if kind == "bed" and trip.world != null and trip.world.roads != null:
+		# On the network, where the bed is (the region's frame): you wake up there however you came.
+		var node: Node3D = spot["node"]
+		var xz := trip.world.route_xz(node.global_position)
+		var fwd := -node.global_transform.basis.z
+		req["at"] = [xz[0], xz[1], atan2(fwd.x, -fwd.z)]
+	Shed.request(req)
 	_keep_perch()
 	Sfx.play_at("pickup", main.walker.global_position, -14.0)
 	return ""

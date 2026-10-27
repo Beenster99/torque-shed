@@ -563,6 +563,7 @@ func _run_all() -> void:
 	await _t(&"_test_net_world")
 	await _t(&"_test_net_flats")
 	await _t(&"_test_net_sites")
+	await _t(&"_test_net_saves")
 	await _t(&"_test_real_pack")
 	await _t(&"_test_real_levels")
 	await _t(&"_test_real_epic")
@@ -23985,6 +23986,10 @@ func _test_net_flats() -> void:
 
 func _test_net_sites() -> void:
 	_net().test_sites()
+
+
+func _test_net_saves() -> void:
+	_net().test_saves()
 
 
 # ---------------------------------------------------------------------------- road markings (tests/road_markings_tests.gd)

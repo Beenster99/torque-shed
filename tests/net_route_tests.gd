@@ -359,4 +359,39 @@ func test_sites() -> void:
 					spots += 1
 			check(spots > 0 or str(p["site"]["kind"]) == "layby", "with somewhere to sit or buy food (%d)" % spots)
 			check(ns.build_some(100) == 0, "and not built again")
+		# Slept at it: woken on the road beside it, facing on along the route, the next rider a bike length back.
+		var bed := [xf.origin.x + xf.basis.x.x * 10.0, xf.origin.z + xf.basis.x.z * 10.0, 0.0]
+		var wake = w.net_wake_xf(bed, 0)
+		var wake2 = w.net_wake_xf(bed, 1)
+		check(wake is Transform3D and wake2 is Transform3D, "woken on the network road by the stop")
+		if wake is Transform3D and wake2 is Transform3D:
+			var xz := w.route_xz((wake as Transform3D).origin)
+			var on := net.locate(xz[0], xz[1])
+			var fwd := -(wake as Transform3D).basis.z
+			var rh := w.route.heading_at_s(float(p["site"]["s"]))
+			check(not on.is_empty() and bool(on["on_road"]) and float(on["lat"]) * (1.0 if int(p["dir"]) > 0 else -1.0) < 0.0,
+				"on the road's left half (%s)" % str(on.get("lat")))
+			check(Vector2(fwd.x, fwd.z).dot(Vector2(sin(rh), -cos(rh))) > 0.7, "facing on along the route")
+			check(absf((wake as Transform3D).origin.distance_to((wake2 as Transform3D).origin) - 4.0) < 0.5, "the next a bike length back")
 	w.free()
+
+
+## A night's save on the network ride keeps where each rider's bed is, and carries it on.
+func test_saves() -> void:
+	var was_adv: Dictionary = Shed.adventure
+	var was_crew: Dictionary = Shed.crew
+	Shed.crew = {1: {"name": "Sam"}, 2: {"name": "Jo"}}
+	Shed.adventure = {"id": 7, "seed": 3, "km": 40.0, "needs": {1: {"food": 0.5, "drink": 0.5, "rest": 0.2, "bed": "inn:1", "bed_s": 12000.0,
+		"bed_at": [1500.25, -320.5, 1.2]}, 2: {"food": 0.6, "drink": 0.6, "rest": 0.3, "bed": "inn:2", "bed_s": 12004.0}}}
+	var save := AdventureNeeds.sanitize_save(AdventureNeeds.make_save())
+	check((save["where"] as Dictionary).size() == 1 and save["where"]["Sam"] == [1500.25, -320.5, 1.2], "Sam's bed kept where it is (%s)" % str(save["where"]))
+	check(not (save["adventure"] as Dictionary).has("needs"), "the road kept, not the meters as they ran")
+	var bad := save.duplicate(true)
+	bad["where"] = {"Sam": [1.0, NAN, 0.0], "Jo": "inn"}
+	check((AdventureNeeds.sanitize_save(bad)["where"] as Dictionary).is_empty(), "a bed's place that isn't one is dropped")
+	Shed.adventure = {"id": 8, "resume": save["at"], "resume_at": save["where"]}
+	check(AdventureNeeds.resume_at("Sam") == [1500.25, -320.5, 1.2] and AdventureNeeds.resume_at("Jo").is_empty(),
+		"carried on: Sam wakes where the bed was, Jo by the road's distance")
+	check(is_equal_approx(AdventureNeeds.resume_s("Jo"), 12004.0), "Jo at %.0f m" % AdventureNeeds.resume_s("Jo"))
+	Shed.adventure = was_adv
+	Shed.crew = was_crew
