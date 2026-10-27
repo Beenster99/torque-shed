@@ -20,9 +20,6 @@ const TRACK := Color(0.55, 0.45, 0.32)
 const ROUTE := Color(0.25, 0.75, 1.0)
 const FUEL := Color(0.25, 0.9, 0.4)
 const DEST := Color(1.0, 0.45, 0.35)
-const FORK := Color(1.0, 0.8, 0.25)
-## Another way off at a fork, not the one being taken.
-const OTHER := Color(0.5, 0.52, 0.55, 0.5)
 ## The rest of the crew on the map and in their list, and the wrong-way warning.
 const FRIEND := Color(0.45, 0.85, 1.0)
 const WRONG := Color(0.85, 0.12, 0.1)
@@ -123,12 +120,12 @@ func _draw() -> void:
 				out[i] = to_screen(pts[i])
 			var w := maxf(float(road.get("hw", 3.0)) * 2.0 * k, 2.0)
 			var kind := str(road.get("kind", ""))
-			var col := TRACK if kind == "dirt" else OTHER if kind == "other" else ROAD
+			var col := TRACK if kind == "dirt" else ROAD
 			if not sat.is_empty():
 				# Over the satellite picture the roads are a light outline: the picture shows them.
 				col.a *= 0.35
 				w = maxf(w * 0.5, 1.5)
-			draw_polyline(out, col, w if kind != "other" else maxf(w * 0.6, 1.5), true)
+			draw_polyline(out, col, w, true)
 	var route: PackedVector2Array = view.get("route", PackedVector2Array())
 	if features.has("route") and route.size() >= 2:
 		var out := PackedVector2Array()
@@ -144,7 +141,7 @@ func _draw() -> void:
 		if r.grow(-4.0).has_point(at):
 			var c := _colour(p)
 			draw_circle(at, maxf(size.x / 40.0, 4.0), c)
-			draw_string(font, at + Vector2(-20, -8), {"fuel": "F", "fork": "Y"}.get(str(p["kind"]), "X"), HORIZONTAL_ALIGNMENT_CENTER, 40, fs, Color.WHITE)
+			draw_string(font, at + Vector2(-20, -8), "F" if str(p["kind"]) == "fuel" else "X", HORIZONTAL_ALIGNMENT_CENTER, 40, fs, Color.WHITE)
 	# The stops ahead: their markers on the map and a list of the next few (a unit that knows the route).
 	var stops: Array = view.get("stops", []) if features.has("route") else []
 	for p in stops:
@@ -181,11 +178,7 @@ func _draw() -> void:
 		for i in mini(top.size(), 2):
 			draw_string(font, Vector2(x, fs + 2.0), top[i], HORIZONTAL_ALIGNMENT_LEFT, size.x * 0.5 - 8.0, fs, cols[i])
 			x += size.x * 0.5
-	# Coming up to a fork: the ways, their votes and the pick, under the top bar.
-	var choice: Dictionary = view.get("choice", {})
-	if features.has("route") and not choice.is_empty():
-		_draw_choice(choice, bar_h + 4.0, fs, font)
-	elif features.has("route") and not (view.get("junction", {}) as Dictionary).is_empty():
+	if features.has("route") and not (view.get("junction", {}) as Dictionary).is_empty():
 		_draw_junction(view["junction"], bar_h + 4.0, fs, font)
 	elif not stops.is_empty():
 			var lfs := maxi(8, fs - 2)
@@ -362,27 +355,7 @@ static func near_distance(m: float) -> String:
 
 
 func _colour(p: Dictionary) -> Color:
-	return {"fuel": FUEL, "fork": FORK}.get(str(p.get("kind", "")), DEST)
-
-
-## The ways at the fork ahead, a line each: letter, which way, name, length, time, the surface
-## it's mostly on and how many have voted for it; the picked one marked.
-func _draw_choice(c: Dictionary, y: float, fs: int, font: Font) -> void:
-	var ways: Array = c["ways"]
-	var lh := fs + 3.0
-	var picked := int(c["picked"])
-	draw_rect(Rect2(0, y, size.x, lh * (ways.size() + 1) + 6.0), Color(0, 0, 0, 0.72))
-	var head := "Fork %.1f %s: %s" % [Units.distance_value(float(c["dist"]) / 1000.0), Units.distance_unit(),
-		"vote 1-%d" % ways.size() if picked < 0 else str(ways[picked]["letter"]) + " chosen"]
-	draw_string(font, Vector2(6, y + fs + 1.0), head, HORIZONTAL_ALIGNMENT_LEFT, size.x - 12.0, fs, FORK)
-	for k in ways.size():
-		var w: Dictionary = ways[k]
-		var n := (w["voters"] as PackedStringArray).size()
-		var bits := str(w["text"]).split(", ")
-		var line := "%s%s %s %s %s %s%s" % [">" if bool(w["picked"]) else "", str(w["letter"]), str(w["arrow"]), str(w["name"]),
-			bits[0], bits[1].replace("about ", "") if bits.size() > 1 else "", "  +%d" % n if n > 0 else ""]
-		var col := Color.WHITE if picked < 0 or bool(w["picked"]) else Color(1, 1, 1, 0.45)
-		draw_string(font, Vector2(6, y + lh * (k + 1) + fs + 1.0), line, HORIZONTAL_ALIGNMENT_LEFT, size.x - 12.0, fs, col)
+	return FUEL if str(p.get("kind", "")) == "fuel" else DEST
 
 
 ## Whether point `p` is one this unit shows (fuel needs the "fuel" feature, a destination the route).

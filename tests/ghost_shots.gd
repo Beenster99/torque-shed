@@ -54,7 +54,6 @@ func _ready() -> void:
 		print("no adventure")
 		get_tree().quit(1)
 		return
-	await Rides.take_main_roads(trip)
 	var w := trip.world
 	var s := 900.0
 	trip.jump(s - w.distance_of(main.bike.global_position, "shot"))

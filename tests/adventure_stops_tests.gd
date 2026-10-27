@@ -44,8 +44,6 @@ func _tour_world(found: Array, spot: Dictionary) -> AdventureWorld:
 
 
 func _put(w: AdventureWorld, spot: Dictionary) -> AdventureWorld:
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)   # the main road at every fork, so it all streams
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(d): spot["p"] -= d)

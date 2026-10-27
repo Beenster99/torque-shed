@@ -130,8 +130,6 @@ static func _junction_faults(route: AdventureRoute, most: int) -> Array:
 func test_real() -> void:
 	var r := AdventureRoute.new()
 	r.plan_real(AdventurePlans.pack_for(AdventurePlans.tour("shodoshima")), 7, 1000.0)
-	for f in r.forks.size():
-		r.choose(f, 0)   # (the road is only looked up as far as the first fork still open)
 	var got := _junction_faults(r, 10)
 	var faults: Array = got[2]
 	check(int(got[0]) >= 3, "real road: %d junctions with %d side roads looked at" % [got[0], got[1]])

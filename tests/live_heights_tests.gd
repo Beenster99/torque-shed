@@ -7,7 +7,7 @@ extends RefCounted
 const Rides := preload("res://tests/rides.gd")
 const FIXTURES := "res://tests/fixtures/heights"
 const REGION := "shodoshima"
-## The ride the fixtures cover: the first four pins of Shodoshima's tour (28 km, one fork).
+## The ride the fixtures cover: the first four pins of Shodoshima's tour (28 km).
 const PINS := 4
 
 var t: Node   # the test runner: check()
@@ -119,8 +119,7 @@ func test_heights() -> void:
 		_restore()
 		return
 	var live: RealPack = res["pack"]
-	check(live.terrain.live and live.x.size() == baked.x.size() and live.forks.size() == baked.forks.size(),
-		"the same road (%d knots, %d fork) on the live land" % [live.x.size(), live.forks.size()])
+	check(live.terrain.live and live.x.size() == baked.x.size(), "the same road (%d knots) on the live land" % live.x.size())
 	var worst := 0.0
 	var total := 0.0
 	for i in live.e.size():
@@ -144,11 +143,6 @@ func test_heights() -> void:
 	var mid: float = diffs[diffs.size() / 2] if not diffs.is_empty() else INF
 	var p90: float = diffs[diffs.size() * 9 / 10] if not diffs.is_empty() else INF
 	check(diffs.size() > 100 and mid < 1.0 and p90 < 4.0, "and so is the land beside it (%.2f m apart at the middle of %d points, %.1f m at the 90th)" % [mid, diffs.size(), p90])
-	# The fork's other way: its tiles were taken in too, so it's on the fine land.
-	if not live.forks.is_empty():
-		var w: Dictionary = live.forks[0]["way"]
-		var k := (w["x"] as Array).size() / 2
-		check(live.terrain.has_tile_at(float(w["x"][k]), float(w["z"][k])), "the fork's other way is on the finest land too")
 	_restore()
 
 

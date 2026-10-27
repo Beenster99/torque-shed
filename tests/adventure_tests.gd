@@ -38,12 +38,9 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 
 
 ## A world for a ride of `km` (see Rides) whose road follows `spot` ({p: local position}), kept in step with the
-## origin. The main road is taken at every fork (unless `forks_open`), so it's all there to stream.
-func _world(seed: int, km: float, spot: Dictionary, forks_open := false) -> AdventureWorld:
+## origin.
+func _world(seed: int, km: float, spot: Dictionary) -> AdventureWorld:
 	var w := Rides.world(km, seed)
-	if not forks_open:
-		for f in w.route.forks.size():
-			w.route.choose(f, 0)
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(d): spot["p"] -= d)
@@ -80,7 +77,7 @@ func test_route() -> void:
 	check(fuel.size() >= 1, "fuel stations along it %s" % str(fuel.map(func(f): return roundi(float(f["s"])))))
 	check(a.sites_of("start").size() == 1 and a.sites_of("finish").size() == 1 and float(a.sites_of("finish")[0]["s"]) == 40000.0,
 		"a start banner, and the destination 40 km on")
-	var xz := Rides.main_roads(a).xz_at(20000.0, 2.5)   # (the road past a fork still open isn't there to be found)
+	var xz := a.xz_at(20000.0, 2.5)
 	var hit := a.locate(xz[0], xz[1])
 	check(not hit.is_empty() and absf(float(hit["s"]) - 20000.0) < 1.0 and absf(float(hit["lat"]) - 2.5) < 0.05,
 		"a point is found along the road: %.1f m, %.2f m right" % [float(hit.get("s", -1)), float(hit.get("lat", 0))])
@@ -127,7 +124,6 @@ func test_stream() -> void:
 func test_frames() -> void:
 	var spot := {}
 	var w := _world(9, 50.0, spot)
-	Rides.main_roads(w.route)   # (31 km is past forks: taken, so it's there)
 	var p := w.transform_at(31234.5, 1.25).origin
 	var xz := w.route.xz_at(31234.5, 1.25)
 	check(absf(float(w.route_xz(p)[0]) - xz[0]) < 0.01, "local and route frames agree before a shift")
@@ -140,7 +136,6 @@ func test_frames() -> void:
 	check(fmod(w.origin.x, 1.0) == 0.0 and fmod(w.origin.z, 1.0) == 0.0, "the origin is whole metres (%s)" % str(w.origin))
 	# Another machine, whose origin is somewhere else.
 	var other := Rides.world(50.0, 9)
-	Rides.main_roads(other.route)
 	other.shift_origin_to(other.transform_at(29000.0).origin)
 	var mine := PackedFloat32Array([1.0, 7.0, q.x, q.y, q.z, 0, 0, 0, 1, 3, 0, 0])
 	var theirs := AdventureWorld.untag(w.tag_state(mine), other.origin)
@@ -387,8 +382,7 @@ func test_trip() -> void:
 	var noted: Dictionary = main.saver._players.values()[0]
 	check(int(noted["riding"]) == 0 and (noted["xf"] as Transform3D).origin.distance_to(Workshop.walker_spawn(Net.local_slot()).origin) < 0.1,
 		"a save out here puts you back at the shed")
-	# To the destination (the host taking the main road at every fork: the road isn't built past one still open).
-	await Rides.take_main_roads(trip)
+	# To the destination.
 	trip.jump(trip.world.route.length - trip.world.distance_of(main.bike.global_position, "own") - 5.0)
 	for i in 30:
 		main.bike.throttle = 0.3

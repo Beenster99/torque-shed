@@ -81,7 +81,7 @@ var _lock := Mutex.new()
 var _material: StandardMaterial3D
 var _water_material: StandardMaterial3D
 var _at := Vector2(INF, INF)
-var _epoch := 0        # changes when the road does (a way picked at a fork): older work is thrown away
+var _epoch := 0        # changes when the roads do (set_roads): older work is thrown away
 var _touch := {}       # Vector2i -> true for the blocks the road is near (worked out once a road, see _near_road)
 var _touch_done := false
 var _redo := {}        # Vector2i -> true: its ground came in while it was being laid out, so it's laid out again
@@ -90,9 +90,9 @@ var _way := Vector2.ZERO
 ## The road network in network mode (set_roads), else null: anything with roads_near(rect: Rect2) -> bool and
 ## ground_at(x, z, bare) -> float (RoadNet, interfaces/road-block.md). Read by the workers.
 var roads: Object = null
-## No new blocks are started while this is set (a fork's way is being put together, and the road is about to change
-## under them: see AdventureWorld.apply_picks_soon), and those being laid out stop where they are (the swap lays every
-## block out again: reset), so the road can be swapped without waiting on any. Read by the workers.
+## No new blocks are started while this is set (the roads are about to change under them: see set_roads), and those
+## being laid out stop where they are (the swap lays every block out again: reset), so the roads can be swapped
+## without waiting on any. Read by the workers.
 var hold := false
 
 
@@ -141,7 +141,7 @@ func _exit_tree() -> void:
 	_tasks.clear()
 
 
-## Everything is laid out again (the road changed under it: a way was picked at a fork).
+## Everything is laid out again (the roads changed under it: see set_roads).
 func reset() -> void:
 	_epoch += 1
 	for key in _tasks:
@@ -254,7 +254,7 @@ func holds(x: float, z: float) -> bool:
 
 ## Whether the road is within ROAD_NEAR of the middle of block `key`. The blocks it's near are marked in one go along
 ## the road (a point every 64 m), the first time it's asked: asking the road for each block in reach on its own was a
-## hitch of tens of ms when they were all asked at once (at the start, and once a fork's way is taken).
+## hitch of tens of ms when they were all asked at once (at the start).
 func _near_road(key: Vector2i) -> bool:
 	if not _touch_done:
 		_touch_done = true

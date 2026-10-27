@@ -827,7 +827,7 @@ func _settle(cond: Callable) -> void:
 ## leaves the land under a deck as it is and builds the bridge, parapets and all.
 ## No corners: the road's heading turns smoothly from one knot to the next all along a ride (RoutePlanner.fair_line,
 ## by the road's class), so a mapped corner is a curve and the traffic never snaps round one. Measured as the most the
-## turn changes from one knot to the next (the kink) and the sharpest bend, on both bundled tours and a fork's way.
+## turn changes from one knot to the next (the kink) and the sharpest bend, on both bundled tours.
 func test_corners() -> void:
 	for region_id in ["dales", "shodoshima"]:
 		var p := AdventurePlans.pack_for(AdventurePlans.tour(region_id))
@@ -836,10 +836,6 @@ func test_corners() -> void:
 		check(k[1] < KINK_MAX and k[0] < KINK_WORST and k[2] >= RoutePlanner.MIN_RADIUS * 0.9,
 			"%s: no corners on the road, the turn changing at most %.2f deg from one knot to the next (99.9%% of knots; the worst %.2f), no bend under %.0f m (%.1f)"
 			% [region_id, k[1], k[0], RoutePlanner.MIN_RADIUS, k[2]])
-		for f: Dictionary in p.forks:
-			var kw := _kinks(PackedFloat64Array(f["way"]["x"]), PackedFloat64Array(f["way"]["z"]))
-			check(kw[0] < KINK_WORST, "%s: and a fork's other way has none either (the worst %.2f deg)" % [region_id, kw[0]])
-			break
 	# A right-angled corner, as a street's map has it, comes out a curve.
 	var corner := PackedVector2Array([Vector2(0, 0), Vector2(0, -100), Vector2(100, -100)])
 	var line := RoutePlanner.smooth_line(corner, RoutePlanner.MIN_RADIUS, PackedFloat64Array([5.0, 5.0, 5.0]))
@@ -942,38 +938,6 @@ func test_bridges() -> void:
 	var built := AdventureChunk.build(route, c)
 	var bridge: Dictionary = built.get("bridge", {})
 	check(not bridge.is_empty() and (bridge["v"] as PackedVector3Array).size() > 60, "and the chunk builds the bridge (%d corners)" % ((bridge["v"] as PackedVector3Array).size() if not bridge.is_empty() else 0))
-	# The other way at a fork: the bridges past where it rejoins are still where the road crosses them.
-	if route.forks.is_empty() or route.forks[0]["ways"].size() < 2:
-		return
-	var alt := route.path_copy({0: 1})
-	alt._assemble_path()
-	var shift := alt.px.size() - route.px.size()
-	var past := -1
-	for k in range(0, b.size() - 1, 2):
-		if b[k] > int(route.forks[0]["i1"]) and b[k + 1] - b[k] > 2 * AdventureRoute.DECK_EASE:
-			past = (b[k] + b[k + 1]) / 2
-			break
-	check(alt.deck.size() == alt.px.size() and alt.bore.size() == alt.px.size() and (past < 0 or alt.deck[past + shift] == 1.0),
-		"on the other way at a fork the bridges past it are still under the road (%d knots on)" % shift)
-	# And the other way's own bridges: found along it, laid straight across, and under the road when it's taken.
-	var wr: Dictionary = p.forks[0]["way"]
-	var wb: PackedInt32Array = wr.get("bridges", PackedInt32Array())
-	check(wb.size() >= 2, "the other way at the fork has its own bridges (%d)" % (wb.size() / 2))
-	if wb.size() < 2:
-		return
-	var longest := 0
-	for k in range(0, wb.size() - 1, 2):
-		if wb[k + 1] - wb[k] > wb[longest + 1] - wb[longest]:
-			longest = k
-	var w0 := wb[longest]
-	var w1 := wb[longest + 1]
-	var we: PackedFloat32Array = wr["e"]
-	var off := 0.0
-	for k in range(w0 + 3, w1 - 2):
-		off = maxf(off, absf(we[k] - lerpf(we[w0 + 3], we[w1 - 3], float(k - w0 - 3) / maxf(w1 - w0 - 6, 1))))
-	var at := int(route.forks[0]["i0"]) + (w0 + w1) / 2
-	check(off < 0.5 and alt.deck[at] == 1.0,
-		"its longest (%d m) laid straight across (%.2f m off at most), and under the road on that way (%.1f)" % [(w1 - w0) * 4, off, alt.deck[at]])
 
 
 ## Tunnels (tools/span_bake.py's spans of kind 1): on Shodoshima's east coast the road goes 640 m under a hill. The
@@ -1161,7 +1125,7 @@ func test_streams() -> void:
 	w.free()
 
 
-## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
+## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with a real inn or two.
 func test_dales() -> void:
 	var r := RealRegion.get_region("dales")
 	check(r != null and r.country == "uk" and r.places.size() > 30 and RealRegion.list().has("dales"), "the game has the Dales region (%d places)" % (r.places.size() if r else 0))
@@ -1173,7 +1137,7 @@ func test_dales() -> void:
 		return
 	var p: RealPack = res["pack"]
 	check(p.max_km() > 20.0 and p.max_km() < 45.0 and p.region == "uk" and p.junctions.size() > 5 and p.pois.size() > 5,
-		"%.1f km, with %d junctions, %d places to stop and %d forks, on UK limits" % [p.max_km(), p.junctions.size(), p.pois.size(), p.forks.size()])
+		"%.1f km, with %d junctions and %d places to stop, on UK limits" % [p.max_km(), p.junctions.size(), p.pois.size()])
 	check(p.limit_at(10.0) >= 30.0, "with speed limits (%d km/h at the start)" % int(p.limit_at(10.0)))
 
 
@@ -1229,46 +1193,6 @@ func test_rules() -> void:
 	check(ab2 != null and (ab2 as Array).size() == 1 and (ab2 as Array)[0].y == 0, "A to B still can't go A-D-B: the turn at D onto D-B is banned, so the dear road it is")
 	var db = RoutePlanner._shortest(r, 3, 1, PackedFloat64Array([10.0, 1.0]))
 	check(db != null and (db as Array)[0].y == 2, "but from D itself the road to B is fine (no turn to ban)")
-
-
-## A planned road has forks where the roads offer another way: the other way is a road of its own that meets the main
-## road at both ends, and the adventure rides it.
-func test_forks() -> void:
-	var r := RealRegion.get_region(REGION)
-	var res := RoutePlanner.plan(r, {"pins": pins(), "mode": "scenic", "seed": 3})
-	var p: RealPack = res["pack"]
-	check(bool(res["ok"]) and p.forks.size() >= 1, "the scenic island road has %d fork(s) (%d ms for them)" % [p.forks.size(), int(res["parts"].get("forks", 0)) - int(res["parts"].get("places", 0))])
-	if p.forks.is_empty():
-		return
-	var ok := true
-	for row: Dictionary in p.forks:
-		var way: Dictionary = row["way"]
-		var n := int(way["n"])
-		var i0 := int(row["i0"])
-		var i1 := int(row["i1"])
-		var wx: PackedFloat64Array = way["x"]
-		var wz: PackedFloat64Array = way["z"]
-		var we: PackedFloat32Array = way["e"]
-		if (n - 1) % 32 != 0 or i0 % 32 != 0 or i1 % 32 != 0 or i1 <= i0 or wx.size() != n or we.size() != n:
-			ok = false
-		if Vector2(wx[0] - p.x[i0], wz[0] - p.z[i0]).length() > 0.01 or Vector2(wx[n - 1] - p.x[i1], wz[n - 1] - p.z[i1]).length() > 0.01:
-			ok = false
-		if absf(we[0] - p.e[i0]) > 0.01 or absf(we[n - 1] - p.e[i1]) > 0.01:
-			ok = false
-		var line := PackedVector2Array()
-		for k in n:
-			line.append(Vector2(wx[k], wz[k]))
-		if (way["chunks"] as Array).size() != (n - 1) / 32 or RoutePlanner.sharpest_turn(line) > RoutePlanner.MAX_TURN:
-			ok = false
-		var kinds: Array = row["kinds"]
-		if kinds[0] != "main" or not ["scenic", "gravel"].has(str(kinds[1])) or str((row["names"] as Dictionary)[kinds[1]]) == "":
-			ok = false
-	check(ok, "each fork's other way runs from the main road's knot i0 to i1 in whole chunks, with their heights and a name")
-	# The adventure rides it.
-	RealPack.register(p)
-	var route := AdventureRoute.new()
-	route.plan_real(p, 3, p.max_km(), [])
-	check(route.forks.size() == p.forks.size(), "the adventure has the planned forks (%d)" % route.forks.size())
 
 
 ## Finding places on the map: the region's towns and villages by name, and suggestions with nothing typed.

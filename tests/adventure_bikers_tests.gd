@@ -29,8 +29,6 @@ func _world(seed: int, km: float, spot: Dictionary, host := true, pack: RealPack
 		w.setup(pack, seed)
 	else:
 		w.setup(Rides.pack(km), seed, km)
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)
 	spot["ps"] = [w.transform_at(20.0, -1.5).origin]
 	w.focus = func(): return spot["ps"]
 	w.origin_shifted.connect(func(d):
@@ -83,11 +81,8 @@ static func _open_stretch(tr: AdventureTraffic, after: float, length: float) -> 
 					ok = false
 					s += k * 50.0 + 50.0
 					break
-		var nf := r.next_fork(s)
-		if ok and r.fork_at(s) < 0 and (nf < 0 or r.fork_s(nf) > s + length + 300.0):
-			return s
 		if ok:
-			s += 200.0
+			return s
 	return -1.0
 
 

@@ -229,7 +229,7 @@ func test_trip_page() -> void:
 # ---------------------------------------------------------------------------- the highlight log
 
 ## The host's log of the crew's highlights: setting off, a stop (once, with everyone who stopped
-## there), a new surface, a peak, a fork's way, a fine, a breakdown and its fix, a tow, a picnic,
+## there), a new surface, a peak, a fine, a breakdown and its fix, a tow, a picnic,
 ## sunrise and sunset; each with when, how far and who. Only highlights are taken; the oldest go
 ## past the cap.
 func test_highlight_log() -> void:
@@ -270,10 +270,6 @@ func test_highlight_log() -> void:
 	check(e.has("hours") and e.has("day") and e.has("t") and e.has("s"), "each with the clock, the day, the time since setting off and the km")
 	var when := AdventureDiary.when_text(by["stop"])
 	check(when.contains("5.2 km in") and when.contains("Tester, Dave"), "said as: %s" % when)
-	# The way at a fork: the host's pick is the crew's highlight.
-	Shed.request({"a": "adventure_vote", "fork": 0, "way": 1})
-	var forks := AdventureDiary.log_entries().filter(func(x): return str(x["kind"]) == "fork")
-	check(forks.size() == 1 and str(forks[0]["key"]) == "fork_0" and str(forks[0]["text"]).begins_with("Took B"), "the way taken at the fork: %s" % (str(forks[0]["text"]) if not forks.is_empty() else ""))
 	# Arriving.
 	Shed.request({"a": "adventure_arrive"})
 	check(not AdventureDiary.find("arrive").is_empty(), "arriving")
@@ -334,7 +330,7 @@ func test_highlights_ride() -> void:
 	check(tops_ok, "each the top of its climb: nothing higher for %.1f km either side" % (AdventureDiary.PEAK_REACH / 1000.0))
 	var ps := trip.world.distance_of(main.bike.global_position, "own") + 300.0
 	trip.photos._peaks = [{"s": ps, "h": r.height_at_s(ps)}]
-	trip.photos._peaks_for = r.decided.size()
+	trip.photos._peaks_found = true
 	trip.jump(250.0)
 	await _ticks(40)
 	trip.jump(100.0)
@@ -344,7 +340,7 @@ func test_highlights_ride() -> void:
 	var surf_s := -1.0
 	var last := r.surface_at_s(0.0)
 	var s := 0.0
-	while s < minf(r.length, r.stream_end()) - 300.0:
+	while s < r.length - 300.0:
 		if r.surface_at_s(s) != last and s > 300.0 and r.surface_at_s(s + 100.0) == r.surface_at_s(s):
 			surf_s = s
 			break

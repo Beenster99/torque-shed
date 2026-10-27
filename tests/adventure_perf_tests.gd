@@ -152,7 +152,7 @@ static func _scan_land(route: AdventureRoute, data: Dictionary, tally: Dictionar
 	return bad
 
 
-## The chunks of both tours' roads, either way at the forks, looked over for bad triangles (see scan): none anywhere.
+## The chunks of both tours' roads looked over for bad triangles (see scan): none anywhere.
 func test_triangles() -> void:
 	var chunks := 0
 	var bad := []
@@ -161,8 +161,6 @@ func test_triangles() -> void:
 	for theme in ["shodoshima", "dales"]:
 		for seed in [5, 42]:
 			var r := Rides.tour_route(theme, seed)
-			for f in r.forks.size():
-				r.choose(f, seed % 2)
 			var found := 0
 			for c in r.chunk_count():
 				var data := AdventureChunk.build(r, c)
@@ -192,7 +190,7 @@ func _ride(main: Node, trip: AdventureTrip, from: float, to: float, step: float,
 	var s := from
 	var last := Time.get_ticks_usec()
 	while s < to:
-		s = minf(s + step, minf(w.route.total, w.route.stream_end()) - 30.0)
+		s = minf(s + step, w.route.total - 30.0)
 		var xf := w.transform_at(s, -1.6)
 		if main.bike:
 			main.bike.place(xf.origin, w.heading_at(s))
@@ -226,8 +224,7 @@ static func _summary(times: Array) -> Dictionary:
 ## Simon's v0.17.0 round: "too many stutters in adventures - this causes lag for everyone".
 ## Out on a long ride every frame now goes by without a hitch: the chunks of road go into the
 ## world a piece at a time, the ride's stats each second no longer go over the whole shed (nor
-## redraw the shed, out of sight back home), and a fork's way off the main road is put together
-## on a worker thread (a tenth of a second on the main thread, on every player's game at once).
+## redraw the shed, out of sight back home).
 func test_ride() -> void:
 	AdventureTrip.instant = true
 	var main: Node = load("res://scenes/main.tscn").instantiate()
@@ -242,46 +239,28 @@ func test_ride() -> void:
 	Rides.start(60.0, 42)
 	await _ticks(30)
 	var trip: AdventureTrip = main.trip
-	check(trip.on_trip() and main.bike != null and trip.world.route.forks.size() > 0, "out on a %.0f km ride, with a fork in it" % (trip.world.route.length / 1000.0 if trip.on_trip() else 0.0))
-	if not trip.on_trip() or main.bike == null or trip.world.route.forks.is_empty():
+	check(trip.on_trip() and main.bike != null and trip.world.route.length > 12000.0, "out on a %.0f km ride" % (trip.world.route.length / 1000.0 if trip.on_trip() else 0.0))
+	if not trip.on_trip() or main.bike == null or trip.world.route.length <= 12000.0:
 		await _done(main)
 		return
 	var w := trip.world
 	await _frames(120)
 	# From the start: three kilometres at 120 m a second (2 m a frame).
 	var a: Array = await _ride(main, trip, 40.0, 3000.0, 2.0)
-	# Then up to the first fork, the host picking the way off the main road, and on through it.
-	var fs := w.route.fork_s(0)
-	var jumped := fs - 2200.0
+	# Then on from further along the road (as the Debug tab's jump does), the road built round it first.
+	var jumped := 9000.0
 	trip.jump(jumped - w.distance_of(main.bike.global_position, "own"))
 	await _frames(60)
-	var voted := [false]
-	var b: Array = await _ride(main, trip, jumped, fs + 700.0, 2.0, func(s):
-		if not voted[0] and s > fs - 2000.0:
-			voted[0] = true
-			Shed.request({"a": "adventure_vote", "fork": 0, "way": 1}))
-	# The ride goes as fast as the frames do (on a quick machine 2 m a frame is hundreds of metres a second), far
-	# ahead of the worker thread building the road: past the fork, the bike's held still while the road along the
-	# way picked catches up, then rides on (the wait isn't in the frame times).
-	if main.bike:
-		main.bike.linear_velocity = Vector3.ZERO
-	var ground := await _until(func(): return w.has_ground(fs + 600.0), 15.0)
-	var b2: Array = await _ride(main, trip, fs + 700.0, fs + 1200.0, 2.0)
-	(b[0] as Array).append_array(b2[0])
-	(b[0] as Array).sort()
-	var fork := _summary(b[0])
+	var b: Array = await _ride(main, trip, jumped, jumped + 2700.0, 2.0)
 	var all: Array = (a[0] as Array) + (b[0] as Array)
 	all.sort()
 	var sum := _summary(all)
-	var taken := w.route.decided.has(0) and int(w.route.choices.get(0, 0)) == 1
-	print("    ADV RIDE PROFILE: %d frames, median %.2f ms, p99 %.2f, worst %.1f ms (at %.0f m / %.0f m), %d frames over the median by %.0f ms, %d over 33 ms; through the fork: worst %.1f ms, %d stutters; %s"
-		% [sum["n"], sum["median"], sum["p99"], sum["worst"], a[1], b[1], sum["spikes"], SPIKE_MS, sum["over33"], fork["worst"], fork["spikes"], w.timing_text()])
-	check(taken and ground, "the host's pick at the fork is taken, and the road built on along it (picks %s, chosen %s, ground %s, voted %s)"
-		% [Shed.adventure.get("picks", {}), w.route.choices, ground, voted[0]])
+	print("    ADV RIDE PROFILE: %d frames, median %.2f ms, p99 %.2f, worst %.1f ms (at %.0f m / %.0f m), %d frames over the median by %.0f ms, %d over 33 ms; %s"
+		% [sum["n"], sum["median"], sum["p99"], sum["worst"], a[1], b[1], sum["spikes"], SPIKE_MS, sum["over33"], w.timing_text()])
 	check(float(sum["worst"]) < 60.0 and int(sum["over33"]) <= 2,
 		"no stutter on the ride: the worst of %d frames %.1f ms, %d over 33 ms (the median %.1f ms)" % [sum["n"], sum["worst"], sum["over33"], sum["median"]])
-	check(int(sum["spikes"]) * 400 < int(sum["n"]) and float(fork["worst"]) < 60.0,
-		"hardly a frame much slower than the rest (%d of %d over the median by %.0f ms), and none at the fork (worst there %.1f ms)" % [sum["spikes"], sum["n"], SPIKE_MS, fork["worst"]])
+	check(int(sum["spikes"]) * 400 < int(sum["n"]),
+		"hardly a frame much slower than the rest (%d of %d over the median by %.0f ms)" % [sum["spikes"], sum["n"], SPIKE_MS])
 	# A customer walking in at the shed meanwhile (their bike's model made as they come) was a
 	# hitch of 100 ms and more, on every machine: not till you're home.
 	var cid := Contracts.spawn("maint")

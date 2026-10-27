@@ -327,11 +327,12 @@ static func menu_of(node: Node) -> Array:
 # ---------------------------------------------------------------------------- saving a night's stop
 
 ## The adventure as it stands, put away to carry on another day: the road (everything in
-## Shed.adventure but who's on it now), where each rider is by name, their meters, the time.
+## Shed.adventure but who's on it now, and an old ride's fork votes and picks), where each rider is by name, their
+## meters, the time.
 static func make_save() -> Dictionary:
 	var adv := {}
 	for k in Shed.adventure:
-		if not str(k) in ["id", "riders", "arrived", "arrived_name", "needs", "resume", "needs_saved", "votes"]:
+		if not str(k) in ["id", "riders", "arrived", "arrived_name", "needs", "resume", "needs_saved", "votes", "picks"]:
 			adv[k] = Shed.adventure[k]
 	var at := {}
 	var meters := {}

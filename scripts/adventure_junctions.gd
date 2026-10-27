@@ -33,8 +33,8 @@ const KEEP := 12
 const KEEP_ROUND := 15
 const FLAT := 24.0
 ## How far a junction keeps from other sites (m) by their kind.
-const CLEAR := {"village": 100.0, "village_row": 60.0, "fuel": 170.0, "start": 380.0, "finish": 420.0, "fork": 420.0,
-	"junction": 520.0, "crossing": 230.0}
+const CLEAR := {"village": 100.0, "village_row": 60.0, "fuel": 170.0, "start": 380.0, "finish": 420.0,
+	"crossing": 230.0}
 const CLEAR_OTHER := 150.0
 ## The side roads: how long the stub runs (m), its width, and how far it bends off and is skewed.
 const ARM_LEN := [55.0, 85.0]
@@ -187,7 +187,7 @@ static func widen(route: AdventureRoute) -> void:
 
 
 ## Lays out each junction's side roads on the land, once the road and its land are planned (the
-## end of AdventureRoute.plan_real, the path then the main road at every fork): each arm's centre line
+## end of AdventureRoute.plan_real): each arm's centre line
 ## from the main road's edge (or the ring's) out, skewed and bending as planned, at the land's
 ## height there. Off the tarmac the side roads are the main road's own surface (a snowy road's
 ## lanes are snowy too).
