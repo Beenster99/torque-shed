@@ -20,6 +20,12 @@ extends Node
 ## the diary's stats) and this player's camera (AdventurePhotos); at the destination, and again at
 ## Ride home, the Adventure Diary is put together (AdventureDiary) and, back in the shed, opened
 ## in its book (DiaryBook), as it can be again from the route planner's Adventure diaries button or the photo on the shed wall.
+##
+## On the road network (Adventure.network, the host's choice) the crew can be anywhere on the map: each game keeps the
+## roads and land round its own rider and any mate near them (focus_points), knows where every mate is in the
+## region's frame (crew_at), shows them all on the HUD and the maps (friends), and puts a player joining a ride in
+## progress by a mate. It also shows the crew's "leave the route?" call and takes this player's answer (see
+## AdventureCrew: 1 yes, 2 no).
 
 static var current: AdventureTrip
 ## Skips the fades (the tests).
@@ -78,6 +84,14 @@ var computer := TripComputer.new()
 ## This player's camera and their side of the Adventure Diary, and the book it's read in.
 var photos: AdventurePhotos
 var diary: DiaryBook
+## Where each mate is (peer -> region-frame Vector2), from their snapshots (AdventureCrew.region_xz); a mate in the
+## shed isn't here.
+var crew_at := {}
+var _join_at = null          # the mate's region-frame point you joined a ride in progress by, or null
+var _call_label: Label       # the crew's "leave the route?" call
+var _call_seen := {}         # call id -> ticks when it came in here (the count down is from then)
+var _tick_at := 0            # ticks: when the host last settled a call
+var _builds_at := -100000    # ticks: when this game last told the shed its builder hash
 
 
 func _ready() -> void:
@@ -124,6 +138,20 @@ func _ready() -> void:
 	_wrong.add_theme_constant_override("outline_size", 8)
 	_wrong.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_wrong)
+	_call_label = Label.new()
+	_call_label.name = "RouteCall"
+	_call_label.visible = false
+	_call_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_call_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_call_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_call_label.offset_top = 128.0
+	_call_label.add_theme_font_size_override("font_size", 22)
+	_call_label.add_theme_color_override("font_color", SatnavScreen.FRIEND)
+	_call_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_call_label.add_theme_constant_override("outline_size", 8)
+	_call_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_call_label)
+	Net.state_received.connect(_on_state)
 	needs = AdventureNeedsView.new()
 	needs.trip = self
 	add_child(needs)
@@ -147,7 +175,10 @@ func on_trip() -> bool:
 ## Called whenever the shed changes: loads the adventure the host started, or brings you home
 ## from one that's over.
 func sync() -> void:
-	if _busy or not main.in_session:
+	if not main.in_session:
+		return
+	_tell_builds()
+	if _busy:
 		return
 	var id := int(Shed.adventure.get("id", 0))
 	if id != 0 and id != trip_id:
@@ -171,6 +202,11 @@ static func real_mismatch(info: Dictionary) -> String:
 static func _mismatch_of(info: Dictionary, res: Dictionary) -> String:
 	if not bool(res.get("ok", false)):
 		return str(res.get("error", "This game can't plan that journey."))
+	if bool(info.get("network", false)):
+		# On the road network the roads round every rider must be the same: the same builders and map cells.
+		var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
+		var region := RealRegion.get_region(str(plan.get("region", "")))
+		return AdventureCrew.ride_mismatch(info, AdventureCrew.builds(), AdventureCrew.ride_hash(region))
 	if str(info.get("real_hash", "")) != (res["pack"] as RealPack).hash:
 		return "Your game planned a different road from the host's: update the game to join."
 	return ""
@@ -227,29 +263,49 @@ func enter() -> void:
 	if main.geometry.active:
 		main.geometry.close()
 	world = AdventureWorld.new()
+	# The road network or the planned road: the host's choice for everyone, whatever this machine's own toggle says.
+	var was := AdventureWorld.network
+	AdventureWorld.network = bool(info.get("network", false))
 	world.setup(AdventurePlans.pack_for(AdventurePlans.clean(info["plan"])), int(info["seed"]))
+	AdventureWorld.network = was
 	world.focus = focus_points
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
 	world.add_child(AdventureTraffic.new())   # cars, vans, lorries and buses both ways
 	_sleep_town(true)
-	var from := maxf(0.0, start_s() - 120.0)
-	world.preload_range(from, from + 420.0)
-	var xf := start_xf()
-	if main.bike:
-		main.bike.place(xf.origin, xf.basis.get_euler().y)
-		main.camera.snap()
-	elif main.walker:
-		var s0 := maxf(30.0, start_s())
-		var side := world.transform_at(s0, -world.route.width_at_s(s0) * 0.5 - 1.5)
-		main.walker.place(side)
+	# A ride well under way: by a mate, wherever they are. Otherwise at the start (or where you slept). Just joined the
+	# session, the mates out on the ride may not have been heard from yet: a moment's wait for them.
+	var until := Time.get_ticks_msec() + 3000
+	while start_s() <= 0.0 and _mates_out().size() < Adventure.riders_out().filter(func(p): return p != Shed.me()).size() \
+			and Time.get_ticks_msec() < until:
+		await get_tree().physics_frame
+		if world == null:
+			return
+	var by := AdventureCrew.join_by(_mates_out(), _start_xz()) if start_s() <= 0.0 else -1
+	if by >= 0:
+		await _join_by(crew_at[by])
+		if world == null:
+			return   # (the ride ended meanwhile)
+	else:
+		var from := maxf(0.0, start_s() - 120.0)
+		world.preload_range(from, from + 420.0)
+		var xf := start_xf()
+		if main.bike:
+			main.bike.place(xf.origin, xf.basis.get_euler().y)
+			main.camera.snap()
+		elif main.walker:
+			var s0 := maxf(30.0, start_s())
+			var side := world.transform_at(s0, -world.route.width_at_s(s0) * 0.5 - 1.5)
+			main.walker.place(side)
 	Daylight.adventure_rate = Adventure.day_rate()
 	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0, world.route.look)
 	Shed.request(join)
 	computer.reset()
 	photos.begin()   # (a ride carried on picks its diary and trip computer up again)
-	if start_s() > 0.0:
+	if by >= 0:
+		main.hud.flash("Joining the ride in progress by %s." % str(Shed.crew.get(by, {}).get("name", "a mate")), 5.0)
+	elif start_s() > 0.0:
 		main.hud.flash("Carrying on the adventure: %.1f of %d km done. Morning, and back on the road." % [start_s() / 1000.0, roundi(float(info["km"]))], 5.0)
 	else:
 		main.hud.flash("%s: %d km of %s to %s. Fuel stations are signed along the way. {paper_map} for the map when stopped." % [
@@ -339,6 +395,9 @@ func _unload() -> void:
 	_hud.visible = false
 	_crew.visible = false
 	_wrong.visible = false
+	_call_label.visible = false
+	_call_seen.clear()
+	_join_at = null
 
 
 ## Hides the town and stops it (processing and collision) while you're away on the adventure,
@@ -371,6 +430,8 @@ func start_xf() -> Transform3D:
 	var ids := Shed.crew.keys()
 	ids.sort()
 	var slot := maxi(0, ids.find(Shed.me()))
+	if _join_at != null:
+		return join_xf(_join_at)   # (joined a ride in progress: by the mate you joined)
 	var s := start_s()
 	if s > 0.0:
 		var at := clampf(s - 4.0 * float(slot), 20.0, world.route.length - 40.0)
@@ -399,7 +460,8 @@ func _nearest_bike() -> int:
 	return best
 
 
-## Your position first, then everyone else's: where the road has to be.
+## Your position first, then everyone else's: where the road has to be. On the road network, only the mates near you
+## (AdventureCrew.NEAR): a mate far off on the map has the roads and land round them built by their own game.
 func focus_points() -> Array:
 	var out := []
 	if main.bike:
@@ -408,11 +470,110 @@ func focus_points() -> Array:
 		out.append(main.walker.global_position)
 	else:
 		out.append(main.camera.global_position)
+	var mine: Vector3 = out[0]
+	var on_network := world != null and world.roads != null
 	for peer in main.remotes:
 		var rp = main.remotes[peer]
 		if is_instance_valid(rp):
-			out.append(rp.world_position())
+			var at: Vector3 = rp.world_position()
+			if on_network and not AdventureCrew.near(Vector2(mine.x, mine.z), Vector2(at.x, at.z)):
+				continue
+			out.append(at)
 	return out
+
+
+## The mates out on the ride whose place this game knows: {peer: region-frame Vector2}.
+func _mates_out() -> Dictionary:
+	var out := {}
+	var riders: Dictionary = Shed.adventure.get("riders", {}) if Shed.adventure.get("riders") is Dictionary else {}
+	for p in crew_at:
+		if p != Shed.me() and riders.has(p) and Shed.crew.has(p):
+			out[p] = crew_at[p]
+	return out
+
+
+## The region-frame (x, z) of the ride's start.
+func _start_xz() -> Vector2:
+	var xz := world.route.xz_at(0.0, 0.0)
+	return Vector2(xz[0], xz[1])
+
+
+## Puts you by a mate at region-frame `at` (joining a ride in progress), behind the fade: on the planned road a little
+## behind them; on the network on the road they're on (or the land where they are), once the ground's in there.
+func _join_by(at: Vector2) -> void:
+	_join_at = at
+	world.shift_origin_to(world.to_local_pos(at.x, 0.0, at.y))
+	if world.roads == null:
+		var s := world.distance_of(join_xf(at).origin, "own")
+		world.preload_range(s - 120.0, s + 300.0)
+		_put(join_xf(at))
+		return
+	var xf := join_xf(at)
+	var spot := Vector2(xf.origin.x + world.origin.x, xf.origin.z + world.origin.z)
+	# Held there (the land and roads stream round wherever you are) till its road block is in: at most a few seconds.
+	var until := Time.get_ticks_msec() + 9000
+	while world != null and not world.roads.has_ground(spot.x, spot.y) and Time.get_ticks_msec() < until:
+		_put(xf)
+		world.follow(xf.origin)
+		world.roads.preload_round([spot], 300.0)
+		await get_tree().physics_frame
+		if world != null:
+			xf = join_xf(at)
+	if world != null:
+		_put(xf)
+
+
+## Where you're put joining a mate at region-frame `at` (local), on the left half of the road facing along it: on the
+## planned road JOIN_BEHIND behind them; on the network on the road they're on, JOIN_BEHIND back towards its a end
+## (off every road, on the land beside them).
+func join_xf(at: Vector2) -> Transform3D:
+	if world.roads == null:
+		var s0 := clampf(world.distance_of(world.to_local_pos(at.x, 0.0, at.y), "join") - AdventureCrew.JOIN_BEHIND, 2.0, world.route.total - 20.0)
+		return world.transform_at(s0, -world.route.width_at_s(s0) * 0.25)
+	var net := world.roads.net
+	var hit := net.locate(at.x, at.y)
+	if hit.is_empty():
+		var g := net.ground_at(at.x, at.y, world.route.real.terrain.height(at.x, at.y))
+		return Transform3D(Basis(), world.to_local_pos(at.x + 3.0, (g if not is_nan(g) else 0.0) + 0.5, at.y))
+	var ei := int(hit["edge"])
+	var s := clampf(float(hit["s"]) - AdventureCrew.JOIN_BEHIND, 1.0, maxf(1.0, net.length_of(ei) - 1.0))
+	var p := net.point_at(ei, s)
+	var there := net.locate(p.x, p.y, ei)
+	var h := float(there.get("heading", hit["heading"]))
+	var w := float(hit["width"])
+	var q := p + Vector2(cos(h), sin(h)) * (-w * 0.25)
+	var y := net.road_y(ei, s) + RoadNet.CROWN
+	return Transform3D(Basis(Vector3.UP, -h), world.to_local_pos(q.x, y if not is_nan(y) else 0.0, q.y))   # (no ground there yet: 0 till it's in)
+
+
+## You at local `xf`: on your bike, stopped, or on foot.
+func _put(xf: Transform3D) -> void:
+	if main.bike:
+		main.bike.place(xf.origin, xf.basis.get_euler().y)
+		main.bike.linear_velocity = Vector3.ZERO
+		main.bike.angular_velocity = Vector3.ZERO
+		main.camera.snap()
+	elif main.walker:
+		main.walker.place(xf)
+
+
+## A mate's snapshot came in: where they are on the map (gone from crew_at when they're back in the shed).
+func _on_state(peer: int, state: PackedFloat32Array) -> void:
+	var at = AdventureCrew.region_xz(state)
+	if at == null:
+		crew_at.erase(peer)
+	else:
+		crew_at[peer] = at
+
+
+## Tells the shed this game's builder hash (once a session, or again when it hasn't arrived), so a player on a
+## different version is caught as they join, not out on the ride.
+func _tell_builds() -> void:
+	var mine := AdventureCrew.builds()
+	if str(Shed.crew.get(Shed.me(), {}).get("builds", "")) == mine or Time.get_ticks_msec() - _builds_at < 5000:
+		return
+	_builds_at = Time.get_ticks_msec()
+	Shed.request({"a": "adventure_builds", "builds": mine})
 
 
 ## The world's origin moved by `d`: your bike, the camera, your walker, the other players and the
@@ -482,6 +643,8 @@ func _physics_process(delta: float) -> void:
 		_hud.visible = true
 		_crew.text = crew_text()
 		_crew.visible = _crew.text != ""
+		_call_label.text = call_text()
+		_call_label.visible = _call_label.text != ""
 		# On the bike, sat nav or not (one fitted says so on its screen too).
 		_wrong.visible = main.bike != null and int(Shed.adventure.get("arrived", 0)) == 0 and not map_open() and not main.menu.visible and wrong_way()
 	if _map and _map.visible:
@@ -523,6 +686,64 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				main.hud.flash(why, 1.5, true)
 		get_viewport().set_input_as_handled()
+		return
+	# The crew's call open: 1 yes, 2 no (on foot too, for its 30 s: they're the tools otherwise).
+	if not Adventure.route_call().is_empty() and Adventure.riders_out().has(Shed.me()):
+		for k in 2:
+			if event.is_action_pressed("tool_%d" % (k + 1)):
+				route_vote(k == 0)
+				get_viewport().set_input_as_handled()
+				return
+
+
+# ---------------------------------------------------------------------------- the crew's route call
+
+## Asks the crew to leave the agreed route ("leave") or get back on it ("rejoin"): see AdventureCrew. Alone, it's done
+## at once. The sat nav and the maps call it.
+func route_ask(kind: String) -> void:
+	Shed.request({"a": "adventure_route_call", "kind": kind})
+
+
+## This player's answer to the crew's open call.
+func route_vote(yes: bool) -> void:
+	var c := Adventure.route_call()
+	if not c.is_empty():
+		Shed.request({"a": "adventure_route_vote", "id": int(c["id"]), "yes": yes})
+
+
+## The call card's text: who asks what, how to answer, the time left and the answers so far ("" when there's no call).
+func call_text() -> String:
+	var c := Adventure.route_call()
+	if c.is_empty():
+		return ""
+	var id := int(c["id"])
+	if not _call_seen.has(id):
+		_call_seen[id] = Time.get_ticks_msec()
+	var by := int(c.get("by", 0))
+	var who := "You" if by == Shed.me() else str(Shed.crew.get(by, {}).get("name", "A mate"))
+	var votes: Dictionary = c.get("votes", {})
+	var yes := PackedStringArray()
+	var no := PackedStringArray()
+	for p in Adventure.riders_out():
+		var said := "you" if p == Shed.me() else str(Shed.crew.get(p, {}).get("name", "?"))
+		if votes.has(p) and bool(votes[p]):
+			yes.append(said)
+		elif votes.has(p):
+			no.append(said)
+	var left := AdventureCrew.seconds_left(Time.get_ticks_msec() - int(_call_seen[id]))
+	var how := "1 yes   2 no" if not votes.has(Shed.me()) else ("You said yes" if bool(votes[Shed.me()]) else "You said no")
+	return "%s %s: %s?   %s   (%d s)\nYes: %s    No: %s" % [who, "ask" if who == "You" else "asks", AdventureCrew.ASKS[str(c["kind"])], how,
+		left, ", ".join(yes) if not yes.is_empty() else "-", ", ".join(no) if not no.is_empty() else "-"]
+
+
+## The host settles the crew's call as soon as its outcome is known (its time up, or a rider gone).
+func _keep_call_time() -> void:
+	var c := Adventure.route_call()
+	if c.is_empty() or not Shed.is_authority() or Time.get_ticks_msec() - _tick_at < 500:
+		return
+	if AdventureCrew.outcome(c, Adventure.riders_out(), Time.get_ticks_msec()) != "":
+		_tick_at = Time.get_ticks_msec()
+		Shed.request({"a": "adventure_route_tick"})
 
 
 ## Why the paper map can't come out now ("" if it can): you have to stop first.
@@ -644,14 +865,16 @@ func _nav() -> Satnav.AdventureNav:
 
 
 ## The rest of the crew along the road: [{peer, name, ahead (m along the road from you, negative
-## behind), at (local)}], nearest first. Along the road, not as the crow flies: a mate on the
-## hairpin just above you is as far ahead as the road there says.
+## behind), at (local), off}], nearest first. Along the road, not as the crow flies: a mate on the
+## hairpin just above you is as far ahead as the road there says. On the road network, where either of you is off
+## the planned road, as the crow flies instead ("ahead" the distance, off true): the crew can be anywhere on the map.
 func friends() -> Array:
 	var out := []
 	if world == null or main == null:
 		return out
-	var mine := world.distance_of(focus_points()[0], "own")
-	if mine < 0.0:
+	var me: Vector3 = focus_points()[0]
+	var mine := world.distance_of(me, "own")
+	if mine < 0.0 and world.roads == null:
 		return out
 	for peer in main.remotes:
 		var rp = main.remotes[peer]
@@ -659,9 +882,13 @@ func friends() -> Array:
 			continue
 		var at: Vector3 = rp.world_position()
 		var s := world.distance_of(at, "friend_%d" % int(peer))
-		if s < 0.0:
-			continue
-		out.append({"peer": int(peer), "name": str(Shed.crew.get(peer, {}).get("name", rp.player_name)), "ahead": s - mine, "at": at})
+		var f := {"peer": int(peer), "name": str(Shed.crew.get(peer, {}).get("name", rp.player_name)), "ahead": s - mine, "at": at, "off": false}
+		if s < 0.0 or mine < 0.0:
+			if world.roads == null:
+				continue
+			f["ahead"] = Vector2(at.x - me.x, at.z - me.z).length()
+			f["off"] = true
+		out.append(f)
 	out.sort_custom(func(a, b): return absf(float(a["ahead"])) < absf(float(b["ahead"])))
 	return out
 
@@ -671,16 +898,17 @@ func friends() -> Array:
 func crew_text() -> String:
 	var bits := PackedStringArray()
 	for f in friends():
-		bits.append(friend_text(str(f["name"]), float(f["ahead"])))
+		bits.append(friend_text(str(f["name"]), float(f["ahead"]), bool(f.get("off", false))))
 	return "\n".join(bits)
 
 
-## "Dave 1.2 km ahead", "Sam 300 m behind", "Jo with you": a mate `ahead` metres on along the road.
-static func friend_text(who: String, ahead: float) -> String:
+## "Dave 1.2 km ahead", "Sam 300 m behind", "Jo with you": a mate `ahead` metres on along the road; `off` the planned
+## road, "Ali 4.3 km away" (as the crow flies).
+static func friend_text(who: String, ahead: float, off := false) -> String:
 	var d := absf(ahead)
 	if d < 30.0:
 		return "%s with you" % who
-	var how := "ahead" if ahead > 0.0 else "behind"
+	var how := "away" if off else ("ahead" if ahead > 0.0 else "behind")
 	if Units.imperial():
 		var mi := Units.distance_value(d / 1000.0)
 		return "%s %.1f mi %s" % [who, mi, how] if mi >= 0.1 else "%s %d yd %s" % [who, roundi(d * 1.0936 / 10.0) * 10, how]
@@ -839,6 +1067,7 @@ func _process(delta: float) -> void:
 	if moment_t >= 0.0:
 		_tick_moment(delta)
 	_watch_black(delta)
+	_keep_call_time()
 	if _preparing and not _busy and int(Shed.adventure.get("id", 0)) == trip_id:
 		AdventurePlans.poll()
 		enter()

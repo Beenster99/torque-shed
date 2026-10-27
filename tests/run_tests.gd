@@ -820,6 +820,11 @@ func _run_all() -> void:
 	await _t(&"_test_ghost_pass_through")
 	await _t(&"_test_ghost_remote")
 	await _t(&"_test_ghost_adventure")
+	print("Ride Anywhere v2 (T9): co-op on the road network, the crew's hashes, positions and the leave-the-route call")
+	await _t(&"_test_coop_hashes")
+	await _t(&"_test_coop_positions")
+	await _t(&"_test_coop_call")
+	await _t(&"_test_coop_state")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -22552,6 +22557,26 @@ func _test_road_meshes() -> void:
 
 func _test_road_ride() -> void:
 	await _roads().test_ride()
+
+
+func _coop() -> RefCounted:
+	return load("res://tests/coop_network_tests.gd").new(self)
+
+
+func _test_coop_hashes() -> void:
+	_coop().test_hashes()
+
+
+func _test_coop_positions() -> void:
+	_coop().test_positions()
+
+
+func _test_coop_call() -> void:
+	_coop().test_call()
+
+
+func _test_coop_state() -> void:
+	_coop().test_state()
 
 
 func _planner() -> RefCounted:
