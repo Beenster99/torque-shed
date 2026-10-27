@@ -88,6 +88,12 @@ var version_hash := ""
 ## (its canopy map, trees_at, and its cover), look: the place's look (PlaceLook: broad, needle, autumn)}. The ride sets
 ## it; the tests leave it off.
 var dress := {}
+## Level ground beside the roads for the ride's stops (T7: NetSites), [] for none: each {edge, s (m along it from its a
+## end), side (1 the right of a to b, -1 the left), out (m past the verge), along (m either way)}. Set once with
+## set_flats, before any block is laid out, the same on every machine (from the plan). ground_at levels the land
+## inside each to the road's height there, banked out as a road's is; no tree or building of a block stands in one.
+var flats: Array[Dictionary] = []
+var _flats_by_block := {}   # Vector2i -> PackedInt32Array: the flats whose ground (with its bank) reaches the block
 
 var _lock := Mutex.new()
 var _edges_by_block := {}   # Vector2i -> PackedInt32Array: the edges whose line's box (with GROUND_REACH) meets it
@@ -1364,6 +1370,82 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 		"node": node}
 
 
+# ---------------------------------------------------------------------------- flat ground for the stops
+
+## Sets the stops' flat ground (flats) from `list` ({edge, s, side, out, along} each).
+func set_flats(list: Array) -> void:
+	flats.clear()
+	_flats_by_block.clear()
+	for f: Dictionary in list:
+		var e := int(f["edge"])
+		var s := float(f["s"])
+		var h := heading_at(e, s)
+		var g := {"edge": e, "s": s, "side": signf(float(f["side"])), "out": float(f["out"]), "along": float(f["along"]),
+			"c": point_at(e, s), "fwd": Vector2(sin(h), -cos(h)), "right": Vector2(cos(h), sin(h)),
+			"in": width_of(e) * 0.5 + VERGE + float(f["out"])}
+		var reach := Vector2(float(g["along"]), float(g["in"])).length() + BANK_MAX
+		g["box"] = Rect2(g["c"], Vector2.ZERO).grow(reach)
+		var i := flats.size()
+		flats.append(g)
+		var box: Rect2 = g["box"]
+		var k0 := RoadBlock.key_of(box.position.x, box.position.y)
+		var k1 := RoadBlock.key_of(box.end.x, box.end.y)
+		for bz in range(k0.y, k1.y + 1):
+			for bx in range(k0.x, k1.x + 1):
+				var key := Vector2i(bx, bz)
+				var list2: PackedInt32Array = _flats_by_block.get(key, PackedInt32Array())
+				list2.append(i)
+				_flats_by_block[key] = list2
+
+
+## What the flats of block `k` add to its hash ("" for none).
+func flats_hash_of(k: Vector2i) -> String:
+	var ids: PackedInt32Array = _flats_by_block.get(k, PackedInt32Array())
+	if ids.is_empty():
+		return ""
+	var text := ""
+	for i in ids:
+		var f: Dictionary = flats[i]
+		text += "|%d,%.1f,%d,%.1f,%.1f" % [int(f["edge"]), float(f["s"]), int(f["side"]), float(f["out"]), float(f["along"])]
+	return text.sha1_text().substr(0, 12)
+
+
+## How far (x, z) is outside a flat `f` (m: 0 inside it), out from its side of the road and along it; INF over the road's
+## other side.
+static func _flat_out(f: Dictionary, x: float, z: float) -> float:
+	var d := Vector2(x, z) - (f["c"] as Vector2)
+	var v := d.dot(f["right"]) * float(f["side"])
+	if v < 0.0:
+		return INF
+	return maxf(maxf(absf(d.dot(f["fwd"])) - float(f["along"]), v - float(f["in"])), 0.0)
+
+
+## The flat ground at (x, z) whose bare ground is `bare`: Vector2(how much it holds the land, 1 inside one easing to 0
+## over a road's bank past its edge; the height it holds it to), the strongest.
+func _flat_at(x: float, z: float, bare: float) -> Vector2:
+	var best := Vector2.ZERO
+	for i in _flats_by_block.get(RoadBlock.key_of(x, z), PackedInt32Array()):
+		var f: Dictionary = flats[i]
+		if not (f["box"] as Rect2).has_point(Vector2(x, z)):
+			continue
+		var y := road_y(int(f["edge"]), float(f["s"])) - UNDER
+		if is_nan(y):
+			continue
+		var bank := clampf(absf(bare - y) * BANK_SLOPE, BANK_MIN, BANK_MAX)
+		var t := 1.0 - smoothstep(0.0, bank, _flat_out(f, x, z))
+		if t > best.x:
+			best = Vector2(t, y)
+	return best
+
+
+## Whether (x, z) is within `pad` m of a flat (no tree or building stands there).
+func in_flat(x: float, z: float, pad := 0.0) -> bool:
+	for i in _flats_by_block.get(RoadBlock.key_of(x, z), PackedInt32Array()):
+		if _flat_out(flats[i], x, z) <= pad:
+			return true
+	return false
+
+
 ## The radius about a junction's middle that is all its surface (m): a roundabout's ring out to its outer edge.
 static func _inner(j: Dictionary) -> float:
 	if j["kind"] in ["roundabout", "mini"]:
@@ -1418,13 +1500,19 @@ func ground_at(x: float, z: float, bare: float) -> float:
 		sum_y += w * y
 	if deck < INF:
 		return minf(deck, below)
-	if sum_w <= 0.0:
-		return minf(bare, below)
-	return minf(lerpf(bare, sum_y / sum_w, most), below)
+	var land := bare if sum_w <= 0.0 else lerpf(bare, sum_y / sum_w, most)
+	if not flats.is_empty():
+		var f := _flat_at(x, z, bare)
+		if f.x > 0.0:
+			land = lerpf(land, f.y, f.x)
+	return minf(land, below)
 
 
-## Whether any road shapes the land in `rect` (region frame).
+## Whether any road (or a stop's flat ground: flats) shapes the land in `rect` (region frame).
 func roads_near(rect: Rect2) -> bool:
+	for f: Dictionary in flats:
+		if (f["box"] as Rect2).intersects(rect):
+			return true
 	var k0 := RoadBlock.key_of(rect.position.x, rect.position.y)
 	var k1 := RoadBlock.key_of(rect.end.x, rect.end.y)
 	for bz in range(k0.y, k1.y + 1):

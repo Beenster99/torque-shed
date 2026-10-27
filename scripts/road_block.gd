@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 5
+const VERSION := 6
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -75,7 +75,7 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 	b.net = n
 	b.key = k
 	b.rect = Rect2(Vector2(k) * SIZE, Vector2(SIZE, SIZE))
-	b.hash = hash_of(n.region.hash, k)
+	b.hash = hash_of(n.region.hash + n.flats_hash_of(k), k)
 	var r := n.region
 	var edges := n.edges_in(k)
 	for ei in edges:
@@ -92,7 +92,7 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 		b.junctions.append(_public(j))
 	b.junctions.sort_custom(func(p, q): return int(p["node"]) < int(q["node"]))
 	for row: Array in n.buildings_in(k):
-		if b._over_road(row):
+		if b._over_road(row) or n.in_flat(float(row[0]), float(row[1]), maxf(float(row[2]), float(row[3])) * 0.5):
 			continue
 		var out := row.duplicate()
 		out.append(b._building_y(row))
@@ -267,7 +267,7 @@ func _plant() -> void:
 ## off the buildings and out of the water; `scale` its size.
 func _stand(t: RealTerrain, kind: String, x: float, z: float, clear: float, o: Vector3, rng: RandomNumberGenerator,
 		scale := Vector3.ONE) -> void:
-	if t.cover(x, z) == RealPack.WATER:
+	if t.cover(x, z) == RealPack.WATER or net.in_flat(x, z, 3.0):
 		return
 	if not net._near(x, z).is_empty():
 		var on := net.locate(x, z)

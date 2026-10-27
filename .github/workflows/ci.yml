@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pairs: ["mp_test mp_adventure mp_wrench mp_needs", "mp_dest mp_diary mp_network", "mp_bikers mp_real mp_journey"]
+        pairs: ["mp_test mp_adventure mp_wrench mp_needs", "mp_dest mp_diary mp_network mp_real_net", "mp_bikers mp_real mp_journey"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Godot

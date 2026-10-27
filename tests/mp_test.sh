@@ -7,14 +7,15 @@
 # a sixth keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
 # a seventh rides with one of the other bikers on an adventure (tests/mp_bikers.gd),
 # an eighth rides a real road together and sleeps at an inn along it (tests/mp_real.gd), a ninth plans a
-# journey together on the Route planner and rides it (tests/mp_journey.gd), and a tenth rides the road network
-# in two different cells of the map, joins a ride in progress and agrees to leave the route (tests/mp_network.gd).
+# journey together on the Route planner and rides it (tests/mp_journey.gd), a tenth rides the road network
+# in two different cells of the map, joins a ride in progress and agrees to leave the route (tests/mp_network.gd), and an
+# eleventh rides the eighth's real road on the road network, end to end (tests/mp_real_net.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
 # Each pair: its scene, and how it runs (the other bikers' pair runs at the real frame rate). Pass pair names
 # (tests/mp_test.sh mp_real mp_journey) to run just those: CI runs them spread over several machines.
-ALL="mp_test mp_adventure mp_wrench mp_needs mp_dest mp_diary mp_bikers mp_real mp_journey mp_network"
+ALL="mp_test mp_adventure mp_wrench mp_needs mp_dest mp_diary mp_bikers mp_real mp_journey mp_network mp_real_net"
 failed=""
 for pair in ${*:-$ALL}; do
 	if [ ! -f "tests/$pair.tscn" ]; then

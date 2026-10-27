@@ -71,6 +71,13 @@ static func of(w: AdventureWorld) -> NetNav:
 	return _current
 
 
+## Lets go of ride `w`'s sat nav (the ride's ending): waits for a search under way, and holds on to nothing of it.
+static func forget(w: AdventureWorld) -> void:
+	if _current != null and _current.world == w:
+		_current.stop()
+		_current = null
+
+
 ## The sat nav for ride `w`; with no ride (the tests), over `n` along `r`, in the region's own frame.
 func _init(w: AdventureWorld, n: RoadNet = null, r: NetRoute = null) -> void:
 	world = w
@@ -552,7 +559,7 @@ func satnav_friends(_pos: Vector2) -> Array:
 	var out := []
 	for f in trip.friends():
 		var at: Vector3 = f["at"]
-		out.append({"name": f["name"], "ahead": f["ahead"], "at": Vector2(at.x, at.z)})
+		out.append({"name": f["name"], "ahead": f["ahead"], "at": Vector2(at.x, at.z), "off": bool(f.get("off", false))})
 	return out
 
 
