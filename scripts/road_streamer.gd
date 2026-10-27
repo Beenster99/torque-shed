@@ -186,6 +186,13 @@ func commit(b: RoadBlock) -> Node3D:
 			mi.name = part.capitalize()
 			mi.mesh = AdventureProps.to_mesh(a)
 			node.add_child(mi)
+	var bridge: Dictionary = b.arrays.get("bridge", {})
+	if not bridge.is_empty() and not (bridge["v"] as PackedVector3Array).is_empty():
+		var bmi := MeshInstance3D.new()
+		bmi.name = "Bridges"
+		bmi.mesh = AdventureProps.to_mesh(bridge)
+		bmi.material_override = AdventureChunk._bridge_material()
+		node.add_child(bmi)
 	var lines: Dictionary = b.arrays["lines"]
 	if not (lines["v"] as PackedVector3Array).is_empty():
 		var lmi := MeshInstance3D.new()

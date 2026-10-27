@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 3
+const VERSION := 4
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -32,6 +32,12 @@ const ISLAND_H := 0.15
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
+## A bridge's parapets: as thick as this (m), and as tall and of the stone the single-line ride's are
+## (AdventureChunk.PARAPET); a pier under it every PIER_GAP or so where the land is more than PIER_MIN below its deck.
+const PARAPET_W := 0.45
+const PIER_MIN := 1.5
+## A road crossing over or under another this far (m) above or below it isn't on it (_on_other).
+const OVER := 2.5
 
 var key := Vector2i.ZERO
 var rect := Rect2()
@@ -154,7 +160,7 @@ func _add_pieces(ei: int) -> void:
 			pts.append(Vector3(p.x, net.road_y(ei, a), p.y))
 		pieces.append({"edge": ei, "s0": run.x, "s1": run.y, "points": pts, "width": net.width_of(ei),
 			"lanes": net.lanes_of(ei), "class": r.class_of(ei), "surface": r.surface_of(ei), "name": r.name_of(ei),
-			"oneway": r.edge_oneway[ei], "a": r.edge_a[ei], "b": r.edge_b[ei], "ring": net.on_ring(ei)})
+			"oneway": r.edge_oneway[ei], "a": r.edge_a[ei], "b": r.edge_b[ei], "ring": net.on_ring(ei), "at": at})
 
 
 ## Where (s) edge `ei` crosses the block's edge between `sa` (inside if `a_in`) and `sb`.
@@ -320,7 +326,7 @@ func anchor() -> Vector3:
 ## collision triangles}}. The land under them is RealLand's (RoadNet.ground_at).
 func _lay_out() -> void:
 	arrays = {"deck": {}, "verge": AdventureProps.new_arrays(), "lines": AdventureProps.new_arrays(),
-		"island": AdventureProps.new_arrays(), "faces": {}}
+		"island": AdventureProps.new_arrays(), "bridge": AdventureProps.new_arrays(), "faces": {}}
 	for p in pieces:
 		_piece_mesh(p)
 	for j in junctions:
@@ -460,8 +466,12 @@ func _piece_mesh(p: Dictionary) -> void:
 	g["i"].append_array(idx)
 	_faces_of(surf)
 	arrays["faces"][surf].append_array(faces)
-	# The verges, level with the road's edge, then the skirt down under the land: none where they'd lie on another road.
+	# The verges, level with the road's edge, then the skirt down under the land: none where they'd lie on another road,
+	# nor out on a bridge (its parapets instead).
 	var ei := int(p["edge"])
+	var ws := PackedFloat32Array()
+	for a: float in p["at"]:
+		ws.append(net.bridge_at(ei, a))
 	var keep := []
 	for k in rows:
 		var row := []
@@ -470,13 +480,55 @@ func _piece_mesh(p: Dictionary) -> void:
 		keep.append(row)
 	for k in rows - 1:
 		for q in 2:
-			if not keep[k][q] or not keep[k + 1][q]:
+			if not keep[k][q] or not keep[k + 1][q] or (ws[k] > 0.0 and ws[k + 1] > 0.0):
 				continue
 			var side := -1.0 if q == 0 else 1.0
 			_verge_strip(pts[k] - o + rights[k] * side * e, pts[k + 1] - o + rights[k + 1] * side * e, rights[k] * side,
 				rights[k + 1] * side, verge_col)
+	_bridge_sides(pts, rights, e, ws, surf)
 	if surf == "tarmac":
 		_piece_lines(p, pts, rights, e, s0)
+
+
+## A piece's bridges, where it's out on one (`ws`, RoadNet.bridge_at at each of its points `pts`): a stone parapet
+## each side, its outside on down to the deck's underside BRIDGE_DEPTH under the road, the underside, and a pier every
+## PIER_GAP or so where the land is well below. The parapets' insides are walls (collision `surf`, the road's).
+func _bridge_sides(pts: PackedVector3Array, rights: Array, e: float, ws: PackedFloat32Array, surf: String) -> void:
+	var arr: Dictionary = arrays["bridge"]
+	var o := anchor()
+	var stone: Color = AdventureChunk.BRIDGE_STONE
+	var top := Vector3.UP * AdventureChunk.PARAPET
+	var dn := Vector3.DOWN * RoadNet.BRIDGE_DEPTH
+	var since := 0.0
+	for k in pts.size() - 1:
+		if ws[k] <= 0.0 or ws[k + 1] <= 0.0:
+			since = 0.0
+			continue
+		var c0 := pts[k] - o
+		var c1 := pts[k + 1] - o
+		var r0: Vector3 = rights[k]
+		var r1: Vector3 = rights[k + 1]
+		for side: float in [-1.0, 1.0]:
+			var in0 := c0 + r0 * side * e
+			var in1 := c1 + r1 * side * e
+			var out0 := c0 + r0 * side * (e + PARAPET_W)
+			var out1 := c1 + r1 * side * (e + PARAPET_W)
+			AdventureProps._quad(arr, in0, in1, in1 + top, in0 + top, stone.darkened(0.06))
+			AdventureProps._quad(arr, in0 + top, in1 + top, out1 + top, out0 + top, stone.lightened(0.08))
+			AdventureProps._quad(arr, out0 + top, out1 + top, out1 + dn, out0 + dn, stone)
+			_face(surf, in0, in1, in1 + top)
+			_face(surf, in0, in1 + top, in0 + top)
+		AdventureProps._quad(arr, c0 - r0 * (e + PARAPET_W) + dn, c0 + r0 * (e + PARAPET_W) + dn,
+			c1 + r1 * (e + PARAPET_W) + dn, c1 - r1 * (e + PARAPET_W) + dn, stone.darkened(0.25))
+		since += Vector2(c1.x - c0.x, c1.z - c0.z).length()
+		if since < AdventureChunk.PIER_GAP or ws[k] < 1.0:
+			continue
+		var ground := float(net.height.call(pts[k].x, pts[k].z))
+		var bottom := pts[k].y + dn.y
+		if bottom - ground > PIER_MIN:
+			since = 0.0
+			var xf := Transform3D(Basis(Vector3.UP, -_heading(pts, k)), Vector3(c0.x, ground - o.y - 0.5, c0.z))
+			AdventureProps.box(arr, xf, Vector3(e * 2.0 + 0.8, bottom - ground + 0.5, 1.6), stone.darkened(0.12), false)
 
 
 ## The verge's colour beside a road of surface `surf`: the place's own, as the land beside it is.
@@ -505,10 +557,11 @@ func _verge_strip(a0: Vector3, b0: Vector3, ra: Vector3, rb: Vector3, col: Color
 
 
 ## Whether `p` (region frame) is on a road other than edge `ei` (any, for -1): its carriageway or a junction's surface,
-## where no verge is laid.
+## where no verge is laid. Not one that crosses over or under it (OVER or more above or below).
 func _on_other(p: Vector3, ei: int) -> bool:
 	var on := net.locate(p.x, p.z, ei)
-	return not on.is_empty() and bool(on["on_road"]) and (int(on["edge"]) != ei or int(on["node"]) >= 0)
+	return not on.is_empty() and bool(on["on_road"]) and (int(on["edge"]) != ei or int(on["node"]) >= 0) \
+		and absf(float(on["y"]) - p.y) < OVER
 
 
 ## A tarmac piece's edge lines and centre dashes.
@@ -570,9 +623,8 @@ func _junction_mesh(j: Dictionary) -> void:
 			var m: Vector3 = a["mouth"]
 			var out := RoadNet._bearing(Vector2(m.x - at.x, m.z - at.z))
 			var right := Vector3(cos(out), 0.0, sin(out)) * float(a["width"]) * 0.5
-			var ring_e := float(j.get("ring_w", 7.0)) * 0.5
-			var back := Vector3(sin(out), 0.0, -cos(out)) * -ring_e
-			_fan(g, surf, col, at - o, [at + back - right * 1.6 - o, m - right - o, m + right - o, at + back + right * 1.6 - o])
+			# (from the ring's middle line, where the arm's own node is: no further in, or it pokes into the island)
+			_fan(g, surf, col, at - o, [at - right * 1.6 - o, m - right - o, m + right - o, at + right * 1.6 - o])
 		_island(j)
 		return
 	var full := net.junction_of(int(j["node"]))

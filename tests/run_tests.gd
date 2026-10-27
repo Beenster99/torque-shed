@@ -22571,6 +22571,10 @@ func _test_road_meshes() -> void:
 	_roads().test_meshes()
 
 
+func _test_road_bridges() -> void:
+	_roads().test_bridges()
+
+
 func _test_road_ride() -> void:
 	await _roads().test_ride()
 

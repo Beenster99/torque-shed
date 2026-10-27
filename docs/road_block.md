@@ -1,4 +1,4 @@
-# Road block: interface (T6), version 3
+# Road block: interface (T6), version 4
 
 Owner: T6 Road network core. Readers: T7 Satnav and journeys, T8 Regional kits (markings, buildings), T9 Co-op,
 T10 Life on the network, and T5 Terrain around the rider (the ground under the roads).
@@ -48,6 +48,8 @@ net.width_of(edge: int) -> float                    # the carriageway's full wid
 net.lanes_of(edge: int) -> int                      # 1 or 2 (one-way roads and narrow lanes have 1)
 net.profile(edge: int) -> PackedFloat32Array        # road height at each of net.samples_of(edge) even steps a to b (about RoadNet.STEP m)
 net.road_y(edge: int, s: float) -> float            # the road's height at s (centre line, before the crown)
+net.bridges_of(edge: int) -> PackedInt32Array       # its bridges (the map's), as samples [first, last, ...]
+net.bridge_at(edge: int, s: float) -> float         # how far out on a bridge it is at s: 1 over what it crosses, 0 off one
 net.junction_of(node: int) -> Dictionary            # the junction at node (below), {} for a plain join (two roads)
 net.mouth(edge: int, node: int) -> float            # how far from node (m along the edge) the plain road starts
 net.locate(x: float, z: float, hint := -1) -> Dictionary   # which road am I on (below)
@@ -66,6 +68,17 @@ the last 40 m into each junction, which every road meeting there shares). The ne
 `ready` says the ground there is final, so it never holds on to a coarse guess. The streamer builds a block only
 once `terrain.ready(block.rect.grow(128), 0)` is true, and so every machine with the fine tiles builds the same
 block. Where a road crosses into a block whose ground isn't in yet, nothing is built there until it is.
+
+### Bridges
+
+The map's bridges (the region's spans of kind 0, from Overture's is_bridge flag) are the net's bridges too: the
+road runs straight from the land at one end to the land at the other, over the valley or river rather than down
+into it. Where a bridge crosses another road without meeting it (an overpass), its deck climbs to leave
+`RoadNet.HEADROOM` m (16 ft 6 in) over that road, level for `RoadNet.CROWN_FLAT` m either side of it and falling
+away at `RoadNet.RAMP` (one in twenty) on banks of its own, so a dual carriageway's overbridges and the slip roads
+up to them are ridden as they are. The road under it stays on the land. Out on a bridge `ground_at` leaves the land
+as it is, only ever `RoadNet.BRIDGE_DEPTH` m or more under the deck; the block draws a stone parapet each side (walls
+to ride into), the deck's sides and underside, and piers down to the land where it's well below, and no verges.
 
 ### locate: "which road am I on"
 
@@ -97,7 +110,10 @@ never left in the air. Where several roads are near, the one whose bank it's nea
 Away from every road it returns `bare` unchanged. T5's land blocks call it for every
 vertex near a road (`net.roads_near(rect: Rect2) -> bool` says whether a rectangle has any within reach); the
 road blocks draw only the deck, junctions, verges and their kerbs, so land and road meet without a strip owned
-by either. A verge is left out wherever it would lie on another road's carriageway or a junction's surface.
+by either. A verge is left out wherever it would lie on another road's carriageway or a junction's surface (not one
+crossing over or under it). Nowhere within `RoadNet.LAND_PAD` m of a road's verge is the land higher than that
+road, whatever other road is near (a dual carriageway's other half, a roundabout's ring), so no land stands up
+through a deck.
 
 ## RoadBlock (scripts/road_block.gd)
 
@@ -134,6 +150,7 @@ block.ms: float                 # how long the build took on its worker
 | oneway | int | RealRegion.edge_oneway: 0 both ways, 1 a to b only, -1 b to a only |
 | a, b | int | the edge's end nodes |
 | ring | bool | part of a roundabout's carriageway |
+| at | PackedFloat32Array | how far along the edge (m) each of its points is |
 
 ### A junction
 
@@ -147,7 +164,7 @@ block.ms: float                 # how long the build took on its worker
 | arms | Array[Dictionary] | the roads out of it, clockwise from north (below) |
 | island | float | a roundabout's island radius (m), 0 otherwise |
 | pair | int | a staggered junction's other node, else -1 |
-| outline | PackedVector2Array | its surface's edge, clockwise, region frame (x, z): across each arm's mouth, then a curved kerb (`RoadNet.KERB_STEPS` pieces) round to the next arm, or a straight one where the two arms' edges don't meet (a tee's far side) |
+| outline | PackedVector2Array | its surface's edge, clockwise, region frame (x, z): across each arm's mouth, then a curved kerb (`RoadNet.KERB_STEPS` pieces) round to the next arm, or a straight one where the two arms' edges don't meet (a tee's far side); a roundabout's is the circle round its ring's outer edge |
 
 An arm: `{edge: int, node: int (the node it leaves from), heading: float (out of the junction, as locate's; a
 roundabout's is the bearing from its middle),

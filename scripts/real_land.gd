@@ -185,8 +185,11 @@ func follow(x: float, z: float) -> void:
 			if lod > 0 and (_near_road(key) if roads == null else d <= NET_NEAR):
 				lod = 0
 			if have != lod and not _tasks.has(key):
-				want.append({"key": key, "lod": lod, "d": d})
-	want.sort_custom(func(a, b): return float(a["d"]) < float(b["d"]))
+				var bare: bool = not _blocks.has(key) or _blocks[key]["mi"] == null
+				want.append({"key": key, "lod": lod, "d": d, "bare": bare})
+	# Land where there's none yet first, nearest first, then the rest re-levelled: a block waiting behind the near ones'
+	# finer levels is a hole through to the sky (the skyline under it is pushed well down near the road).
+	want.sort_custom(func(a, b): return bool(a["bare"]) and not bool(b["bare"]) if bool(a["bare"]) != bool(b["bare"]) else float(a["d"]) < float(b["d"]))
 	_queue = want
 	for key: Vector2i in _blocks.keys():
 		if _centre(key).distance_to(_at) > RANGES[2] + HYSTERESIS + BLOCK * 0.5:
@@ -668,7 +671,8 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 
 ## The rivers and streams (RealPack.streams) of the block at (ox, oz) into `verts` and `idx`: a ribbon of water down each,
 ## its own width or STREAM_MIN_W if narrower, on the water at each point (the real heights there, never up a bank: the
-## lowest of them a point either way), over the trough the land has along it (AdventureRoute.ground_at). Each segment is
+## lowest of them a point either way; on the network ride no higher than the land with the roads cut in), over the
+## trough the land has along it (AdventureRoute.ground_at). Each segment is
 ## the block's that its middle is in; none on the road (`near`: its knots by the block) but under a bridge, nor where the
 ## land cover has the water already.
 func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: PackedVector3Array, idx: PackedInt32Array) -> void:
@@ -700,6 +704,10 @@ func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: Packed
 			var hb := _lowest(raw, k + 1)
 			if is_nan(ha) or is_nan(hb):
 				continue
+			if roads != null:
+				# (down with the land where a road's bank has cut it, never standing over it)
+				ha = minf(ha, float(roads.call("ground_at", a.x, a.y, ha)))
+				hb = minf(hb, float(roads.call("ground_at", b.x, b.y, hb)))
 			var along := (b - a).normalized()
 			var side := Vector2(-along.y, along.x) * half
 			# (a little past each end, so the next segment's ribbon overlaps it at a bend)
@@ -715,6 +723,8 @@ func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: Packed
 ## no water's drawn there (it would lie over the road, or a bank of it). The deck is the nearest knot's, not the nearest
 ## of every fourth (at a bridge's end that may be on the deck while the road there isn't).
 func _on_road(near: PackedInt32Array, x: float, z: float, reach: float) -> bool:
+	if roads != null:
+		return _on_net(x, z)
 	if near.is_empty():
 		return false
 	var nr := _nearest_of(route, near, x, z)
@@ -728,6 +738,16 @@ func _on_road(near: PackedInt32Array, x: float, z: float, reach: float) -> bool:
 			best = d
 			k = i
 	return not near_deck(route, k)
+
+
+## _on_road for the road network: whether (x, z) is on a road, its verge, or the land held level with it past the verge
+## (RoadNet.LAND_PAD, where water would stand over the cut land), unless it's under a bridge.
+func _on_net(x: float, z: float) -> bool:
+	var on: Dictionary = roads.call("locate", x, z)
+	if on.is_empty():
+		return false
+	var off := absf(float(on["lat"])) - float(on["width"]) * 0.5
+	return off <= RoadNet.VERGE + RoadNet.LAND_PAD and float(roads.call("bridge_at", int(on["edge"]), float(on["s"]))) < 0.5
 
 
 ## Whether knot `i` of `r` is on a bridge or just at its end (a deck eases in over its first and last knots).

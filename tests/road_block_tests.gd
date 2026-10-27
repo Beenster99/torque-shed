@@ -78,7 +78,7 @@ func test_interface() -> void:
 	check(b.arrays is Dictionary and b.ms >= 0.0 and b.buildings is Array, "arrays, ms and buildings")
 	var piece_keys := {"edge": TYPE_INT, "s0": TYPE_FLOAT, "s1": TYPE_FLOAT, "points": TYPE_PACKED_VECTOR3_ARRAY,
 		"width": TYPE_FLOAT, "lanes": TYPE_INT, "class": TYPE_STRING, "surface": TYPE_STRING, "name": TYPE_STRING,
-		"oneway": TYPE_INT, "a": TYPE_INT, "b": TYPE_INT, "ring": TYPE_BOOL}
+		"oneway": TYPE_INT, "a": TYPE_INT, "b": TYPE_INT, "ring": TYPE_BOOL, "at": TYPE_PACKED_FLOAT32_ARRAY}
 	check(not b.pieces.is_empty(), "the block has pieces of road (%d)" % b.pieces.size())
 	for p in b.pieces:
 		for k in piece_keys:
@@ -248,6 +248,28 @@ func test_heights() -> void:
 	check(absf(shelf - (road - RoadNet.UNDER)) < 0.01, "on an embankment the land is level with the road %.0f m past the verge, under its skirt (%.2f m against the road's %.2f)" % [RoadNet.FALL_PAD, shelf, road])
 	var below := bank.ground_at(300.0, edge + RoadNet.FALL_PAD + 12.0, float(dip.call(300.0, edge + RoadNet.FALL_PAD + 12.0)))
 	check(below < road - 1.0 and below > road - 6.0, "then falls away down a bank one in three (%.2f m under the road %.0f m out)" % [road - below, RoadNet.FALL_PAD + 12.0])
+	# A dual carriageway across a slope, its halves 16 m apart: no land between them or beside them stands higher than
+	# the nearer half (it would lie over its deck).
+	var slope := func(_x: float, z: float) -> float: return 10.0 + z * 0.15
+	var dual := RoadNet.new(graph([[-300, 92], [300, 92], [300, 108], [-300, 108]], [[0, 1, "primary", 1], [2, 3, "primary", 1]]), slope)
+	var over := 0.0
+	for z in range(80, 121):
+		var at := dual.locate(0.0, float(z))
+		var g := dual.ground_at(0.0, float(z), float(slope.call(0.0, float(z))))
+		var lowest := minf(dual.road_y(0, dual.length_of(0) * 0.5), dual.road_y(1, dual.length_of(1) * 0.5))
+		if absf(float(z) - 100.0) < 8.0 + RoadNet.LAND_PAD:
+			over = maxf(over, g - (lowest if absf(float(z) - 100.0) <= 8.0 else float(at["y"])))
+	check(over <= 0.01, "no land over a dual carriageway's decks or between them (the most %.2f m over)" % over)
+	# A roundabout is round: its ring's lines keep to one circle round its middle.
+	var rn := RoadNet.new(roundabout(), flat)
+	var lo := INF
+	var hi := 0.0
+	for ei in 8:
+		for q: Vector2 in rn.line_of(ei):
+			var d := q.distance_to(Vector2(100, 100))
+			lo = minf(lo, d)
+			hi = maxf(hi, d)
+	check(hi - lo < 0.3, "a roundabout's ring is a circle (%.2f to %.2f m from its middle)" % [lo, hi])
 
 
 ## A road crossing from one block into the next is in both, the two meeting at the seam; the same block twice is the
@@ -382,6 +404,48 @@ func test_meshes() -> void:
 	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
 	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
 	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
+
+
+## The map's bridges: one over a valley runs level from end to end with the land left as it is under it, a parapet each
+## side and piers down to the valley floor; one over another road climbs to clear it, and the road under it stays on
+## the land, its own way through.
+func test_bridges() -> void:
+	var valley := func(x: float, _z: float) -> float: return 50.0 - maxf(0.0, 40.0 - absf(x - 100.0)) * 0.5
+	var r := graph([[-300, 100], [300, 100]], [[0, 1, "primary"]])
+	r.spans = [[0, 60.0, 100.0, 140.0, 100.0]]
+	var net := RoadNet.new(r, valley)
+	var mid := net.locate(100.0, 100.0)
+	var s := float(mid["s"])
+	check(net.bridge_at(0, s) >= 1.0 and net.bridge_at(0, 10.0) <= 0.0, "the road is out on its bridge over the valley, and only there")
+	check(absf(net.road_y(0, s) - 50.0) < 0.6, "level across it, not down into the valley (%.2f m over the far side's 50)" % net.road_y(0, s))
+	var floor_y := float(valley.call(100.0, 100.0))
+	check(is_equal_approx(net.ground_at(100.0, 100.0, floor_y), floor_y), "the valley floor under it is left as it is")
+	check(net.ground_at(100.0, 100.0, 80.0) <= net.road_y(0, s) - RoadNet.BRIDGE_DEPTH, "and land is never up through its deck")
+	var b := net.block(Vector2i(0, 0))
+	check((b.arrays["bridge"]["v"] as PackedVector3Array).size() > 0, "the bridge has its stonework")
+	var deck := _down(b, Vector3(100.0, 70.0, 100.0) - b.anchor())
+	check(not is_nan(deck) and absf(deck - net.road_y(0, s)) < 0.1, "its deck is ridden on at its height (%.2f)" % deck)
+	var parapet := false
+	for surf in b.arrays["faces"]:
+		var f: PackedVector3Array = b.arrays["faces"][surf]
+		for k in range(0, f.size(), 3):
+			var n := (f[k + 1] - f[k]).cross(f[k + 2] - f[k]).normalized()
+			parapet = parapet or (absf(n.y) < 0.1 and f[k].x + b.anchor().x > 70.0 and f[k].x + b.anchor().x < 130.0)
+	check(parapet, "and its parapets are walls to ride into")
+	# Over another road on the flat: the bridge climbs to clear it, gently, and the road under it stays on the land.
+	var o := graph([[-300, 100], [300, 100], [100, -200], [100, 400]], [[0, 1, "primary"], [2, 3, "secondary"]])
+	o.spans = [[0, 40.0, 100.0, 160.0, 100.0]]
+	var over := RoadNet.new(o, flat)
+	var top := over.road_y(0, float(over.locate(100.0, 100.0, 0)["s"]))
+	check(top >= 10.0 + RoadNet.HEADROOM + RoadNet.BRIDGE_DEPTH, "it climbs to clear the road under it (its deck %.2f m up)" % (top - 10.0))
+	var steep := 0.0
+	var pr := over.profile(0)
+	for k in range(1, pr.size()):
+		steep = maxf(steep, absf(pr[k] - pr[k - 1]) / (over.length_of(0) / float(pr.size() - 1)))
+	check(steep < 0.08, "up and down approaches no steeper than one in twelve (%.3f)" % steep)
+	var under := over.locate(100.0, 100.0, 1)
+	check(int(under["edge"]) == 1 and absf(float(under["y"]) - 10.0) < 0.1, "the road under it is on the land, found from itself")
+	check(over.bridge_at(1, float(under["s"])) <= 0.0, "and isn't a bridge itself")
 
 
 ## The height of the first collision triangle of block `b` straight under local `p` (NAN if none).
