@@ -193,7 +193,7 @@ func anchor() -> Vector3:
 
 
 ## Lays the block's meshes and collision out into `arrays`: {deck: {surface: grid arrays}, verge, lines, island,
-## buildings (AdventureProps arrays; the buildings as the single-line ride draws them until T8's kits), faces: {surface:
+## buildings (AdventureProps arrays, in the place's region kit), faces: {surface:
 ## collision triangles}}. The land under them is RealLand's (RoadNet.ground_at).
 func _lay_out() -> void:
 	arrays = {"deck": {}, "verge": AdventureProps.new_arrays(), "lines": AdventureProps.new_arrays(),
@@ -205,9 +205,16 @@ func _lay_out() -> void:
 	_join_caps()
 	var houses := AdventureProps.new_arrays()
 	var o := anchor()
+	# In the place's region kit (RegionKit, T8), else as the single-line ride's plain buildings.
+	var mid := rect.get_center()
+	var kit := RegionKit.at_frame(net.region.frame_lat, net.region.frame_lon, mid.x, mid.y) if net.region != null else {}
 	for row: Array in buildings:
-		AdventureProps.real_building(houses, Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o, float(row[2]),
-			float(row[3]), float(row[4]), float(row[5]), RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)])
+		var at := Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o
+		var kind := RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)]
+		if kit.is_empty():
+			AdventureProps.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind)
+		else:
+			RegionBuildings.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind, kit)
 	arrays["buildings"] = houses
 	for surf in arrays["deck"]:
 		_finish_grid(arrays["deck"][surf])

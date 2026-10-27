@@ -140,6 +140,55 @@ func test_buildings() -> void:
 	check(int(worst["verts"]) <= 3000, "the heaviest is light enough for a chunk of them (%d vertices: %s)" % [worst["verts"], worst["what"]])
 
 
+## A town's buildings take the region's city styles: every region has several, each building one its height suits,
+## every style draws sound triangles under a city's budget, and a street of them isn't all the same.
+func test_city() -> void:
+	var table: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(RegionKit.COUNTRIES))["countries"]
+	var worst := {"verts": 0, "what": ""}
+	var broken := []
+	var samey := []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for region in RegionKit.regions():
+		var code := ""
+		for c in table:
+			if table[c]["region"] == region:
+				code = c
+				break
+		var kit := RegionKit.choose(PlaceProfile.parse({"country": code, "density": "city"}))
+		var seen := {}
+		for k in 40:
+			var kind: String = ["block", "shop", "civic", "house"][k % 4]
+			var h: float = [4.0, 7.0, 10.0, 14.0, 22.0, 35.0, 70.0][k % 7] if kind != "house" else 7.0
+			var w := 6.0 + float(k % 5) * 6.0
+			var d := 8.0 + float(k % 3) * 5.0
+			var style := RegionCity.style_for(kit, kind, w, d, h, rng.randf())
+			if style.is_empty():
+				broken.append("%s %s %.0f m: no style" % [region, kind, h])
+				continue
+			var name := str(style["style"])
+			seen[name] = true
+			var hs: Array = RegionCity.HEIGHTS[name]
+			if h < float(hs[0]) or h > float(hs[1]):
+				broken.append("%s %s at %.0f m" % [region, name, h])
+			var a := AdventureProps.new_arrays()
+			RegionCity.build(a, Transform3D(Basis(Vector3.UP, 0.4), Vector3(k * 50.0, 0, 0)), w, d, h, kind, style, kit, rng)
+			_measure(a, "%s %s %.0f m" % [region, name, h], worst, broken)
+		if seen.size() < 3:
+			samey.append("%s %s" % [region, str(seen.keys())])
+	check(broken.is_empty(), "every region's city buildings take a style their height suits and draw sound triangles (not %s)" % str(broken))
+	check(samey.is_empty(), "every region's cities have three styles or more (not %s)" % str(samey))
+	check(int(worst["verts"]) <= 8000, "the heaviest city building is light enough for a street of them (%d vertices: %s)" % [worst["verts"], worst["what"]])
+	var gb := RegionKit.choose(PlaceProfile.parse({"country": "GB", "density": "city"}))
+	var styles := {}
+	for k in 200:
+		styles[str(RegionCity.style_for(gb, "block", 20.0, 12.0, 13.0, (k + 0.5) / 200.0).get("style", ""))] = true
+	check(styles.has("tenement") and styles.has("modern"), "a British city has tenements and modern blocks (%s)" % str(styles.keys()))
+	var rural := RegionKit.choose(PlaceProfile.parse({"country": "GB", "density": "rural"}))
+	check(RegionCity.style_for(rural, "house", 8.0, 9.0, 7.0, 0.5).is_empty() and not RegionCity.style_for(gb, "house", 30.0, 9.0, 7.0, 0.5).is_empty()
+		and RegionCity.style_for(gb, "barn", 20.0, 12.0, 8.0, 0.5).is_empty(), "a country house stays a house, a town's row of houses takes a street style, a barn stays a barn")
+
+
 func _measure(a: Dictionary, what: String, worst: Dictionary, broken: Array) -> void:
 	var v: PackedVector3Array = a["v"]
 	var n: PackedVector3Array = a["n"]

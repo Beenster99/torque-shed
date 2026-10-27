@@ -25,6 +25,11 @@ static func real_building(a: Dictionary, pos: Vector3, w: float, d: float, yaw: 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([roundi(pos.x * 10.0), roundi(pos.z * 10.0)])
 	var xf := Transform3D(Basis(Vector3.UP, yaw), pos + Vector3(0.0, -SKIRT, 0.0))
+	# A town's blocks and street-front houses in the region's city styles.
+	var city := RegionCity.style_for(kit, kind, w, d, h, rng.randf())
+	if not city.is_empty():
+		RegionCity.build(a, xf, w, d, h, kind, city, kit, rng)
+		return
 	match kind:
 		"shed":
 			var c: Color = RegionKit.pick(rng, kit["walls"])
