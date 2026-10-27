@@ -30,6 +30,9 @@ var group := [0, 1]
 var fetch := false
 ## No frame times: just the pictures (a quick look at a change of your own).
 var quick := false
+## The network ride (AdventureWorld.network, the Esc > Debug toggle): every road round the camera, not just the plan's.
+## Its land follows the camera off the ride's own tiles, so it fetches heights (and keeps none).
+var network := false
 ## Just the pictures and stats.json: postcards.sh makes the sheet once every place is done.
 var no_sheet := false
 ## Folders of runs to make one sheet of, instead of running (CI's machines' shares).
@@ -70,6 +73,8 @@ func _ready() -> void:
 			no_sheet = true
 		elif a == "--quick":
 			quick = true
+		elif a == "--network":
+			network = true
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var spec: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(PLACES))
 	if not merge.is_empty():
@@ -96,6 +101,8 @@ func _run(spec: Dictionary) -> void:
 		push_error(stats["places"][0]["error"])
 		return
 	use_own_world(fetch)
+	if network:
+		HeightTiles.offline = false
 	get_window().size = size
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
@@ -224,6 +231,9 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	if fetch:
 		return got   # (planning fetched the ride's heights: that's all a fetch is for)
 	var w := AdventureWorld.new()
+	AdventureWorld.network = network
+	if network:
+		w.roads_region = RealRegion.get_region(str(plan["region"]))
 	w.setup(pack, 1)
 	if w.route.look.has("kit"):
 		got["theme"] = "%s, %s" % [str(w.route.look["kit_name"]).to_lower(), ["January", "February", "March", "April", "May", "June",
@@ -239,6 +249,7 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	got["s"] = roundi(s)
 	for view: String in spec["views"]:
 		cam.global_transform = view_xf(w, s, view)
+		w.follow(cam.global_position)   # (as a ride does under its rider: the land and skyline round the camera)
 		var settled := await _settle(w)
 		got["load_s"] = got.get("load_s", (Time.get_ticks_msec() - t0) / 1000.0)
 		var img := get_viewport().get_texture().get_image()
@@ -266,7 +277,8 @@ func _settle(w: AdventureWorld) -> bool:
 	var done := false
 	while Time.get_ticks_msec() < end:
 		await _frames(3)
-		if w.wanted_chunks().all(func(c): return w.chunks.has(c)) and (w.land == null or not w.land.busy()):
+		var roads_in := w.roads == null or RoadStreamer.wanted(w.roads.riders(), 600.0).all(func(k): return w.roads.blocks.has(k))
+		if w.wanted_chunks().all(func(c): return w.chunks.has(c)) and (w.land == null or not w.land.busy()) and roads_in:
 			done = true
 			break
 	RenderingServer.render_loop_enabled = true
