@@ -353,6 +353,7 @@ func _run_all() -> void:
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
 	await _t(&"_test_upgrade_options")
 	await _t(&"_test_upgrade_options_session")
+	await _t(&"_test_room_signs_clear_of_lights")
 	print("Selling from the showroom: pricing, online offers and counter-offers, part exchange, saving")
 	await _t(&"_test_sales_pricing")
 	await _t(&"_test_sales_offers")
@@ -12903,10 +12904,9 @@ func _test_room_signs_clear_of_lights() -> void:
 	var ws: Workshop = main.workshop
 	var hits := _sign_light_hits(ws)
 	check(hits.is_empty(), "in a plain shed no sign runs into a light %s" % str(hits))
-	Shed.request({"a": "garage_money", "value": 1000000})
+	# Every upgrade built, the ones a new shed's level doesn't reach yet (the recovery truck) too.
 	for id in GarageUpgrades.CATALOGUE:
-		Shed.request({"a": "buy_upgrade", "id": id})
-	await get_tree().process_frame
+		Shed.upgrades[id] = true
 	ws.upgrades.sync()
 	check(ws.upgrades.built().split(",").size() == GarageUpgrades.CATALOGUE.size(), "every upgrade built (%s)" % ws.upgrades.built())
 	hits = _sign_light_hits(ws)
