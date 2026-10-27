@@ -72,12 +72,15 @@ static func land_material() -> StandardMaterial3D:
 	return _land_mat
 
 
-## The white lines' material.
+## The road paint's material (its colours are the paint's vertex colours).
 static func line_material() -> StandardMaterial3D:
 	if _line_mat:
 		return _line_mat
 	_line_mat = StandardMaterial3D.new()
-	_line_mat.albedo_color = Color(0.86, 0.86, 0.82)
+	# (the paint's own colour: white, or a country's yellow, RoadMarkings)
+	_line_mat.vertex_color_use_as_albedo = true
+	_line_mat.vertex_color_is_srgb = true
+	_line_mat.albedo_color = Color(0.98, 0.98, 0.98)
 	_line_mat.roughness = 0.7
 	return _line_mat
 

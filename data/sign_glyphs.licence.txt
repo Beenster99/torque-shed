@@ -1,0 +1,10 @@
+data/sign_glyphs.json: the outlines of the words the game writes on signs, roads and shop fronts, cut into triangles
+by tools/sign_glyphs.py from these fonts:
+
+  Noto Sans, Noto Sans Arabic, Noto Sans Thai, Noto Sans JP, Noto Sans KR and Noto Sans SC
+  Copyright 2022 The Noto Project Authors (https://github.com/notofonts)
+  From https://github.com/google/fonts (ofl/notosans, notosansarabic, notosansthai, notosansjp, notosanskr, notosanssc)
+
+They are licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org), which allows them to be
+used, changed and passed on, in games sold commercially too, so long as the fonts themselves are not sold on their
+own. Outlines made from them stay under the same licence.

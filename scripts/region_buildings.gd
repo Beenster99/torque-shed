@@ -174,6 +174,7 @@ static func _block(a: Dictionary, xf: Transform3D, w: float, d: float, h: float,
 		var awning: Color = RegionKit.pick(rng, kit["shop"]["awning"], fascia)
 		_plate(a, body, Vector3(0, 0.25, d * 0.5), Vector2(w * 0.8, 2.1), glass.lightened(0.15))
 		AdventureProps.box(a, body.translated_local(Vector3(0, 2.55, d * 0.5 + 0.08)), Vector3(w * 0.9, 0.6, 0.16), fascia)
+		_shop_name(a, body, Vector3(0, 2.85, d * 0.5 + 0.17), w * 0.8, 0.34, fascia, kit, rng)
 		_lean_to(a, body, Vector3(0, 2.5, d * 0.5 + 0.16), w * 0.85, 1.3, 0.5, awning)
 
 
@@ -445,6 +446,18 @@ static func _plate(a: Dictionary, xf: Transform3D, at: Vector3, size: Vector2, c
 	var x1 := at.x + size.x * 0.5
 	var pts := [xf * Vector3(x0, at.y, z), xf * Vector3(x1, at.y, z), xf * Vector3(x1, at.y + size.y, z), xf * Vector3(x0, at.y + size.y, z)]
 	_face(a, pts, xf.basis.z * face, col)
+
+
+## A shop's name on its fascia: a word the country's shops have (SignWords.shop_word, in the local script), centred at
+## `at` on the front, `h` m tall and no wider than `most`, in white on a dark fascia or near-black on a light one.
+static func _shop_name(a: Dictionary, xf: Transform3D, at: Vector3, most: float, h: float, fascia: Color, kit: Dictionary,
+		rng: RandomNumberGenerator) -> void:
+	var word := SignWords.shop_word(kit.get("facts", {}), rng)
+	if word == "" or most < 1.0:
+		return
+	var ink := Color(0.95, 0.94, 0.9) if fascia.get_luminance() < 0.55 else Color(0.08, 0.08, 0.09)
+	var b := xf.basis.orthonormalized()
+	SignWords.draw(a, word, xf * at, b.x, b.y, h, ink, b.z, most)
 
 
 ## A flat face through `pts` (in order round it), turned to face `out`.

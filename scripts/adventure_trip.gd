@@ -78,7 +78,7 @@ var _put_back_at := 0        # ticks: when the last "back on the road" happened
 ## Hunger, thirst and tiredness: the meters, their effects, and sitting, eating and sleeping.
 var needs: AdventureNeedsView
 var _map: AdventureMap       # the paper map, made the first time it's opened
-var _nav_cache: Satnav.AdventureNav   # for the wrong-way warning on the HUD (see wrong_way)
+var _nav_cache: Satnav.AdventureNav   # for the wrong-way warning on the HUD (see wrong_way; NetNav on the network)
 ## The trip computer for the whole ride, from setting off (see Satnav.computer).
 var computer := TripComputer.new()
 ## This player's camera and their side of the Adventure Diary, and the book it's read in.
@@ -636,7 +636,7 @@ func _physics_process(delta: float) -> void:
 	if main.bike:
 		computer.step(delta, main.bike.speed, main.bike.global_position.y, main.bike.fuel_litres, main.bike.surface)
 	_hud_timer -= delta
-	if _hud_timer <= 0.0 and not hit.is_empty():
+	if _hud_timer <= 0.0 and (not hit.is_empty() or world.roads != null):
 		_hud_timer = 0.25
 		var waiting := crew_waiting()
 		_hud.text = hud_text(s) if waiting.is_empty() else "Waiting at the start for %s to get the road ready..." % " and ".join(waiting)
@@ -647,6 +647,10 @@ func _physics_process(delta: float) -> void:
 		_call_label.visible = _call_label.text != ""
 		# On the bike, sat nav or not (one fitted says so on its screen too).
 		_wrong.visible = main.bike != null and int(Shed.adventure.get("arrived", 0)) == 0 and not map_open() and not main.menu.visible and wrong_way()
+		# The network's sat nav's news ("Back on route"), sat nav or not.
+		var said: String = _nav().news() if world.roads != null else ""
+		if said != "" and said != "Turn around":
+			main.hud.flash(said, 2.5)
 	if _map and _map.visible:
 		if main.bike and absf(main.bike.speed) > 2.0:
 			close_map()
@@ -658,6 +662,8 @@ func _physics_process(delta: float) -> void:
 ## The line at the top of the screen: how far you've come, the road, and the next fuel.
 func hud_text(s: float) -> String:
 	var r := world.route
+	if world.roads != null and int(Shed.adventure.get("arrived", 0)) == 0:
+		return _net_hud_text()
 	if int(Shed.adventure.get("arrived", 0)) != 0:
 		return "At %s, %d km from the start.   %s" % [AdventureDest.name_of(str(Shed.adventure.get("dest", ""))), roundi(r.length / 1000.0),
 			Controls.hint("Ride home from the {menu} menu when everyone's ready.") if Shed.is_authority() else "The host rides everyone home when you're ready."]
@@ -667,6 +673,25 @@ func hud_text(s: float) -> String:
 		if float(st["s"]) > s - 30.0:
 			text += "   Fuel in %.1f km" % maxf(0.0, (float(st["s"]) - s) / 1000.0)
 			break
+	return text
+
+
+## hud_text on the network ride: how far there is to go along the way the sat nav knows (NetNav), the road you're on.
+func _net_hud_text() -> String:
+	var nav: NetNav = _nav()
+	var left := nav.to_go()
+	var me: Node3D = main.bike if main.bike else main.walker
+	var road := nav.satnav_road_name(Vector2(me.global_position.x, me.global_position.z)) if me != null else ""
+	var text := "Adventure  %s" % ("%.1f km to go" % (left / 1000.0) if left >= 0.0 else "finding the way")
+	if road != "":
+		text += "   %s" % road
+	match nav.status:
+		"back":
+			text += "   Back to the route"
+		"free":
+			text += "   Off the route"
+		"lost":
+			text += "   No way from here"
 	return text
 
 
@@ -854,11 +879,14 @@ func wrong_way() -> bool:
 	if world == null or me == null:
 		return false
 	var fwd := -me.global_transform.basis.z
-	var g := _nav().satnav_guide(Vector2(me.global_position.x, me.global_position.z), Vector2(fwd.x, fwd.z).normalized())
+	var g: Dictionary = _nav().satnav_guide(Vector2(me.global_position.x, me.global_position.z), Vector2(fwd.x, fwd.z).normalized())
 	return bool(g.get("wrong_way", false))
 
 
-func _nav() -> Satnav.AdventureNav:
+## The sat nav's provider for this ride: NetNav on the network, else the road's own (Satnav.AdventureNav).
+func _nav() -> Object:
+	if world.roads != null:
+		return NetNav.of(world)
 	if _nav_cache == null or _nav_cache.world != world:
 		_nav_cache = Satnav.AdventureNav.new(world)
 	return _nav_cache

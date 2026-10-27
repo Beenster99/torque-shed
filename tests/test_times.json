@@ -452,6 +452,8 @@
 	"_test_road_lean": 2112,
 	"_test_road_locate": 30,
 	"_test_road_meshes": 200,
+	"_test_road_markings_paint": 700,
+	"_test_road_markings_style": 900,
 	"_test_road_ride": 6000,
 	"_test_road_traffic": 15975,
 	"_test_room_signs_clear_of_lights": 4000,
@@ -619,5 +621,11 @@
 	"_test_yard_items_buy_place": 91,
 	"_test_yard_items_catalogue": 90,
 	"_test_yard_items_fit": 174,
-	"_test_yard_items_smooth": 113
+	"_test_yard_items_smooth": 113,
+	"_test_net_route": 60,
+	"_test_net_search": 60,
+	"_test_net_junctions": 120,
+	"_test_net_nav": 120,
+	"_test_net_plan": 4000,
+	"_test_net_world": 9000
 }

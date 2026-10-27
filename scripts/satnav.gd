@@ -8,7 +8,8 @@ extends Node
 ## satnav_hud, {satnav_hud} toggles it).
 ##
 ## Where the roads come from is a route provider. In town it's TownRoute, over the riding map's
-## WorldRoads; on an adventure (AdventureWorld.current) it's AdventureNav, over its road. Anything
+## WorldRoads; on an adventure (AdventureWorld.current) it's AdventureNav, over its road, and on the
+## network ride NetNav, over the road graph and the crew's agreed route on it. Anything
 ## else sets `Satnav.route_provider` to an object with
 ## any of these methods (all positions are world x z as Vector2, distances in metres):
 ##   satnav_roads(pos: Vector2, radius: float) -> Array of {pts: PackedVector2Array, kind, hw}
@@ -22,12 +23,15 @@ extends Node
 ##       stop ahead, nearest first: {kind (AdventureStops.NAV: "food", "rest", "sleep", "fuel"),
 ##       site (the site's kind), name, label (for the list: "Lay-by", or a cafe's name), distance, at}
 ##   satnav_guide(pos: Vector2, fwd: Vector2) -> {wrong_way: bool (facing back the way you came),
-##       turn: where the way on is, relative to your heading (radians, + to the right)}, {} off it
+##       turn: where the way on is, relative to your heading (radians, + to the right), and on the
+##       network status (NetNav.status: "on_route", "back", "free", "finding", "lost") and say
+##       (something to show for a moment: "Back on route", "" for nothing)}, {} off it
 ##   satnav_friends(pos: Vector2) -> Array of the other riders: {name, ahead (m along the road,
 ##       negative behind), at (Vector2)}
 ##   satnav_junction(pos: Vector2, fwd: Vector2) -> the next junction on the way where there's
 ##       something to say, within JUNCTION_AHEAD: {text ("At the roundabout, take the 2nd exit"),
-##       type (AdventureJunctions.TYPES), exit (a roundabout's, else 0), distance}, {} for none
+##       type (AdventureJunctions.TYPES, or on the network RoadNet's kinds), exit (a roundabout's,
+##       else 0), distance, and on the network turn (radians, + right)}, {} for none
 ##   satnav_next(pos: Vector2, fwd: Vector2) -> {fuel, food, sleep}: how far along the way to the
 ##       next of each (m), -1 when there's none (the trip computer's page)
 ## and clears it (null) when it's done.
@@ -69,7 +73,7 @@ var viewport: SubViewport
 var screen: SatnavScreen         # in the viewport, for the unit on the bars
 var hud_screen: SatnavScreen     # the HUD overlay (made by HUD, or null)
 var town: TownRoute
-var adventure: AdventureNav      # the adventure road's provider, made when one is on
+var adventure: AdventureNav      # the adventure road's provider, made when one is on (NetNav.of on the network)
 ## The trip meter for this ride, from getting on (an adventure keeps its own, see computer()).
 var trip := TripComputer.new()
 var _timer := 0.0
@@ -117,6 +121,8 @@ func provider() -> Object:
 	if route_provider != null and is_instance_valid(route_provider):
 		return route_provider
 	var adv := AdventureWorld.current
+	if adv != null and adv.roads != null:
+		return NetNav.of(adv)
 	if adv != null and adv.route != null:
 		if adventure == null or adventure.world != adv:
 			adventure = AdventureNav.new(adv)
