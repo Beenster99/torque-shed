@@ -6,7 +6,8 @@ Every country the world's towns name (data/world/countries.json) gets a row: its
 RegionKit draws its buildings and furniture from), the side of the road it drives on, its speed and distance units,
 its road paint (the centre line's colour, the edge line's), its warning sign shape and speed limit sign, its language
 and script (for shop fronts and place names), its places of worship by kind and share, its roadside posts and kerb
-paint, and how often its towns have speed bumps. Nothing here is chosen by a player: a cell's profile names its
+paint, how often its towns have speed bumps, its road markings' style, the word on its stop signs, how many side
+roads stop rather than give way, and its warning signs' face. Nothing here is chosen by a player: a cell's profile names its
 country and the country names its kit.
 
 The facts are general knowledge of each country's roads and towns (no data source to credit). Where a fact is the
@@ -184,6 +185,38 @@ BUMPS_REGION = {
 }
 BUMPS = {"JP": 0.1, "DE": 0.2, "AT": 0.2, "CH": 0.2, "AR": 1.5, "CL": 1.0, "UY": 1.0}
 
+# Road markings (data/road_marks.json says how each style paints its lines, give-ways, stops and roundabouts), a
+# region's default, then countries'.
+MARKS_REGION = {
+    "british_isles": "uk", "western_europe": "eu", "nordic": "nordic", "eastern_europe": "eu",
+    "mediterranean": "eu", "north_africa_middle_east": "eu", "sub_saharan_africa": "au",
+    "north_america": "us", "latin_america": "latam", "south_asia": "asia", "east_asia": "asia",
+    "south_east_asia": "asia", "australia_nz": "au",
+}
+MARKS = {"DE": "de", "AT": "de", "CH": "de", "LI": "de", "FR": "fr", "BE": "fr", "LU": "fr", "MC": "fr",
+         "NL": "nl", "JP": "jp", "ZA": "au", "NA": "au", "BW": "au", "ZW": "au", "IE": "uk", "MT": "uk", "CY": "uk",
+         "HK": "uk", "MY": "uk", "SG": "uk", "KE": "uk", "IN": "asia", "PR": "us"}
+# The word on a stop sign (and painted on the road before its line, where the markings say so): STOP but where it's
+# the local word.
+STOP_WORD = {}
+for c in "MX GT HN SV NI CR PA CO VE EC PE BO".split():
+    STOP_WORD[c] = "ALTO"
+for c in "BR DO CU CL AR UY PY".split():
+    STOP_WORD[c] = "PARE"
+for c in "SA EG JO SY IQ YE KW BH QA OM AE LY MA DZ TN SD MR EH PS".split():
+    STOP_WORD[c] = "قف"
+STOP_WORD.update({"IR": "ایست", "AF": "ایست", "TR": "DUR", "JP": "止まれ", "CN": "停", "TW": "停", "MO": "停",
+                  "KR": "정지", "KP": "정지", "TH": "หยุด"})
+# How many of a junction's side roads meet it at a stop rather than a give-way: a region's share, then countries'.
+STOP_REGION = {
+    "british_isles": 0.05, "western_europe": 0.15, "nordic": 0.1, "eastern_europe": 0.2, "mediterranean": 0.2,
+    "north_africa_middle_east": 0.4, "sub_saharan_africa": 0.4, "north_america": 0.9, "latin_america": 0.6,
+    "south_asia": 0.3, "east_asia": 0.4, "south_east_asia": 0.3, "australia_nz": 0.15,
+}
+STOP = {"JP": 1.0, "KR": 0.6, "TW": 0.6}
+# Warning signs with a yellow face inside their red border (the rest are white; diamonds are always yellow).
+YELLOW_WARNING = set("SE FI IS PL GR".split())
+
 
 # Countries in a region that the world's towns don't name (or name under another code).
 NAMES = {"AI": "Anguilla", "GG": "Guernsey", "JE": "Jersey", "MS": "Montserrat", "NL": "Netherlands",
@@ -230,6 +263,10 @@ def table():
             "posts": POSTS.get(code, POSTS_REGION[region]),
             "kerb": KERB.get(code, KERB_REGION[region]),
             "bumps": BUMPS.get(code, BUMPS_REGION[region]),
+            "marks": MARKS.get(code, MARKS_REGION[region]),
+            "stop": STOP_WORD.get(code, "STOP"),
+            "stop_share": STOP.get(code, STOP_REGION[region]),
+            "warning_face": "yellow" if code in YELLOW_WARNING or code in DIAMOND else "white",
         }
     return {"format": FORMAT, "regions": list(REGIONS), "countries": out}
 

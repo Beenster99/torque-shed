@@ -820,6 +820,13 @@ func _run_all() -> void:
 	await _t(&"_test_ghost_pass_through")
 	await _t(&"_test_ghost_remote")
 	await _t(&"_test_ghost_adventure")
+	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
+	await _t(&"_test_region_kit_countries")
+	await _t(&"_test_region_kit_choose")
+	await _t(&"_test_region_kit_buildings")
+	await _t(&"_test_region_kit_city")
+	await _t(&"_test_road_markings_style")
+	await _t(&"_test_road_markings_paint")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -23885,3 +23892,17 @@ func _test_region_kit_buildings() -> void:
 
 func _test_region_kit_city() -> void:
 	_region_kit().test_city()
+
+
+# ---------------------------------------------------------------------------- road markings (tests/road_markings_tests.gd)
+
+func _road_markings() -> RefCounted:
+	return load("res://tests/road_markings_tests.gd").new(self)
+
+
+func _test_road_markings_style() -> void:
+	_road_markings().test_style()
+
+
+func _test_road_markings_paint() -> void:
+	_road_markings().test_paint()

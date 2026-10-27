@@ -448,6 +448,8 @@
 	"_test_road_locate": 30,
 	"_test_road_meshes": 200,
 	"_test_road_bridges": 300,
+	"_test_road_markings_paint": 700,
+	"_test_road_markings_style": 900,
 	"_test_road_ride": 6000,
 	"_test_road_traffic": 15975,
 	"_test_round5_models": 42781,

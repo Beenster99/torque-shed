@@ -173,6 +173,24 @@ roundabout's is the bearing from its middle),
 width: float, class: String, mouth: Vector3 (where its plain road starts, on its centre line), main: bool (one of
 the two arms of the junction's through road: the widest pair nearest straight on)}`.
 
+### Markings and signs (T8's RoadMarkings)
+
+`RoadMarkings.paint(block, kit) -> {"lines": AdventureProps arrays, "signs": AdventureProps arrays}`, from the
+block's anchor; `{}` when `kit` is (the place's country isn't known). `_lay_out` asks for it first, with
+`RegionKit.at_frame` of the block's middle. When it gives something, the block draws its `lines` as its paint (in
+place of the plain white lines: `AdventureSurface.line_material` takes the paint's own colours, so a country's
+yellow shows) and its `signs` with its buildings; otherwise the plain white lines as before. It reads only what this
+note lists: pieces (points, at, width, lanes, class, surface, oneway, a, b, ring, edge), junctions (kind, arms with
+main, radius, pos), `net.mouth`, `net.junction_of`, `net.length_of` and the block's building count. It's pure, so it
+runs on the worker and every machine paints the same.
+
+What it paints, from the country's facts (data/countries.json) and its markings' style (data/road_marks.json):
+centre and edge lines in the country's colours and patterns (and in town, Britain's double yellows or the kerb
+paint), a give-way or a stop across the lanes coming in on every side road's mouth and every roundabout entry, the
+stop word painted before a stop where the country does, Britain's give-way triangle and mini roundabout disc; and
+on poles beside them the give-way, stop (its word in the local script: SignWords, data/sign_glyphs.json) and
+roundabout signs, and a junction warning `WARN_AHEAD` m up each main road into one.
+
 ## What each thread uses
 
 - **T7 satnav.** `locate` for where a rider is on the graph (edge, s, which way they face from heading); the
@@ -180,7 +198,7 @@ the two arms of the junction's through road: the widest pair nearest straight on
   "second exit" is counting arms; `main` says which way is straight on.
 - **T8 markings and buildings.** Pieces carry width, lanes, class, surface and oneway; junctions carry kind, arms
   with their mouths, outline and island, which is everything a stop line, give-way, hatching, a roundabout's
-  arrows or a kerb needs. Until T8's markings land, T6 draws plain white edge and centre lines. Buildings: the
+  arrows or a kerb needs. T8's markings (RoadMarkings, below) paint them in the country's way; where the country isn't known, T6's plain white edge and centre lines. Buildings: the
   block hands over its rows with their ground; T8's kits replace how they're drawn, not which ones stand.
 - **T9 co-op.** Blocks are keyed and hashed in the region frame, so two machines on the same region build the same
   block and can compare `hash`. Positions on the wire stay as AdventureWorld tags them today.

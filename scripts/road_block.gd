@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 4
+const VERSION := 5
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -52,6 +52,8 @@ var trees := {}
 var arrays := {}
 var ms := 0.0
 var net: RoadNet
+## Whether the place's markings (RoadMarkings, T8) paint its lines, rather than the plain white ones.
+var _marked := false
 ## Set by the streamer when the ground under it sharpened while it was being laid out (it's laid out again).
 var stale := false
 
@@ -327,6 +329,11 @@ func anchor() -> Vector3:
 func _lay_out() -> void:
 	arrays = {"deck": {}, "verge": AdventureProps.new_arrays(), "lines": AdventureProps.new_arrays(),
 		"island": AdventureProps.new_arrays(), "bridge": AdventureProps.new_arrays(), "faces": {}}
+	# The place's region kit (RegionKit, T8): how its buildings are built and its roads marked and signed.
+	var mid := rect.get_center()
+	var kit := RegionKit.at_frame(net.region.frame_lat, net.region.frame_lon, mid.x, mid.y) if net.region != null else {}
+	var marks := RoadMarkings.paint(self, kit)
+	_marked = not marks.is_empty()
 	for p in pieces:
 		_piece_mesh(p)
 	for j in junctions:
@@ -334,9 +341,11 @@ func _lay_out() -> void:
 	_join_caps()
 	var houses := AdventureProps.new_arrays()
 	var o := anchor()
-	# In the place's region kit (RegionKit, T8), else as the single-line ride's plain buildings.
-	var mid := rect.get_center()
-	var kit := RegionKit.at_frame(net.region.frame_lat, net.region.frame_lon, mid.x, mid.y) if net.region != null else {}
+	if _marked:
+		for k: String in ["v", "n", "c"]:
+			arrays["lines"][k].append_array(marks["lines"][k])
+			houses[k].append_array(marks["signs"][k])
+	# In the place's region kit, else as the single-line ride's plain buildings.
 	for row: Array in buildings:
 		var at := Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o
 		var kind := RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)]
@@ -488,7 +497,7 @@ func _piece_mesh(p: Dictionary) -> void:
 			_verge_strip(pts[k] - o + rights[k] * side * e, pts[k + 1] - o + rights[k + 1] * side * e, rights[k] * side,
 				rights[k + 1] * side, verge_col)
 	_bridge_sides(pts, rights, e, ws, surf)
-	if surf == "tarmac":
+	if surf == "tarmac" and not _marked:
 		_piece_lines(p, pts, rights, e, s0)
 
 
