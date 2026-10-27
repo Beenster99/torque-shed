@@ -8,15 +8,17 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 1
+const VERSION := 4
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
+## A building stands at least this far past a road's verge (m), or it's left out (_over_road).
+const CLEAR := 1.0
 ## The deck's points across (edge, quarter, crown, quarter, edge), as the single-line road's.
 const ACROSS := 5
 ## The verge's skirt: from the verge's outer edge it runs this far further out and down under the land (m).
-const SKIRT_OUT := 0.8
-const SKIRT_DOWN := 0.6
+const SKIRT_OUT := 1.6
+const SKIRT_DOWN := 1.2
 ## The white lines: an edge line this far in from the edge (m), this wide, on roads at least EDGE_LINE_MIN wide; a
 ## centre line's dashes DASH on, GAP off (m), on two-lane roads; all LINE_LIFT above the deck.
 const LINE_IN := 0.3
@@ -30,6 +32,12 @@ const ISLAND_H := 0.15
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
+## A bridge's parapets: as thick as this (m), and as tall and of the stone the single-line ride's are
+## (AdventureChunk.PARAPET); a pier under it every PIER_GAP or so where the land is more than PIER_MIN below its deck.
+const PARAPET_W := 0.45
+const PIER_MIN := 1.5
+## A road crossing over or under another this far (m) above or below it isn't on it (_on_other).
+const OVER := 2.5
 
 var key := Vector2i.ZERO
 var rect := Rect2()
@@ -37,6 +45,9 @@ var hash := ""
 var pieces: Array[Dictionary] = []
 var junctions: Array[Dictionary] = []
 var buildings: Array = []
+## The trees and bushes standing in the block (RoadNet.dress): kind (AdventureProps.mesh) -> Array of Transform3D, from
+## the block's corner (anchor).
+var trees := {}
 ## The mesh and collision arrays the streamer commits (T6's own business; their shape may change freely).
 var arrays := {}
 var ms := 0.0
@@ -79,9 +90,12 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 		b.junctions.append(_public(j))
 	b.junctions.sort_custom(func(p, q): return int(p["node"]) < int(q["node"]))
 	for row: Array in n.buildings_in(k):
+		if b._over_road(row):
+			continue
 		var out := row.duplicate()
 		out.append(b._building_y(row))
 		b.buildings.append(out)
+	b._plant()
 	b._lay_out()
 	b.ms = (Time.get_ticks_usec() - t0) / 1000.0
 	return b
@@ -146,7 +160,7 @@ func _add_pieces(ei: int) -> void:
 			pts.append(Vector3(p.x, net.road_y(ei, a), p.y))
 		pieces.append({"edge": ei, "s0": run.x, "s1": run.y, "points": pts, "width": net.width_of(ei),
 			"lanes": net.lanes_of(ei), "class": r.class_of(ei), "surface": r.surface_of(ei), "name": r.name_of(ei),
-			"oneway": r.edge_oneway[ei], "a": r.edge_a[ei], "b": r.edge_b[ei], "ring": net.on_ring(ei)})
+			"oneway": r.edge_oneway[ei], "a": r.edge_a[ei], "b": r.edge_b[ei], "ring": net.on_ring(ei), "at": at})
 
 
 ## Where (s) edge `ei` crosses the block's edge between `sa` (inside if `a_in`) and `sb`.
@@ -180,6 +194,121 @@ func _building_y(row: Array) -> float:
 	return y
 
 
+## Plants the block's trees (trees) from the net's dress: where the canopy map has woods, as many as its share of the
+## ground under trees and their crowns' size say, as tall as it has them (as AdventureChunk does along the planned road);
+## where there's no canopy map, by what covers the ground. None on a road or its verge, by a building, or in water.
+func _plant() -> void:
+	if net.dress.is_empty():
+		return
+	var t: RealTerrain = net.dress["terrain"]
+	var look: Dictionary = net.dress.get("look", {})
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([net.region.hash, "trees", key])
+	var broad := str(look.get("broad", "tree"))
+	var needle := str(look.get("needle", "pine"))
+	var autumn := float(look.get("autumn", 0.0))
+	var bush := "bush"
+	for kind: String in (look.get("plants", {}) as Dictionary):
+		if kind in AdventureChunk.BUSHES:
+			bush = kind
+			break
+	var o := anchor()
+	var step := AdventureChunk.CANOPY_STEP
+	var north := absf(t.lat0) > float(AdventureChunk.NEEDLE_ODDS["north_lat"])
+	var looks := int(SIZE / step)
+	for j in looks:
+		for i in looks:
+			var cx := rect.position.x + (i + 0.5) * step
+			var cz := rect.position.y + (j + 0.5) * step
+			var v := t.trees_at(cx, cz)
+			var share := 0.0
+			var tallest := 0.0
+			var leaf := 0
+			if v >= 0:
+				share = float((v >> 5) & 7) / 7.0
+				tallest = float(v & 31) * AdventureChunk.CANOPY_HEIGHT_STEP
+				leaf = (v >> 8) & 3
+			else:
+				# No canopy map here: what covers the ground says how wooded it is, the trees of a middling height.
+				var c := t.cover(cx, cz)
+				var cover := RealPack.COVER[c] if c >= 0 and c < RealPack.COVER.size() else ""
+				share = float((AdventureChunk.ODDS["trees"] as Dictionary).get(cover, 0.05)) * 0.6
+				tallest = rng.randf_range(9.0, 16.0)
+				if rng.randf() < float((AdventureChunk.ODDS["bushes"] as Dictionary).get(cover, 0.1)) * 0.35:
+					_stand(t, bush, cx + rng.randf_range(-7.0, 7.0), cz + rng.randf_range(-7.0, 7.0), 2.5, o, rng)
+			if share <= 0.0:
+				continue
+			var p_needle := 1.0 if leaf == 2 else (0.0 if leaf == 1 else (0.5 if leaf == 3 else
+				float(AdventureChunk.NEEDLE_ODDS["north" if north else "base"])))
+			if v < 0 and not north:
+				p_needle *= 0.5   # (odd trees in open country are mostly broadleaves)
+			var conifer := float(absi(hash([floori(cx / AdventureChunk.NEEDLE_PATCH), floori(cz / AdventureChunk.NEEDLE_PATCH)])) % 1000) / 1000.0 < p_needle
+			var crown: Array = AdventureChunk.CROWN_NEEDLE if conifer else AdventureChunk.CROWN_BROAD
+			var wide := float(crown[0]) * tallest + float(crown[1])
+			var many := minf(float(AdventureChunk.CANOPY_MOST), share * step * step / (wide * wide))
+			var n := int(many + rng.randf())
+			for k in n:
+				var kind := needle if (conifer if leaf != 3 else rng.randf() < 0.5) else (broad if share < 0.5 or rng.randf() < 0.4 else "tree")
+				if kind == "tree" and broad in ["jungle_tree", "acacia"]:
+					kind = broad
+				if kind in ["tree", "oak"] and autumn > 0.0 and rng.randf() < autumn:
+					kind = "autumn_tree"
+				var tall := maxf(3.0, tallest * rng.randf_range(0.65, 1.0))
+				var size: Array = AdventureChunk.TREE_SIZE.get(kind, [6.6, 5.2])
+				var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1])
+				var x := cx + rng.randf_range(-0.5, 0.5) * step
+				var z := cz + rng.randf_range(-0.5, 0.5) * step
+				_stand(t, kind, x, z, 6.0, o, rng, Vector3(across, tall / float(size[0]), across))
+
+
+## Stands one `kind` at region-frame (x, z) on the land (RoadNet.ground_at), at least `clear` m past any road's verge,
+## off the buildings and out of the water; `scale` its size.
+func _stand(t: RealTerrain, kind: String, x: float, z: float, clear: float, o: Vector3, rng: RandomNumberGenerator,
+		scale := Vector3.ONE) -> void:
+	if t.cover(x, z) == RealPack.WATER:
+		return
+	if not net._near(x, z).is_empty():
+		var on := net.locate(x, z)
+		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + clear):
+			return
+	for row: Array in buildings:
+		if Vector2(float(row[0]) - x, float(row[1]) - z).length() < maxf(float(row[2]), float(row[3])) * 0.75 + 2.0:
+			return
+	var bare := float(net.height.call(x, z))
+	if is_nan(bare):
+		return
+	var y := net.ground_at(x, z, bare) - 0.3   # (a little in: the land's mesh is coarser than the heights)
+	var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(scale), Vector3(x, y, z) - o)
+	if not trees.has(kind):
+		trees[kind] = []
+	(trees[kind] as Array).append(xf)
+
+
+## The region kit (T8's RegionKit) of the place the block's middle is in: how its buildings are built.
+func kit_of() -> Dictionary:
+	var r := net.region
+	var mid := rect.get_center()
+	var ll := RealRegion.from_frame(Vector2(r.frame_lat, r.frame_lon), mid.x, mid.y)
+	return RegionKit.choose(PlaceProfile.of_cell(RealRegion.cell_of(ll.x, ll.y)))
+
+
+## Whether building `row` stands on a road or its verge, or in a junction (the map's buildings and its roads are each
+## drawn a little off, and a road's own line wins).
+func _over_road(row: Array) -> bool:
+	var bx := float(row[0])
+	var bz := float(row[1])
+	var w := float(row[2])
+	var d := float(row[3])
+	var yaw := float(row[4])
+	for c: Vector2 in [Vector2.ZERO, Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5)]:
+		var px := bx + (c.x * w) * cos(yaw) + (c.y * d) * sin(yaw)
+		var pz := bz - (c.x * w) * sin(yaw) + (c.y * d) * cos(yaw)
+		var on := net.locate(px, pz)
+		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + CLEAR):
+			return true
+	return false
+
+
 ## Which road (x, z) is on (RoadNet.locate).
 func locate(x: float, z: float) -> Dictionary:
 	return net.locate(x, z)
@@ -197,7 +326,7 @@ func anchor() -> Vector3:
 ## collision triangles}}. The land under them is RealLand's (RoadNet.ground_at).
 func _lay_out() -> void:
 	arrays = {"deck": {}, "verge": AdventureProps.new_arrays(), "lines": AdventureProps.new_arrays(),
-		"island": AdventureProps.new_arrays(), "faces": {}}
+		"island": AdventureProps.new_arrays(), "bridge": AdventureProps.new_arrays(), "faces": {}}
 	for p in pieces:
 		_piece_mesh(p)
 	for j in junctions:
@@ -295,7 +424,7 @@ func _piece_mesh(p: Dictionary) -> void:
 		return
 	var surf := str(p["surface"])
 	var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
-	var verge_col: Color = AdventureSurface.VERGE_COLOR.get(surf, AdventureSurface.VERGE_COLOR["tarmac"])
+	var verge_col := _verge_colour(surf)
 	var e := float(p["width"]) * 0.5
 	var o := anchor()
 	var g := _deck_of(surf)
@@ -339,28 +468,102 @@ func _piece_mesh(p: Dictionary) -> void:
 	g["i"].append_array(idx)
 	_faces_of(surf)
 	arrays["faces"][surf].append_array(faces)
-	# The verges, level with the road's edge, then the skirt down under the land.
-	var verge: Dictionary = arrays["verge"]
-	for k in rows - 1:
+	# The verges, level with the road's edge, then the skirt down under the land: none where they'd lie on another road,
+	# nor out on a bridge (its parapets instead).
+	var ei := int(p["edge"])
+	var ws := PackedFloat32Array()
+	for a: float in p["at"]:
+		ws.append(net.bridge_at(ei, a))
+	var keep := []
+	for k in rows:
+		var row := []
 		for side: float in [-1.0, 1.0]:
-			var a := pts[k] - o
-			var b := pts[k + 1] - o
-			var ra: Vector3 = rights[k] * side
-			var rb: Vector3 = rights[k + 1] * side
-			var a0 := a + ra * e
-			var b0 := b + rb * e
-			var a1 := a + ra * (e + RoadNet.VERGE) + Vector3(0.0, -0.03, 0.0)
-			var b1 := b + rb * (e + RoadNet.VERGE) + Vector3(0.0, -0.03, 0.0)
-			var a2 := a + ra * (e + RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
-			var b2 := b + rb * (e + RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
-			_up(verge, a0, b0, b1, verge_col)
-			_up(verge, a0, b1, a1, verge_col)
-			_up(verge, a1, b1, b2, verge_col.darkened(0.1))
-			_up(verge, a1, b2, a2, verge_col.darkened(0.1))
-			_face("grass", a0, b0, b1)
-			_face("grass", a0, b1, a1)
+			row.append(not _on_other(pts[k] + rights[k] * side * (e + RoadNet.VERGE), ei))
+		keep.append(row)
+	for k in rows - 1:
+		for q in 2:
+			if not keep[k][q] or not keep[k + 1][q] or (ws[k] > 0.0 and ws[k + 1] > 0.0):
+				continue
+			var side := -1.0 if q == 0 else 1.0
+			_verge_strip(pts[k] - o + rights[k] * side * e, pts[k + 1] - o + rights[k + 1] * side * e, rights[k] * side,
+				rights[k + 1] * side, verge_col)
+	_bridge_sides(pts, rights, e, ws, surf)
 	if surf == "tarmac":
 		_piece_lines(p, pts, rights, e, s0)
+
+
+## A piece's bridges, where it's out on one (`ws`, RoadNet.bridge_at at each of its points `pts`): a stone parapet
+## each side, its outside on down to the deck's underside BRIDGE_DEPTH under the road, the underside, and a pier every
+## PIER_GAP or so where the land is well below. The parapets' insides are walls (collision `surf`, the road's).
+func _bridge_sides(pts: PackedVector3Array, rights: Array, e: float, ws: PackedFloat32Array, surf: String) -> void:
+	var arr: Dictionary = arrays["bridge"]
+	var o := anchor()
+	var stone: Color = AdventureChunk.BRIDGE_STONE
+	var top := Vector3.UP * AdventureChunk.PARAPET
+	var dn := Vector3.DOWN * RoadNet.BRIDGE_DEPTH
+	var since := 0.0
+	for k in pts.size() - 1:
+		if ws[k] <= 0.0 or ws[k + 1] <= 0.0:
+			since = 0.0
+			continue
+		var c0 := pts[k] - o
+		var c1 := pts[k + 1] - o
+		var r0: Vector3 = rights[k]
+		var r1: Vector3 = rights[k + 1]
+		for side: float in [-1.0, 1.0]:
+			var in0 := c0 + r0 * side * e
+			var in1 := c1 + r1 * side * e
+			var out0 := c0 + r0 * side * (e + PARAPET_W)
+			var out1 := c1 + r1 * side * (e + PARAPET_W)
+			AdventureProps._quad(arr, in0, in1, in1 + top, in0 + top, stone.darkened(0.06))
+			AdventureProps._quad(arr, in0 + top, in1 + top, out1 + top, out0 + top, stone.lightened(0.08))
+			AdventureProps._quad(arr, out0 + top, out1 + top, out1 + dn, out0 + dn, stone)
+			_face(surf, in0, in1, in1 + top)
+			_face(surf, in0, in1 + top, in0 + top)
+		AdventureProps._quad(arr, c0 - r0 * (e + PARAPET_W) + dn, c0 + r0 * (e + PARAPET_W) + dn,
+			c1 + r1 * (e + PARAPET_W) + dn, c1 - r1 * (e + PARAPET_W) + dn, stone.darkened(0.25))
+		since += Vector2(c1.x - c0.x, c1.z - c0.z).length()
+		if since < AdventureChunk.PIER_GAP or ws[k] < 1.0:
+			continue
+		var ground := float(net.height.call(pts[k].x, pts[k].z))
+		var bottom := pts[k].y + dn.y
+		if bottom - ground > PIER_MIN:
+			since = 0.0
+			var xf := Transform3D(Basis(Vector3.UP, -_heading(pts, k)), Vector3(c0.x, ground - o.y - 0.5, c0.z))
+			AdventureProps.box(arr, xf, Vector3(e * 2.0 + 0.8, bottom - ground + 0.5, 1.6), stone.darkened(0.12), false)
+
+
+## The verge's colour beside a road of surface `surf`: the place's own, as the land beside it is.
+func _verge_colour(surf: String) -> Color:
+	var col: Color = AdventureSurface.VERGE_COLOR.get(surf, AdventureSurface.VERGE_COLOR["tarmac"])
+	var look: Dictionary = net.dress.get("look", {})
+	if look.has("verge"):
+		col = (look["verge"] as Dictionary).get(surf, col)
+	return col
+
+
+## A stretch of verge out from the road's edge a to b (block space), out along `ra` and `rb`, level with the edge, then
+## its skirt down under the land; and its collision.
+func _verge_strip(a0: Vector3, b0: Vector3, ra: Vector3, rb: Vector3, col: Color) -> void:
+	var verge: Dictionary = arrays["verge"]
+	var a1 := a0 + ra * RoadNet.VERGE + Vector3(0.0, -0.03, 0.0)
+	var b1 := b0 + rb * RoadNet.VERGE + Vector3(0.0, -0.03, 0.0)
+	var a2 := a0 + ra * (RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
+	var b2 := b0 + rb * (RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
+	_up(verge, a0, b0, b1, col)
+	_up(verge, a0, b1, a1, col)
+	_up(verge, a1, b1, b2, col.darkened(0.1))
+	_up(verge, a1, b2, a2, col.darkened(0.1))
+	_face("grass", a0, b0, b1)
+	_face("grass", a0, b1, a1)
+
+
+## Whether `p` (region frame) is on a road other than edge `ei` (any, for -1): its carriageway or a junction's surface,
+## where no verge is laid. Not one that crosses over or under it (OVER or more above or below).
+func _on_other(p: Vector3, ei: int) -> bool:
+	var on := net.locate(p.x, p.z, ei)
+	return not on.is_empty() and bool(on["on_road"]) and (int(on["edge"]) != ei or int(on["node"]) >= 0) \
+		and absf(float(on["y"]) - p.y) < OVER
 
 
 ## A tarmac piece's edge lines and centre dashes.
@@ -422,19 +625,50 @@ func _junction_mesh(j: Dictionary) -> void:
 			var m: Vector3 = a["mouth"]
 			var out := RoadNet._bearing(Vector2(m.x - at.x, m.z - at.z))
 			var right := Vector3(cos(out), 0.0, sin(out)) * float(a["width"]) * 0.5
-			var ring_e := float(j.get("ring_w", 7.0)) * 0.5
-			var back := Vector3(sin(out), 0.0, -cos(out)) * -ring_e
-			_fan(g, surf, col, at - o, [at + back - right * 1.6 - o, m - right - o, m + right - o, at + back + right * 1.6 - o])
+			# (from the ring's middle line, where the arm's own node is: no further in, or it pokes into the island)
+			_fan(g, surf, col, at - o, [at - right * 1.6 - o, m - right - o, m + right - o, at + right * 1.6 - o])
 		_island(j)
 		return
-	var outline: PackedVector2Array = j["outline"]
+	var full := net.junction_of(int(j["node"]))
+	var outline: PackedVector2Array = full["outline"]
+	var heights: PackedFloat32Array = full["outline_y"]
+	var kerb: PackedByteArray = full["kerb"]
 	var pts := []
 	for k in outline.size():
-		var y := centre.y
-		if j["kind"] != "end":
-			y = float((arms[k / 2]["mouth"] as Vector3).y)
-		pts.append(Vector3(outline[k].x, y, outline[k].y) - o)
-	_fan(g, surf, col, centre - o, pts, j["kind"] != "end")
+		pts.append(Vector3(outline[k].x, heights[k], outline[k].y) - o)
+	var closed: bool = j["kind"] != "end"
+	_fan(g, surf, col, centre - o, pts, closed)
+	# Its verges, round the kerbs between the arms (the arms' own run on from their mouths).
+	var verge_col := _verge_colour(surf)
+	var count := pts.size() if closed else pts.size() - 1
+	var mid := centre - o
+	# Each kerb's way out, and each point's (between the kerbs either side of it), so the verge bends round unbroken.
+	var outs := []
+	for k in count:
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[(k + 1) % pts.size()]
+		var side := Vector3(b.z - a.z, 0.0, a.x - b.x).normalized()
+		if side.dot((a + b) * 0.5 - mid) < 0.0:
+			side = -side
+		outs.append(side)
+	var at := []
+	var keep := []
+	for k in pts.size():
+		var n := Vector3.ZERO
+		for q: int in [k - 1, k]:
+			var w := posmod(q, pts.size())
+			if (closed or (q >= 0 and q < count)) and w < count and kerb[w] == 1:
+				n += outs[w]
+		n = n.normalized() if n.length_squared() > 0.0 else Vector3.ZERO
+		if not closed:
+			n = Vector3(pts[k].x - mid.x, 0.0, pts[k].z - mid.z).normalized()   # (a dead end's: round its half circle)
+		at.append(n)
+		keep.append(n != Vector3.ZERO and not _on_other(pts[k] + o + n * RoadNet.VERGE, -1))
+	for k in count:
+		var k1 := (k + 1) % pts.size()
+		if kerb[k] == 0 or not keep[k] or not keep[k1]:
+			continue
+		_verge_strip(pts[k], pts[k1], at[k], at[k1], verge_col)
 
 
 ## A fan of triangles from `c` round `pts` (closed if `closed`), into grid `g` and collision `surf`.
@@ -500,7 +734,8 @@ func _join_caps() -> void:
 			continue
 		var surf := r.surface_of(e0)
 		var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
-		var c := Vector3(r.node_pos[node].x, net.node_y(node), r.node_pos[node].y)
+		var at := net.point_at(e0, 0.0 if r.edge_a[e0] == node else net.length_of(e0))   # (the join, on the smoothed line)
+		var c := Vector3(at.x, net.node_y(node), at.y)
 		var ring := []
 		for k in 12:
 			var t := TAU * k / 12.0

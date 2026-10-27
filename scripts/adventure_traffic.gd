@@ -139,10 +139,19 @@ func sample(s: float) -> Dictionary:
 	var u := f - i
 	var h := lerpf(r.hd[i], r.hd[i + 1], u)
 	var b := clampi(int(s / BIN), 0, _busy.size() - 1)
-	return {"pos": world.to_local_pos(lerpf(r.px[i], r.px[i + 1], u), lerpf(r.ph[i], r.ph[i + 1], u) + AdventureChunk.CROWN * 0.75,
+	var y0 := r.ph[i]
+	var y1 := r.ph[i + 1]
+	if world.roads != null:
+		# On the network ride the road under the planned line is the network's, at its own heights.
+		var n0 := world.network_y(i)
+		var n1 := world.network_y(i + 1)
+		if not is_nan(n0) and not is_nan(n1):
+			y0 = n0
+			y1 = n1
+	return {"pos": world.to_local_pos(lerpf(r.px[i], r.px[i + 1], u), lerpf(y0, y1, u) + AdventureChunk.CROWN * 0.75,
 			lerpf(r.pz[i], r.pz[i + 1], u)),
 		"fwd": Vector3(sin(h), 0.0, -cos(h)), "hw": r.width[clampi(int(round(f)), 0, r.width.size() - 1)] * 0.5,
-		"busy": _busy[b], "limit": _limit[b], "grade": (r.ph[i + 1] - r.ph[i]) / AdventureRoute.STEP}
+		"busy": _busy[b], "limit": _limit[b], "grade": (y1 - y0) / AdventureRoute.STEP}
 
 
 ## The road's bend at `s` (1/m, + to the right), over a few knots either way: a real road's curvature from one knot to

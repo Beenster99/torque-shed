@@ -3,6 +3,7 @@
 #   tests/postcards/postcards.sh                     # all eight, into /tmp/postcards (about six minutes)
 #   tests/postcards/postcards.sh --only=dales        # one place, under a minute, to check a change of your own
 #   tests/postcards/postcards.sh --only=dales --quick   # just the pictures, no frame times
+#   tests/postcards/postcards.sh --only=dales --network # the network ride (Esc > Debug): fetches the heights round it
 #   tests/postcards/postcards.sh --group=1/4 --out=DIR --label="PR 61"   # CI: the second of every four places
 #   tests/postcards/postcards.sh --merge=DIR,DIR --out=DIR               # CI: one sheet of the machines' shares
 #   tests/postcards/postcards.sh --fetch             # fill world/heights for the rides (after bake.py; needs the network)

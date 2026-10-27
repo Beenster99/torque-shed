@@ -445,6 +445,7 @@
 	"_test_road_bike_rules": 12,
 	"_test_road_block_interface": 60,
 	"_test_road_blocks": 40,
+	"_test_road_bridges": 300,
 	"_test_road_cell": 1500,
 	"_test_road_heights": 40,
 	"_test_road_kinds": 40,

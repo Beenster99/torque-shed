@@ -821,6 +821,30 @@ func _run_all() -> void:
 	await _t(&"_test_ghost_pass_through")
 	await _t(&"_test_ghost_remote")
 	await _t(&"_test_ghost_adventure")
+	print("Ride anywhere v2: the place's look and sound (T3, T4) and the road network (T6)")
+	await _t(&"_test_place_look_eight_places")
+	await _t(&"_test_place_look_ground")
+	await _t(&"_test_place_look_plants")
+	await _t(&"_test_place_look_rules")
+	await _t(&"_test_place_look_sun")
+	await _t(&"_test_place_sound_due")
+	await _t(&"_test_place_sound_eight_places")
+	await _t(&"_test_place_sound_files")
+	await _t(&"_test_place_sound_mix")
+	await _t(&"_test_place_sound_radio")
+	await _t(&"_test_place_sound_ride")
+	await _t(&"_test_place_sound_ride_radio")
+	await _t(&"_test_place_sound_rules")
+	await _t(&"_test_place_sound_with_profiles")
+	await _t(&"_test_road_block_interface")
+	await _t(&"_test_road_kinds")
+	await _t(&"_test_road_locate")
+	await _t(&"_test_road_heights")
+	await _t(&"_test_road_blocks")
+	await _t(&"_test_road_cell")
+	await _t(&"_test_road_meshes")
+	await _t(&"_test_road_bridges")
+	await _t(&"_test_road_ride")
 	print("Ride Anywhere v2 (T9): co-op on the road network, the crew's hashes, positions and the leave-the-route call")
 	await _t(&"_test_coop_hashes")
 	await _t(&"_test_coop_positions")
@@ -22553,6 +22577,10 @@ func _test_road_cell() -> void:
 
 func _test_road_meshes() -> void:
 	_roads().test_meshes()
+
+
+func _test_road_bridges() -> void:
+	_roads().test_bridges()
 
 
 func _test_road_ride() -> void:
