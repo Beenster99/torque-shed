@@ -19,6 +19,12 @@ extends Node3D
 ## net's, the roads cut and banked into it (roads.ground_at); the road blocks sit just above it. Blocks within NET_NEAR
 ## of the rider are at the near level, so their 8 m cells follow the cuttings.
 const NET_NEAR := 1100.0
+## In network mode the land is coloured as the land well away from a road is (the satellite's ground showing through:
+## PlaceLook.ground_share), wherever it is: the roads' own verges are the road blocks'.
+const NET_COLOUR_LAT := 60.0
+## And the satellite's ground takes only this share of what it would there: the land round a rider is near it, where the
+## place's own grass, crops and woods colour it, the satellite's only shading them.
+const NET_SATELLITE := 0.5
 
 ## The riders may leave the road and ride the land (the Esc > Debug network toggle sets it): AdventureTrip doesn't put
 ## a bike back on the road while a near block holds it up.
@@ -44,6 +50,11 @@ const UNDER_BY := 0.3
 const ROAD_NEAR := 560.0
 ## How far the edges of a block hang down at least (m), so two blocks at different levels show no crack between them.
 const SKIRT_MIN := 4.0
+## On the road network the skirts are as deep as the land and this block's edge part, looked at every EDGE_LOOK (m), and
+## as the land parts from a straight line between points EDGE_KNOT apart (the far level's cells, where every level's
+## edge meets the land).
+const EDGE_LOOK := 8.0
+const EDGE_KNOT := 64.0
 ## Where the road's own blend into the land is worked out exactly: from this far off it (m, from BAND_NEAR the chunks'
 ## land covers it and the land lies hidden under it) to BAND_FAR, where the ground is the bare real height.
 const BAND_NEAR := 96.0
@@ -97,7 +108,11 @@ func setup(w: AdventureWorld, r: AdventureRoute) -> void:
 	terrain = r.real.terrain
 	_material = StandardMaterial3D.new()
 	_material.vertex_color_use_as_albedo = true
+	_material.vertex_color_is_srgb = true   # (the colours are the look's, as the chunks' land is: AdventureSurface.land_material)
 	_material.roughness = 1.0
+	# (seen from both sides: wherever the eye might slip through a crack, under the land's edge or between two levels,
+	# it meets the land's underside, not the sky beyond)
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_water_material = water_material()
 	if terrain != null and not terrain.ground_arrived.is_connected(_on_ground):
 		terrain.ground_arrived.connect(_on_ground)
@@ -178,8 +193,11 @@ func follow(x: float, z: float) -> void:
 			if lod > 0 and (_near_road(key) if roads == null else d <= NET_NEAR):
 				lod = 0
 			if have != lod and not _tasks.has(key):
-				want.append({"key": key, "lod": lod, "d": d})
-	want.sort_custom(func(a, b): return float(a["d"]) < float(b["d"]))
+				var bare: bool = not _blocks.has(key) or _blocks[key]["mi"] == null
+				want.append({"key": key, "lod": lod, "d": d, "bare": bare})
+	# Land where there's none yet first, nearest first, then the rest re-levelled: a block waiting behind the near ones'
+	# finer levels is a hole through to the sky (the skyline under it is pushed well down near the road).
+	want.sort_custom(func(a, b): return bool(a["bare"]) and not bool(b["bare"]) if bool(a["bare"]) != bool(b["bare"]) else float(a["d"]) < float(b["d"]))
 	_queue = want
 	for key: Vector2i in _blocks.keys():
 		if _centre(key).distance_to(_at) > RANGES[2] + HYSTERESIS + BLOCK * 0.5:
@@ -441,6 +459,34 @@ func _precise(x: float, z: float, k: int) -> Array:
 	return [y, best, lat]
 
 
+## Any height in `grid` (`m` a side) that isn't a number (the ground not in there yet, or no road height for it) made
+## its nearest neighbour's along the row, or the column, so no vertex is ever lost and leaves a hole: the block is laid
+## again once the ground comes.
+static func _fill_gaps(grid: PackedFloat32Array, m: int) -> PackedFloat32Array:
+	var any := false
+	for g in grid.size():
+		if not is_finite(grid[g]):
+			any = true
+			break
+	if not any:
+		return grid
+	for pass_dir in 2:
+		for line in m:
+			var last := NAN
+			for step in 2:
+				for t in m:
+					var u := t if step == 0 else m - 1 - t
+					var g := line * m + u if pass_dir == 0 else u * m + line
+					if is_finite(grid[g]):
+						last = grid[g]
+					elif not is_nan(last):
+						grid[g] = last
+	for g in grid.size():
+		if not is_finite(grid[g]):
+			grid[g] = 0.0   # (none in the whole block: flat rather than a hole, till the ground comes)
+	return grid
+
+
 ## The mesh arrays of block `key` at level `lod`, or null when it holds no land. Any thread.
 func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var cells: int = CELLS[lod]
@@ -495,6 +541,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 				bare = route.base[k]
 			if net != null:
 				grid[g] = float(net.call("ground_at", x, z, bare)) if cut else bare
+				lats[g] = NET_COLOUR_LAT
 			elif d >= BAND_FAR:
 				grid[g] = bare
 			elif d < BAND_NEAR:
@@ -504,6 +551,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 				grid[g] = pr[0]
 				knot[g] = int(pr[1])
 				lats[g] = pr[2]
+	grid = _fill_gaps(grid, m)
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var cols := PackedColorArray()
@@ -660,7 +708,8 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 
 ## The rivers and streams (RealPack.streams) of the block at (ox, oz) into `verts` and `idx`: a ribbon of water down each,
 ## its own width or STREAM_MIN_W if narrower, on the water at each point (the real heights there, never up a bank: the
-## lowest of them a point either way), over the trough the land has along it (AdventureRoute.ground_at). Each segment is
+## lowest of them a point either way; on the network ride no higher than the land with the roads cut in), over the
+## trough the land has along it (AdventureRoute.ground_at). Each segment is
 ## the block's that its middle is in; none on the road (`near`: its knots by the block) but under a bridge, nor where the
 ## land cover has the water already.
 func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: PackedVector3Array, idx: PackedInt32Array) -> void:
@@ -692,6 +741,10 @@ func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: Packed
 			var hb := _lowest(raw, k + 1)
 			if is_nan(ha) or is_nan(hb):
 				continue
+			if roads != null:
+				# (down with the land where a road's bank has cut it, never standing over it)
+				ha = minf(ha, float(roads.call("ground_at", a.x, a.y, ha)))
+				hb = minf(hb, float(roads.call("ground_at", b.x, b.y, hb)))
 			var along := (b - a).normalized()
 			var side := Vector2(-along.y, along.x) * half
 			# (a little past each end, so the next segment's ribbon overlaps it at a bend)
@@ -707,6 +760,8 @@ func _stream_ribbons(ox: float, oz: float, near: PackedInt32Array, verts: Packed
 ## no water's drawn there (it would lie over the road, or a bank of it). The deck is the nearest knot's, not the nearest
 ## of every fourth (at a bridge's end that may be on the deck while the road there isn't).
 func _on_road(near: PackedInt32Array, x: float, z: float, reach: float) -> bool:
+	if roads != null:
+		return _on_net(x, z)
 	if near.is_empty():
 		return false
 	var nr := _nearest_of(route, near, x, z)
@@ -720,6 +775,16 @@ func _on_road(near: PackedInt32Array, x: float, z: float, reach: float) -> bool:
 			best = d
 			k = i
 	return not near_deck(route, k)
+
+
+## _on_road for the road network: whether (x, z) is on a road, its verge, or the land held level with it past the verge
+## (RoadNet.LAND_PAD, where water would stand over the cut land), unless it's under a bridge.
+func _on_net(x: float, z: float) -> bool:
+	var on: Dictionary = roads.call("locate", x, z)
+	if on.is_empty():
+		return false
+	var off := absf(float(on["lat"])) - float(on["width"]) * 0.5
+	return off <= RoadNet.VERGE + RoadNet.LAND_PAD and float(roads.call("bridge_at", int(on["edge"]), float(on["s"]))) < 0.5
 
 
 ## Whether knot `i` of `r` is on a bridge or just at its end (a deck eases in over its first and last knots).
@@ -797,7 +862,50 @@ func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: Packe
 		var mid_h := terrain.height((xa + xb) * 0.5, (za + zb) * 0.5)
 		if not is_nan(mid_h):
 			gap = maxf(gap, absf(mid_h - (verts[a].y + verts[b].y) * 0.5))
+	if roads != null:
+		gap = maxf(gap, _net_edge_gap(ox, oz, e, cells, sp, verts, n))
 	return gap
+
+
+## _edge_gap on the road network, where the land is cut and banked for the roads at every level: how far this block's
+## edge `e` and a neighbour's at any level can part along it. Both are the same land (ground_at) at the points they
+## share, every EDGE_KNOT (the coarsest level's cell), and straight or nearly so between: so the most this edge strays
+## from the land, or the land from a straight line between those points, every EDGE_LOOK along it.
+func _net_edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int) -> float:
+	var looks := int(BLOCK / EDGE_LOOK)
+	var land := PackedFloat32Array()
+	land.resize(looks + 1)
+	for k in looks + 1:
+		var t := k * EDGE_LOOK
+		var x := ox + (t if e < 2 else (0.0 if e == 2 else BLOCK))
+		var z := oz + (t if e >= 2 else (0.0 if e == 0 else BLOCK))
+		var bare := route.ground_at(x, z)
+		land[k] = NAN if is_nan(bare) else float(roads.call("ground_at", x, z, bare))
+	var gap := 0.0
+	var per := int(EDGE_KNOT / EDGE_LOOK)
+	for k in looks + 1:
+		if is_nan(land[k]):
+			continue
+		# This edge there (between its own vertices), and the coarsest neighbour's (between the shared points).
+		var f := k * EDGE_LOOK / sp
+		var i0 := mini(int(f), cells - 1)
+		var mine := lerpf(verts[_edge_vert(e, i0, n)].y, verts[_edge_vert(e, i0 + 1, n)].y, f - i0)
+		var k0 := (k / per) * per
+		var k1 := mini(k0 + per, looks)
+		var theirs := land[k]
+		if not is_nan(land[k0]) and not is_nan(land[k1]) and k1 > k0:
+			theirs = lerpf(land[k0], land[k1], float(k - k0) / float(k1 - k0))
+		gap = maxf(gap, maxf(absf(land[k] - mine), absf(theirs - mine)))
+	return gap
+
+
+## The vertex index of point `t` along edge `e` of a block `n` vertices a side (see _edge_gap's order).
+static func _edge_vert(e: int, t: int, n: int) -> int:
+	match e:
+		0: return t
+		1: return (n - 1) * n + t
+		2: return t * n
+	return t * n + n - 1
 
 
 ## The ground's colour: what the road's own land is there (its surface's, patched, tinted by what covers it), so the two
@@ -805,7 +913,7 @@ func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: Packe
 ## from the road means nothing), and a beach by the sea. Under water it's the bed's, where the water is drawn (`wet`), and
 ## the water's own blue where it isn't (the far level).
 func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, wet := true) -> Color:
-	var col := AdventureChunk._land_color(route, i, 3, lat, x, z, y)
+	var col := AdventureChunk._land_color(route, i, 3, lat, x, z, y, NET_SATELLITE if roads != null else 1.0)
 	if not wet and terrain.cover(x, z) == RealPack.WATER:
 		return col.lerp(FAR_WATER, 0.85)
 	if route.cover_at(x, z) == "":

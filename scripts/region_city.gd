@@ -450,6 +450,7 @@ static func _shopfronts(a: Dictionary, body: Transform3D, w: float, d: float, ki
 		var fascia: Color = RegionKit.pick(rng, kit["shop"]["fascia"], DARK)
 		RegionBuildings._plate(a, body, Vector3(x, 0.25, d * 0.5), Vector2(uw - 0.8, 2.3), glass.lightened(0.18))
 		AdventureProps.box(a, body.translated_local(Vector3(x, 2.7, d * 0.5 + 0.08)), Vector3(uw - 0.3, 0.55, 0.16), fascia)
+		RegionBuildings._shop_name(a, body, Vector3(x, 2.975, d * 0.5 + 0.17), uw - 1.0, 0.32, fascia, kit, rng)
 		if rng.randf() < 0.5:
 			RegionBuildings._lean_to(a, body, Vector3(x, 2.65, d * 0.5 + 0.16), uw - 0.6, 1.2, 0.45, RegionKit.pick(rng, kit["shop"]["awning"], fascia))
 

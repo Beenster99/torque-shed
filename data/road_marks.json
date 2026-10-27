@@ -1,0 +1,128 @@
+{
+	"format": 1,
+	"_about": "How each country's roads are painted (data/countries.json 'marks' names the style; its 'centre' and 'edge' name the colours). Lengths in metres. A line's dash 0 is a solid line. centre: two-lane roads; major: the same on primary roads and bigger (double: two solid lines); near: the centre line's last stretch before a junction; edge: on roads at least edge.min wide; give_way: across a side road's mouth, as 'double' (two broken lines), 'dash' (one broad broken line), 'teeth' (a row of triangles pointing at the driver) or 'none'; triangle: a painted triangle in the lane before a give-way; stop: its line's width and whether the stop word is painted before it; roundabout: the give-way at a roundabout's entries; mini: a painted disc at a mini roundabout's middle; town_lines: what runs along a town street's kerbs instead of its edge lines ('double_yellow', Britain's no-waiting lines).",
+	"styles": {
+		"uk": {
+			"centre": {"w": 0.1, "dash": 4.0, "gap": 5.0},
+			"major": {"w": 0.1, "dash": 4.0, "gap": 5.0},
+			"near": {"w": 0.15, "dash": 6.0, "gap": 3.0, "len": 30.0},
+			"edge": {"w": 0.1, "dash": 0.0, "gap": 0.0, "min": 5.0},
+			"give_way": {"kind": "double", "w": 0.2, "dash": 0.6, "gap": 0.3},
+			"triangle": true,
+			"stop": {"w": 0.3, "word": true},
+			"roundabout": {"kind": "dash", "w": 0.2, "dash": 0.6, "gap": 0.3},
+			"mini": true,
+			"town_lines": "double_yellow"
+		},
+		"eu": {
+			"centre": {"w": 0.12, "dash": 4.5, "gap": 7.5},
+			"major": {"w": 0.12, "dash": 6.0, "gap": 12.0},
+			"near": {"w": 0.12, "dash": 0.0, "gap": 0.0, "len": 20.0},
+			"edge": {"w": 0.12, "dash": 0.0, "gap": 0.0, "min": 5.0},
+			"give_way": {"kind": "dash", "w": 0.4, "dash": 0.5, "gap": 0.25},
+			"triangle": false,
+			"stop": {"w": 0.4, "word": false},
+			"roundabout": {"kind": "dash", "w": 0.4, "dash": 0.5, "gap": 0.25},
+			"mini": false
+		},
+		"de": {
+			"centre": {"w": 0.12, "dash": 6.0, "gap": 12.0},
+			"major": {"w": 0.15, "dash": 6.0, "gap": 12.0},
+			"near": {"w": 0.12, "dash": 0.0, "gap": 0.0, "len": 30.0},
+			"edge": {"w": 0.15, "dash": 0.0, "gap": 0.0, "min": 5.0},
+			"give_way": {"kind": "dash", "w": 0.5, "dash": 0.5, "gap": 0.25},
+			"triangle": false,
+			"stop": {"w": 0.5, "word": true},
+			"roundabout": {"kind": "dash", "w": 0.5, "dash": 0.5, "gap": 0.25},
+			"mini": false
+		},
+		"fr": {
+			"centre": {"w": 0.12, "dash": 3.0, "gap": 10.0},
+			"major": {"w": 0.15, "dash": 3.0, "gap": 10.0},
+			"near": {"w": 0.12, "dash": 0.0, "gap": 0.0, "len": 25.0},
+			"edge": {"w": 0.2, "dash": 3.0, "gap": 3.5, "min": 5.0},
+			"give_way": {"kind": "dash", "w": 0.5, "dash": 0.5, "gap": 0.5},
+			"triangle": false,
+			"stop": {"w": 0.5, "word": false},
+			"roundabout": {"kind": "dash", "w": 0.5, "dash": 0.5, "gap": 0.5},
+			"mini": false
+		},
+		"nl": {
+			"centre": {"w": 0.1, "dash": 3.0, "gap": 9.0},
+			"major": {"w": 0.15, "dash": 3.0, "gap": 9.0},
+			"near": {"w": 0.1, "dash": 3.0, "gap": 9.0, "len": 0.0},
+			"edge": {"w": 0.15, "dash": 1.0, "gap": 3.0, "min": 4.5},
+			"give_way": {"kind": "teeth", "w": 0.6, "dash": 0.5, "gap": 0.25},
+			"triangle": false,
+			"stop": {"w": 0.3, "word": false},
+			"roundabout": {"kind": "teeth", "w": 0.6, "dash": 0.5, "gap": 0.25},
+			"mini": false
+		},
+		"nordic": {
+			"centre": {"w": 0.1, "dash": 3.0, "gap": 9.0},
+			"major": {"w": 0.15, "dash": 9.0, "gap": 3.0},
+			"near": {"w": 0.1, "dash": 0.0, "gap": 0.0, "len": 20.0},
+			"edge": {"w": 0.1, "dash": 1.0, "gap": 2.0, "min": 5.0},
+			"give_way": {"kind": "teeth", "w": 0.5, "dash": 0.4, "gap": 0.3},
+			"triangle": false,
+			"stop": {"w": 0.3, "word": true},
+			"roundabout": {"kind": "teeth", "w": 0.5, "dash": 0.4, "gap": 0.3},
+			"mini": false
+		},
+		"us": {
+			"centre": {"w": 0.1, "dash": 3.0, "gap": 9.0},
+			"major": {"w": 0.1, "dash": 0.0, "gap": 0.0, "double": true},
+			"near": {"w": 0.1, "dash": 0.0, "gap": 0.0, "len": 30.0, "double": true},
+			"edge": {"w": 0.1, "dash": 0.0, "gap": 0.0, "min": 5.0},
+			"give_way": {"kind": "teeth", "w": 0.6, "dash": 0.5, "gap": 0.3},
+			"triangle": false,
+			"stop": {"w": 0.45, "word": true},
+			"roundabout": {"kind": "teeth", "w": 0.6, "dash": 0.5, "gap": 0.3},
+			"mini": false
+		},
+		"latam": {
+			"centre": {"w": 0.1, "dash": 3.0, "gap": 9.0},
+			"major": {"w": 0.1, "dash": 0.0, "gap": 0.0, "double": true},
+			"near": {"w": 0.1, "dash": 0.0, "gap": 0.0, "len": 30.0},
+			"edge": {"w": 0.1, "dash": 0.0, "gap": 0.0, "min": 5.5},
+			"give_way": {"kind": "dash", "w": 0.4, "dash": 0.6, "gap": 0.3},
+			"triangle": false,
+			"stop": {"w": 0.4, "word": true},
+			"roundabout": {"kind": "dash", "w": 0.4, "dash": 0.6, "gap": 0.3},
+			"mini": false
+		},
+		"jp": {
+			"centre": {"w": 0.15, "dash": 5.0, "gap": 5.0},
+			"major": {"w": 0.15, "dash": 0.0, "gap": 0.0},
+			"near": {"w": 0.15, "dash": 0.0, "gap": 0.0, "len": 30.0},
+			"edge": {"w": 0.15, "dash": 0.0, "gap": 0.0, "min": 4.0},
+			"give_way": {"kind": "none"},
+			"triangle": false,
+			"stop": {"w": 0.45, "word": true},
+			"roundabout": {"kind": "dash", "w": 0.3, "dash": 0.5, "gap": 0.5},
+			"mini": false
+		},
+		"au": {
+			"centre": {"w": 0.1, "dash": 3.0, "gap": 9.0},
+			"major": {"w": 0.1, "dash": 3.0, "gap": 9.0},
+			"near": {"w": 0.1, "dash": 0.0, "gap": 0.0, "len": 30.0},
+			"edge": {"w": 0.1, "dash": 0.0, "gap": 0.0, "min": 5.0},
+			"give_way": {"kind": "dash", "w": 0.3, "dash": 0.6, "gap": 0.6},
+			"triangle": false,
+			"stop": {"w": 0.3, "word": false},
+			"roundabout": {"kind": "dash", "w": 0.3, "dash": 0.6, "gap": 0.6},
+			"mini": false
+		},
+		"asia": {
+			"centre": {"w": 0.15, "dash": 4.0, "gap": 6.0},
+			"major": {"w": 0.15, "dash": 0.0, "gap": 0.0},
+			"near": {"w": 0.15, "dash": 0.0, "gap": 0.0, "len": 30.0},
+			"edge": {"w": 0.15, "dash": 0.0, "gap": 0.0, "min": 5.5},
+			"give_way": {"kind": "dash", "w": 0.3, "dash": 0.6, "gap": 0.4},
+			"triangle": false,
+			"stop": {"w": 0.4, "word": true},
+			"roundabout": {"kind": "dash", "w": 0.3, "dash": 0.6, "gap": 0.4},
+			"mini": false
+		}
+	}
+}

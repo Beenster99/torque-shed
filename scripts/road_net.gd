@@ -19,25 +19,41 @@ const REACH := 30.0
 const UNDER := 0.12
 ## The verge either side of the carriageway, level with it (m).
 const VERGE := 1.5
-## The cutting or embankment past the verge: as wide as the height it makes up times BANK_SLOPE, between BANK_MIN and
-## BANK_MAX (m).
-const BANK_SLOPE := 1.5
-const BANK_MIN := 4.0
+## The cutting or embankment past the verge: as wide as the height it makes up times BANK_SLOPE (one in three), between
+## BANK_MIN and BANK_MAX (m).
+const BANK_SLOPE := 3.0
+const BANK_MIN := 8.0
 const BANK_MAX := 40.0
+## Where the land would rise past the road (a cutting, sidelong ground), it's held down level with the road this much
+## further out past the verge before its bank starts (m): the land is a grid of 8 m cells (RealLand's near level), and
+## a cell with a corner up the bank and another under the deck would lie over the road. A cell's diagonal and a little.
+## Nowhere this near a road's verge is the land higher than that road, whatever other road is near (a dual
+## carriageway's other half, a roundabout's ring), so no cell reaching over a deck can stand up through it.
+const LAND_PAD := 12.0
+## Where the land falls away from the road (an embankment), it's held level with the road this much past the verge
+## before its bank starts, so the verge's skirt is never left in the air over a cell of land that has already fallen.
+const FALL_PAD := 4.0
 ## A tee with another on the far side of its main road within this distance (m) is a staggered junction.
 const STAGGER := 40.0
-## The heights along an edge are smoothed over this many STEPs, three times over (much like a bell curve some 50 m
-## across), then eased over EASE m at each end onto the height of the node there, which every road meeting there shares.
-const FAIR_STEPS := 7
+## The heights along an edge are smoothed over this many STEPs, three times over (much like a bell curve some 60 m
+## across: as the single-line ride's roads are, AdventureRoute.fair_heights), then eased over EASE m at each end onto
+## the height of the node there, which every road meeting there shares.
+const FAIR_STEPS := AdventureRoute.FAIR_KNOTS
 const EASE := 40.0
 ## The smoothed heights are worked out PAGE samples at a time, from the bare ones PAGE_PAD either side (as far as three
 ## passes of FAIR_STEPS reach).
 const PAGE := 64
-const PAGE_PAD := 9
+const PAGE_PAD := 27
 ## A junction's arm starts its plain road at least this far (m) past where its kerbs clear the arms either side, and at
 ## most MOUTH_MOST from the node (and never past half the edge).
 const FILLET := 3.0
 const MOUTH_MOST := 30.0
+## A roundabout whose map line keeps within this share of its radius of a circle is drawn as one; any other shape has
+## its corners cut this many times.
+const RING_ROUND := 0.2
+const RING_ROUNDS := 4
+## A junction's kerb between two arms is a curve of this many pieces.
+const KERB_STEPS := 6
 ## A three-armed junction whose straightest pair of arms is within this much (radians) of straight on is a tee;
 ## otherwise it's a fork.
 const TEE_STRAIGHT := deg_to_rad(35.0)
@@ -45,6 +61,20 @@ const TEE_STRAIGHT := deg_to_rad(35.0)
 const CROWN := 0.04
 ## The grid locate and ground_at look a point up in (m a side), within each 512 m block.
 const GRID := 32.0
+## A bridge's deck (the map's bridges, the region's spans of kind 0) runs straight from one end to the other, over what
+## it crosses rather than down into it, and goes this far under the road (m): the land under it stays below that.
+const BRIDGE_DEPTH := AdventureRoute.BRIDGE_DEPTH
+## Over another road a bridge leaves it this much headroom (m, a British bridge's 16 ft 6 in) under its deck, and a
+## little more for the land the road below is laid on (it's often up on a bank of its own).
+const HEADROOM := 5.3
+const HEADROOM_PAD := 0.7
+## Where a bridge has to climb to clear a road under it, it's level for this far either side of the road (m), then
+## falls away at RAMP (rise over run) to where it meets the land: its approaches, on banks of their own.
+const CROWN_FLAT := 20.0
+const RAMP := 0.05
+## A bridge's deck eases onto the land over this many STEPs at each end (its abutments).
+const DECK_EASE := AdventureRoute.DECK_EASE
+var _none := [PackedInt32Array(), []]   # (what _near_at gives where no road is)
 
 var region: RealRegion
 ## height(x, z) -> float: the bare ground in the region frame (T5's terrain, asked by position and nothing else).
@@ -54,22 +84,31 @@ var height: Callable
 var ready: Callable
 ## 12 hex of the block builder's version and the region's hash.
 var version_hash := ""
+## What the blocks dress the land round the roads with (RoadBlock.trees), or {} for bare land: {terrain: RealTerrain
+## (its canopy map, trees_at, and its cover), look: the place's look (PlaceLook: broad, needle, autumn)}. The ride sets
+## it; the tests leave it off.
+var dress := {}
 
 var _lock := Mutex.new()
 var _edges_by_block := {}   # Vector2i -> PackedInt32Array: the edges whose line's box (with GROUND_REACH) meets it
 var _nodes_by_block := {}   # Vector2i -> PackedInt32Array
 var _buildings_by_block := {}   # Vector2i -> Array of rows
+var _lines := {}            # edge -> PackedVector2Array: its line smoothed (line_of)
 var _cum := {}              # edge -> PackedFloat32Array: distance along its line at each point
 var _fair := {}             # Vector2i(edge, page) -> PackedFloat32Array: its heights smoothed (_fair_page)
 var _node_y := {}           # node -> float
 var _junction := {}         # node -> Dictionary ({} for a plain join)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
-var _grids := {}            # Vector2i block -> {Vector2i cell -> PackedInt32Array of edges}
+var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
+var _decks := {}            # edge -> Dictionary: its bridges' heights (_deck_plan)
+var _mapped_of := {}        # edge -> PackedInt32Array: its bridges as the map has them (_mapped)
+var _over := {}             # edge -> Array of Vector4: the roads its bridges cross (_crossings)
+var _grids := {}            # Vector2i block -> {Vector2i cell -> {edge -> PackedInt32Array of its line's pieces}}
 
 
 ## How far round a road the land is shaped by it (m past the centre line, at the widest).
 static func ground_reach() -> float:
-	return 4.0 + VERGE + BANK_MAX
+	return 4.0 + VERGE + LAND_PAD + BANK_MAX
 
 
 func _init(r: RealRegion, h: Callable, final := Callable()) -> void:
@@ -130,6 +169,266 @@ func lanes_of(edge: int) -> int:
 	return 1 if region.edge_oneway[edge] != 0 or width_of(edge) < 5.0 else 2
 
 
+## Edge `edge`'s line, a to b, smoothed as the planned road is (RoutePlanner.smooth_line, by its class): no corner the
+## map drew stays a corner, and the bike's road and the net's lie one on the other. It's smoothed a strand at a time
+## (the edges joined end to end through plain joins), so it flows on through a join: a junction's or a dead end's node
+## stays where it is, a plain join's moves onto the curve. A roundabout's ring is left as the map drew it.
+func line_of(edge: int) -> PackedVector2Array:
+	_lock.lock()
+	var l = _lines.get(edge)
+	_lock.unlock()
+	if l != null:
+		return l
+	var got := _smooth_strand(edge)
+	if not got.has(edge):
+		got[edge] = region.edge_line[edge]   # (one with both ends on a ring that the way round it doesn't take)
+	# (the first line an edge is given stays its line: the grid and its other caches were worked out from it)
+	_lock.lock()
+	for ei: int in got:
+		if not _lines.has(ei):
+			_lines[ei] = got[ei]
+	var line: PackedVector2Array = _lines[edge]
+	_lock.unlock()
+	return line
+
+
+## The edge on through plain join `node` from edge `from`, or -1 where the strand ends there.
+func _through(node: int, from: int) -> int:
+	var adj := region.adjacent[node]
+	if adj.size() != 2 or adj[0] == adj[1]:
+		return -1
+	var next := adj[1] if adj[0] == from else adj[0]
+	if region.edge_a[next] == region.edge_b[next] or not _ring_of_edge(next).is_empty() or not _ring_of_edge(from).is_empty():
+		return -1
+	return next
+
+
+## The roundabout edge `edge` goes round (its nodes, as _ring), or empty: its own ring, or, for one too long to be
+## found as part of one (RoutePlanner.RING_EDGE_M), the ring of a short edge at its a node that has its b node too.
+func _ring_of_edge(edge: int) -> PackedInt32Array:
+	if on_ring(edge):
+		return _ring(edge)
+	for e2 in region.adjacent[region.edge_a[edge]]:
+		if e2 != edge and on_ring(e2):
+			var ring := _ring(e2)
+			if ring.has(region.edge_b[edge]) and ring.has(region.edge_a[edge]):
+				return ring
+	return PackedInt32Array()
+
+
+## The smoothed lines of the strand edge `edge` is part of: {edge: line, a to b}.
+func _smooth_strand(edge: int) -> Dictionary:
+	var ring := _ring_of_edge(edge)
+	if not ring.is_empty():
+		return _smooth_ring(ring, edge)
+	if region.edge_a[edge] == region.edge_b[edge]:
+		return {edge: region.edge_line[edge]}
+	# The strand in order, each [edge, the node it's entered from].
+	var seen := {edge: true}
+	var behind := []
+	var ahead := []
+	for dir: int in [0, 1]:
+		var cur := edge
+		var node := region.edge_a[edge] if dir == 0 else region.edge_b[edge]
+		while true:
+			var next := _through(node, cur)
+			if next < 0 or seen.has(next):
+				break
+			seen[next] = true
+			var far := region.other_end(next, node)
+			if dir == 0:
+				behind.append([next, far])
+			else:
+				ahead.append([next, node])
+			node = far
+			cur = next
+	behind.reverse()
+	var strand: Array = behind + [[edge, region.edge_a[edge]]] + ahead
+	var raw := PackedVector2Array()
+	var owner := PackedInt32Array()
+	var joins := PackedFloat64Array()   # how far along raw each join is
+	var run := 0.0
+	for st: Array in strand:
+		var line := region.line_from(int(st[0]), int(st[1]))
+		if not raw.is_empty():
+			joins.append(run)
+		for k in range(0 if raw.is_empty() else 1, line.size()):
+			if not raw.is_empty():
+				run += raw[raw.size() - 1].distance_to(line[k])
+			raw.append(line[k])
+			owner.append(int(st[0]))
+	var out := {}
+	if raw.size() < 3 or run < 1.0:
+		for st: Array in strand:
+			out[int(st[0])] = region.edge_line[int(st[0])]
+		return out
+	var sm := RoutePlanner.smooth_line(raw, RoutePlanner.MIN_RADIUS, RoutePlanner.fair_of(region, owner))
+	sm[0] = raw[0]
+	if sm[sm.size() - 1].distance_to(raw[raw.size() - 1]) > 0.25:
+		sm.append(raw[raw.size() - 1])
+	else:
+		sm[sm.size() - 1] = raw[raw.size() - 1]
+	var cum := PackedFloat64Array([0.0])
+	for k in range(1, sm.size()):
+		cum.append(cum[k - 1] + sm[k].distance_to(sm[k - 1]))
+	var total := cum[cum.size() - 1]
+	# Each join is cut where the curve passes nearest its node, near as far along it as the join is along the map's line.
+	var cuts := PackedFloat64Array([0.0])
+	for i in joins.size():
+		var at := region.node_pos[int(strand[i + 1][1])]
+		var guess := joins[i] / run * total
+		var best := guess
+		var best_d := INF
+		for k in range(1, sm.size()):
+			if cum[k] < guess - 40.0 or cum[k - 1] > guess + 40.0:
+				continue
+			var ab := sm[k] - sm[k - 1]
+			var l2 := ab.length_squared()
+			var t := clampf((at - sm[k - 1]).dot(ab) / l2, 0.0, 1.0) if l2 > 0.0 else 0.0
+			var d := (sm[k - 1] + ab * t).distance_squared_to(at)
+			if d < best_d:
+				best_d = d
+				best = cum[k - 1] + sqrt(l2) * t
+		cuts.append(clampf(best, cuts[cuts.size() - 1], total))
+	cuts.append(total)
+	for i in strand.size():
+		var piece := _cut(sm, cum, cuts[i], cuts[i + 1])
+		var ei := int(strand[i][0])
+		if int(strand[i][1]) != region.edge_a[ei]:
+			piece.reverse()
+		out[ei] = piece
+	return out
+
+
+## The lines of the roundabout edge `edge` is on, round: {edge: line, a to b}. A ring near enough a circle is drawn as
+## one (each edge an arc between where its nodes' bearings from the middle meet it); any other shape is rounded off
+## (corners cut, RING_ROUNDS times) and each edge cut from it where its nodes are nearest. As the map drew it where its
+## edges don't run one after another round it.
+func _smooth_ring(ring: PackedInt32Array, edge: int) -> Dictionary:
+	var set := {}
+	for n in ring:
+		set[n] = true
+	var order := PackedInt32Array()
+	var froms := PackedInt32Array()   # the node each is gone round from
+	var used := {}
+	var n0 := ring[0]
+	var node := n0
+	for _i in ring.size() + 1:
+		var next := -1
+		for ei in region.adjacent[node]:
+			if not used.has(ei) and set.has(region.other_end(ei, node)) and region.edge_a[ei] != region.edge_b[ei]:
+				next = ei
+				break
+		if next < 0:
+			break
+		used[next] = true
+		order.append(next)
+		froms.append(node)
+		node = region.other_end(next, node)
+		if node == n0:
+			break
+	if node != n0 or order.size() < 2:
+		return {edge: region.edge_line[edge]}
+	var raw := PackedVector2Array()
+	for i in order.size():
+		var line := region.line_from(order[i], froms[i])
+		for k in range(0 if raw.is_empty() else 1, line.size()):
+			raw.append(line[k])
+	raw.resize(raw.size() - 1)   # (it closes on its first point)
+	var c := Vector2.ZERO
+	for p in raw:
+		c += p
+	c /= raw.size()
+	var r := 0.0
+	for n in froms:
+		r += region.node_pos[n].distance_to(c)
+	r /= order.size()
+	var round := r > 1.0
+	for p in raw:
+		round = round and absf(p.distance_to(c) - r) <= r * RING_ROUND
+	var out := {}
+	if round:
+		for i in order.size():
+			var ei := order[i]
+			var line := region.line_from(ei, froms[i])
+			var a := region.node_pos[froms[i]] - c
+			var b := region.node_pos[region.other_end(ei, froms[i])] - c
+			var mid := line[line.size() / 2] - c if line.size() > 2 else (a + b) * 0.5
+			var t0 := atan2(a.y, a.x)
+			var sweep := wrapf(atan2(b.y, b.x) - t0, -PI, PI)
+			# (the way round the map's line goes: the side its middle is on)
+			var way := signf(wrapf(atan2(mid.y, mid.x) - t0, -PI, PI))
+			if way != 0.0 and signf(sweep) != way:
+				sweep += TAU * way
+			var steps := maxi(2, ceili(absf(sweep) * r / 3.0))
+			var pts := PackedVector2Array()
+			for k in steps + 1:
+				var t := t0 + sweep * float(k) / steps
+				pts.append(c + Vector2(cos(t), sin(t)) * r)
+			if froms[i] != region.edge_a[ei]:
+				pts.reverse()
+			out[ei] = pts
+		return out
+	# Rounded off: corners cut, then each node's nearest point on it is where its edges meet.
+	var loop := raw
+	for _round in RING_ROUNDS:
+		var cut := PackedVector2Array()
+		for k in loop.size():
+			var p := loop[k]
+			var q := loop[(k + 1) % loop.size()]
+			cut.append(p.lerp(q, 0.25))
+			cut.append(p.lerp(q, 0.75))
+		loop = cut
+	var at := {}   # node -> [index of the piece it's cut into, its point]
+	for n in froms:
+		var np := region.node_pos[n]
+		var best := INF
+		for k in loop.size():
+			var p := loop[k]
+			var q := loop[(k + 1) % loop.size()]
+			var pq := q - p
+			var t := clampf((np - p).dot(pq) / pq.length_squared(), 0.0, 1.0) if pq.length_squared() > 0.0 else 0.0
+			var d := (p + pq * t).distance_squared_to(np)
+			if d < best:
+				best = d
+				at[n] = [k, p + pq * t]
+	for i in order.size():
+		var ei := order[i]
+		var from: Array = at[froms[i]]
+		var to: Array = at[region.other_end(ei, froms[i])]
+		var pts := PackedVector2Array([from[1]])
+		var k := (int(from[0]) + 1) % loop.size()
+		if int(from[0]) != int(to[0]) or (from[1] as Vector2).distance_to(loop[(int(from[0]) + 1) % loop.size()]) < (to[1] as Vector2).distance_to(loop[(int(from[0]) + 1) % loop.size()]):
+			while true:
+				pts.append(loop[k])
+				if k == int(to[0]):
+					break
+				k = (k + 1) % loop.size()
+		pts.append(to[1])
+		if froms[i] != region.edge_a[ei]:
+			pts.reverse()
+		out[ei] = pts
+	return out
+
+
+## The stretch of line `pts` (`cum` the distance along it at each point) from `s0` to `s1`, its ends cut in exactly.
+static func _cut(pts: PackedVector2Array, cum: PackedFloat64Array, s0: float, s1: float) -> PackedVector2Array:
+	var out := PackedVector2Array([_along(pts, cum, s0)])
+	for k in pts.size():
+		if cum[k] > s0 + 0.01 and cum[k] < s1 - 0.01:
+			out.append(pts[k])
+	out.append(_along(pts, cum, s1))
+	return out
+
+
+static func _along(pts: PackedVector2Array, cum: PackedFloat64Array, s: float) -> Vector2:
+	for k in range(1, pts.size()):
+		if cum[k] >= s:
+			var seg := cum[k] - cum[k - 1]
+			return pts[k - 1].lerp(pts[k], (s - cum[k - 1]) / seg if seg > 0.0 else 0.0)
+	return pts[pts.size() - 1]
+
+
 ## The distance along edge `edge`'s line at each of its points.
 func _cum_of(edge: int) -> PackedFloat32Array:
 	_lock.lock()
@@ -137,7 +436,7 @@ func _cum_of(edge: int) -> PackedFloat32Array:
 	_lock.unlock()
 	if c != null:
 		return c
-	var line := region.edge_line[edge]
+	var line := line_of(edge)
 	var out := PackedFloat32Array()
 	out.resize(line.size())
 	for k in range(1, line.size()):
@@ -150,12 +449,13 @@ func _cum_of(edge: int) -> PackedFloat32Array:
 
 ## The edge's length (m, along its line).
 func length_of(edge: int) -> float:
-	return region.edge_len[edge]
+	var c := _cum_of(edge)
+	return c[c.size() - 1]
 
 
 ## The point `s` m along edge `edge` from its a node (clamped to its ends).
 func point_at(edge: int, s: float) -> Vector2:
-	var line := region.edge_line[edge]
+	var line := line_of(edge)
 	var cum := _cum_of(edge)
 	if s <= 0.0:
 		return line[0]
@@ -211,6 +511,8 @@ func _fair_page(edge: int, page: int) -> PackedFloat32Array:
 	var lo := k0 - PAGE_PAD
 	var hi := k1 + PAGE_PAD
 	var sp := len / float(n - 1)
+	var plan := _deck_plan(edge)
+	var bridged := not (plan["level"] as Array).is_empty()
 	var h := PackedFloat32Array()
 	h.resize(hi - lo)
 	var box := Rect2()
@@ -224,6 +526,22 @@ func _fair_page(edge: int, page: int) -> PackedFloat32Array:
 			p = point_at(edge, sp * k)
 		box = Rect2(p, Vector2.ZERO) if k == lo else box.expand(p)
 		h[k - lo] = float(height.call(p.x, p.y))
+		if bridged:
+			h[k - lo] = _decked(plan, k, h[k - lo], sp)
+	# (where the ground isn't in yet, the nearest that is: one sample with no height would spread to the whole page, and
+	# the land laid from it would have holes; it's laid again once the ground comes)
+	var last := NAN
+	for k in h.size():
+		if is_nan(h[k]):
+			h[k] = last
+		else:
+			last = h[k]
+	last = NAN
+	for k in range(h.size() - 1, -1, -1):
+		if is_nan(h[k]):
+			h[k] = last
+		else:
+			last = h[k]
 	var half := FAIR_STEPS / 2
 	for _pass in 3:
 		var sums := PackedFloat64Array()
@@ -238,11 +556,259 @@ func _fair_page(edge: int, page: int) -> PackedFloat32Array:
 			out[k] = (sums[b + 1] - sums[a]) / float(b - a + 1)
 		h = out
 	var res := h.slice(k0 - lo, k1 - lo)
-	if not ready.is_valid() or bool(ready.call(box.grow(STEP))):
+	if bridged:
+		for k in res.size():
+			if not is_nan(res[k]):
+				res[k] = maxf(res[k], _lifted(plan, k0 + k, sp))   # (smoothing would take the top off its climb over a road)
+	if (not ready.is_valid() or bool(ready.call(box.grow(STEP)))) and (not bridged or _decks.has(edge)):
 		_lock.lock()
 		_fair[key] = res
 		_lock.unlock()
 	return res
+
+
+## Edge `edge`'s bridges: the map's (_mapped), each run on over any road it crosses (_crossings) far enough to clear that
+## road, its verges and the land held level with it (a bridge's ends on the map are often its abutments' faces, short
+## of the land the road under it is cut into), as its samples [first, last, ...].
+func bridges_of(edge: int) -> PackedInt32Array:
+	_lock.lock()
+	var got = _bridges.get(edge)
+	_lock.unlock()
+	if got != null:
+		return got
+	var mapped := _mapped(edge)
+	var out := PackedInt32Array()
+	var over := []
+	if not mapped.is_empty():
+		var n := samples_of(edge)
+		var sp := length_of(edge) / float(n - 1)
+		var spans: Array[Vector2i] = []
+		for k in range(0, mapped.size() - 1, 2):
+			spans.append(Vector2i(mapped[k], mapped[k + 1]))
+			for hit: Vector4 in _crossings(edge, sp * mapped[k], sp * mapped[k + 1]):
+				over.append(hit)
+				spans.append(Vector2i(maxi(0, floori((hit.z - hit.w) / sp)), mini(n - 1, ceili((hit.z + hit.w) / sp))))
+		spans.sort()
+		for sv in spans:
+			var m := out.size()
+			if m >= 2 and sv.x <= out[m - 1]:
+				out[m - 1] = maxi(out[m - 1], sv.y)
+			else:
+				out.append(sv.x)
+				out.append(sv.y)
+	_lock.lock()
+	_over[edge] = over
+	_bridges[edge] = out
+	_lock.unlock()
+	return out
+
+
+## Edge `edge`'s bridges as the map has them (the region's spans of kind 0, RoutePlanner.spans_along), as its samples
+## [first, last, ...].
+func _mapped(edge: int) -> PackedInt32Array:
+	_lock.lock()
+	var got = _mapped_of.get(edge)
+	_lock.unlock()
+	if got != null:
+		return got
+	var n := samples_of(edge)
+	var sp := length_of(edge) / float(n - 1)
+	var xs := PackedFloat64Array()
+	var zs := PackedFloat64Array()
+	xs.resize(n)
+	zs.resize(n)
+	for k in n:
+		var p := point_at(edge, sp * k)
+		xs[k] = p.x
+		zs[k] = p.y
+	var out := RoutePlanner.spans_along(region, xs, zs, 0)
+	_snap_ends(out, xs, zs)
+	_lock.lock()
+	_mapped_of[edge] = out
+	_lock.unlock()
+	return out
+
+
+## Bridges `b` ([first, last, ...] samples at `xs`, `zs`, as RoutePlanner.spans_along finds them: any pair about as
+## far apart as the bridge is long) each moved to the samples nearest the ends of the map's bridge it is, so its deck
+## runs from the land at its very ends, not from a little way down into what it crosses.
+func _snap_ends(b: PackedInt32Array, xs: PackedFloat64Array, zs: PackedFloat64Array) -> void:
+	for k in range(0, b.size() - 1, 2):
+		var p0 := Vector2(xs[b[k]], zs[b[k]])
+		var p1 := Vector2(xs[b[k + 1]], zs[b[k + 1]])
+		var best := INF
+		var ends := Vector2i(b[k], b[k + 1])
+		for sp: Array in region.spans:
+			if int(sp[0]) != 0:
+				continue
+			var a := Vector2(float(sp[1]), float(sp[2]))
+			var c := Vector2(float(sp[3]), float(sp[4]))
+			for pair: Array in [[a, c], [c, a]]:
+				var d: float = p0.distance_to(pair[0]) + p1.distance_to(pair[1])
+				if d < best and d < RoutePlanner.BRIDGE_REACH * 4.0:
+					best = d
+					ends = Vector2i(_nearest_sample(pair[0], xs, zs, b[k]), _nearest_sample(pair[1], xs, zs, b[k + 1]))
+		if ends.y > ends.x:
+			b[k] = ends.x
+			b[k + 1] = ends.y
+
+
+## The sample at `xs`, `zs` nearest `p`, looking within a few either side of `near`.
+static func _nearest_sample(p: Vector2, xs: PackedFloat64Array, zs: PackedFloat64Array, near: int) -> int:
+	var best := near
+	var best_d := INF
+	var reach := int(ceil(RoutePlanner.BRIDGE_REACH * 2.0 / STEP)) + 1
+	for k in range(maxi(0, near - reach), mini(xs.size(), near + reach + 1)):
+		var d := Vector2(xs[k], zs[k]).distance_squared_to(p)
+		if d < best_d:
+			best_d = d
+			best = k
+	return best
+
+
+## How far edge `edge` is out onto a bridge `s` m along it: 1 out over what it crosses, easing from 0 over DECK_EASE
+## samples at each end (its abutments, where the land comes up to it), 0 off it.
+func bridge_at(edge: int, s: float) -> float:
+	return _deck_weight(edge, bridges_of(edge), s)
+
+
+## How far out onto bridges `b` (edge `edge`'s samples [first, last, ...]) it is `s` m along: see bridge_at.
+func _deck_weight(edge: int, b: PackedInt32Array, s: float) -> float:
+	if b.is_empty():
+		return 0.0
+	var n := samples_of(edge)
+	var f := clampf(s / maxf(length_of(edge), 0.001), 0.0, 1.0) * float(n - 1)
+	var w := 0.0
+	for k in range(0, b.size() - 1, 2):
+		var i0 := float(b[k])
+		var i1 := float(b[k + 1])
+		if f < i0 or f > i1:
+			continue
+		# (no abutment at an end where the bridge carries on through the node into another road's)
+		var from_a := f - i0 if b[k] > 0 or not _deck_on(edge, region.edge_a[edge]) else INF
+		var from_b := i1 - f if b[k + 1] < n - 1 or not _deck_on(edge, region.edge_b[edge]) else INF
+		var ease := minf(DECK_EASE, (i1 - i0) * 0.5) if from_a < INF and from_b < INF else float(DECK_EASE)
+		w = maxf(w, clampf(minf(from_a, from_b) / maxf(ease, 0.5), 0.0, 1.0))
+	return w
+
+
+## Whether another road at node `node` (than edge `edge`) is on one of the map's bridges right up to it.
+func _deck_on(edge: int, node: int) -> bool:
+	for ei in region.adjacent[node]:
+		if ei == edge:
+			continue
+		var b := _mapped(ei)
+		if b.is_empty():
+			continue
+		var last := samples_of(ei) - 1
+		if (region.edge_a[ei] == node and b[0] == 0) or (region.edge_b[ei] == node and b[b.size() - 1] == last):
+			return true
+	return false
+
+
+## Edge `edge`'s bridges' heights: {"level": [[first sample, last, height there, there], ...] (each straight from the
+## land at one end to the land at the other), "lifts": PackedVector2Array of (sample, height) where one crosses
+## another road and its deck must clear it (HEADROOM)}. Kept once the ground they're taken from is final.
+func _deck_plan(edge: int) -> Dictionary:
+	_lock.lock()
+	var got = _decks.get(edge)
+	_lock.unlock()
+	if got != null:
+		return got
+	var b := _mapped(edge)
+	bridges_of(edge)   # (finds the roads it crosses: _over)
+	_lock.lock()
+	var over: Array = _over.get(edge, [])
+	_lock.unlock()
+	var plan := {"level": [], "lifts": PackedVector2Array()}
+	var final := true
+	if not b.is_empty():
+		var sp := length_of(edge) / float(samples_of(edge) - 1)
+		for k in range(0, b.size() - 1, 2):
+			var p0 := point_at(edge, sp * b[k])
+			var p1 := point_at(edge, sp * b[k + 1])
+			(plan["level"] as Array).append([b[k], b[k + 1], float(height.call(p0.x, p0.y)), float(height.call(p1.x, p1.y))])
+			final = final and _final(p0, STEP) and _final(p1, STEP)
+		var lifts := PackedVector2Array()
+		for hit: Vector4 in over:
+			lifts.append(Vector2(hit.z / sp, float(height.call(hit.x, hit.y)) + HEADROOM + HEADROOM_PAD + BRIDGE_DEPTH))
+			final = final and _final(Vector2(hit.x, hit.y), STEP)
+		plan["lifts"] = lifts
+	if final:
+		_lock.lock()
+		_decks[edge] = plan
+		_lock.unlock()
+	return plan
+
+
+## The other roads crossing edge `edge`'s line between `s0` and `s1` m along it without meeting it (an overpass: not
+## near a node of either), and not on a bridge of their own there: [Vector4(x, z, s along edge, how far either side of
+## it (m along edge) the bridge must run to clear that road, its verges and the land held level with it, and then
+## ease onto its abutments), ...].
+func _crossings(edge: int, s0: float, s1: float) -> Array:
+	var out := []
+	var line := line_of(edge)
+	var cum := _cum_of(edge)
+	var ends: Array[Vector2] = [region.node_pos[region.edge_a[edge]], region.node_pos[region.edge_b[edge]]]
+	var seen := {}
+	for i in range(1, line.size()):
+		if cum[i] < s0 or cum[i - 1] > s1:
+			continue
+		var a := line[i - 1]
+		# (the grid's cells are filed with every piece within ground_reach of them: one look every GRID along will do)
+		var from := maxf(cum[i - 1], s0)
+		var to := minf(cum[i], s1)
+		var looks := int(ceil((to - from) / GRID)) + 1
+		for l in looks:
+			var q0 := a.lerp(line[i], (lerpf(from, to, float(l) / maxf(looks - 1, 1)) - cum[i - 1]) / maxf(cum[i] - cum[i - 1], 0.001))
+			var near := _near_at(q0.x, q0.y)
+			var cands: PackedInt32Array = near[0]
+			for c in cands.size():
+				var oe := cands[c]
+				if oe == edge:
+					continue
+				var ol := line_of(oe)
+				for j: int in near[1][c]:
+					var key := Vector3i(i, oe, j)
+					if seen.has(key):
+						continue
+					seen[key] = true
+					var hit = Geometry2D.segment_intersects_segment(a, line[i], ol[j - 1], ol[j])
+					if hit == null:
+						continue
+					var at: Vector2 = hit
+					var s := cum[i - 1] + a.distance_to(at)
+					if s < s0 or s > s1:
+						continue
+					var meets := false
+					for q: Vector2 in ends + [region.node_pos[region.edge_a[oe]], region.node_pos[region.edge_b[oe]]]:
+						meets = meets or q.distance_to(at) < 6.0
+					if meets or _deck_weight(oe, _mapped(oe), _cum_of(oe)[j - 1] + ol[j - 1].distance_to(at)) > 0.0:
+						continue
+					var cross := absf((line[i] - a).normalized().cross((ol[j] - ol[j - 1]).normalized()))
+					var clear := (width_of(oe) * 0.5 + VERGE + LAND_PAD) / maxf(cross, 0.35) + width_of(edge) * 0.5 + DECK_EASE * STEP
+					out.append(Vector4(at.x, at.y, s, clear))
+	return out
+
+
+## The height a bridge holds edge `edge`'s sample `k` (a fraction, or past either end) up to, by plan `plan`
+## (_deck_plan), from the land there `bare`: straight across its span, and up to clear any road under it, falling away
+## at RAMP to the land either side.
+static func _decked(plan: Dictionary, k: float, bare: float, sp: float) -> float:
+	var y := bare
+	for lv: Array in plan["level"]:
+		if k >= float(lv[0]) and k <= float(lv[1]) and not is_nan(float(lv[2]) + float(lv[3])):
+			y = lerpf(float(lv[2]), float(lv[3]), (k - float(lv[0])) / maxf(float(lv[1]) - float(lv[0]), 1.0))
+	return y if is_nan(y) else maxf(y, _lifted(plan, k, sp))
+
+
+## The height plan `plan`'s lifts hold sample `k` up to (-INF where none does).
+static func _lifted(plan: Dictionary, k: float, sp: float) -> float:
+	var y := -INF
+	for lift: Vector2 in plan["lifts"]:
+		if not is_nan(lift.y):
+			y = maxf(y, lift.y - maxf(absf(k - lift.x) * sp - CROWN_FLAT, 0.0) * RAMP)
+	return y
 
 
 ## The smoothed bare height of edge `edge`'s sample `k`.
@@ -251,16 +817,31 @@ func _fair_at(edge: int, k: int) -> float:
 
 
 ## The height of the road at node `node`, which every road meeting there shares: the mean of their smoothed heights at
-## that end.
+## that end; at a junction, of its through road's only (a roundabout's ring), so the through road runs on level and
+## a side road climbing or dropping away eases onto it, not the junction onto the side road.
 func node_y(node: int) -> float:
 	_lock.lock()
 	var y = _node_y.get(node)
 	_lock.unlock()
 	if y != null:
 		return y
+	var counts := {}
+	var adj := region.adjacent[node]
+	if adj.size() >= 3:
+		for ei in adj:
+			if on_ring(ei):
+				counts[ei] = true
+		if counts.size() < 2:
+			counts = {}
+			var arms := _arms(PackedInt32Array([node]), {})
+			var main := _main_pair(arms)
+			counts[int(arms[main.x]["edge"])] = true
+			counts[int(arms[main.y]["edge"])] = true
 	var sum := 0.0
 	var count := 0
-	for ei in region.adjacent[node]:
+	for ei in adj:
+		if not counts.is_empty() and not counts.has(ei):
+			continue
 		if region.edge_a[ei] == node:
 			sum += _fair_at(ei, 0)
 			count += 1
@@ -520,7 +1101,12 @@ func _roundabout(ring: PackedInt32Array) -> Dictionary:
 	var main := _main_pair(arms) if arms.size() >= 2 else Vector2i(-1, -1)
 	for k in arms.size():
 		arms[k]["main"] = k == main.x or k == main.y
-	var island := maxf(0.0, radius - ring_w * 0.5 - 0.5)
+	# (the island stops short of the ring as it's drawn, rounded: line_of)
+	var inner := radius
+	for ei: int in skip:
+		for p in line_of(ei):
+			inner = minf(inner, p.distance_to(centre))
+	var island := maxf(0.0, inner - ring_w * 0.5 - 0.5)
 	var out := {"node": ring[0], "nodes": ring, "kind": "mini" if radius <= RoutePlanner.MINI_RING_M else "roundabout",
 		"pos": Vector3(centre.x, y, centre.y), "island": island, "pair": -1, "arms": arms, "ring_w": ring_w,
 		"ring_r": radius}
@@ -557,6 +1143,9 @@ func _shape(j: Dictionary) -> void:
 		a["mouth"] = Vector3(p.x, road_y(ei, s), p.y)
 	var radius := 0.0
 	var outline := PackedVector2Array()
+	var outline_y := PackedFloat32Array()
+	var kerb := PackedByteArray()   # 1 where the outline runs on from point k along a kerb, 0 across an arm's mouth
+	var corners := []
 	for a in arms:
 		var p: Vector3 = a["mouth"]
 		var ei := int(a["edge"])
@@ -564,13 +1153,41 @@ func _shape(j: Dictionary) -> void:
 		var out_head := heading_at(ei, s) + (0.0 if bool(a["_from_a"]) else PI)
 		var right := Vector2(cos(out_head), sin(out_head))
 		var half := float(a["width"]) * 0.5
-		var left_c := Vector2(p.x, p.z) - right * half
-		var right_c := Vector2(p.x, p.z) + right * half
-		outline.append(left_c)
-		outline.append(right_c)
-		radius = maxf(radius, maxf(left_c.distance_to(centre), right_c.distance_to(centre)))
+		corners.append([Vector2(p.x, p.z) - right * half, Vector2(p.x, p.z) + right * half, Vector2(sin(out_head), -cos(out_head)), p.y])
+	for i in n:
+		var c: Array = corners[i]
+		outline.append(c[0])
+		outline.append(c[1])
+		outline_y.append_array([c[3], c[3]])
+		kerb.append_array([0, 1])
+		if ring or n < 2:
+			continue
+		# The kerb round to the next arm's left edge: a curve into the corner where the two edges would meet (none where
+		# they wouldn't, the far side of a tee: a straight kerb).
+		var d: Array = corners[(i + 1) % n]
+		var x = _meet(c[1], -(c[2] as Vector2), d[0], -(d[2] as Vector2))
+		if x == null:
+			continue
+		for q in range(1, KERB_STEPS):
+			var t := float(q) / KERB_STEPS
+			outline.append((c[1] as Vector2).lerp(x, t).lerp((x as Vector2).lerp(d[0], t), t))
+			outline_y.append(lerpf(c[3], d[3], t))
+			kerb.append(1)
+	for p in outline:
+		radius = maxf(radius, p.distance_to(centre))
 	if ring:
-		radius = maxf(radius, float(j["ring_r"]) + float(j["ring_w"]) * 0.5)
+		# A roundabout's surface is its ring, out to its outer edge (its arms' mouths run on from that).
+		var outer := float(j["ring_r"]) + float(j["ring_w"]) * 0.5
+		radius = maxf(radius, outer)
+		outline = PackedVector2Array()
+		for k in 24:
+			var b := TAU * k / 24.0
+			outline.append(centre + Vector2(sin(b), -cos(b)) * outer)
+		outline_y = PackedFloat32Array()
+		outline_y.resize(outline.size())
+		outline_y.fill(float(j["pos"].y))
+		kerb = PackedByteArray()
+		kerb.resize(outline.size())
 	if n == 1:
 		# A dead end: its outline is the half circle of the road's end.
 		var a: Dictionary = arms[0]
@@ -581,8 +1198,30 @@ func _shape(j: Dictionary) -> void:
 			var b := h + PI * 0.5 + PI * float(k) / 8.0   # round behind the node, from the road's right edge to its left
 			outline.append(centre + Vector2(sin(b), -cos(b)) * half)
 		radius = half
+		outline_y = PackedFloat32Array()
+		outline_y.resize(outline.size())
+		outline_y.fill(float(j["pos"].y))
+		kerb = PackedByteArray()
+		kerb.resize(outline.size())
+		kerb.fill(1)
 	j["radius"] = maxf(radius, 0.5)
 	j["outline"] = outline
+	j["outline_y"] = outline_y
+	j["kerb"] = kerb
+
+
+## Where the line from `p` along `u` meets the one from `q` along `v`, both ahead of where they start and within
+## MOUTH_MOST and a half of it, or null.
+static func _meet(p: Vector2, u: Vector2, q: Vector2, v: Vector2):
+	var den := u.cross(v)
+	if absf(den) < 0.05:
+		return null
+	var w := q - p
+	var a := w.cross(v) / den
+	var b := w.cross(u) / den
+	if a <= 0.0 or b <= 0.0 or a > MOUTH_MOST * 1.5 or b > MOUTH_MOST * 1.5:
+		return null
+	return p + u * a
 
 
 ## The distance (m along `edge` from `node`) where its plain road starts: 0 at a plain join.
@@ -600,7 +1239,9 @@ func mouth(edge: int, node: int) -> float:
 
 # ---------------------------------------------------------------------------- where you are
 
-## The edges filed under each GRID square of block `key` (any whose line comes within ground_reach of the square).
+## The edges filed under each GRID square of block `key` (any whose line comes within ground_reach of the square), with
+## the pieces of each one's line that do: {Vector2i cell -> [PackedInt32Array edges, Array of PackedInt32Array (each
+## edge's pieces: k for the piece from point k - 1 to k)]}.
 func _grid_of(key: Vector2i) -> Dictionary:
 	_lock.lock()
 	var g = _grids.get(key)
@@ -612,8 +1253,8 @@ func _grid_of(key: Vector2i) -> Dictionary:
 	var cells := int(RoadBlock.SIZE / GRID)
 	var pad := ground_reach()
 	for ei in edges_in(key):
-		var line := region.edge_line[ei]
-		var seen := {}
+		var line := line_of(ei)
+		var mine := {}
 		for k in range(1, line.size()):
 			var box := Rect2(line[k - 1], Vector2.ZERO).expand(line[k]).grow(pad)
 			var c0 := Vector2i(floori((box.position.x - o.x) / GRID), floori((box.position.y - o.y) / GRID))
@@ -621,34 +1262,45 @@ func _grid_of(key: Vector2i) -> Dictionary:
 			for cz in range(maxi(c0.y, 0), mini(c1.y, cells - 1) + 1):
 				for cx in range(maxi(c0.x, 0), mini(c1.x, cells - 1) + 1):
 					var c := Vector2i(cx, cz)
-					if seen.has(c):
-						continue
-					seen[c] = true
-					var list: PackedInt32Array = out.get(c, PackedInt32Array())
-					list.append(ei)
-					out[c] = list
+					var segs: PackedInt32Array = mine.get(c, PackedInt32Array())
+					segs.append(k)
+					mine[c] = segs
+		for c: Vector2i in mine:
+			if not out.has(c):
+				out[c] = [PackedInt32Array(), []]
+			var edges: PackedInt32Array = out[c][0]
+			edges.append(ei)   # (a packed array is a copy: put back)
+			out[c][0] = edges
+			(out[c][1] as Array).append(mine[c])
 	_lock.lock()
 	_grids[key] = out
 	_lock.unlock()
 	return out
 
 
-## The edges filed near (x, z).
-func _near(x: float, z: float) -> PackedInt32Array:
+## The edges filed near (x, z), and the pieces of their lines near it (_grid_of).
+func _near_at(x: float, z: float) -> Array:
 	var key := RoadBlock.key_of(x, z)
 	var o := Vector2(key) * RoadBlock.SIZE
-	return _grid_of(key).get(Vector2i(floori((x - o.x) / GRID), floori((z - o.y) / GRID)), PackedInt32Array())
+	return _grid_of(key).get(Vector2i(floori((x - o.x) / GRID), floori((z - o.y) / GRID)), _none)
+
+
+## The edges filed near (x, z).
+func _near(x: float, z: float) -> PackedInt32Array:
+	return _near_at(x, z)[0]
 
 
 ## The nearest point of edge `edge`'s line to `p`: [distance along the line, signed distance right of it (a to b),
-## distance from it].
-func _project(edge: int, p: Vector2) -> Array:
-	var line := region.edge_line[edge]
+## distance from it]. Only the pieces `segs` of the line are looked at (all of them, empty).
+func _project(edge: int, p: Vector2, segs := PackedInt32Array()) -> Array:
+	var line := line_of(edge)
 	var cum := _cum_of(edge)
 	var best_d := INF
 	var best_s := 0.0
 	var best_lat := 0.0
-	for k in range(1, line.size()):
+	var count := segs.size() if not segs.is_empty() else line.size() - 1
+	for i in count:
+		var k := segs[i] if not segs.is_empty() else i + 1
 		var a := line[k - 1]
 		var b := line[k]
 		var ab := b - a
@@ -671,17 +1323,22 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 	var best := -1
 	var best_key := INF
 	var best_proj := []
-	var cands := _near(x, z)
+	var near := _near_at(x, z)
+	var cands: PackedInt32Array = near[0]
 	if hint >= 0 and hint < region.edge_count() and not cands.has(hint):
 		cands = cands.duplicate()
 		cands.append(hint)
-	for ei in cands:
-		var pr := _project(ei, p)
+	for c in cands.size():
+		var ei := cands[c]
+		var pr := _project(ei, p, near[1][c] if c < (near[1] as Array).size() else PackedInt32Array())
 		var off := float(pr[2]) - width_of(ei) * 0.5
 		if off > REACH:
 			continue
-		# Inside a carriageway, the one whose centre line is nearest; else the nearest edge of one.
+		# Inside a carriageway, the one whose centre line is nearest; else the nearest edge of one. Still on the hint's,
+		# that one (where one road crosses over another, the one it was on).
 		var key := maxf(off, 0.0) * 1000.0 + float(pr[2])
+		if ei == hint and off <= 0.0:
+			key = -1.0
 		if key < best_key or (key == best_key and ei < best):
 			best_key = key
 			best = ei
@@ -694,7 +1351,7 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 	var f := clampf(lat / maxf(w * 0.5, 0.1), -1.0, 1.0)
 	var y := road_y(best, s) + CROWN * (1.0 - f * f)
 	var node := -1
-	var on := absf(lat) <= w * 0.5
+	var on := float(best_proj[2]) <= w * 0.5   # (its distance, not lat: past a dead end isn't on it)
 	for n: int in [region.edge_a[best], region.edge_b[best]]:
 		var j := junction_of(n)
 		if j.is_empty() or j["kind"] == "end":
@@ -714,7 +1371,9 @@ static func _inner(j: Dictionary) -> float:
 	return 0.0
 
 
-## The land's height at (x, z) with the roads cut in, from the bare ground `bare` there: see road-block.md.
+## The land's height at (x, z) with the roads cut in, from the bare ground `bare` there: see road-block.md. Under a
+## carriageway or its verges it's the road's, just under its deck (the lowest, where two overlap); further out each
+## road near holds it to its own height as much as its bank says, the nearest holding it most.
 func ground_at(x: float, z: float, bare: float) -> float:
 	if is_nan(bare):
 		return bare
@@ -722,24 +1381,46 @@ func ground_at(x: float, z: float, bare: float) -> float:
 	var most := 0.0
 	var sum_w := 0.0
 	var sum_y := 0.0
-	for ei in _near(x, z):
-		var pr := _project(ei, p)
+	var deck := INF
+	var below := INF   # (the lowest road within LAND_PAD of its verge: no land there is higher, see LAND_PAD)
+	var near := _near_at(x, z)
+	var cands: PackedInt32Array = near[0]
+	for c in cands.size():
+		var ei := cands[c]
+		var pr := _project(ei, p, near[1][c])
 		var off := float(pr[2]) - width_of(ei) * 0.5 - VERGE
-		if off > BANK_MAX:
+		if off > BANK_MAX + LAND_PAD:
 			continue
 		var y := road_y(ei, float(pr[0])) - UNDER
-		var t := 1.0
-		if off > 0.0:
+		if is_nan(y):
+			continue   # (no ground under it yet)
+		# (out on a bridge the land is left as it is under the deck, and only kept below it)
+		var on_bridge := bridge_at(ei, float(pr[0]))
+		if off <= 0.0:
+			if on_bridge >= 1.0:
+				below = minf(below, y - BRIDGE_DEPTH)
+			else:
+				deck = minf(deck, lerpf(y, minf(bare, y - BRIDGE_DEPTH), on_bridge))
+			continue
+		if off < LAND_PAD:
+			below = minf(below, y - BRIDGE_DEPTH * on_bridge)
+		# (land rising past the road waits LAND_PAD before its bank; land falling away, FALL_PAD)
+		var from := FALL_PAD if bare <= y else LAND_PAD
+		var t := 1.0 - on_bridge
+		if off > from:
 			var bank := clampf(absf(bare - y) * BANK_SLOPE, BANK_MIN, BANK_MAX)
-			t = 1.0 - smoothstep(0.0, bank, off)
+			t *= 1.0 - smoothstep(from, from + bank, off)
 		if t <= 0.0:
 			continue
+		var w := t * t * t * t   # (so the road it's nearest the bank of has its way)
 		most = maxf(most, t)
-		sum_w += t
-		sum_y += t * y
+		sum_w += w
+		sum_y += w * y
+	if deck < INF:
+		return minf(deck, below)
 	if sum_w <= 0.0:
-		return bare
-	return lerpf(bare, sum_y / sum_w, most)
+		return minf(bare, below)
+	return minf(lerpf(bare, sum_y / sum_w, most), below)
 
 
 ## Whether any road shapes the land in `rect` (region frame).
