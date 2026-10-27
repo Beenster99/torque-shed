@@ -24,6 +24,7 @@ var _box := Rect2()        # the route frame's bounds of it all
 var _riders: Array = []    # [{x, z, name, me, heading}]
 var _timer := 0.0
 var _route: AdventureRoute   # the route the lines were made for
+var _route_button: Button   # on the road network: asks the crew to leave the agreed route, or get back on it
 
 
 func _ready() -> void:
@@ -63,6 +64,10 @@ func _ready() -> void:
 	gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	side.add_child(gap)
+	_route_button = Button.new()
+	_route_button.pressed.connect(_on_route_button)
+	_route_button.visible = false
+	side.add_child(_route_button)
 	var close := Button.new()
 	Controls.bind_text(close, "Fold the map away ({paper_map})")
 	close.pressed.connect(func(): closed.emit())
@@ -106,12 +111,54 @@ func refresh() -> void:
 				first = false
 	_riders = _rider_spots()
 	_info.text = _info_text(r, _own_s())
+	_refresh_route_button()
 	_whole.queue_redraw()
+
+
+## The route call's button (the road network only, where the crew can ride off the agreed route): what it asks, or why
+## it can't be pressed now.
+func _refresh_route_button() -> void:
+	var on_net := trip.world.roads != null and int(Shed.adventure.get("arrived", 0)) == 0
+	_route_button.visible = on_net
+	if not on_net:
+		return
+	var free := Adventure.route_mode() == "free"
+	var open := not Adventure.route_call().is_empty()
+	var alone := Adventure.riders_out().size() <= 1
+	if open:
+		_route_button.text = "The crew are deciding on the route..."
+	elif free:
+		_route_button.text = "Back to the agreed route" if alone else "Ask the crew to get back on the agreed route"
+	else:
+		_route_button.text = "Leave the agreed route" if alone else "Ask the crew to leave the agreed route"
+	_route_button.disabled = open
+
+
+func _on_route_button() -> void:
+	trip.route_ask("rejoin" if Adventure.route_mode() == "free" else "leave")
+	refresh()
 
 
 func _own_s() -> float:
 	var p: Vector3 = trip.focus_points()[0]
+	if trip.world.roads != null:
+		# On the network, how far along the route the sat nav reckons you are (off it, by the way back).
+		var nav := NetNav.of(trip.world)
+		nav.update(Vector2(p.x, p.z), _fwd2())
+		var m := nav.route_metres() if nav.route != null else -1.0
+		if m >= 0.0:
+			return clampf(m, 0.0, trip.world.route.length)
 	return maxf(trip.world.distance_of(p, "map"), 0.0)
+
+
+## The way you're facing, flat (local frame).
+func _fwd2() -> Vector2:
+	var fwd := Vector3.FORWARD
+	if trip.main and trip.main.bike:
+		fwd = -trip.main.bike.global_transform.basis.z
+	elif trip.main and trip.main.walker:
+		fwd = -trip.main.walker.global_transform.basis.z
+	return Vector2(fwd.x, fwd.z).normalized() if Vector2(fwd.x, fwd.z).length() > 0.01 else Vector2(0, -1)
 
 
 ## Where everyone is on the route frame: you first.
@@ -127,7 +174,8 @@ func _rider_spots() -> Array:
 	# The others with how far ahead or behind along the road they are ("Dave 1.2 km ahead").
 	for f in trip.friends():
 		var q := w.route_xz(f["at"])
-		out.append({"x": q[0], "z": q[1], "name": AdventureTrip.friend_text(str(f["name"]), float(f["ahead"])), "me": false, "heading": 0.0})
+		out.append({"x": q[0], "z": q[1], "name": AdventureTrip.friend_text(str(f["name"]), float(f["ahead"]), bool(f.get("off", false))),
+			"me": false, "heading": 0.0})
 	return out
 
 

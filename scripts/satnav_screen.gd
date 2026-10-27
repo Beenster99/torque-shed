@@ -33,7 +33,7 @@ const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
 ## {pts: PackedVector2Array, kind, hw}, route: PackedVector2Array, road: name of the road it's
 ## on, points: Array of {kind, name, distance (m), at: Vector2 or null}, stops: the next places
 ## to stop, Array of {kind, name, label, distance, at}, guide: {wrong_way, turn} (the way to go,
-## relative to the heading; on the network also status and say, see Satnav.satnav_guide), friends: Array of {name, ahead (m), at}, junction: what to do at the
+## relative to the heading; on the network also status and say, see Satnav.satnav_guide), friends: Array of {name, ahead (m), at, off (on the network: off the planned road, ahead as the crow flies)}, junction: what to do at the
 ## next one, {text, type, exit, distance}} or {} for no fix yet.
 var view := {}
 ## What the unit can show (BikeBuild.satnav_features): "map", "route", "fuel".
@@ -223,7 +223,7 @@ func _draw() -> void:
 		draw_rect(box, Color(0, 0, 0, 0.55))
 		for i in shown.size():
 			draw_string(font, Vector2(box.position.x + 4.0, box.position.y + lh * (i + 1) - 2.0), AdventureTrip.friend_text(str(shown[i]["name"]),
-				float(shown[i]["ahead"])), HORIZONTAL_ALIGNMENT_RIGHT, box.size.x - 8.0, lfs, FRIEND)
+				float(shown[i]["ahead"]), bool(shown[i].get("off", false))), HORIZONTAL_ALIGNMENT_RIGHT, box.size.x - 8.0, lfs, FRIEND)
 	# Along the bottom: the road it's on, and north.
 	draw_rect(Rect2(0, size.y - bar_h, size.x, bar_h), Color(0, 0, 0, 0.6))
 	var road_name := str(view.get("road", ""))

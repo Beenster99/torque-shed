@@ -552,7 +552,7 @@ func satnav_friends(_pos: Vector2) -> Array:
 	var out := []
 	for f in trip.friends():
 		var at: Vector3 = f["at"]
-		out.append({"name": f["name"], "ahead": f["ahead"], "at": Vector2(at.x, at.z)})
+		out.append({"name": f["name"], "ahead": f["ahead"], "at": Vector2(at.x, at.z), "off": bool(f.get("off", false))})
 	return out
 
 
