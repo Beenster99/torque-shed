@@ -243,6 +243,10 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	pack.tunnels = tunnels
 	pack.chunks = rows
 	pack.names = names
+	for st in steps:
+		pack.steps.append_array([st.x, st.y, st.z])
+	pack.pin_nodes = stops
+	pack.run_start = run_start
 	var end_k := n - 1
 	turns.append({"d": snappedf((n - 1) * STEP, 0.1), "x": snappedf(xs[end_k], 0.1), "z": snappedf(zs[end_k], 0.1), "turn": "arrive", "onto": "", "branches": 0})
 	pack.turns = turns

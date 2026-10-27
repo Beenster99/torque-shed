@@ -38,6 +38,7 @@ func _restore() -> void:
 	HeightTiles.offline = false
 	HeightTiles.reset()
 	CellStore.offline = _cells_were
+	PlaceProfile.forget()   # (the profiles guessed while offline, not to be kept for later tests)
 
 
 ## Shodoshima's terrain made live: the same region, its heights from the map tiles (its buildings levelled).

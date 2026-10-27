@@ -617,5 +617,11 @@
 	"_test_yard_items_buy_place": 91,
 	"_test_yard_items_catalogue": 90,
 	"_test_yard_items_fit": 174,
-	"_test_yard_items_smooth": 113
+	"_test_yard_items_smooth": 113,
+	"_test_net_route": 60,
+	"_test_net_search": 60,
+	"_test_net_junctions": 120,
+	"_test_net_nav": 120,
+	"_test_net_plan": 4000,
+	"_test_net_world": 9000
 }
