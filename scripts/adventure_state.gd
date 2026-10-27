@@ -11,7 +11,10 @@ extends RefCounted
 ## AdventurePlans), real and real_hash (the planned road's id and hash), theme (the look of its
 ## land), dest (the last pin's place, see AdventureDest), title, by (the host's name),
 ## riders {peer: bike id, 0 when there was none for them}, arrived (the first peer to reach the
-## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived)}. Never
+## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived), network (whether it's
+## ridden on the road network: the host's Esc > Debug toggle when they set off, the same for everyone), builds and
+## ride_hash (the host's builder and ride hashes, see AdventureCrew: on the network every machine must match them),
+## route (the crew's agreed route and its "leave the route?" call, see AdventureCrew)}. Never
 ## carried over in a save: loading one finds everybody back at the shed.
 ##
 ## Actions (Shed.request): adventure_start {plan, seed, title} (the host, from the route planner:
@@ -24,6 +27,10 @@ extends RefCounted
 ## see AdventureNeeds), everyone back where they slept.
 ## adventure_highlight (see
 ## AdventureDiary, which keeps the crew's highlights here as "log").
+## adventure_builds {builds} (each player as they join the shed: their game's builder hash, kept in Shed.crew, and
+## the crew told when it isn't the host's); adventure_route_call {kind: "leave" or "rejoin"} (any rider: asks the
+## crew), adventure_route_vote {id, yes} (any rider: their answer) and adventure_route_tick (the host, settling a
+## call whose time is up): see AdventureCrew.
 
 const MIN_KM := 5.0
 const MAX_KM := 400.0
@@ -53,6 +60,10 @@ static func sanitize(v) -> Dictionary:
 	out["title"] = str(out.get("title", ""))
 	out["real"] = str(out.get("real", ""))
 	out["real_hash"] = str(out.get("real_hash", ""))
+	out["network"] = bool(out.get("network", false))
+	out["builds"] = str(out.get("builds", ""))
+	out["ride_hash"] = str(out.get("ride_hash", ""))
+	out["route"] = AdventureCrew.sanitize_route(out.get("route"))
 	# Planned here too (the host's road if all is well; if not, what was said is kept, for AdventureTrip.real_mismatch
 	# to turn down).
 	var plan := AdventurePlans.clean(out["plan"])
@@ -71,6 +82,39 @@ static func _is_host(peer: int) -> bool:
 	return not Net.is_online() or peer == 1
 
 
+## Whether the ride on now is ridden on the road network (the host's choice, everyone's).
+static func network() -> bool:
+	return active() and bool(Shed.adventure.get("network", false))
+
+
+## The crew's route mode: "route" while it rides the route it agreed, "free" once it's agreed to leave it (see
+## AdventureCrew). The sat nav reads it.
+static func route_mode() -> String:
+	return str((Shed.adventure["route"] as Dictionary).get("mode", "route")) if Shed.adventure.get("route") is Dictionary else "route"
+
+
+## One more each time the crew changes its route mode.
+static func route_version() -> int:
+	return int((Shed.adventure["route"] as Dictionary).get("version", 0)) if Shed.adventure.get("route") is Dictionary else 0
+
+
+## The crew's open "leave the route?" call ({} when there's none): {id, by, kind, votes {peer: bool}, ends}.
+static func route_call() -> Dictionary:
+	return (Shed.adventure["route"] as Dictionary).get("call", {}) if Shed.adventure.get("route") is Dictionary else {}
+
+
+## The peers out on the ride now (joined it and still in the crew).
+static func riders_out() -> Array:
+	var out := []
+	var riders = Shed.adventure.get("riders", {})
+	if riders is Dictionary:
+		for p in riders:
+			if Shed.crew.has(int(p)) or Shed.crew.has(p):
+				out.append(int(p))
+	out.sort()
+	return out
+
+
 static func check(peer: int, action: Dictionary) -> String:
 	match str(action.get("a", "")):
 		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_in", "adventure_load", "adventure_clear", "adventure_view", "adventure_survey":
@@ -80,6 +124,11 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Only the host can start an adventure."
 			if active():
 				return "There's an adventure on already."
+			if AdventureWorld.network:
+				var odd := AdventureCrew.odd_ones(Shed.crew, AdventureCrew.builds())
+				if not odd.is_empty():
+					return "%s on a different version of the game: everyone needs the same one to ride the road network together." % (
+						" and ".join(odd) + (" is" if odd.size() == 1 else " are"))
 			return AdventureJourney.start_check(action)
 		"adventure_photo":
 			if not _is_host(peer):
@@ -103,6 +152,19 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's no adventure on."
 		"adventure_highlight":
 			return AdventureDiary.check(peer, action)
+		"adventure_builds":
+			return ""
+		"adventure_route_call":
+			if not active():
+				return "There's no adventure on."
+			return AdventureCrew.call_check(_route(), peer, str(action.get("kind", "")), riders_out())
+		"adventure_route_vote":
+			if not active():
+				return "There's no adventure on."
+			return AdventureCrew.vote_check(_route(), peer, int(action.get("id", 0)), riders_out())
+		"adventure_route_tick":
+			if not _is_host(peer) or not active():
+				return "Only the host keeps time."
 		_:
 			return "Unknown adventure action."
 	return ""
@@ -122,7 +184,11 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": int(action.get("seed", randi())), "km": km,
 				"theme": planned["theme"], "dest": dest, "title": title if title != "" else "Ride to %s" % dest,
 				"plan": planned["plan"], "real": planned["real"], "real_hash": planned["real_hash"],
-				"by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
+				"by": who, "riders": {}, "arrived": 0, "arrived_name": "", "network": AdventureWorld.network,
+				"builds": AdventureCrew.builds(), "ride_hash": "", "route": AdventureCrew.sanitize_route({})}
+			if AdventureWorld.network:
+				var plan: Dictionary = planned["plan"]
+				Shed.adventure["ride_hash"] = AdventureCrew.ride_hash(RealRegion.get_region(str(plan.get("region", ""))))
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
 			Shed.journey.erase("in")   # (said for this ride: the next is to be agreed afresh)
 			AdventureDiary.started(true)
@@ -136,6 +202,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["arrived"] = 0
 			Shed.adventure["arrived_name"] = ""
 			Shed.adventure["by"] = who
+			Shed.adventure["route"] = AdventureCrew.sanitize_route(Shed.adventure.get("route"))
+			(Shed.adventure["route"] as Dictionary)["call"] = {}   # (a call left open overnight is forgotten)
 			Shed.adventure["resume"] = (save["at"] as Dictionary).duplicate()
 			Shed.adventure["needs_saved"] = (save["needs"] as Dictionary).duplicate(true)
 			if Daylight.current:
@@ -183,7 +251,47 @@ static func apply(peer: int, action: Dictionary) -> String:
 			return ""
 		"adventure_highlight":
 			return AdventureDiary.apply(peer, action)
+		"adventure_builds":
+			var b := str(action.get("builds", "")).left(16)
+			if Shed.crew.has(peer):
+				Shed.crew[peer]["builds"] = b
+			if peer != Shed.me() and b != AdventureCrew.builds():
+				return "*%s's game is a different version from the host's: fine in the shed, but you'll all need the same one to ride the road network together." % who
+			return ""
+		"adventure_route_call":
+			var route := _route()
+			var kind := str(action.get("kind", ""))
+			AdventureCrew.open_call(route, peer, kind, Time.get_ticks_msec())
+			var done := _settle_route(route)
+			if done != "":
+				return done
+			return "*%s asks: %s? Everyone out on the ride, answer yes or no." % [who, AdventureCrew.ASKS[kind]]
+		"adventure_route_vote":
+			var route := _route()
+			(route["call"]["votes"] as Dictionary)[peer] = bool(action.get("yes", false))
+			return _settle_route(route)
+		"adventure_route_tick":
+			return _settle_route(_route())
 	return ""
+
+
+## The route state in Shed.adventure, made whole (and kept there) to change.
+static func _route() -> Dictionary:
+	if not (Shed.adventure.get("route") is Dictionary):
+		Shed.adventure["route"] = AdventureCrew.sanitize_route({})
+	var route: Dictionary = Shed.adventure["route"]
+	if not (route.get("call") is Dictionary):
+		route["call"] = {}
+	return route
+
+
+## Settles the open call once its outcome is known (AdventureCrew.outcome); what to tell the crew ("*...") or "".
+static func _settle_route(route: Dictionary) -> String:
+	var c: Dictionary = route.get("call", {})
+	if c.is_empty():
+		return ""
+	var said := AdventureCrew.settle(route, AdventureCrew.outcome(c, riders_out(), Time.get_ticks_msec()))
+	return "*" + said if said != "" else ""
 
 
 ## Everyone's at the destination: the crew's photo (hung on the shed wall) and XP for each of them
