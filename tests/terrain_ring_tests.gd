@@ -274,6 +274,20 @@ func test_off_plan() -> void:
 	check(single is Array and net is Array and (single[Mesh.ARRAY_INDEX] as PackedInt32Array).size() < full + 4 * cells * 12
 		and (net[Mesh.ARRAY_INDEX] as PackedInt32Array).size() == full + 4 * cells * 12 and dip > 0,
 		"in network mode the land under the road is drawn too, cut in where the net says (%d points)" % dip)
+	# A deep cutting through the block's edge: the skirt there hangs as deep as the land and a coarser neighbour's
+	# straight edge part, so the eye never sees through the seam.
+	w.land.set_roads(FakeNet.new(road.y, 9.0))
+	var deep = w.land._block_arrays(on_road, 0)
+	var shallow := INF
+	if deep is Array:
+		var dv: PackedVector3Array = deep[Mesh.ARRAY_VERTEX]
+		var n := cells + 1
+		for t in n:
+			var z := on_road.y * RealLand.BLOCK + float(t) * RealLand.BLOCK / cells
+			if absf(z - road.y) < FakeNet.HALF:
+				# (edge 2, the block's west side: its skirt's vertices follow the grid's and the other three edges')
+				shallow = minf(shallow, dv[t * n].y - dv[n * n + 2 * n + t].y)
+	check(deep is Array and shallow >= 9.0, "a block's skirt hangs below a deep cutting through its edge (%.1f m)" % shallow)
 	w.land.set_roads(null)
 	w.queue_free()
 	await t.get_tree().process_frame
@@ -286,12 +300,20 @@ class FakeNet:
 	extends RefCounted
 	const HALF := 20.0
 	var z0 := 0.0
+	var depth := 1.0
 
-	func _init(z: float) -> void:
+	func _init(z: float, d := 1.0) -> void:
 		z0 = z
+		depth = d
 
 	func roads_near(rect: Rect2) -> bool:
 		return z0 > rect.position.y - HALF and z0 < rect.end.y + HALF
 
 	func ground_at(_x: float, z: float, bare: float) -> float:
-		return bare - 1.0 if absf(z - z0) < HALF else bare
+		return bare - depth if absf(z - z0) < HALF else bare
+
+	func locate(_x: float, z: float) -> Dictionary:
+		return {"edge": 0, "s": 0.0, "lat": z - z0, "width": 8.0}
+
+	func bridge_at(_edge: int, _s: float) -> float:
+		return 0.0

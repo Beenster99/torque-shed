@@ -50,6 +50,11 @@ const UNDER_BY := 0.3
 const ROAD_NEAR := 560.0
 ## How far the edges of a block hang down at least (m), so two blocks at different levels show no crack between them.
 const SKIRT_MIN := 4.0
+## On the road network the skirts are as deep as the land and this block's edge part, looked at every EDGE_LOOK (m), and
+## as the land parts from a straight line between points EDGE_KNOT apart (the far level's cells, where every level's
+## edge meets the land).
+const EDGE_LOOK := 8.0
+const EDGE_KNOT := 64.0
 ## Where the road's own blend into the land is worked out exactly: from this far off it (m, from BAND_NEAR the chunks'
 ## land covers it and the land lies hidden under it) to BAND_FAR, where the ground is the bare real height.
 const BAND_NEAR := 96.0
@@ -105,6 +110,9 @@ func setup(w: AdventureWorld, r: AdventureRoute) -> void:
 	_material.vertex_color_use_as_albedo = true
 	_material.vertex_color_is_srgb = true   # (the colours are the look's, as the chunks' land is: AdventureSurface.land_material)
 	_material.roughness = 1.0
+	# (seen from both sides: wherever the eye might slip through a crack, under the land's edge or between two levels,
+	# it meets the land's underside, not the sky beyond)
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_water_material = water_material()
 	if terrain != null and not terrain.ground_arrived.is_connected(_on_ground):
 		terrain.ground_arrived.connect(_on_ground)
@@ -451,6 +459,34 @@ func _precise(x: float, z: float, k: int) -> Array:
 	return [y, best, lat]
 
 
+## Any height in `grid` (`m` a side) that isn't a number (the ground not in there yet, or no road height for it) made
+## its nearest neighbour's along the row, or the column, so no vertex is ever lost and leaves a hole: the block is laid
+## again once the ground comes.
+static func _fill_gaps(grid: PackedFloat32Array, m: int) -> PackedFloat32Array:
+	var any := false
+	for g in grid.size():
+		if not is_finite(grid[g]):
+			any = true
+			break
+	if not any:
+		return grid
+	for pass_dir in 2:
+		for line in m:
+			var last := NAN
+			for step in 2:
+				for t in m:
+					var u := t if step == 0 else m - 1 - t
+					var g := line * m + u if pass_dir == 0 else u * m + line
+					if is_finite(grid[g]):
+						last = grid[g]
+					elif not is_nan(last):
+						grid[g] = last
+	for g in grid.size():
+		if not is_finite(grid[g]):
+			grid[g] = 0.0   # (none in the whole block: flat rather than a hole, till the ground comes)
+	return grid
+
+
 ## The mesh arrays of block `key` at level `lod`, or null when it holds no land. Any thread.
 func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var cells: int = CELLS[lod]
@@ -515,6 +551,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 				grid[g] = pr[0]
 				knot[g] = int(pr[1])
 				lats[g] = pr[2]
+	grid = _fill_gaps(grid, m)
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var cols := PackedColorArray()
@@ -825,7 +862,50 @@ func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: Packe
 		var mid_h := terrain.height((xa + xb) * 0.5, (za + zb) * 0.5)
 		if not is_nan(mid_h):
 			gap = maxf(gap, absf(mid_h - (verts[a].y + verts[b].y) * 0.5))
+	if roads != null:
+		gap = maxf(gap, _net_edge_gap(ox, oz, e, cells, sp, verts, n))
 	return gap
+
+
+## _edge_gap on the road network, where the land is cut and banked for the roads at every level: how far this block's
+## edge `e` and a neighbour's at any level can part along it. Both are the same land (ground_at) at the points they
+## share, every EDGE_KNOT (the coarsest level's cell), and straight or nearly so between: so the most this edge strays
+## from the land, or the land from a straight line between those points, every EDGE_LOOK along it.
+func _net_edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int) -> float:
+	var looks := int(BLOCK / EDGE_LOOK)
+	var land := PackedFloat32Array()
+	land.resize(looks + 1)
+	for k in looks + 1:
+		var t := k * EDGE_LOOK
+		var x := ox + (t if e < 2 else (0.0 if e == 2 else BLOCK))
+		var z := oz + (t if e >= 2 else (0.0 if e == 0 else BLOCK))
+		var bare := route.ground_at(x, z)
+		land[k] = NAN if is_nan(bare) else float(roads.call("ground_at", x, z, bare))
+	var gap := 0.0
+	var per := int(EDGE_KNOT / EDGE_LOOK)
+	for k in looks + 1:
+		if is_nan(land[k]):
+			continue
+		# This edge there (between its own vertices), and the coarsest neighbour's (between the shared points).
+		var f := k * EDGE_LOOK / sp
+		var i0 := mini(int(f), cells - 1)
+		var mine := lerpf(verts[_edge_vert(e, i0, n)].y, verts[_edge_vert(e, i0 + 1, n)].y, f - i0)
+		var k0 := (k / per) * per
+		var k1 := mini(k0 + per, looks)
+		var theirs := land[k]
+		if not is_nan(land[k0]) and not is_nan(land[k1]) and k1 > k0:
+			theirs = lerpf(land[k0], land[k1], float(k - k0) / float(k1 - k0))
+		gap = maxf(gap, maxf(absf(land[k] - mine), absf(theirs - mine)))
+	return gap
+
+
+## The vertex index of point `t` along edge `e` of a block `n` vertices a side (see _edge_gap's order).
+static func _edge_vert(e: int, t: int, n: int) -> int:
+	match e:
+		0: return t
+		1: return (n - 1) * n + t
+		2: return t * n
+	return t * n + n - 1
 
 
 ## The ground's colour: what the road's own land is there (its surface's, patched, tinted by what covers it), so the two
