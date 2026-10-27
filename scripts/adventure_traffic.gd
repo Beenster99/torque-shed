@@ -10,10 +10,8 @@ extends Node3D
 ## Ride into any of it and you come off (as in town: RoadTraffic._on_bike_hit).
 ##
 ## Everything is placed by distance along the route (s), never by position, so it's untouched
-## by the floating origin (each frame it's put where its s is in the local frame) and it only
-## ever drives the way chosen at each fork: nothing goes past a fork that isn't decided yet,
-## where the road isn't built (TrafficStream.s_max). With riders far apart, each group has
-## traffic of its own (TrafficStream.foci).
+## by the floating origin (each frame it's put where its s is in the local frame). With riders
+## far apart, each group has traffic of its own (TrafficStream.foci).
 ##
 ## At the junctions (AdventureJunctions) it stops for the lights and gives way at roundabouts,
 ## and turns off down the side roads and comes out of them (see TrafficStream.junctions). The
@@ -179,7 +177,7 @@ func limit_at(s: float) -> float:
 
 
 ## Works out how busy the road is and its limits all along it, and where the bus stops are
-## (again whenever a fork's choice moves the road's sites).
+## (again whenever the route's sites are a new list).
 func _tables() -> void:
 	var r := world.route
 	_sites_ref = r.sites
@@ -249,7 +247,7 @@ func _physics_process(delta: float) -> void:
 		_tables()
 	_find_riders()
 	stream.s_min = 2.0
-	stream.s_max = minf(world.route.total, world.route.stream_end()) - 2.0
+	stream.s_max = world.route.total - 2.0
 	_watch_bikes()
 	if host:
 		_waiting_buses()

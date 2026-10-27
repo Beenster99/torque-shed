@@ -202,7 +202,6 @@ func test_adventure() -> void:
 	if not trip.on_trip() or main.bike == null:
 		await _end(main)
 		return
-	await Rides.take_main_roads(trip)
 	var w := trip.world
 	var s := 600.0
 	trip.jump(s - w.distance_of(main.bike.global_position, "own"))

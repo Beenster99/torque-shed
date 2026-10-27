@@ -35,8 +35,6 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 func _world(seed: int, region_id: String, spot: Dictionary) -> AdventureWorld:
 	var w := AdventureWorld.new()
 	w.setup(Rides.tour_pack(region_id), seed, 40.0)
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(d): spot["p"] -= d)

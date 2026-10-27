@@ -22,13 +22,9 @@ func _frames(n: int) -> void:
 
 
 ## A world (not streaming: it's stood still, and the traffic is stepped by hand) with its traffic,
-## whose riders are at the local positions in `spot["ps"]`. Forks left open if `forks_open`, else
-## the main road at each.
-func _world(seed: int, km: float, spot: Dictionary, forks_open := false) -> AdventureTraffic:
+## whose riders are at the local positions in `spot["ps"]`.
+func _world(seed: int, km: float, spot: Dictionary) -> AdventureTraffic:
 	var w := Rides.world(Rides.full(km), seed)
-	if not forks_open:
-		for f in w.route.forks.size():
-			w.route.choose(f, 0)
 	spot["ps"] = [w.transform_at(20.0, -1.5).origin]
 	w.focus = func(): return spot["ps"]
 	w.origin_shifted.connect(func(d):
@@ -60,10 +56,8 @@ static func _run(tr: AdventureTraffic, seconds: float, dt := 0.1) -> void:
 static func _with_village(km: float, after := 3000.0) -> Array:
 	for seed in range(1, 80):
 		var r := Rides.route(Rides.full(km), seed)
-		for f in r.forks.size():
-			r.choose(f, 0)
 		for st in r.sites_of("village"):
-			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0 and r.fork_at(float(st["s"])) < 0:
+			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0:
 				return [seed, st]
 	return []
 
@@ -90,7 +84,7 @@ func test_density() -> void:
 	var r := tr.world.route
 	for k in range(40, int(minf(r.length - 1500.0, 40000.0) / 50.0)):
 		var s := k * 50.0
-		if r.surface_at_s(s) != "tarmac" or r.width_at_s(s) < 5.5 or (not r.forks.is_empty() and s > r.fork_s(0) - 200.0 and s < r.rejoin_s(0) + 200.0):
+		if r.surface_at_s(s) != "tarmac" or r.width_at_s(s) < 5.5:
 			continue
 		var d := INF
 		for st in tr.world.route.sites:
@@ -185,7 +179,7 @@ func test_climb() -> void:
 	var r := tr.world.route
 	var steep := 0.0
 	var at := 0.0
-	for k in range(100, int(minf(r.stream_end(), r.length) / AdventureRoute.STEP) - 100):
+	for k in range(100, int(r.length / AdventureRoute.STEP) - 100):
 		var g := (r.height_at_s((k + 25) * AdventureRoute.STEP) - r.height_at_s(k * AdventureRoute.STEP)) / (25.0 * AdventureRoute.STEP)
 		if g > steep:
 			steep = g
@@ -297,47 +291,25 @@ func test_blockers() -> void:
 	await _free(tr)
 
 
-## Only on the way chosen at each fork and fine across the floating origin: nothing goes past a
-## fork that's still open; once it's decided they drive on along the way picked; and when the
+## On the road and fine across the floating origin: the traffic drives along the road, placed on it, and when the
 ## origin moves every vehicle stays at the same place on the route.
-func test_forks_origin() -> void:
+func test_origin() -> void:
 	var spot := {}
-	var seed := 0
-	for k in range(1, 40):
-		var r := Rides.route(Rides.full(80.0), k)
-		if not r.forks.is_empty() and r.fork_s(0) < 40000.0:
-			seed = k
-			break
-	var tr := _world(seed, 80.0, spot, true)
+	var tr := _world(1, 80.0, spot)
 	var r := tr.world.route
-	var fork := r.fork_s(0)
-	_at(tr, spot, [fork - 300.0], -8.0)   # stood on the verge, out of the traffic's way
-	var past := 0
-	var seen_near := 0
-	for i in 1500:
-		tr._physics_process(0.1)
-		for d in tr.stream.vehicles:
-			if float(d["s"]) > fork:
-				past += 1
-			if float(d["s"]) > fork - 60.0:
-				seen_near += 1
-	check(past == 0 and seen_near > 0, "with the fork still open, the traffic goes up to it and no further (%d times near it)" % seen_near)
-	tr.world.apply_picks({0: 1})
-	tr._physics_process(0.1)
-	var on_way := 0
+	_at(tr, spot, [20000.0], -8.0)   # stood on the verge, out of the traffic's way
+	var seen := 0
 	var on_road := false
 	for i in 1500:
 		tr._physics_process(0.1)
 		for d in tr.stream.vehicles:
-			if float(d["s"]) > fork + 20.0:
-				on_way += 1
-				if not on_road and not d.has("arm") and not d.get("kerb", false):
-					# One driving along way B: placed on its road.
-					var hit := tr.world.locate_local(tr.stream.slot(int(d["seed"]))["pos"])
-					on_road = not hit.is_empty() and absf(float(hit["s"]) - float(d["s"])) < 3.0 \
-						and absf(float(hit["lat"])) < r.width_at_s(float(d["s"])) * 0.5 + 1.0
-	check(on_way > 0 and on_road and tr.busy_at(0.0) >= 0.0 and is_same(tr._sites_ref, r.sites),
-		"once it's decided they drive on along way B, on its road (and the stops along it are known) (%d seen on it, on the road %s)" % [on_way, on_road])
+			seen += 1
+			if not on_road and not d.has("arm") and not d.get("kerb", false):
+				var hit := tr.world.locate_local(tr.stream.slot(int(d["seed"]))["pos"])
+				on_road = not hit.is_empty() and absf(float(hit["s"]) - float(d["s"])) < 3.0 \
+					and absf(float(hit["lat"])) < r.width_at_s(float(d["s"])) * 0.5 + 1.0
+	check(seen > 0 and on_road and tr.busy_at(0.0) >= 0.0 and is_same(tr._sites_ref, r.sites),
+		"the traffic drives along the road, placed on it (the stops along it known) (%d seen, on the road %s)" % [seen, on_road])
 	# The origin moves under them.
 	var before := {}
 	for d in tr.stream.vehicles:
@@ -478,8 +450,6 @@ func test_perf() -> void:
 	for i in 10:
 		await t.get_tree().physics_frame
 	var trip: AdventureTrip = main.trip
-	if trip.on_trip():
-		await Rides.take_main_roads(trip)
 	var tr := AdventureTraffic.current
 	check(trip.on_trip() and tr != null and tr.get_parent() == trip.world and tr.host, "the adventure has its traffic")
 	if tr == null:

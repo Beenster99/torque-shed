@@ -36,7 +36,6 @@ import urllib.request
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fork_bake  # noqa: E402
 import land_bake  # noqa: E402
 import road_facts  # noqa: E402
 import levels  # noqa: E402
@@ -1004,20 +1003,11 @@ def bake(args, log=print):
     names = sorted({c["name"] for c in chunks})
     # (the chunks' rows are made after the land, which says which are built up: see below)
 
-    # Forks: the second-best way between two junctions of the route, a road of its own.
     region = road_facts.region_of(args.lat, args.lon)
-    forks = fork_bake.find_forks(sys.modules[__name__], graph, steps, knots, shift, args.seed) if args.forks else []
-    ways = [fork_bake.build_way(sys.modules[__name__], graph, fk, knots, shift, elev, dem, frame, edge_of_s, region)
-            for fk in forks]
-    fork_rows = fork_bake.fork_rows(sys.modules[__name__], forks, ways, chunks)
     os.makedirs(args.out, exist_ok=True)
-    log("forks: %d (%s)" % (len(forks), ", ".join("%d to %d km, other way %.1f km" % (
-        fk["i0"] * STEP / 1000, fk["i1"] * STEP / 1000, w["length"] / 1000.0) for fk, w in zip(forks, ways))))
-    with open(os.path.join(args.out, "forks.json"), "w") as f:
-        json.dump(fork_rows, f, separators=(",", ":"))
-    all_knots = np.vstack([knots] + [np.column_stack([w["x"], w["z"]]) for w in ways])
+    all_knots = knots
 
-    # The land: height tiles at each level down the corridor (the other ways' too).
+    # The land: height tiles at each level down the corridor.
     os.makedirs(args.out, exist_ok=True)
     dems = {lv.name: (dem if lv is levels.FINE else Dem(args.cache, args.lat, log, lv.spacing)) for lv in levels.LEVELS}
     tiles, has_sea, land = bake_terrain(
@@ -1051,7 +1041,7 @@ def bake(args, log=print):
         "length_m": round((len(knots) - 1) * STEP, 1), "run_out_m": RUN_OUT,
         "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
-        "building_count": len(land["buildings"]), "region": region, "junction_count": len(junctions), "fork_count": len(forks), "summary": summary,
+        "building_count": len(land["buildings"]), "region": region, "junction_count": len(junctions), "summary": summary,
         "poi_count": len(land["pois"]), "landmark_count": len(land["landmarks"]), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
         "sources": {"overture_release": release, "elevation": "Mapterhorn, AWS Terrain Tiles fallback"},
         "credits": CREDITS,
@@ -1064,7 +1054,7 @@ def bake(args, log=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--issue", help="a JSON file with name, title, start {lat, lon}, end {lat, lon}, length_km, and optionally via [{lat, lon}], avoid [class] and forks (false for none)")
+    ap.add_argument("--issue", help="a JSON file with name, title, start {lat, lon}, end {lat, lon}, length_km, and optionally via [{lat, lon}], and avoid [class]")
     ap.add_argument("--name", help="short id, used as the folder name")
     ap.add_argument("--title", default="", help="the issue's name for the title screen")
     ap.add_argument("--lat", type=float, help="start point latitude (put it near a road)")
@@ -1078,7 +1068,6 @@ def main(argv=None):
     ap.add_argument("--via", type=float, nargs=2, action="append", metavar=("LAT", "LON"),
                     help="a point the route passes (repeat for more), between the start and the end")
     ap.add_argument("--avoid", default="", help="road classes to leave out, comma-separated (e.g. motorway,trunk)")
-    ap.add_argument("--no-forks", dest="forks", action="store_false", help="bake no second ways for the crew to vote on")
     args = ap.parse_args(argv)
     args.avoid = [c for c in str(args.avoid).split(",") if c]
     if args.issue:
@@ -1097,8 +1086,6 @@ def main(argv=None):
             args.via = [[v["lat"], v["lon"]] for v in issue["via"]]
         if not args.avoid and issue.get("avoid"):
             args.avoid = list(issue["avoid"])
-        if issue.get("forks") is False:
-            args.forks = False
         args.places = {"from": issue.get("from", ""), "to": issue.get("to", "")}
     if args.lat is None or args.lon is None or not args.name:
         ap.error("give --name, --lat and --lon (or --issue)")

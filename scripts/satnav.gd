@@ -16,10 +16,8 @@ extends Node
 ##   satnav_route(pos: Vector2, fwd: Vector2, metres: float) -> PackedVector2Array
 ##       the road ahead from `pos` going `fwd`, about `metres` of it
 ##   satnav_road_name(pos: Vector2) -> String     the road you're on ("" off road)
-##   satnav_points(pos: Vector2, fwd: Vector2) -> Array of {kind ("fuel", "destination" or
-##       "fork"), name, distance (m, along the route), at (Vector2, or null when it's off the map)}
-##   satnav_choice(pos: Vector2, fwd: Vector2) -> Dictionary    the ways at a fork coming up
-##       (AdventureForks.choice), {} when there's none
+##   satnav_points(pos: Vector2, fwd: Vector2) -> Array of {kind ("fuel" or "destination"), name,
+##       distance (m, along the route), at (Vector2, or null when it's off the map)}
 ##   satnav_stops(pos: Vector2, fwd: Vector2, count: int) -> Array of the next `count` places to
 ##       stop ahead, nearest first: {kind (AdventureStops.NAV: "food", "rest", "sleep", "fuel"),
 ##       site (the site's kind), name, label (for the list: "Lay-by", or a cafe's name), distance, at}
@@ -266,8 +264,6 @@ static func view_for(source: Object, pos: Vector3, fwd3: Vector3, speed := 0.0) 
 		v["route"] = source.satnav_route(p, fwd, AHEAD)
 	if source.has_method("satnav_road_name"):
 		v["road"] = str(source.satnav_road_name(p))
-	if source.has_method("satnav_choice"):
-		v["choice"] = source.satnav_choice(p, fwd)
 	if source.has_method("satnav_points"):
 		var pts: Array = source.satnav_points(p, fwd)
 		pts.sort_custom(func(a, b): return float(a["distance"]) < float(b["distance"]))
@@ -456,7 +452,7 @@ class AdventureNav:
 		if hit.is_empty():
 			return {}
 		var s := float(hit["s"])
-		var end := minf(world.route.length, world.route.stream_end())
+		var end := world.route.length
 		var to := _at(minf(s + GUIDE_AHEAD, end)) - pos
 		if to.length() < 2.0:
 			to = _at(minf(s + STEP, end)) - _at(maxf(s - STEP, 0.0))
@@ -495,16 +491,6 @@ class AdventureNav:
 			s += STEP
 		if run.size() > 1:
 			out.append({"pts": run, "kind": "road" if surf == "tarmac" else "dirt", "hw": r.width_at_s(s1) * 0.5})
-		# The other ways at a fork, off the way being taken, drawn fainter.
-		var me := world.route_xz(Vector3(pos.x, 0.0, pos.y))
-		for way in r.ways_near(me[0], me[1], radius * 1.5):
-			var xs: PackedFloat64Array = way["xs"]
-			var zs: PackedFloat64Array = way["zs"]
-			var pts := PackedVector2Array()
-			for k in xs.size():
-				var q := world.to_local_pos(xs[k], 0.0, zs[k])
-				pts.append(Vector2(q.x, q.z))
-			out.append({"pts": pts, "kind": "other", "hw": 2.0})
 		# The junctions' side roads, and round each roundabout's island its ring.
 		var i0 := int(s0 / AdventureRoute.STEP)
 		for st in AdventureJunctions.near(r, i0, int(s1 / AdventureRoute.STEP)):
@@ -533,9 +519,9 @@ class AdventureNav:
 		if hit.is_empty():
 			return out
 		# Always on towards the destination, whichever way you're facing: turned round, it runs
-		# back behind you. Not past a fork till the way's decided: which way to go isn't known yet.
+		# back behind you.
 		var s := float(hit["s"])
-		var end := clampf(s + metres, 0.0, minf(world.route.total, world.route.stream_end()))
+		var end := clampf(s + metres, 0.0, world.route.total)
 		out.append(pos)
 		var rounds := AdventureJunctions.near(world.route, int(s / AdventureRoute.STEP), int(end / AdventureRoute.STEP) + 8, 8) \
 			.filter(func(st): return st.has("rc"))
@@ -603,9 +589,6 @@ class AdventureNav:
 		var left := world.route.length - s
 		if left > 0.0:
 			out.append({"kind": "destination", "name": "Destination", "distance": left, "at": _at(world.route.length)})
-		var f := world.route.next_fork(s)
-		if f >= 0:
-			out.append({"kind": "fork", "name": "Fork", "distance": maxf(world.route.fork_s(f) - s, 0.0), "at": _at(world.route.fork_s(f))})
 		return out
 
 	## How far along the way to the next fuel, food and bed (m; -1 when there's none ahead).
@@ -626,13 +609,6 @@ class AdventureNav:
 			if left == 0:
 				break
 		return out
-
-	## The choice coming up at a fork, heading on (see AdventureForks.choice), or {}.
-	func satnav_choice(pos: Vector2, fwd: Vector2) -> Dictionary:
-		var hit := _where(pos)
-		if hit.is_empty() or _way(float(hit["s"]), fwd) < 0:
-			return {}
-		return AdventureForks.choice(world.route, float(hit["s"]))
 
 	## The next `count` stops on the way (AdventureStops' places and the fuel stations), nearest
 	## first, whichever way you're facing.

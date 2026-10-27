@@ -430,7 +430,8 @@ func test_sleep() -> void:
 
 ## Carried on another day: the save made by the night's sleep goes through a save file, the shed
 ## is opened again (nobody's out on an adventure), the host's Esc menu offers to continue it, and
-## it loads with you on your bike back at the distance you slept, the meters as they were.
+## it loads with you on your bike back at the distance you slept, the meters as they were. A save from a build with
+## forks on the road (the ways picked at them) carries on just the same.
 func test_resume() -> void:
 	var main := await _start(97, 60.0, false)
 	await _go(main, 97, 60.0)
@@ -439,14 +440,7 @@ func test_resume() -> void:
 	var faithful: int = t._bike_named("Old Faithful")
 	var view: AdventureNeedsView = main.trip.needs
 	var w: AdventureWorld = main.trip.world
-	# Past the first fork, the host's way taken: the night's stop is along that way.
-	var forked := not w.route.forks.is_empty() and (w.route.forks[0]["ways"] as Array).size() > 1
-	var go := 6000.0
-	if forked:
-		Shed.request({"a": "adventure_vote", "fork": 0, "way": 1})
-		await _ticks(3)
-		go = float(w.route.forks[0]["s"]) + 1500.0
-	main.trip.jump(go)
+	main.trip.jump(6000.0)
 	await _ticks(10)
 	var s := w.distance_of(main.bike.global_position, "own")
 	var lat := -w.route.width_at_s(s) * 0.5 + 1.0
@@ -471,6 +465,9 @@ func test_resume() -> void:
 	Shed.crew[MATE] = {"name": "Mate", "slot": 1}
 	await _ticks(2)
 	check(not Adventure.active() and not Shed.adventure_save.is_empty(), "the shed opened again: nobody's out on the road, the adventure waits")
+	# (as a save from before the forks were taken out has them: the ways picked and the votes, which are left be)
+	Shed.adventure_save["adventure"]["picks"] = {0: 1, 1: 0}
+	Shed.adventure_save["adventure"]["votes"] = {0: {1: 1}}
 	main.menu.show_pause()
 	check(main.menu._continue_adventure.visible and not main.menu._continue_adventure.disabled and main.menu._continue_adventure.text.begins_with("Continue adventure: %.1f" % (s / 1000.0)),
 		"the host's Esc menu offers: %s" % main.menu._continue_adventure.text)
@@ -485,8 +482,7 @@ func test_resume() -> void:
 		"rested, and as hungry as you went to bed")
 	check(absf(AdventureNeeds.resume_s("Mate") - (s + 30.0)) < 0.5 and absf(Daylight.time_of_day() - AdventureNeeds.MORNING) < 0.1,
 		"your mate carries on from their tent, in the morning")
-	check(forked and AdventureForks.pick_of(0) == 1 and main.trip.world != null and int(main.trip.world.route.choices.get(0, -1)) == 1,
-		"and the road's the same: the way picked at the first fork is still the way (%s)" % str(AdventureForks.picks()))
+	check(not AdventureNeeds.make_save()["adventure"].has("picks"), "and the old forks' picks aren't saved again")
 	Shed.crew.erase(MATE)
 	await _end(main)
 
@@ -504,9 +500,6 @@ func test_real_stop() -> void:
 	var view: AdventureNeedsView = main.trip.needs
 	var w: AdventureWorld = main.trip.world
 	var s := float(found[1]["s"])
-	for f in w.route.forks.size():
-		Shed.request({"a": "adventure_vote", "fork": f, "way": 0})   # the main road, where the inn was found
-	await _ticks(2)
 	main.trip.jump(s - 40.0 - w.distance_of(main.bike.global_position, "own"))
 	w.preload_range(s - 200.0, s + 200.0)
 	await _ticks(4)

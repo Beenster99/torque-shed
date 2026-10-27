@@ -64,11 +64,6 @@ var junctions: Array = []
 ## Real places beside the road to stop at: [{kind ("fuel", "cafe", "pub", "inn", "campsite", "layby", "viewpoint"),
 ## name ("" when it has none we can print), x, z, k (the nearest knot), lat (m to the right of the road), conf}].
 var pois: Array = []
-## Second ways between two junctions of the road, for the crew to vote on: [{i0, i1 (knots of the main road, on chunk
-## boundaries), kinds ("main" then "scenic" or "gravel"), names {kind: name}, way: {n, x, z, e, chunks: [[surface, width,
-## class, name, limit]]}}], in order along the road.
-var forks: Array = []
-var fork_count := 0
 ## What the data says about the road: {from, to (the issue's words), roads (the named roads it follows, longest first),
 ## climb_m, top_m, low_m}.
 var summary := {}

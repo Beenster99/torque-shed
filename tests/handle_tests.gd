@@ -277,8 +277,6 @@ func test_verge_edges() -> void:
 	var plan := AdventurePlans.tour("dales")
 	plan["mode"] = "tracks"
 	w.setup(AdventurePlans.pack_for(AdventurePlans.clean(plan)), 42, 60.0)
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(dd): spot["p"] -= dd)

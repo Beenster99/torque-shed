@@ -42,8 +42,6 @@ const SHELTER_IN := 30.0
 
 ## Emitted after the origin moves: everything placed in the local frame moves by -delta.
 signal origin_shifted(delta: Vector3)
-## Emitted when a way picked at a fork has been taken in (see apply_picks_soon).
-signal picks_taken
 
 static var current: AdventureWorld
 ## The network ride (Esc > Debug > "Road network (test)", Ride Anywhere v2): a ride set up while it's on streams the
@@ -83,25 +81,12 @@ var _ready_data := {}    # chunk -> built data waiting to be committed
 var _committing := {}    # the chunk going into the world a piece at a time (AdventureChunk.begin), or {}
 var _hints := {}         # who -> the knot they were last found near
 var _own_s := 0.0
-var _path_job: _PathJob   # a fork's way being put together on a worker thread (apply_picks_soon)
-var _later_picks := {}    # picks that came in meanwhile
 
 
 ## What the worker threads hand back, guarded by its mutex (not the node, which may go first).
 class _Results extends RefCounted:
 	var mutex := Mutex.new()
 	var done := {}
-
-
-## The path for some picks at the forks, put together on a worker thread: `path` is a copy of
-## the route assembled for `picks` (see AdventureRoute.path_copy).
-class _PathJob extends RefCounted:
-	var picks := {}
-	var path: AdventureRoute
-	var task := -1
-
-	func run() -> void:
-		path._assemble_path()
 
 
 func _ready() -> void:
@@ -113,9 +98,6 @@ func _exit_tree() -> void:
 	for c in _tasks:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
-	if _path_job != null:
-		WorkerThreadPool.wait_for_task_completion(_path_job.task)
-		_path_job = null
 	_stop_committing()
 	if current == self:
 		current = null
@@ -135,7 +117,6 @@ func setup(pack: RealPack, seed := 1, km := 0.0) -> void:
 		"fuel": func(site, xf, _info): return AdventureProps.fuel_station(site, xf, route.surface_at_s(float(site["s"]))),
 		"start": func(_site, xf, info): return AdventureProps.banner("START", xf, float(info["width"]), Color(0.1, 0.35, 0.7)),
 		"finish": func(_site, xf, info): return AdventureProps.banner("DESTINATION", xf, float(info["width"]), Color(0.75, 0.2, 0.1)),
-		"fork": func(site, xf, _info): return AdventureForks.signpost(site, xf, route),
 		AdventureJunctions.KIND: func(site, xf, _info): return AdventureJunctions.build(route, site, xf),
 		"limit": func(site, xf, _info): return AdventureProps.limit_sign(float(site["kmh"]), route.real != null and route.real.region == "uk", xf),
 	}
@@ -170,107 +151,6 @@ func _start_network() -> bool:
 	roads.setup(self, net)
 	add_child(roads)
 	return true
-
-
-## Takes the ways picked at the forks ({fork: way}, see AdventureForks): the road from each newly
-## decided fork on is rebuilt along its way, and anything already built or building past it is
-## dropped (normally nothing: the road isn't built past a fork until it's decided). True when
-## anything changed.
-func apply_picks(picks: Dictionary) -> bool:
-	var keys := picks.keys()
-	keys.sort()
-	var changed := false
-	for f in keys:
-		var fi := int(f)
-		var w := int(picks[f])
-		if fi < 0 or fi >= route.forks.size() or (route.decided.has(fi) and int(route.choices.get(fi, 0)) == w):
-			continue
-		_drop_from(route.fork_s(fi))
-		route.choose(fi, w)
-		changed = true
-	return changed
-
-
-## apply_picks without the hitch, for the crew's picks as they come in on the ride: a way off
-## the main road has its path put together on a worker thread, and taken in (the chunks past
-## its fork dropped) once that's done and no chunk is building, a few frames later; picks_taken
-## says when. True when it's started on a pick it didn't have.
-func apply_picks_soon(picks: Dictionary) -> bool:
-	if _path_job != null:
-		_later_picks = picks   # the one under way first, then these
-		return false
-	var fresh := {}
-	for f in picks:
-		var fi := int(f)
-		if fi < 0 or fi >= route.forks.size() or (route.decided.has(fi) and int(route.choices.get(fi, 0)) == int(picks[f])):
-			continue
-		fresh[fi] = int(picks[f])
-	if fresh.is_empty():
-		return false
-	var same := fresh.keys().all(func(f): return int(route.choices.get(f, 0)) == int(fresh[f]))
-	if same or not threaded:
-		# The way the path already runs (the main road): nothing to put together.
-		if apply_picks(fresh):
-			picks_taken.emit()
-		return true
-	if land != null:
-		land.hold = true   # (the land's workers read the road: none are started till it's swapped)
-	_path_job = _PathJob.new()
-	_path_job.picks = fresh
-	_path_job.path = route.path_copy(fresh)
-	_path_job.task = WorkerThreadPool.add_task(_path_job.run, false, "Adventure fork")
-	return true
-
-
-## Takes in the path a pick's job put together, once it's done and nothing's building on the
-## route: drops what was built past its forks (normally nothing) and swaps the new path in.
-func _take_path() -> void:
-	if not WorkerThreadPool.is_task_completed(_path_job.task) or not _tasks.is_empty() or (land != null and land.working()):
-		return
-	WorkerThreadPool.wait_for_task_completion(_path_job.task)
-	var job := _path_job
-	_path_job = null
-	var keys := job.picks.keys()
-	keys.sort()
-	_drop_from(route.fork_s(int(keys[0])))
-	route.take_path(job.path, job.picks)
-	if land != null:
-		land.hold = false
-	picks_taken.emit()
-	var later := _later_picks
-	_later_picks = {}
-	if not later.is_empty():
-		apply_picks_soon(later)
-
-
-## Lets the worker threads finish (they read the route, which is about to change) and drops every
-## chunk from `s` on, built, waiting or building.
-func _drop_from(s: float) -> void:
-	if land != null:
-		land.reset()   # (its workers read the route too, and the land past a fork is about to be another way's)
-	for c in _tasks:
-		WorkerThreadPool.wait_for_task_completion(_tasks[c])
-	_tasks.clear()
-	_box.mutex.lock()
-	_box.done.clear()
-	_box.mutex.unlock()
-	var c0 := AdventureRoute.chunk_of(s)
-	if not _committing.is_empty() and int(_committing["c"]) >= c0:
-		_stop_committing()
-	for c in _ready_data.keys():
-		if c >= c0:
-			_ready_data.erase(c)
-	for c in chunks.keys():
-		if c >= c0:
-			chunks[c].queue_free()
-			chunks.erase(c)
-
-
-## The last chunk that may be built: the one ending at the first undecided fork (or the road's end).
-func last_buildable_chunk() -> int:
-	var end := route.stream_end()
-	var last := route.chunk_count() - 1
-	return last if end == INF else mini(last, AdventureRoute.chunk_of(end) - 1)
 
 
 # ---------------------------------------------------------------------------- frames
@@ -361,7 +241,7 @@ func back_on_road(p: Vector3):
 	var s := float(hit["s"])
 	if absf(float(hit["lat"])) <= route.width_at_s(s) * 0.5 + OFF_ROAD and p.y > route.height_at_s(s) - 5.0:
 		return null
-	s = clampf(s, 2.0, minf(route.total, route.stream_end()) - 20.0)
+	s = clampf(s, 2.0, route.total - 20.0)
 	return transform_at(s, -route.width_at_s(s) * 0.25)
 
 
@@ -533,7 +413,7 @@ func wanted_chunks() -> Array:
 		if s >= 0.0 and s < own and s > own - REMOTE_BEHIND:
 			lo = minf(lo, s - BEHIND * 0.5)
 	var c_lo := maxi(0, AdventureRoute.chunk_of(lo))
-	var c_hi := mini(last_buildable_chunk(), AdventureRoute.chunk_of(own + AHEAD))
+	var c_hi := mini(route.chunk_count() - 1, AdventureRoute.chunk_of(own + AHEAD))
 	var c_own := AdventureRoute.chunk_of(own)
 	var out := []
 	for c in range(c_lo, c_hi + 1):
@@ -581,8 +461,6 @@ func stream() -> void:
 			_ready_data.erase(c)
 	if not _committing.is_empty() and not keep.has(int(_committing["c"])):
 		_stop_committing()
-	if _path_job != null:
-		_take_path()
 	var commits := _commit_some(want)
 	for c in want:
 		if chunks.has(c) or _tasks.has(c) or _ready_data.has(c) or int(_committing.get("c", -1)) == c:
@@ -594,8 +472,8 @@ func stream() -> void:
 				_commit(data)
 				commits += 1
 			break
-		if _tasks.size() >= MAX_TASKS or _path_job != null:
-			break   # (none started while a fork's new way is being put together: see _take_path)
+		if _tasks.size() >= MAX_TASKS:
+			break
 		_tasks[c] = WorkerThreadPool.add_task(_work.bind(route, c, _box), false, "Adventure chunk")
 
 
@@ -652,7 +530,7 @@ func _commit_some(want: Array) -> int:
 	return done
 
 
-## Gives up on the chunk being put into the world (not wanted any more, or past a fork).
+## Gives up on the chunk being put into the world (not wanted any more).
 func _stop_committing() -> void:
 	if _committing.is_empty():
 		return
@@ -671,7 +549,7 @@ func preload_range(s0: float, s1: float) -> void:
 			at.append(Vector2(xz[0], xz[1]))
 		roads.preload_round(at, 300.0)
 		return
-	for c in range(maxi(0, AdventureRoute.chunk_of(s0)), mini(last_buildable_chunk(), AdventureRoute.chunk_of(s1)) + 1):
+	for c in range(maxi(0, AdventureRoute.chunk_of(s0)), mini(route.chunk_count() - 1, AdventureRoute.chunk_of(s1)) + 1):
 		if not chunks.has(c):
 			var data := AdventureChunk.build(route, c)
 			_note_build(data)

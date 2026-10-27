@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Two halves. The highlights are the crew's, kept by the host in the shared state
 ## (Shed.adventure["log"], so every player has the same list): setting off, each stop visited,
-## the ways taken at forks, onto a new surface, the high points (old diaries may also hold police chases and fines),
+## onto a new surface, the high points (old diaries may also hold the ways taken at forks, police chases and fines),
 ## breakdowns and roadside fixes, picnics, sunrise and sunset, and arriving. Each has its time
 ## (the clock, and the day), how far along the road (km) and who. The photos are taken on each
 ## player's own machine (AdventurePhotos: automatically at the highlights they were part of, and
@@ -22,7 +22,7 @@ extends RefCounted
 ##
 ## Shed.adventure: "diary" (the adventure's diary id, the same on every game, kept through a
 ## night's stop), "log" {n: entry} (a Dictionary, so the crew are sent only what's new), "log_n".
-## An entry: {n, kind, key (one entry per key: a stop, a fork, a peak... the next rider there is
+## An entry: {n, kind, key (one entry per key: a stop, a peak... the next rider there is
 ## added to its who), text, who [names; [] is the whole crew], s (m along the road), hours (the
 ## clock), day (nights in), t (s since setting off)}.
 ## Action (Shed.request): adventure_highlight {kind, key, s, what?, peer?} for what a rider's own
@@ -200,12 +200,6 @@ static func started(fresh: bool) -> void:
 	else:
 		note("start", "resume_%d" % int(Shed.adventure.get("nights", 0)), [], AdventureNeeds.save_s({"at": Shed.adventure.get("resume", {})}) if Shed.adventure.get("resume") is Dictionary else 0.0,
 			"Back on the road after a night's sleep")
-
-
-## The way's been picked at fork `f` (way `w`).
-static func forked(f: int, w: int) -> void:
-	var r := AdventureForks._route()
-	note("fork", "fork_%d" % f, [], r.fork_s(f) if r != null else 0.0, "Took %s at the fork" % AdventureForks.way_name(f, w))
 
 
 ## `peer` is fined `amount` for going `mph` too fast.
