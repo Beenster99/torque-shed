@@ -290,6 +290,9 @@ func enter() -> void:
 	else:
 		var from := maxf(0.0, start_s() - 120.0)
 		world.preload_range(from, from + 420.0)
+		var bed := AdventureNeeds.resume_at(_crew_name())
+		if world.roads != null and not bed.is_empty():
+			world.roads.preload_round([Vector2(float(bed[0]), float(bed[1]))], 300.0)
 		var xf := start_xf()
 		if main.bike:
 			main.bike.place(xf.origin, xf.basis.get_euler().y)
@@ -432,6 +435,11 @@ func start_xf() -> Transform3D:
 	var slot := maxi(0, ids.find(Shed.me()))
 	if _join_at != null:
 		return join_xf(_join_at)   # (joined a ride in progress: by the mate you joined)
+	var bed := AdventureNeeds.resume_at(_crew_name())
+	if world.roads != null and not bed.is_empty():
+		var xf = world.net_wake_xf(bed, slot)
+		if xf is Transform3D:
+			return xf
 	var s := start_s()
 	if s > 0.0:
 		var at := clampf(s - 4.0 * float(slot), 20.0, world.route.length - 40.0)
@@ -441,7 +449,11 @@ func start_xf() -> Transform3D:
 
 ## How far along the road you start (m): 0 from the start, else where you slept.
 func start_s() -> float:
-	return maxf(0.0, AdventureNeeds.resume_s(str(Shed.crew.get(Shed.me(), {}).get("name", ""))))
+	return maxf(0.0, AdventureNeeds.resume_s(_crew_name()))
+
+
+func _crew_name() -> String:
+	return str(Shed.crew.get(Shed.me(), {}).get("name", ""))
 
 
 ## The nearest bike to you in the shed with nobody on it (within a few metres), or 0.

@@ -233,6 +233,33 @@ func transform_at(s: float, lat := 0.0) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(xz[0], y, xz[1]))
 
 
+## Where a rider in grid slot `slot` wakes on the network ride, having slept at `bed` ([x, z, heading], the region's
+## frame: AdventureNeeds.resume_at): on the road nearest it, on the left half, facing on along the route (or the way the
+## bed faced, away from it), staggered a bike length back by slot. null when no road is near.
+func net_wake_xf(bed: Array, slot: int):
+	if roads == null or bed.size() != 3:
+		return null
+	var net := roads.net
+	var on := net.locate(float(bed[0]), float(bed[1]))
+	if on.is_empty():
+		return null
+	var e := int(on["edge"])
+	# Facing on along the route where it's near (the beds are at its stops), else the way the bed faced.
+	var face := float(bed[2])
+	var hit := route.locate(float(bed[0]), float(bed[1]))
+	if not hit.is_empty() and absf(float(hit["lat"])) < NETWORK_ADVICE * 2.0:
+		face = route.heading_at_s(float(hit["s"]))
+	var dir := 1.0 if absf(angle_difference(net.heading_at(e, float(on["s"])), face)) < PI * 0.5 else -1.0
+	var len := net.length_of(e)
+	var s := clampf(float(on["s"]) - dir * 4.0 * slot, minf(5.0, len * 0.5), maxf(len - 5.0, len * 0.5))
+	var h := net.heading_at(e, s) + (0.0 if dir > 0.0 else PI)
+	var p := net.point_at(e, s) + Vector2(cos(h), sin(h)) * (-net.width_of(e) * 0.25)
+	var y := net.road_y(e, s)
+	if is_nan(y):
+		return null
+	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(p.x, y + RoadNet.CROWN, p.y))
+
+
 ## The network's road height under the planned road's knot `i` (the network ride: the planned line only follows the
 ## network's roads, whose heights are their own), or NaN off the network or where it isn't laid out yet. Kept until the
 ## ground under the roads sharpens (RoadStreamer.heights_changed).

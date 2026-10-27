@@ -327,14 +327,15 @@ static func menu_of(node: Node) -> Array:
 # ---------------------------------------------------------------------------- saving a night's stop
 
 ## The adventure as it stands, put away to carry on another day: the road (everything in
-## Shed.adventure but who's on it now, and an old ride's fork votes and picks), where each rider is by name, their
-## meters, the time.
+## Shed.adventure but who's on it now, and an old ride's fork votes and picks), where each rider is by name (how far
+## along the road, and on the network ride the bed's place in the region's frame, "where"), their meters, the time.
 static func make_save() -> Dictionary:
 	var adv := {}
 	for k in Shed.adventure:
-		if not str(k) in ["id", "riders", "arrived", "arrived_name", "needs", "resume", "needs_saved", "votes", "picks"]:
+		if not str(k) in ["id", "riders", "arrived", "arrived_name", "needs", "resume", "resume_at", "needs_saved", "votes", "picks"]:
 			adv[k] = Shed.adventure[k]
 	var at := {}
+	var where := {}
 	var meters := {}
 	var needs := all()
 	for p in needs:
@@ -343,8 +344,10 @@ static func make_save() -> Dictionary:
 			continue
 		var n: Dictionary = needs[p]
 		at[who] = float(n.get("bed_s", n.get("sat_s", 0.0)))
+		if not _spot(n.get("bed_at")).is_empty():
+			where[who] = _spot(n["bed_at"])
 		meters[who] = {"food": float(n.get("food", 1.0)), "drink": float(n.get("drink", 1.0)), "rest": float(n.get("rest", 1.0))}
-	return {"adventure": adv.duplicate(true), "at": at, "needs": meters, "hours": MORNING,
+	return {"adventure": adv.duplicate(true), "at": at, "where": where, "needs": meters, "hours": MORNING,
 		"nights": int(Shed.adventure.get("nights", 0)), "by": str(Shed.adventure.get("by", ""))}
 
 
@@ -357,6 +360,13 @@ static func sanitize_save(v) -> Dictionary:
 		out["at"] = {}
 	if not (out.get("needs") is Dictionary):
 		out["needs"] = {}
+	var where := {}
+	if out.get("where") is Dictionary:
+		for who in out["where"]:
+			var spot := _spot(out["where"][who])
+			if not spot.is_empty():
+				where[str(who)] = spot
+	out["where"] = where
 	out["hours"] = float(out.get("hours", MORNING))
 	return out
 
@@ -383,6 +393,15 @@ static func resume_s(who: String) -> float:
 	for k in r:
 		lo = minf(lo, float(r[k]))
 	return lo
+
+
+## Where `who` slept on a network ride carried on (Shed.adventure["resume_at"]): [x, z, heading] in the region's frame,
+## or [] (not carried on, or not slept on the network: then by resume_s).
+static func resume_at(who: String) -> Array:
+	var r = Shed.adventure.get("resume_at", null)
+	if not (r is Dictionary) or not (r as Dictionary).has(who):
+		return []
+	return _spot(r[who])
 
 
 # ---------------------------------------------------------------------------- actions
@@ -509,6 +528,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				return ""
 			n["bed"] = str(action["key"]).left(80)
 			n["bed_s"] = float(action.get("s", 0.0))
+			n["bed_at"] = _spot(action.get("at"))
 			n["sat"] = ""
 			var c := bed_count()
 			if c[0] >= c[1]:
@@ -532,6 +552,16 @@ static func apply(peer: int, action: Dictionary) -> String:
 				if action.get(key) is float or action.get(key) is int:
 					_set_level(peer, key, float(action[key]))
 	return ""
+
+
+## A bed's place in the region's frame as an action carries it ([x, z, heading]), or [] when it's not one.
+static func _spot(v) -> Array:
+	if not (v is Array) or (v as Array).size() != 3:
+		return []
+	for x in v:
+		if not (x is float or x is int) or not is_finite(float(x)):
+			return []
+	return [float(v[0]), float(v[1]), float(v[2])]
 
 
 static func _and_list(names: Array) -> String:
