@@ -84,6 +84,15 @@ static func choose(p: Dictionary) -> Dictionary:
 		kit[k] = _colours(raw[k]) if k in COLOUR_FIELDS else raw[k]
 	var shop: Dictionary = raw.get("shop", {})
 	kit["shop"] = {"fascia": _colours(shop.get("fascia", [])), "awning": _colours(shop.get("awning", []))}
+	# The city's styles (RegionCity), each with its own colours where it gives them.
+	var city := []
+	for e: Dictionary in raw.get("city", []):
+		var c := {}
+		for k in e:
+			c[k] = _colours(e[k]) if k in COLOUR_FIELDS else e[k]
+		city.append(c)
+	kit["city"] = city
+	kit["density"] = str(p.get("density", ""))
 	kit["region"] = region
 	kit["country"] = code
 	kit["facts"] = f
@@ -119,10 +128,14 @@ static func for_route(route: AdventureRoute, i: int) -> Dictionary:
 		return {}
 	var t: RealTerrain = route.real.terrain
 	var k := clampi(i, 0, route.knot_count() - 1)
-	var m := RealTerrain.metres_per_degree(t.lat0)
-	var lat := t.lat0 - route.pz[k] / m.x
-	var lon := t.lon0 + route.px[k] / m.y
-	var cell := RealRegion.cell_of(lat, lon)
+	return at_frame(t.lat0, t.lon0, route.px[k], route.pz[k])
+
+
+## The kit of the place at (x, z) in a frame whose origin is at (lat0, lon0), x east and z south (a region's, as
+## RealTerrain and RoadNet have them): its cell's profile's. Blocks the first time a cell is asked for, as for_route.
+static func at_frame(lat0: float, lon0: float, x: float, z: float) -> Dictionary:
+	var m := RealTerrain.metres_per_degree(lat0)
+	var cell := RealRegion.cell_of(lat0 - z / m.x, lon0 + x / m.y)
 	var key := "%d_%d" % [cell.x, cell.y]
 	_lock.lock()
 	var have = _cells.get(key)

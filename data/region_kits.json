@@ -9,11 +9,18 @@
 		"plinth": "", "bars": false,
 		"shop": {"fascia": ["#2b4a6b", "#7a2a24", "#2f5a3a"], "awning": ["#b83a32", "#2d5c8c", "#3d7a46"]},
 		"barn": ["#7d2e1f", "#5c5a52", "#4d604d"],
-		"variants": []
+		"variants": [],
+		"city": [{"style": "modern", "share": 0.8}, {"style": "tower", "share": 0.2}]
 	},
 	"regions": {
 		"british_isles": {
 			"name": "British Isles",
+			"city": [
+				{"style": "terrace", "share": 0.35, "walls": ["#8c4a36", "#9a5640", "#7e4232", "#e8e4d8", "#c8bca4"], "roofs": ["#3c3e44", "#46484e"]},
+				{"style": "tenement", "share": 0.3, "walls": ["#9a5a46", "#a86a52", "#c8b08a", "#bda57e", "#8e4e3c"], "roofs": ["#3c3e44"]},
+				{"style": "modern", "share": 0.25, "walls": ["#c8c4bc", "#a8a49c", "#8c8478", "#d8d0c0", "#8c4a36", "#5a5650"]},
+				{"style": "tower", "share": 0.1}
+			],
 			"walls": ["#a49a87", "#8d8578", "#b3a68c", "#e8e4d8", "#8c4a36"], "roofs": ["#3c3e44", "#46484e", "#6b3a2c"],
 			"trim": "#efede6", "door": ["#1f3a5c", "#5c1a1a", "#1d3d2a", "#2b2b2b"],
 			"roof": "gable", "pitch": 0.7, "eaves": 0.2, "chimney": 0.95, "plinth": "",
@@ -25,6 +32,12 @@
 		},
 		"western_europe": {
 			"name": "Western Europe",
+			"city": [
+				{"style": "mansard", "share": 0.3, "walls": ["#e8dcc4", "#ddd0b4", "#efe6d2"], "roofs": ["#5a6068", "#4a5058"]},
+				{"style": "gabled", "share": 0.3, "walls": ["#8a3a2a", "#7a3428", "#e8e2d4", "#9c4a34", "#d8d0c0", "#4a4440"], "roofs": ["#3a3a3e", "#b85a2e"]},
+				{"style": "modern", "share": 0.3, "walls": ["#e4e2dc", "#c8c4bc", "#d8cbb0", "#a8a8a4", "#9c4a34", "#5a5a5c", "#c8a070"]},
+				{"style": "tower", "share": 0.1}
+			],
 			"walls": ["#ece6d8", "#e2d6bc", "#d8cbb0", "#f2efe8"], "roofs": ["#8a3a26", "#6a2e22", "#4a3c38"],
 			"trim": "#f0ece4", "door": ["#5a3a22", "#3a2a1e"],
 			"roof": "gable", "pitch": 0.75, "eaves": 0.4, "chimney": 0.4,
@@ -49,6 +62,12 @@
 		},
 		"nordic": {
 			"name": "Nordic",
+			"city": [
+				{"style": "tenement", "share": 0.3, "walls": ["#d8b050", "#c87a4a", "#e8dcc0", "#a8b4b8", "#8c4a36"], "roofs": ["#3a3a3e", "#7a3a2a"]},
+				{"style": "gabled", "share": 0.2, "walls": ["#8c2a20", "#d8b050", "#efece4", "#6a7a84"], "roofs": ["#2a2a2e"]},
+				{"style": "modern", "share": 0.4, "walls": ["#e4e2dc", "#c8c4bc", "#7a6a5a", "#3a3a3c"]},
+				{"style": "tower", "share": 0.1}
+			],
 			"walls": ["#8c2a20", "#9a3424", "#d8b050", "#efece4", "#6a7a84"], "roofs": ["#2a2a2e", "#3a3a3e", "#7a3a2a"],
 			"trim": "#f4f2ec", "door": ["#2a3a4a", "#efece4"],
 			"roof": "gable", "pitch": 0.7, "eaves": 0.35, "chimney": 0.7, "plinth": "#5a5a58",
@@ -57,6 +76,12 @@
 		},
 		"eastern_europe": {
 			"name": "Eastern Europe",
+			"city": [
+				{"style": "panel", "share": 0.45, "walls": ["#c8c4b8", "#d8d0b0", "#b8c4c8", "#d8c0a8", "#a8a8a0"]},
+				{"style": "tenement", "share": 0.3, "walls": ["#e8dcb0", "#d8c8a0", "#c8b8a0", "#b8c0b0", "#e4d0c0"], "roofs": ["#6a6e74", "#7a3a30"]},
+				{"style": "modern", "share": 0.2, "walls": ["#e4e2dc", "#c8c4bc"]},
+				{"style": "tower", "share": 0.05}
+			],
 			"walls": ["#e8dcb0", "#c8d4dc", "#e4e0d6", "#d8c8a0", "#b8c0b0", "#a8a49c"], "roofs": ["#4a6a4a", "#7a3a30", "#6a6e74", "#3a5a6a"],
 			"trim": "#f0ece4", "door": ["#3a4a5a", "#5a3a2a"],
 			"roof": "hip", "pitch": 0.55, "eaves": 0.45, "chimney": 0.5, "plinth": "#7a7672",
@@ -65,6 +90,12 @@
 		},
 		"mediterranean": {
 			"name": "Mediterranean",
+			"city": [
+				{"style": "arcade", "share": 0.3, "walls": ["#ecdcb8", "#e2c08a", "#d89a6a", "#f2e4c8", "#e8c8a8"]},
+				{"style": "modern", "share": 0.4, "walls": ["#f4f0e6", "#ecdcb8", "#e8e0d0", "#d8c8a8"], "balconies": true},
+				{"style": "tenement", "share": 0.25, "walls": ["#e2c08a", "#d89a6a", "#c87a5a", "#f2e4c8", "#b8a07a"], "roofs": ["#b0583a", "#a04a30"]},
+				{"style": "tower", "share": 0.05}
+			],
 			"walls": ["#f4f0e6", "#ecdcb8", "#e2c08a", "#d89a6a", "#f2e4c8"], "roofs": ["#b0583a", "#a04a30", "#c06a44", "#985040"],
 			"trim": "#f6f4ee", "door": ["#4a3022", "#2e5a7a", "#3a5a3a"],
 			"roof": "hip", "pitch": 0.32, "eaves": 0.3, "flat": 0.2, "parapet": true, "chimney": 0.2,
@@ -77,6 +108,12 @@
 		},
 		"north_africa_middle_east": {
 			"name": "North Africa and the Middle East",
+			"city": [
+				{"style": "courtyard", "share": 0.4},
+				{"style": "modern", "share": 0.35, "walls": ["#e2cfa6", "#ece2cc", "#d8c8a8", "#f2ece0"], "balconies": true},
+				{"style": "highrise", "share": 0.2, "walls": ["#e2cfa6", "#ece2cc", "#d8d0c0"]},
+				{"style": "tower", "share": 0.05, "glass": "#3a6a7a"}
+			],
 			"walls": ["#e2cfa6", "#d8bf90", "#ece2cc", "#c8a878"], "roofs": ["#d2bc92", "#c8b088"],
 			"trim": "#e8dcc4", "door": ["#2e6a6a", "#2a4a8a", "#6a3a2a", "#3a6a3a"],
 			"roof": "flat", "pitch": 0.0, "eaves": 0.0, "flat": 1.0, "parapet": true, "tanks": 0.25, "rebar": 0.3,
@@ -91,6 +128,12 @@
 		},
 		"sub_saharan_africa": {
 			"name": "Sub-Saharan Africa",
+			"city": [
+				{"style": "shophouse", "share": 0.35},
+				{"style": "modern", "share": 0.4, "walls": ["#e8dcc0", "#d8c8a0", "#a8c0b8", "#e0b8a0", "#f0e8d8"], "balconies": true},
+				{"style": "highrise", "share": 0.2, "walls": ["#e8dcc0", "#d8d0c0"]},
+				{"style": "tower", "share": 0.05}
+			],
 			"walls": ["#c8945e", "#b4784a", "#e8dcc0", "#d8c8a0", "#a8c0b8", "#e0b8a0"], "roofs": ["#8a8e90", "#7a5a40", "#9a9ea0", "#6a4a3a"],
 			"trim": "#e8e0cc", "door": ["#2a4a6a", "#6a3a2a", "#3a6a3a"],
 			"roof": "tin", "pitch": 0.25, "eaves": 0.4, "flat": 0.15, "parapet": true, "chimney": 0.0, "hut": 0.25, "bars": true,
@@ -103,6 +146,11 @@
 		},
 		"north_america": {
 			"name": "North America",
+			"city": [
+				{"style": "terrace", "share": 0.2, "walls": ["#8c4a36", "#7e4232", "#a85a44", "#6a4a3a"], "roofs": ["#3a3a3c"]},
+				{"style": "modern", "share": 0.4, "walls": ["#c8c4bc", "#a8a49c", "#e4e2dc", "#8c8478", "#b89a7a", "#8c4a36", "#4a4c50"]},
+				{"style": "tower", "share": 0.4, "glass": "#3a5a74"}
+			],
 			"walls": ["#eeeeea", "#c8ccc8", "#a8b8c4", "#d8ccb0", "#e4dcc8", "#7a8a94"], "roofs": ["#3a3a3c", "#4a4440", "#5a5650", "#2e2e30"],
 			"trim": "#f6f6f2", "door": ["#7a2a24", "#2a3a4a", "#efefea"],
 			"roof": "gable", "pitch": 0.5, "eaves": 0.4, "chimney": 0.3, "verandah": 0.5, "plinth": "#8a8680",
@@ -112,6 +160,12 @@
 		},
 		"latin_america": {
 			"name": "Latin America",
+			"city": [
+				{"style": "arcade", "share": 0.3},
+				{"style": "modern", "share": 0.4, "balconies": true},
+				{"style": "highrise", "share": 0.25, "walls": ["#e8e4d8", "#d8d0c0", "#e8c8a8"]},
+				{"style": "tower", "share": 0.05}
+			],
 			"walls": ["#d8607a", "#3aa8a8", "#e8c040", "#c86a3a", "#f2ece0", "#8ab848", "#4a7ac0", "#e89a50"], "roofs": ["#9a9488", "#b0583a", "#8a8478"],
 			"trim": "#f2ece0", "door": ["#6a3a22", "#2a4a6a", "#3a6a3a"],
 			"roof": "flat", "pitch": 0.25, "eaves": 0.1, "flat": 0.75, "parapet": true, "tanks": 0.35, "rebar": 0.4,
@@ -121,6 +175,12 @@
 		},
 		"south_asia": {
 			"name": "South Asia",
+			"city": [
+				{"style": "modern", "share": 0.45, "balconies": true},
+				{"style": "shophouse", "share": 0.25},
+				{"style": "highrise", "share": 0.25, "walls": ["#e8e0d0", "#d8d0c0", "#f0e8d0", "#c8d8e0"]},
+				{"style": "tower", "share": 0.05}
+			],
 			"walls": ["#e8a8b8", "#90c8e0", "#b8d890", "#f0e8d0", "#e8c870", "#c8a8d8", "#e0e0d8"], "roofs": ["#9a968c", "#8a867c"],
 			"trim": "#f0ece0", "door": ["#2a6a8a", "#6a3a2a", "#3a6a3a"],
 			"roof": "flat", "pitch": 0.0, "eaves": 0.25, "flat": 0.9, "parapet": true, "tanks": 0.6, "rebar": 0.5,
@@ -130,6 +190,12 @@
 		},
 		"east_asia": {
 			"name": "East Asia",
+			"city": [
+				{"style": "highrise", "share": 0.4, "walls": ["#ecebe6", "#d8d4c8", "#c8c4b8", "#e6e0d0"]},
+				{"style": "modern", "share": 0.35, "walls": ["#ecebe6", "#d8d4c8", "#bfbcb4", "#c8b8a0", "#a8a49c"]},
+				{"style": "shophouse", "share": 0.15},
+				{"style": "tower", "share": 0.1, "glass": "#3a5a6a"}
+			],
 			"walls": ["#ecebe6", "#d8d4c8", "#bfbcb4", "#e6e0d0", "#6a5444"], "roofs": ["#3a4048", "#4a525c", "#2e3238", "#5a6a7a"],
 			"trim": "#5a4434", "door": ["#5a4434", "#3a3a3c"],
 			"roof": "hip", "pitch": 0.48, "eaves": 0.7, "chimney": 0.0, "plinth": "#8a8680",
@@ -138,6 +204,12 @@
 		},
 		"south_east_asia": {
 			"name": "South-East Asia",
+			"city": [
+				{"style": "shophouse", "share": 0.45},
+				{"style": "highrise", "share": 0.3, "walls": ["#f0e8c8", "#e4e4dc", "#c8e0d0", "#e8d0a0"]},
+				{"style": "modern", "share": 0.15, "balconies": true},
+				{"style": "tower", "share": 0.1}
+			],
 			"walls": ["#f0e8c8", "#c8e0d0", "#e8d0a0", "#a86a3a", "#d8b8d0", "#e4e4dc"], "roofs": ["#b84a30", "#2a6a8a", "#8a8e90", "#7a4a2a"],
 			"trim": "#f0ece0", "door": ["#6a3a22", "#2a4a6a"],
 			"roof": "gable", "pitch": 0.75, "eaves": 0.8, "chimney": 0.0, "stilts": 0.3, "bars": true,
@@ -149,6 +221,11 @@
 		},
 		"australia_nz": {
 			"name": "Australia and New Zealand",
+			"city": [
+				{"style": "terrace", "share": 0.25, "walls": ["#8c4a36", "#e8dcc4", "#c8b48c", "#f2f0e8"], "roofs": ["#a8aca8", "#3e4248"]},
+				{"style": "modern", "share": 0.45, "walls": ["#e4e2dc", "#c8c4bc", "#d8ccb0", "#a8a49c", "#8c4a36", "#5a5a5c"]},
+				{"style": "tower", "share": 0.3, "glass": "#3a5a74"}
+			],
 			"walls": ["#f2f0e8", "#e4dcc4", "#c8d4d8", "#d8e0c8", "#b0a896", "#f0e0c0"], "roofs": ["#a8aca8", "#8a2e26", "#2e4a3a", "#3e4248", "#b8bcb8"],
 			"trim": "#f6f6f0", "door": ["#2a3a4a", "#7a2a24", "#efefea"],
 			"roof": "hip", "pitch": 0.38, "eaves": 0.55, "chimney": 0.3, "verandah": 0.6,

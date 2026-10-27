@@ -23877,3 +23877,7 @@ func _test_region_kit_choose() -> void:
 
 func _test_region_kit_buildings() -> void:
 	_region_kit().test_buildings()
+
+
+func _test_region_kit_city() -> void:
+	_region_kit().test_city()
