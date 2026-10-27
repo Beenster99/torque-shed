@@ -209,6 +209,7 @@ func test_world() -> void:
 	w.roads_region = region
 	w.setup(AdventurePlans.pack_for(plan), 1)
 	AdventureWorld.network = was
+	RealLand.roam = false   # (set by a network ride's setup: not for the tests after this one)
 	var nav := NetNav.new(w)
 	nav.threaded = false
 	check(nav.route != null and nav.net == w.roads.net, "the network ride's sat nav has the crew's route on the graph")
