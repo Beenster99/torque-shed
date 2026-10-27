@@ -69,6 +69,12 @@ var pois: Array = []
 var summary := {}
 ## The country's speed-limit rules the baker used ("uk", "jp" or "world").
 var region := "world"
+## The road on the region's graph (RealRegion), for the network ride's sat nav (NetRoute): each step's [from node, edge,
+## to node] in order, the pins' nodes (the planner took each pin to), and how many steps reach the last pin (the rest
+## are the run-out).
+var steps := PackedInt32Array()
+var pin_nodes := PackedInt32Array()
+var run_start := 0
 
 
 ## The planned pack `pack_id` (see register), or null when this game hasn't planned it.

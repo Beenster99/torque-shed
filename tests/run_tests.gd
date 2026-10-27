@@ -555,6 +555,12 @@ func _run_all() -> void:
 	await _t(&"_test_planner_survey")
 	await _t(&"_test_planner_sketch")
 	await _t(&"_test_planner_world_map")
+	await _t(&"_test_net_route")
+	await _t(&"_test_net_search")
+	await _t(&"_test_net_junctions")
+	await _t(&"_test_net_nav")
+	await _t(&"_test_net_plan")
+	await _t(&"_test_net_world")
 	await _t(&"_test_real_pack")
 	await _t(&"_test_real_levels")
 	await _t(&"_test_real_epic")
@@ -23881,3 +23887,31 @@ func _test_region_kit_buildings() -> void:
 
 func _test_region_kit_city() -> void:
 	_region_kit().test_city()
+
+
+func _net() -> RefCounted:
+	return load("res://tests/net_route_tests.gd").new(self)
+
+
+func _test_net_route() -> void:
+	_net().test_route()
+
+
+func _test_net_search() -> void:
+	_net().test_search()
+
+
+func _test_net_junctions() -> void:
+	_net().test_junctions()
+
+
+func _test_net_nav() -> void:
+	_net().test_nav()
+
+
+func _test_net_plan() -> void:
+	_net().test_plan()
+
+
+func _test_net_world() -> void:
+	_net().test_world()

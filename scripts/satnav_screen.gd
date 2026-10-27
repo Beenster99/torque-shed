@@ -23,6 +23,8 @@ const DEST := Color(1.0, 0.45, 0.35)
 ## The rest of the crew on the map and in their list, and the wrong-way warning.
 const FRIEND := Color(0.45, 0.85, 1.0)
 const WRONG := Color(0.85, 0.12, 0.1)
+## "Back on route" on the network ride (see Satnav.satnav_guide's say).
+const BACK_ON := Color(0.15, 0.6, 0.3)
 ## The stops ahead (see Satnav.satnav_stops): each kind's colour and the letter on its marker.
 const STOP_COLORS := {"food": Color(1.0, 0.7, 0.2), "rest": Color(0.4, 0.65, 1.0), "sleep": Color(0.8, 0.5, 1.0), "fuel": FUEL}
 const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
@@ -31,7 +33,7 @@ const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
 ## {pts: PackedVector2Array, kind, hw}, route: PackedVector2Array, road: name of the road it's
 ## on, points: Array of {kind, name, distance (m), at: Vector2 or null}, stops: the next places
 ## to stop, Array of {kind, name, label, distance, at}, guide: {wrong_way, turn} (the way to go,
-## relative to the heading), friends: Array of {name, ahead (m), at}, junction: what to do at the
+## relative to the heading; on the network also status and say, see Satnav.satnav_guide), friends: Array of {name, ahead (m), at}, junction: what to do at the
 ## next one, {text, type, exit, distance}} or {} for no fix yet.
 var view := {}
 ## What the unit can show (BikeBuild.satnav_features): "map", "route", "fuel".
@@ -204,6 +206,12 @@ func _draw() -> void:
 			draw_rect(band, Color.WHITE, false, 2.0)
 			draw_string(font, Vector2(band.position.x, band.position.y + fs * 1.55), "WRONG WAY: TURN AROUND", HORIZONTAL_ALIGNMENT_CENTER,
 				band.size.x, fs + 1, Color.WHITE)
+		elif str(guide.get("say", "")) != "":
+			# On the network: "Back on route" for a moment.
+			var band := Rect2(size.x * 0.12, size.y * 0.4, size.x * 0.76, fs * 2.0)
+			draw_rect(band, Color(BACK_ON, 0.9))
+			draw_string(font, Vector2(band.position.x, band.position.y + fs * 1.4), str(guide["say"]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER,
+				band.size.x, fs, Color.WHITE)
 	# The rest of the crew along the road: how far ahead or behind, nearest first.
 	if not friends.is_empty():
 		var lfs := maxi(8, fs - 2)
@@ -336,8 +344,17 @@ func _draw_junction(j: Dictionary, y: float, fs: int, font: Font) -> void:
 			for k in 3:
 				draw_circle(icon + Vector2(0, (k - 1) * rad * 0.62), rad * 0.26, [Color(0.95, 0.2, 0.15), Color(1.0, 0.7, 0.1), Color(0.2, 0.9, 0.35)][k])
 		_:
-			draw_line(icon + Vector2(0, rad * 1.2), icon - Vector2(0, rad * 1.2), Color.WHITE, 3.0, true)
-			draw_line(icon + Vector2(-rad, 0), icon + Vector2(rad, 0), Color.WHITE, 2.0, true)
+			if j.has("turn"):
+				# The network's junctions: the way in from below, then bent round to the way out.
+				var out_dir := Vector2(sin(float(j["turn"])), -cos(float(j["turn"])))
+				var tip := icon + out_dir * rad * 1.1
+				draw_line(icon + Vector2(0, rad * 1.2), icon, Color.WHITE, 3.0, true)
+				draw_line(icon, tip, ROUTE, 3.0, true)
+				var side := Vector2(-out_dir.y, out_dir.x)
+				draw_colored_polygon(PackedVector2Array([tip + out_dir * rad * 0.35, tip + side * rad * 0.35, tip - side * rad * 0.35]), ROUTE)
+			else:
+				draw_line(icon + Vector2(0, rad * 1.2), icon - Vector2(0, rad * 1.2), Color.WHITE, 3.0, true)
+				draw_line(icon + Vector2(-rad, 0), icon + Vector2(rad, 0), Color.WHITE, 2.0, true)
 	var x := box.position.x + lh * 2.0
 	draw_string(font, Vector2(x, box.position.y + fs + 2.0), near_distance(float(j.get("distance", 0.0))), HORIZONTAL_ALIGNMENT_LEFT,
 		box.size.x - x, fs, ROUTE)
