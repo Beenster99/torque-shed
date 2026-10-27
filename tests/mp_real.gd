@@ -4,7 +4,8 @@ extends Node
 ## real game, the host starts the ride for both, and both must be on it with the same road planned
 ## (its hash). Some way along it each must see the other at the right spot on the road to within a few
 ## centimetres. Both sleep at an inn along it, then the client rides to the finish: both must arrive at the
-## destination. The host ends it.
+## destination. The host ends it. tests/mp_real_net.gd rides the same on the road network (the host's Debug toggle
+## on): the stops built beside the network's roads (NetSites), the end-to-end check of Ride Anywhere v2's phase C.
 
 const Rides := preload("res://tests/rides.gd")
 
@@ -15,6 +16,8 @@ const ALONG := 9000.0
 
 var role := "host"
 var main: Node
+## On the road network (the host's choice: the client's own toggle is left off).
+var network := false
 
 
 func _ready() -> void:
@@ -24,6 +27,7 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Real %s" % role
+	AdventureWorld.network = network and role == "host"
 	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
 	var plan := AdventurePlans.tour(REGION)
 	var pack := AdventurePlans.pack_for(plan)
@@ -40,7 +44,8 @@ func _ready() -> void:
 			Shed.request({"a": "adventure_start", "plan": plan, "seed": SEED, "title": "Round the Dales"})
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 60.0)
 	var same_road := ok_start and str(Shed.adventure.get("real", "")) == pack.id and str(Shed.adventure.get("real_hash", "")) == pack.hash \
-		and trip.world != null and trip.world.route.real == pack and AdventureTrip.real_mismatch(Shed.adventure) == ""
+		and trip.world != null and trip.world.route.real == pack and AdventureTrip.real_mismatch(Shed.adventure) == "" \
+		and (trip.world.roads != null) == network
 	print("MP real note %s: on the road %s, the same copy %s, %.1f km" % [role, ok_start, same_road, trip.world.route.length / 1000.0 if trip.world else 0.0])
 	var wait_until := Time.get_ticks_msec() + 4000
 	await _until(func(): return Time.get_ticks_msec() > wait_until, 5.0)

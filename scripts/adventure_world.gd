@@ -103,6 +103,7 @@ func _exit_tree() -> void:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
 	_stop_committing()
+	NetNav.forget(self)
 	if current == self:
 		current = null
 		Daylight.shelter = 0.0
