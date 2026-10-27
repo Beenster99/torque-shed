@@ -124,6 +124,10 @@ func test_kinds() -> void:
 	var cn := RoadNet.new(cross(), flat)
 	var c := cn.junction_of(0)
 	check(c["kind"] == "cross" and c["arms"].size() == 4, "a crossroads has four arms")
+	var corner := (c["outline"] as PackedVector2Array).size() == 4 * (2 + RoadNet.KERB_STEPS - 1)
+	for p: Vector2 in c["outline"]:
+		corner = corner and p.distance_to(Vector2(c["pos"].x, c["pos"].z)) <= float(c["radius"]) + 0.01
+	check(corner, "its kerbs curve round from one arm to the next (%d points round it)" % (c["outline"] as PackedVector2Array).size())
 	var mains: Array = c["arms"].filter(func(a): return a["main"])
 	check(mains.size() == 2 and mains.all(func(a): return a["class"] == "primary"), "its through road is the wider one")
 	# The narrow track's mouth is further out than the main road's: it has the wide road's width to clear.
@@ -173,6 +177,25 @@ func test_locate() -> void:
 	var rn := RoadNet.new(roundabout(), flat)
 	var ring := rn.locate(100.0 + 16.0, 100.0)
 	check(int(ring.get("node", -1)) == 0 and rn.on_ring(int(ring["edge"])), "on the ring, at the roundabout")
+	# A right-angled corner the map drew at a plain join, and another inside an edge: both become curves, the strand's
+	# ends stay put and its edges meet end to end.
+	var bn := RoadNet.new(graph([[0, 0], [200, 0], [400, 200]], [[0, 1, "secondary"], [1, 2, "secondary", 0, [200, 200]]]), flat)
+	var l0 := bn.line_of(0)
+	var l1 := bn.line_of(1)
+	var worst := 0.0
+	var line := PackedVector2Array()
+	for p in l0 + l1:
+		if line.is_empty() or p.distance_to(line[line.size() - 1]) > 1.0:
+			line.append(p)
+	for k in range(1, line.size() - 1):
+		var turn := absf((line[k] - line[k - 1]).angle_to(line[k + 1] - line[k]))
+		worst = maxf(worst, turn / ((line[k].distance_to(line[k - 1]) + line[k].distance_to(line[k + 1])) * 0.5))
+	check(l0[0] == Vector2(0, 0) and l1[l1.size() - 1] == Vector2(400, 200) and l0[l0.size() - 1] == l1[0],
+		"a strand's ends stay put and its edges meet")
+	check(1.0 / worst >= RoutePlanner.MIN_RADIUS * 0.9, "its corners are curves (the tightest a %.1f m radius)" % (1.0 / worst))
+	var corner := bn.locate(200.0, 0.0)
+	check(not corner.is_empty() and absf(float(corner["lat"])) > 2.0 and bn.length_of(0) + bn.length_of(1) < 600.0,
+		"the corner the map drew is cut (%.1f m off the curve)" % absf(float(corner.get("lat", 0.0))))
 
 
 ## Heights: every road meeting at a junction meets it at its height; the road is smooth; the land is cut to it.
@@ -185,6 +208,12 @@ func test_heights() -> void:
 		var s := 0.0 if net.region.edge_a[ei] == 0 else net.length_of(ei)
 		ends.append(net.road_y(ei, s))
 	check(ends.all(func(y): return is_equal_approx(float(y), y0)), "all four roads meet at the junction's height (%.2f)" % y0)
+	# A side road climbing steeply away from a level main road: the junction is at the main road's height, and the side
+	# road eases onto it (the main road isn't lifted into a hump).
+	var climb := func(_x: float, z: float) -> float: return 10.0 + maxf(0.0, z - 100.0) * 0.6
+	var tn := RoadNet.new(tee(), climb)
+	check(absf(tn.node_y(0) - 10.0) < 0.2 and absf(tn.road_y(1, 30.0) - 10.0) < 0.2,
+		"a junction sits at its through road's height, not lifted by a side road climbing away (%.2f)" % tn.node_y(0))
 	var worst := 0.0
 	for ei in 4:
 		var pr := net.profile(ei)
@@ -205,7 +234,7 @@ func test_heights() -> void:
 		prev = g
 	check(jump < 1.0, "it eases out to the bare land without a step (the biggest a metre %.2f m)" % jump)
 	# In a cutting the land is held level with the road a cell's width past the verge, so the land's 8 m cells never
-	# lie over the deck; where it falls away it may fall from the verge.
+	# lie over the deck; where it falls away it falls from a little past the verge.
 	var vee := func(_x: float, z: float) -> float: return 50.0 + absf(z - 100.0) * 0.5
 	var cut := RoadNet.new(cross(), vee)
 	var road := cut.road_y(int(hit["edge"]), float(hit["s"]))
@@ -215,8 +244,10 @@ func test_heights() -> void:
 	check(cut.ground_at(300.0, edge + RoadNet.LAND_PAD + 20.0, float(vee.call(300.0, edge + RoadNet.LAND_PAD + 20.0))) > road + 2.0, "then climbs its bank")
 	var dip := func(_x: float, z: float) -> float: return 50.0 - absf(z - 100.0) * 0.5
 	var bank := RoadNet.new(cross(), dip)
-	var below := bank.ground_at(300.0, edge + 6.0, float(dip.call(300.0, edge + 6.0)))
-	check(below < bank.road_y(int(hit["edge"]), float(hit["s"])) - 1.0, "on an embankment it falls away from the verge (%.2f m under the road 6 m out)" % (bank.road_y(int(hit["edge"]), float(hit["s"])) - below))
+	var shelf := bank.ground_at(300.0, edge + RoadNet.FALL_PAD - 0.5, float(dip.call(300.0, edge + RoadNet.FALL_PAD - 0.5)))
+	check(absf(shelf - (road - RoadNet.UNDER)) < 0.01, "on an embankment the land is level with the road %.0f m past the verge, under its skirt (%.2f m against the road's %.2f)" % [RoadNet.FALL_PAD, shelf, road])
+	var below := bank.ground_at(300.0, edge + RoadNet.FALL_PAD + 12.0, float(dip.call(300.0, edge + RoadNet.FALL_PAD + 12.0)))
+	check(below < road - 1.0 and below > road - 6.0, "then falls away down a bank one in three (%.2f m under the road %.0f m out)" % [road - below, RoadNet.FALL_PAD + 12.0])
 
 
 ## A road crossing from one block into the next is in both, the two meeting at the seam; the same block twice is the

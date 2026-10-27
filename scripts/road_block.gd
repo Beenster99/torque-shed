@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 2
+const VERSION := 3
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -17,8 +17,8 @@ const CLEAR := 1.0
 ## The deck's points across (edge, quarter, crown, quarter, edge), as the single-line road's.
 const ACROSS := 5
 ## The verge's skirt: from the verge's outer edge it runs this far further out and down under the land (m).
-const SKIRT_OUT := 0.8
-const SKIRT_DOWN := 0.6
+const SKIRT_OUT := 1.6
+const SKIRT_DOWN := 1.2
 ## The white lines: an edge line this far in from the edge (m), this wide, on roads at least EDGE_LINE_MIN wide; a
 ## centre line's dashes DASH on, GAP off (m), on two-lane roads; all LINE_LIFT above the deck.
 const LINE_IN := 0.3
@@ -416,10 +416,7 @@ func _piece_mesh(p: Dictionary) -> void:
 		return
 	var surf := str(p["surface"])
 	var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
-	var verge_col: Color = AdventureSurface.VERGE_COLOR.get(surf, AdventureSurface.VERGE_COLOR["tarmac"])
-	var look: Dictionary = net.dress.get("look", {})
-	if look.has("verge"):
-		verge_col = (look["verge"] as Dictionary).get(surf, verge_col)   # (the place's own, as the land beside it is)
+	var verge_col := _verge_colour(surf)
 	var e := float(p["width"]) * 0.5
 	var o := anchor()
 	var g := _deck_of(surf)
@@ -463,28 +460,55 @@ func _piece_mesh(p: Dictionary) -> void:
 	g["i"].append_array(idx)
 	_faces_of(surf)
 	arrays["faces"][surf].append_array(faces)
-	# The verges, level with the road's edge, then the skirt down under the land.
-	var verge: Dictionary = arrays["verge"]
-	for k in rows - 1:
+	# The verges, level with the road's edge, then the skirt down under the land: none where they'd lie on another road.
+	var ei := int(p["edge"])
+	var keep := []
+	for k in rows:
+		var row := []
 		for side: float in [-1.0, 1.0]:
-			var a := pts[k] - o
-			var b := pts[k + 1] - o
-			var ra: Vector3 = rights[k] * side
-			var rb: Vector3 = rights[k + 1] * side
-			var a0 := a + ra * e
-			var b0 := b + rb * e
-			var a1 := a + ra * (e + RoadNet.VERGE) + Vector3(0.0, -0.03, 0.0)
-			var b1 := b + rb * (e + RoadNet.VERGE) + Vector3(0.0, -0.03, 0.0)
-			var a2 := a + ra * (e + RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
-			var b2 := b + rb * (e + RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
-			_up(verge, a0, b0, b1, verge_col)
-			_up(verge, a0, b1, a1, verge_col)
-			_up(verge, a1, b1, b2, verge_col.darkened(0.1))
-			_up(verge, a1, b2, a2, verge_col.darkened(0.1))
-			_face("grass", a0, b0, b1)
-			_face("grass", a0, b1, a1)
+			row.append(not _on_other(pts[k] + rights[k] * side * (e + RoadNet.VERGE), ei))
+		keep.append(row)
+	for k in rows - 1:
+		for q in 2:
+			if not keep[k][q] or not keep[k + 1][q]:
+				continue
+			var side := -1.0 if q == 0 else 1.0
+			_verge_strip(pts[k] - o + rights[k] * side * e, pts[k + 1] - o + rights[k + 1] * side * e, rights[k] * side,
+				rights[k + 1] * side, verge_col)
 	if surf == "tarmac":
 		_piece_lines(p, pts, rights, e, s0)
+
+
+## The verge's colour beside a road of surface `surf`: the place's own, as the land beside it is.
+func _verge_colour(surf: String) -> Color:
+	var col: Color = AdventureSurface.VERGE_COLOR.get(surf, AdventureSurface.VERGE_COLOR["tarmac"])
+	var look: Dictionary = net.dress.get("look", {})
+	if look.has("verge"):
+		col = (look["verge"] as Dictionary).get(surf, col)
+	return col
+
+
+## A stretch of verge out from the road's edge a to b (block space), out along `ra` and `rb`, level with the edge, then
+## its skirt down under the land; and its collision.
+func _verge_strip(a0: Vector3, b0: Vector3, ra: Vector3, rb: Vector3, col: Color) -> void:
+	var verge: Dictionary = arrays["verge"]
+	var a1 := a0 + ra * RoadNet.VERGE + Vector3(0.0, -0.03, 0.0)
+	var b1 := b0 + rb * RoadNet.VERGE + Vector3(0.0, -0.03, 0.0)
+	var a2 := a0 + ra * (RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
+	var b2 := b0 + rb * (RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
+	_up(verge, a0, b0, b1, col)
+	_up(verge, a0, b1, a1, col)
+	_up(verge, a1, b1, b2, col.darkened(0.1))
+	_up(verge, a1, b2, a2, col.darkened(0.1))
+	_face("grass", a0, b0, b1)
+	_face("grass", a0, b1, a1)
+
+
+## Whether `p` (region frame) is on a road other than edge `ei` (any, for -1): its carriageway or a junction's surface,
+## where no verge is laid.
+func _on_other(p: Vector3, ei: int) -> bool:
+	var on := net.locate(p.x, p.z, ei)
+	return not on.is_empty() and bool(on["on_road"]) and (int(on["edge"]) != ei or int(on["node"]) >= 0)
 
 
 ## A tarmac piece's edge lines and centre dashes.
@@ -551,14 +575,46 @@ func _junction_mesh(j: Dictionary) -> void:
 			_fan(g, surf, col, at - o, [at + back - right * 1.6 - o, m - right - o, m + right - o, at + back + right * 1.6 - o])
 		_island(j)
 		return
-	var outline: PackedVector2Array = j["outline"]
+	var full := net.junction_of(int(j["node"]))
+	var outline: PackedVector2Array = full["outline"]
+	var heights: PackedFloat32Array = full["outline_y"]
+	var kerb: PackedByteArray = full["kerb"]
 	var pts := []
 	for k in outline.size():
-		var y := centre.y
-		if j["kind"] != "end":
-			y = float((arms[k / 2]["mouth"] as Vector3).y)
-		pts.append(Vector3(outline[k].x, y, outline[k].y) - o)
-	_fan(g, surf, col, centre - o, pts, j["kind"] != "end")
+		pts.append(Vector3(outline[k].x, heights[k], outline[k].y) - o)
+	var closed: bool = j["kind"] != "end"
+	_fan(g, surf, col, centre - o, pts, closed)
+	# Its verges, round the kerbs between the arms (the arms' own run on from their mouths).
+	var verge_col := _verge_colour(surf)
+	var count := pts.size() if closed else pts.size() - 1
+	var mid := centre - o
+	# Each kerb's way out, and each point's (between the kerbs either side of it), so the verge bends round unbroken.
+	var outs := []
+	for k in count:
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[(k + 1) % pts.size()]
+		var side := Vector3(b.z - a.z, 0.0, a.x - b.x).normalized()
+		if side.dot((a + b) * 0.5 - mid) < 0.0:
+			side = -side
+		outs.append(side)
+	var at := []
+	var keep := []
+	for k in pts.size():
+		var n := Vector3.ZERO
+		for q: int in [k - 1, k]:
+			var w := posmod(q, pts.size())
+			if (closed or (q >= 0 and q < count)) and w < count and kerb[w] == 1:
+				n += outs[w]
+		n = n.normalized() if n.length_squared() > 0.0 else Vector3.ZERO
+		if not closed:
+			n = Vector3(pts[k].x - mid.x, 0.0, pts[k].z - mid.z).normalized()   # (a dead end's: round its half circle)
+		at.append(n)
+		keep.append(n != Vector3.ZERO and not _on_other(pts[k] + o + n * RoadNet.VERGE, -1))
+	for k in count:
+		var k1 := (k + 1) % pts.size()
+		if kerb[k] == 0 or not keep[k] or not keep[k1]:
+			continue
+		_verge_strip(pts[k], pts[k1], at[k], at[k1], verge_col)
 
 
 ## A fan of triangles from `c` round `pts` (closed if `closed`), into grid `g` and collision `surf`.
@@ -624,7 +680,8 @@ func _join_caps() -> void:
 			continue
 		var surf := r.surface_of(e0)
 		var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
-		var c := Vector3(r.node_pos[node].x, net.node_y(node), r.node_pos[node].y)
+		var at := net.point_at(e0, 0.0 if r.edge_a[e0] == node else net.length_of(e0))   # (the join, on the smoothed line)
+		var c := Vector3(at.x, net.node_y(node), at.y)
 		var ring := []
 		for k in 12:
 			var t := TAU * k / 12.0

@@ -1,4 +1,4 @@
-# Road block: interface (T6), version 2
+# Road block: interface (T6), version 3
 
 Owner: T6 Road network core. Readers: T7 Satnav and journeys, T8 Regional kits (markings, buildings), T9 Co-op,
 T10 Life on the network, and T5 Terrain around the rider (the ground under the roads).
@@ -26,8 +26,13 @@ junction in it, laid out as plain data on a worker, the same on every machine. T
   `Vector2i(bx, bz)` = `RoadBlock.key_of(x, z)`. Edges are in every block they cross, each block owning the stretch
   inside it (pieces overlap a seam by `RoadBlock.SEAM` m so the deck has no crack). A junction belongs to the block
   its node is in.
-- Along an edge, `s` is metres from its `a` node (RealRegion.edge_a) towards `b`, as RealRegion.edge_line runs.
-  `lat` is metres to the right of the centre line looking from a to b.
+- Along an edge, `s` is metres from its `a` node (RealRegion.edge_a) towards `b`, along `net.line_of(edge)`: the
+  map's line (RealRegion.edge_line) smoothed as the planned road is (RoutePlanner.smooth_line, by class), so no
+  corner the map drew stays a corner and the planned road and the network's lie one on the other. It's smoothed a
+  strand at a time (edges joined end to end through plain joins), so a junction's or a dead end's node stays put
+  and a plain join's moves onto the curve; a roundabout's ring stays as the map drew it. `net.length_of(edge)` is
+  its length (a little under RealRegion.edge_len). `lat` is metres to the right of the centre line looking from a
+  to b.
 
 ## RoadNet (scripts/road_net.gd)
 
@@ -37,6 +42,8 @@ RoadNet.new(region: RealRegion, height: Callable, ready := Callable())
     # RoadNet.new(region, terrain.height, terrain.ready), terrain being T5's RealTerrain (interfaces/terrain.md).
 net.region: RealRegion
 net.version_hash -> String                          # 12 hex: RoadBlock.VERSION and the region's hash
+net.line_of(edge: int) -> PackedVector2Array       # its centre line a to b, smoothed (above), region frame (x, z)
+net.length_of(edge: int) -> float                   # its length along line_of (m)
 net.width_of(edge: int) -> float                    # the carriageway's full width (m), by class (RoutePlanner.WIDTH)
 net.lanes_of(edge: int) -> int                      # 1 or 2 (one-way roads and narrow lanes have 1)
 net.profile(edge: int) -> PackedFloat32Array        # road height at each of net.samples_of(edge) even steps a to b (about RoadNet.STEP m)
@@ -81,13 +88,16 @@ depend on it.
 ### ground_at: the roads cut into the land (for T5)
 
 `net.ground_at(x, z, bare)` takes the bare ground height at (x, z) and returns the land's height with the roads
-in it: just under the deck (`RoadNet.UNDER` m) across the carriageway and its verges, then eased back to `bare`
-over a cutting or embankment whose width grows with the height to make up (1 in 1.5 slopes, `RoadNet.BANK_MIN`
-to `RoadNet.BANK_MAX` m). Where the land rises past the road (a cutting) it's held level with the road
-`RoadNet.LAND_PAD` m further past the verge before its bank starts, so that no 8 m cell of the land lies over the deck. Away from every road it returns `bare` unchanged. T5's land blocks call it for every
+in it: just under the deck (`RoadNet.UNDER` m) across the carriageway and its verges (the lowest deck's, where two
+overlap), then eased back to `bare` over a cutting or embankment whose width grows with the height to make up
+(1 in 3 slopes, `RoadNet.BANK_MIN` to `RoadNet.BANK_MAX` m). Where the land rises past the road (a cutting) it's
+held level with the road `RoadNet.LAND_PAD` m further past the verge before its bank starts, so that no 8 m cell
+of the land lies over the deck; where it falls away (an embankment), `RoadNet.FALL_PAD` m, so the verge's skirt is
+never left in the air. Where several roads are near, the one whose bank it's nearest the top of has its way.
+Away from every road it returns `bare` unchanged. T5's land blocks call it for every
 vertex near a road (`net.roads_near(rect: Rect2) -> bool` says whether a rectangle has any within reach); the
 road blocks draw only the deck, junctions, verges and their kerbs, so land and road meet without a strip owned
-by either.
+by either. A verge is left out wherever it would lie on another road's carriageway or a junction's surface.
 
 ## RoadBlock (scripts/road_block.gd)
 
@@ -137,7 +147,7 @@ block.ms: float                 # how long the build took on its worker
 | arms | Array[Dictionary] | the roads out of it, clockwise from north (below) |
 | island | float | a roundabout's island radius (m), 0 otherwise |
 | pair | int | a staggered junction's other node, else -1 |
-| outline | PackedVector2Array | its surface's edge, clockwise, region frame (x, z) |
+| outline | PackedVector2Array | its surface's edge, clockwise, region frame (x, z): across each arm's mouth, then a curved kerb (`RoadNet.KERB_STEPS` pieces) round to the next arm, or a straight one where the two arms' edges don't meet (a tee's far side) |
 
 An arm: `{edge: int, node: int (the node it leaves from), heading: float (out of the junction, as locate's; a
 roundabout's is the bearing from its middle),
