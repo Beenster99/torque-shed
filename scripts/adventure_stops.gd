@@ -249,7 +249,7 @@ static func register(world: AdventureWorld) -> void:
 	for kind in PARKED:
 		VehicleModel.parts(kind, 0)
 	for kind in KINDS + [ROW]:
-		world.site_builders[kind] = func(site, xf, _info): return build(world.route, site, xf)
+		world.site_builders[kind] = func(site, xf, info): return build(world.route, site, xf, info)
 	var fuel: Callable = world.site_builders.get("fuel", Callable())
 	world.site_builders["fuel"] = func(site, xf, info):
 		var node = fuel.call(site, xf, info) if fuel.is_valid() else null
@@ -274,8 +274,9 @@ class Kit:
 	var style_name := "mixed"
 
 
-## A stop's node at `xf` (the site's frame on the road's edge: local +x away from the road).
-static func build(route: AdventureRoute, site: Dictionary, xf: Transform3D) -> Node3D:
+## A stop's node at `xf` (the site's frame on the road's edge: local +x away from the road). On the network ride (NetSites)
+## `info` has where its signs stand, "sign" and "name_sign", in xf's parent's frame.
+static func build(route: AdventureRoute, site: Dictionary, xf: Transform3D, info := {}) -> Node3D:
 	var k := Kit.new()
 	k.site = site
 	k.rng.seed = int(site.get("seed", hash([route.seed_value, site["s"]])))
@@ -305,7 +306,7 @@ static func build(route: AdventureRoute, site: Dictionary, xf: Transform3D) -> N
 		"campsite":
 			_campsite(k)
 	if str(site["kind"]) != ROW:
-		_sign(route, k, xf)
+		_sign(route, k, xf, info)
 	_finish(k)
 	_ground(k, route)
 	return k.root
@@ -559,11 +560,11 @@ static func _bike(k: Kit, xf: Transform3D, col: Color) -> void:
 
 
 ## The roadside sign SIGN_BEFORE metres ahead of the stop, on the left verge facing the way you
-## come, built into the stop's node (in its frame) so it comes and goes with it.
-static func _sign(route: AdventureRoute, k: Kit, xf: Transform3D) -> void:
+## come, built into the stop's node (in its frame) so it comes and goes with it. On the network ride, where `info`
+## has it ("sign", "name_sign": NetSites).
+static func _sign(route: AdventureRoute, k: Kit, xf: Transform3D, info := {}) -> void:
 	var site := k.site
 	var s := float(site["s"])
-	var ss := maxf(s - SIGN_BEFORE, 20.0)
 	var si: int = site["i"]
 	var h := route.hd[si]
 	var e := route.width[si] * 0.5
@@ -571,14 +572,19 @@ static func _sign(route: AdventureRoute, k: Kit, xf: Transform3D) -> void:
 	# The chunk's anchor, from where the site's frame sits in it.
 	var ax := route.px[si] + cos(h) * lat - xf.origin.x
 	var az := route.pz[si] + sin(h) * lat - xf.origin.z
-	var hs := route.heading_at_s(ss)
-	var slat := -(route.width_at_s(ss) * 0.5 + 1.8)
-	var p := route.xz_at(ss, slat)
-	var i := clampi(int(round(ss / AdventureRoute.STEP)), 0, route.knot_count() - 1)
-	var y := route.land_height(i, slat, p[0], p[1])
-	var r := Vector3(cos(hs), 0, sin(hs))
-	var fwd := Vector3(sin(hs), 0, -cos(hs))
-	var world_xf := Transform3D(Basis(r, Vector3.UP, -fwd), Vector3(p[0] - ax, y - 0.05, p[1] - az))
+	var world_xf: Transform3D
+	if info.has("sign"):
+		world_xf = info["sign"]
+	else:
+		var ss := maxf(s - SIGN_BEFORE, 20.0)
+		var hs := route.heading_at_s(ss)
+		var slat := -(route.width_at_s(ss) * 0.5 + 1.8)
+		var p := route.xz_at(ss, slat)
+		var i := clampi(int(round(ss / AdventureRoute.STEP)), 0, route.knot_count() - 1)
+		var y := route.land_height(i, slat, p[0], p[1])
+		var r := Vector3(cos(hs), 0, sin(hs))
+		var fwd := Vector3(sin(hs), 0, -cos(hs))
+		world_xf = Transform3D(Basis(r, Vector3.UP, -fwd), Vector3(p[0] - ax, y - 0.05, p[1] - az))
 	var local := xf.affine_inverse() * world_xf
 	var kind := str(site["kind"])
 	var col := SIGN_BROWN if kind in ["viewpoint", "campsite", "inn"] else (SIGN_BLUE if kind in ["layby", "rest_area"] else SIGN_GREEN)
@@ -608,14 +614,18 @@ static func _sign(route: AdventureRoute, k: Kit, xf: Transform3D) -> void:
 	k.root.set_meta("sign", label)
 	# A village also has its name where the houses start.
 	if kind == "village":
-		var vs := s - 95.0
-		var vh := route.heading_at_s(vs)
-		var vlat := -(route.width_at_s(vs) * 0.5 + 1.6)
-		var vp := route.xz_at(vs, vlat)
-		var vi := clampi(int(round(vs / AdventureRoute.STEP)), 0, route.knot_count() - 1)
-		var vr := Vector3(cos(vh), 0, sin(vh))
-		var vf := Vector3(sin(vh), 0, -cos(vh))
-		var vxf := xf.affine_inverse() * Transform3D(Basis(vr, Vector3.UP, -vf), Vector3(vp[0] - ax, route.land_height(vi, vlat, vp[0], vp[1]) - 0.05, vp[1] - az))
+		var vxf: Transform3D
+		if info.has("name_sign"):
+			vxf = xf.affine_inverse() * (info["name_sign"] as Transform3D)
+		else:
+			var vs := s - 95.0
+			var vh := route.heading_at_s(vs)
+			var vlat := -(route.width_at_s(vs) * 0.5 + 1.6)
+			var vp := route.xz_at(vs, vlat)
+			var vi := clampi(int(round(vs / AdventureRoute.STEP)), 0, route.knot_count() - 1)
+			var vr := Vector3(cos(vh), 0, sin(vh))
+			var vf := Vector3(sin(vh), 0, -cos(vh))
+			vxf = xf.affine_inverse() * Transform3D(Basis(vr, Vector3.UP, -vf), Vector3(vp[0] - ax, route.land_height(vi, vlat, vp[0], vp[1]) - 0.05, vp[1] - az))
 		AdventureProps.box(k.far, vxf, Vector3(0.08, 1.4, 0.08), Color(0.55, 0.56, 0.58))
 		AdventureProps.box(k.far, vxf * Transform3D(Basis(), Vector3(0, 1.0, 0)), Vector3(1.9, 0.6, 0.05), Color(0.96, 0.96, 0.94))
 		var vl := Label3D.new()

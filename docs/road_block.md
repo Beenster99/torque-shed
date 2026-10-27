@@ -57,6 +57,12 @@ net.ground_at(x: float, z: float, bare: float) -> float    # the land with the r
 net.block(key: Vector2i) -> RoadBlock               # builds the block (pure: call it on a worker)
 net.dress: Dictionary                               # {terrain: RealTerrain, look: the place's look}: what blocks plant trees by
                                                     # ({} plants none; the ride sets it)
+net.set_flats(list: Array)                          # the stops' flat ground (T7, NetSites), set once before any block:
+                                                    # each {edge, s, side (1 right of a to b), out (m past the verge),
+                                                    # along (m either way)}. ground_at levels the land in each to
+                                                    # road_y(edge, s) - UNDER, banked out as a road's is (never above a
+                                                    # deck's ceiling); no block tree or building stands in one
+net.in_flat(x, z, pad := 0.0) -> bool               # within pad m of a flat
 ```
 
 The net is read-only once made apart from its caches, which are locked, so one net is shared by every worker.
@@ -125,7 +131,7 @@ RoadBlock.SIZE := 512.0
 RoadBlock.key_of(x, z) -> Vector2i
 block.key: Vector2i
 block.rect: Rect2               # in the region frame
-block.hash: String              # 12 hex of VERSION, the region's hash and the key: co-op compares these
+block.hash: String              # 12 hex of VERSION, the region's hash (and its flats') and the key: co-op compares these
 block.pieces: Array[Dictionary] # the roads (below)
 block.junctions: Array[Dictionary]
 block.buildings: Array          # RealRegion.buildings rows standing in the block, with their ground "y" appended

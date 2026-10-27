@@ -259,3 +259,104 @@ func test_world() -> void:
 ## Moves the nav's frame on, as a frame would (it works out where you are once a frame).
 static func _next_frame(nav: NetNav) -> void:
 	nav._memo = Vector3(-1, INF, INF)
+
+
+## The stops' flat ground on the network (RoadNet.set_flats): the land in one levelled to the road, banked out past it
+## and left as it was on the road's other side, no building in it, and its blocks' hash telling them apart.
+func test_flats() -> void:
+	var r := Roads.graph([[0, 100], [600, 100]], [[0, 1, "primary"]])
+	var slope := func(_x: float, z: float) -> float: return 10.0 + (z - 100.0) * 0.5   # (rising to the south)
+	var plain := RoadNet.new(r, slope)
+	var net := RoadNet.new(r, slope)
+	net.set_flats([{"edge": 0, "s": 300.0, "side": 1, "out": 40.0, "along": 40.0}])
+	var y := net.road_y(0, 300.0) - RoadNet.UNDER
+	var w := net.width_of(0) * 0.5 + RoadNet.VERGE
+	var inside := Vector2(320.0, 100.0 + w + 35.0)
+	var bare: float = slope.call(inside.x, inside.y)
+	check(absf(net.ground_at(inside.x, inside.y, bare) - y) < 0.01 and plain.ground_at(inside.x, inside.y, bare) > y + 3.0,
+		"in the flat, the land is level with the road (%.2f, %.2f without)" % [net.ground_at(inside.x, inside.y, bare), plain.ground_at(inside.x, inside.y, bare)])
+	var edge := Vector2(300.0, 100.0 + w + 40.0 + 6.0)
+	var e_bare: float = slope.call(edge.x, edge.y)
+	var at_edge := net.ground_at(edge.x, edge.y, e_bare)
+	check(at_edge > y + 0.1 and at_edge < plain.ground_at(edge.x, edge.y, e_bare), "just past it, banked up from it")
+	for p: Vector2 in [Vector2(300.0, 100.0 - w - 20.0), Vector2(300.0, 100.0 + 200.0), Vector2(520.0, 100.0 + w + 35.0)]:
+		var b: float = slope.call(p.x, p.y)
+		check(is_equal_approx(net.ground_at(p.x, p.y, b), plain.ground_at(p.x, p.y, b)), "the land as it was at %s" % str(p))
+	check(net.in_flat(inside.x, inside.y) and not net.in_flat(300.0, 100.0 - w - 20.0), "in_flat in it, not over the road")
+	check(net.roads_near(Rect2(inside, Vector2.ONE)), "the land under it is shaped by the net")
+	var k := RoadBlock.key_of(inside.x, inside.y)
+	check(net.block(k).hash != plain.block(k).hash and net.block(Vector2i(5, 5)).hash == plain.block(Vector2i(5, 5)).hash,
+		"a block with a flat in hashes apart, one without as before")
+
+
+## The planned ride's places on the network ride (NetSites): every stop, fuel station, the start and the destination
+## placed on a road (moved a little at most), the straight ones mostly, the ground beside a stop level with its road,
+## and each built into its block once that's in.
+func test_sites() -> void:
+	var plan := AdventurePlans.tour("dales", 3)
+	var region := RealRegion.get_region("dales")
+	var planned := AdventureRoute.new()
+	var pack := AdventurePlans.pack_for(plan)
+	planned.plan_real(pack, 1, pack.max_km())
+	var was := AdventureWorld.network
+	AdventureWorld.network = true
+	var w := AdventureWorld.new()
+	w.roads_region = region
+	w.setup(AdventurePlans.pack_for(plan), 1)
+	AdventureWorld.network = was
+	RealLand.roam = false
+	var ns := w.net_sites
+	check(ns != null and ns.places.size() > 3 and ns.hash.length() == 12, "the ride's places on the network (%d)" % (ns.places.size() if ns else 0))
+	if ns == null:
+		w.free()
+		return
+	var want := 0
+	for st: Dictionary in planned.sites:
+		if not NetSites.SKIP.has(str(st["kind"])):
+			want += 1
+	var placed := {}
+	for p: Dictionary in ns.places:
+		placed[str(p["site"]["kind"])] = int(placed.get(str(p["site"]["kind"]), 0)) + 1
+	check(ns.places.size() >= want - 1 and placed.has("start") and placed.has("finish") and placed.has("fuel"),
+		"all of them placed (%d of %d: %s)" % [ns.places.size(), want, str(placed)])
+	var moved := 0.0
+	var straight := 0
+	for a: Dictionary in planned.sites:
+		var near := INF
+		for b: Dictionary in w.route.sites:
+			if b["kind"] == a["kind"] and b["name"] == a["name"] and int(b.get("seed", 0)) == int(a.get("seed", 0)):
+				near = minf(near, absf(float(b["s"]) - float(a["s"])))
+		moved = maxf(moved, near)
+	for p: Dictionary in ns.places:
+		if float(p["bow"]) <= NetSites.BOW:
+			straight += 1
+	check(moved <= NetSites.NUDGE + 0.1, "none moved further than %d m (%.0f)" % [NetSites.NUDGE, moved])
+	check(straight >= ns.places.size() * 0.7, "most on straight road (%d of %d)" % [straight, ns.places.size()])
+	# The first stop: its ground, and it built into its block.
+	var at := -1
+	for i in ns.places.size():
+		if AdventureStops.KINDS.has(str(ns.places[i]["site"]["kind"])):
+			at = i
+			break
+	check(at >= 0, "a stop on the ride")
+	if at >= 0:
+		var p: Dictionary = ns.places[at]
+		var net := w.roads.net
+		var c := net.point_at(int(p["edge"]), float(p["s"]))
+		w.roads.preload_round([c], 300.0)
+		var y := net.road_y(int(p["edge"]), float(p["s"]))
+		var xf := NetSites.frame_of(net, p, Vector2.ZERO)
+		var out := xf.origin + xf.basis.x * 8.0
+		var g := net.ground_at(out.x, out.z, float(net.height.call(out.x, out.z)))
+		check(not is_nan(y) and absf(g - (y - RoadNet.UNDER)) < 0.05, "the ground beside it level with its road (%.2f, %.2f)" % [g, y])
+		ns.build_some(100)
+		var node = ns._built.get(at)
+		check(node is Node3D and (node as Node).get_parent() == w.roads.blocks.get(p["key"]), "built into its block")
+		if node is Node3D:
+			var spots := 0
+			for n: Node in (node as Node).find_children("*", "", true, false):
+				if n.is_in_group(AdventureStops.SEAT_GROUP) or n.is_in_group(AdventureStops.COUNTER_GROUP):
+					spots += 1
+			check(spots > 0 or str(p["site"]["kind"]) == "layby", "with somewhere to sit or buy food (%d)" % spots)
+			check(ns.build_some(100) == 0, "and not built again")
+	w.free()

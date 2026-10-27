@@ -75,6 +75,8 @@ var land: RealLand
 var roads: RoadStreamer
 ## The region the network ride is on: the plan's (Shed.adventure), unless set before setup (the tests).
 var roads_region: RealRegion
+## The planned ride's places (its stops, fuel, start and destination) beside the network's roads, or null (NetSites).
+var net_sites: NetSites
 var _net_y := {}         # route knot -> the network road's height there (network_y)
 var _net_y_hint := -1
 var _box := _Results.new()
@@ -153,6 +155,9 @@ func _start_network() -> bool:
 	roads = RoadStreamer.new()
 	roads.setup(self, net)
 	add_child(roads)
+	net_sites = NetSites.new()
+	net_sites.setup(self)   # (before any block is laid out: the stops' flat ground is in them)
+	add_child(net_sites)
 	return true
 
 
