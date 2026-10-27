@@ -214,6 +214,21 @@ STOP_REGION = {
     "south_asia": 0.3, "east_asia": 0.4, "south_east_asia": 0.3, "australia_nz": 0.15,
 }
 STOP = {"JP": 1.0, "KR": 0.6, "TW": 0.6}
+# The words over shops (tools/sign_glyphs.py SHOPS): the country's language's, but where a country's own differ.
+SHOPS = {}
+for c in "US CA PR".split():
+    SHOPS[c] = "en-US"
+for c in "AU NZ".split():
+    SHOPS[c] = "en-AU"
+for c in "ZA NA BW ZW LS SZ".split():
+    SHOPS[c] = "en-ZA"
+for c in "SN ML NE BF CI GN TG BJ CM GA CG CD CF TD MG DJ KM MR".split():
+    SHOPS[c] = "fr-AF"
+SHOPS["MX"] = "es-MX"
+for c in "GT HN SV NI CR PA".split():
+    SHOPS[c] = "es-CA"
+for c in "TW HK MO".split():
+    SHOPS[c] = "zh-Hant"
 # Warning signs with a yellow face inside their red border (the rest are white; diamonds are always yellow).
 YELLOW_WARNING = set("SE FI IS PL GR".split())
 
@@ -267,6 +282,7 @@ def table():
             "stop": STOP_WORD.get(code, "STOP"),
             "stop_share": STOP.get(code, STOP_REGION[region]),
             "warning_face": "yellow" if code in YELLOW_WARNING or code in DIAMOND else "white",
+            "shops": SHOPS.get(code, lang),
         }
     return {"format": FORMAT, "regions": list(REGIONS), "countries": out}
 

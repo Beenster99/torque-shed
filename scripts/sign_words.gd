@@ -8,6 +8,7 @@ const GLYPHS := "res://data/sign_glyphs.json"
 
 static var _lock := Mutex.new()
 static var _words := {}
+static var _shops := {}
 static var _loaded := false
 
 
@@ -15,6 +16,21 @@ static var _loaded := false
 static func of(text: String) -> Dictionary:
 	_load()
 	return _words.get(text, {})
+
+
+## The words over shops in `kind` (data/countries.json "shops": a language, or a country's own list such as "en-US"),
+## or English's where it has none.
+static func shop_words(kind: String) -> Array:
+	_load()
+	if _shops.has(kind):
+		return _shops[kind]
+	return _shops.get(kind.split("-")[0], _shops.get("en", []))
+
+
+## A shop's word for country facts `facts`, picked by `rng` ("" when there are none).
+static func shop_word(facts: Dictionary, rng: RandomNumberGenerator) -> String:
+	var words := shop_words(str(facts.get("shops", facts.get("language", "en"))))
+	return "" if words.is_empty() else str(words[rng.randi() % words.size()])
 
 
 ## Whether `text` was baked.
@@ -58,4 +74,5 @@ static func _load() -> void:
 			var d = JSON.parse_string(f.get_as_text())
 			if d is Dictionary:
 				_words = d.get("words", {})
+				_shops = d.get("shops", {})
 	_lock.unlock()

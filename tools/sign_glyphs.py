@@ -70,6 +70,50 @@ WORDS = {
 }
 
 
+# The words over a country's shops, by its language (data/countries.json "language"); a language not listed takes "en".
+SHOPS = {
+    "en": ["CAFE", "BAKERY", "BUTCHER", "PHARMACY", "NEWS", "PUB", "TAKEAWAY", "GARAGE", "HARDWARE", "DELI", "INN",
+           "POST OFFICE", "HOTEL", "BANK"],
+    "en-US": ["DINER", "LIQUOR", "PHARMACY", "BAKERY", "DELI", "HARDWARE", "LAUNDROMAT", "MOTEL", "BAR", "GARAGE"],
+    "en-AU": ["CAFE", "BAKERY", "BOTTLE STORE", "DAIRY", "TAKEAWAYS", "FISH & CHIPS", "PHARMACY", "BUTCHER", "HOTEL"],
+    "en-ZA": ["SPAZA", "BUTCHERY", "BOTTLE STORE", "PHARMACY", "SALON", "CAFE", "BAKERY"],
+    "fr": ["BOULANGERIE", "PHARMACIE", "TABAC", "BOUCHERIE", "BRASSERIE", "ÉPICERIE", "CAFÉ", "HOTEL", "BANK"],
+    "fr-AF": ["BOUTIQUE", "ALIMENTATION", "SUPERETTE", "PHARMACIE", "CAFÉ DES SPORTS", "SALON", "BOULANGERIE"],
+    "de": ["BÄCKEREI", "APOTHEKE", "METZGEREI", "GASTHAUS", "KIOSK", "FRISEUR", "CAFÉ", "HOTEL", "BANK"],
+    "nl": ["BAKKERIJ", "APOTHEEK", "SLAGERIJ", "FIETSEN", "CAFÉ", "SNACKBAR", "HOTEL", "BANK"],
+    "es": ["PANADERÍA", "FARMACIA", "CARNICERÍA", "TIENDA", "BAR", "CAFÉ", "HOTEL", "FERRETERÍA"],
+    "es-MX": ["ABARROTES", "TAQUERÍA", "FARMACIA", "PAPELERÍA", "REFACCIONARIA", "PANADERÍA", "TIENDA", "FERRETERÍA"],
+    "es-CA": ["PULPERÍA", "SODA", "FARMACIA", "TIENDA", "HOSPEDAJE", "FERRETERÍA", "PANADERÍA"],
+    "pt": ["PADARIA", "FARMACIA", "MERCADO", "AÇOUGUE", "LANCHONETE", "CAFÉ", "BAR"],
+    "it": ["PANETTERIA", "FARMACIA", "MACELLERIA", "TABACCHI", "GELATERIA", "TRATTORIA", "ALIMENTARI", "BAR"],
+    "sv": ["BAGERI", "APOTEK", "KONDITORI", "KAFFE", "KIOSK"],
+    "no": ["BAKERI", "APOTEK", "KAFFE", "KIOSK"],
+    "da": ["BAGERI", "APOTEK", "KIOSK", "CAFÉ"],
+    "fi": ["KAHVILA", "LEIPOMO", "APTEEKKI", "KIOSK"],
+    "pl": ["PIEKARNIA", "APTEKA", "SKLEP", "KIOSK"],
+    "cs": ["PEKÁRNA", "LÉKÁRNA", "POTRAVINY", "HOSPODA"],
+    "hu": ["ÉLELMISZER", "PATIKA", "PÉKSÉG", "KÁVÉZÓ"],
+    "tr": ["FIRIN", "ECZANE", "KASAP", "BAKKAL", "LOKANTA"],
+    "ru": ["АПТЕКА", "ПРОДУКТЫ", "ХЛЕБ", "КАФЕ", "МАГАЗИН", "ГАСТРОНОМ"],
+    "uk": ["АПТЕКА", "ХЛІБ", "ПРОДУКТИ", "КАФЕ", "МАГАЗИН"],
+    "sr": ["ПЕКАРА", "АПОТЕКА", "ПРОДАВНИЦА", "МАРКЕТ", "КАФАНА"],
+    "bg": ["АПТЕКА", "ХЛЯБ", "МАГАЗИН", "КАФЕ"],
+    "mn": ["ДЭЛГҮҮР", "ЭМИЙН САН", "ХООЛНЫ ГАЗАР"],
+    "el": ["ΦΑΡΜΑΚΕΙΟ", "ΚΑΦΕΝΕΙΟ", "ΦΟΥΡΝΟΣ", "ΤΑΒΕΡΝΑ", "ΠΑΝΤΟΠΩΛΕΙΟ"],
+    "ar": ["صيدلية", "مقهى", "مخبزة", "مطعم", "بقالة", "حانوت", "جزار"],
+    "fa": ["داروخانه", "نانوایی", "بقالی", "قهوه خانه"],
+    "th": ["ร้านกาแฟ", "ร้านขายยา", "ร้านอาหาร", "ร้านค้า"],
+    "ja": ["薬局", "喫茶", "食堂", "酒", "ラーメン", "パン", "コンビニ", "床屋", "そば", "居酒屋"],
+    "ko": ["약국", "카페", "식당", "편의점", "빵집"],
+    "zh": ["药店", "饭店", "超市", "茶馆", "面馆", "商店"],
+    "zh-Hant": ["藥房", "茶餐廳", "麵包", "士多"],
+    "vi": ["CÀ PHÊ", "PHỞ", "TIỆM", "BIA"],
+    "id": ["WARUNG", "TOKO", "APOTEK", "BENGKEL"],
+    "ms": ["KEDAI", "KOPITIAM", "FARMASI", "RESTORAN"],
+    "tl": ["SARI-SARI", "BOTIKA", "CARINDERIA", "PANADERIA"],
+}
+
+
 class FlatPen(BasePen):
     """Records a glyph's contours as lists of points, its curves cut into straight pieces."""
 
@@ -198,10 +242,36 @@ def word(path, text):
     return {"w": round(x / upem, 4), "top": max(ys), "bottom": min(ys), "tris": tris}
 
 
+def script_of(word):
+    """The script a word is written in, from its first letter."""
+    c = ord(word[0])
+    if 0x0400 <= c < 0x0530:
+        return "Cyrl"
+    if 0x0370 <= c < 0x0400:
+        return "Grek"
+    if 0x0600 <= c < 0x0700:
+        return "Arab"
+    if 0x0E00 <= c < 0x0E80:
+        return "Thai"
+    if 0xAC00 <= c < 0xD7B0:
+        return "Kore"
+    if 0x3040 <= c < 0x3100:
+        return "Jpan"
+    if 0x4E00 <= c < 0xA000:
+        return "Hans"
+    return "Latn"
+
+
 def main():
     fonts = sys.argv[1] if len(sys.argv) > 1 else FONTS
     out = {}
-    for script, words in WORDS.items():
+    words_of = {k: list(v) for k, v in WORDS.items()}
+    for lang, words in SHOPS.items():
+        for w in words:
+            # (Japanese shop words in kanji are drawn from the Japanese font, as Japan writes them)
+            sc = "Jpan" if lang == "ja" else script_of(w)
+            words_of.setdefault(sc, []).append(w)
+    for script, words in words_of.items():
         path = os.path.join(fonts, FONT_OF[script])
         for w in words:
             if w not in out:
@@ -211,7 +281,7 @@ def main():
         rows = ['\t\t%s: %s' % (json.dumps(w, ensure_ascii=False), json.dumps(g, separators=(",", ":")))
                 for w, g in sorted(out.items())]
         f.write(",\n".join(rows))
-        f.write("\n\t}\n}\n")
+        f.write("\n\t},\n\t\"shops\": %s\n}\n" % json.dumps(SHOPS, ensure_ascii=False))
     n = sum(len(g["tris"]) // 6 for g in out.values())
     print("%d words, %d triangles, %d KB -> %s" % (len(out), n, os.path.getsize(OUT) // 1024, os.path.relpath(OUT, ROOT)))
 

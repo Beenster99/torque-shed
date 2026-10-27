@@ -345,6 +345,10 @@ func _lay_out() -> void:
 		for k: String in ["v", "n", "c"]:
 			arrays["lines"][k].append_array(marks["lines"][k])
 			houses[k].append_array(marks["signs"][k])
+		# (the speed bumps' humps are ridden over)
+		if not (marks["faces"] as PackedVector3Array).is_empty():
+			_faces_of("tarmac")
+			arrays["faces"]["tarmac"].append_array(marks["faces"])
 	# In the place's region kit, else as the single-line ride's plain buildings.
 	for row: Array in buildings:
 		var at := Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o

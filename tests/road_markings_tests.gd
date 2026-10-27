@@ -130,5 +130,32 @@ func test_paint() -> void:
 	var rgb := RoadMarkings.paint(rb, _kit("GB"))
 	check(_has(rfr["signs"], RoadMarkings.BLUE) and not _has(rgb["signs"], RoadMarkings.BLUE),
 		"a French roundabout has its blue discs, a British one doesn't")
+	# Speed bumps on a long town street, by the country's count (Mexico's topes), none out of town; bollards round a
+	# town junction's corners.
+	var street := RoadNet.new(load("res://tests/road_block_tests.gd").graph([[100, 100], [-200, 100], [490, 100], [100, 500]],
+		[[1, 0, "residential"], [0, 2, "residential"], [0, 3, "residential"]]), load("res://tests/road_block_tests.gd").flat)
+	var sb := street.block(RoadBlock.key_of(100.0, 100.0))
+	var mx_town := RoadMarkings.paint(sb, _kit("MX", "town"))
+	check((mx_town["faces"] as PackedVector3Array).size() > 0 and _has(mx_town["signs"], RoadMarkings.YELLOW),
+		"a Mexican town street has its topes, striped, to ride over (%d faces)" % [(mx_town["faces"] as PackedVector3Array).size() / 3])
+	check((RoadMarkings.paint(sb, _kit("MX"))["faces"] as PackedVector3Array).is_empty(), "and none out of town")
+	var gb_street := RoadMarkings.paint(sb, _kit("GB", "town"))
+	check(_has(gb_street["signs"], RoadMarkings.BOLLARDS["british_isles"][1]), "a British town junction has its black and gold bollards")
+	var ok := true
+	for p: Vector3 in mx_town["faces"]:
+		ok = ok and p.is_finite() and absf(p.y + sb.anchor().y - 10.0) < 0.3
+	check(ok, "the bumps lie on the road")
+	# Shop names in the country's own words.
+	var rng := RandomNumberGenerator.new()
+	check(SignWords.shop_words("ja").has(SignWords.shop_word(_kit("JP")["facts"], rng)), "Japan's shops are named in Japanese")
+	check(SignWords.shop_words("en-US").has(SignWords.shop_word(_kit("US")["facts"], rng)), "America's in its own English")
+	check(SignWords.shop_words("fr").has(SignWords.shop_word(_kit("FR")["facts"], rng)), "France's in French")
+	check(not SignWords.shop_words("xx").is_empty(), "a language with no list of its own takes English's")
+	var missing := []
+	for k: String in ["en", "fr", "de", "nl", "es", "ja", "ar", "th", "ru", "zh", "ko", "el"]:
+		for w: String in SignWords.shop_words(k):
+			if not SignWords.has(w):
+				missing.append(w)
+	check(missing.is_empty(), "every shop word is baked (missing: %s)" % [missing])
 	# The block draws them: its lines are the country's, and the signs stand with its buildings.
 	check(RoadBlock.VERSION >= 5, "the block's version counts the markings")
