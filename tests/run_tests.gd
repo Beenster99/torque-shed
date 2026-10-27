@@ -353,7 +353,6 @@ func _run_all() -> void:
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
 	await _t(&"_test_upgrade_options")
 	await _t(&"_test_upgrade_options_session")
-	await _t(&"_test_room_signs_clear_of_lights")
 	print("Selling from the showroom: pricing, online offers and counter-offers, part exchange, saving")
 	await _t(&"_test_sales_pricing")
 	await _t(&"_test_sales_offers")
@@ -845,6 +844,13 @@ func _run_all() -> void:
 	await _t(&"_test_road_meshes")
 	await _t(&"_test_road_bridges")
 	await _t(&"_test_road_ride")
+	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
+	await _t(&"_test_region_kit_countries")
+	await _t(&"_test_region_kit_choose")
+	await _t(&"_test_region_kit_buildings")
+	await _t(&"_test_region_kit_city")
+	await _t(&"_test_road_markings_style")
+	await _t(&"_test_road_markings_paint")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -12923,9 +12929,10 @@ func _test_room_signs_clear_of_lights() -> void:
 	var ws: Workshop = main.workshop
 	var hits := _sign_light_hits(ws)
 	check(hits.is_empty(), "in a plain shed no sign runs into a light %s" % str(hits))
-	# Every upgrade built, the ones a new shed's level doesn't reach yet (the recovery truck) too.
+	Shed.request({"a": "garage_money", "value": 1000000})
 	for id in GarageUpgrades.CATALOGUE:
-		Shed.upgrades[id] = true
+		Shed.request({"a": "buy_upgrade", "id": id})
+	await get_tree().process_frame
 	ws.upgrades.sync()
 	check(ws.upgrades.built().split(",").size() == GarageUpgrades.CATALOGUE.size(), "every upgrade built (%s)" % ws.upgrades.built())
 	hits = _sign_light_hits(ws)
@@ -23909,3 +23916,17 @@ func _test_region_kit_buildings() -> void:
 
 func _test_region_kit_city() -> void:
 	_region_kit().test_city()
+
+
+# ---------------------------------------------------------------------------- road markings (tests/road_markings_tests.gd)
+
+func _road_markings() -> RefCounted:
+	return load("res://tests/road_markings_tests.gd").new(self)
+
+
+func _test_road_markings_style() -> void:
+	_road_markings().test_style()
+
+
+func _test_road_markings_paint() -> void:
+	_road_markings().test_paint()
