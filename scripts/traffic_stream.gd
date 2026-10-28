@@ -70,6 +70,9 @@ const CLIMB_DRAG := 0.12
 const BUS_SHARE := 0.65
 const BUS_DWELL := [10.0, 18.0]
 const BUS_PULL_IN := 70.0
+## Now and then a supercar comes past on the open road, going well over the limit: the chance a
+## vehicle turning up out of town is one (never more than one out at a time).
+const SUPERCAR_CHANCE := 0.035
 ## Numbers sent for each vehicle (see pack).
 const PACKED := 7
 ## Junctions: the share of drivers that turn off at one with a side road they can take (more in
@@ -258,6 +261,8 @@ func spawn_one(near := spawn_near, far := spawn_far) -> Dictionary:
 	var hw := float(at.get("hw", 3.5))
 	if hw < 2.0 and kind in ["lorry", "coach"]:
 		kind = "van"   # nothing that big down a single-track lane
+	if busy < 0.3 and hw >= 2.5 and rng.randf() < SUPERCAR_CHANCE and not vehicles.any(func(o): return str(o["kind"]) == "supercar"):
+		kind = "supercar"
 	var pace := TrafficVehicle.pick_pace(rng, kind)
 	var d := {"s": s, "dir": dir, "v": pace * _limit(at) * 0.9, "pace": pace, "kind": kind, "seed": _new_seed(), "ind": 0}
 	d["bus"] = kind == "coach" and rng.randf() < BUS_SHARE
@@ -574,10 +579,10 @@ static func _stop_for(dist: float, brake: float) -> float:
 
 ## Whether vehicle `d` turns off at junction `j`, and down which side road: on its left whichever
 ## it is, on its right across the other lane (not at a roundabout: round the island it only takes
-## the first exit). Nothing big, and no bus, goes down a side road.
+## the first exit). Nothing big, no bus and no supercar (it's only passing through) goes down a side road.
 func _decide_turn(d: Dictionary, j: int) -> void:
 	var jn: Dictionary = junctions[j]
-	if d.get("bus", false) or str(d["kind"]) in ["lorry", "coach", "police"] or d.has("dwell"):
+	if d.get("bus", false) or str(d["kind"]) in ["lorry", "coach", "police", "supercar"] or d.has("dwell"):
 		return
 	if rng.randf() > (TURN_ODDS_VILLAGE if jn.get("village", false) else TURN_ODDS):
 		return

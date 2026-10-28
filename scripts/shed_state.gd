@@ -1490,8 +1490,6 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + bead_text(item)
 	if str(item.get("kind", "")) == "toolbox":
 		text += "\n" + toolbox_text(item)
-	if item.get("food") is Dictionary and AdventureNeeds.packed_text(int(item.get("id", 0))) != "":
-		text += "\n" + AdventureNeeds.packed_text(int(item["id"]))
 	var holed := Puncture.text(item)
 	if holed != "":
 		text += "\n" + holed
@@ -4768,8 +4766,8 @@ func _adventure_apply(peer: int, action: Dictionary) -> void:
 	changed.emit()
 
 
-## Hunger, thirst and tiredness out on an adventure, and the lunch packed for it (see
-## AdventureNeeds): told the same way as the adventure's own actions.
+## Sitting down and going to bed out on an adventure (see AdventureNeeds): told the same way as
+## the adventure's own actions.
 func _needs_apply(peer: int, action: Dictionary) -> void:
 	var why := AdventureNeeds.check(peer, action)
 	if why != "":
@@ -5902,8 +5900,6 @@ func _process_body(delta: float) -> void:
 	Recovery.process(delta)
 	PoolGame.process(delta)
 	Staff.process(delta)
-	if Adventure.active():
-		AdventureNeeds.tick(delta)
 	_deliver_on_order(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:

@@ -229,7 +229,7 @@ func test_trip_page() -> void:
 # ---------------------------------------------------------------------------- the highlight log
 
 ## The host's log of the crew's highlights: setting off, a stop (once, with everyone who stopped
-## there), a new surface, a peak, a fine, a breakdown and its fix, a tow, a picnic,
+## there), a new surface, a peak, a fine, a breakdown and its fix, a tow,
 ## sunrise and sunset; each with when, how far and who. Only highlights are taken; the oldest go
 ## past the cap.
 func test_highlight_log() -> void:
@@ -254,7 +254,6 @@ func test_highlight_log() -> void:
 	AdventureDiary.fined(2, 250, 42)
 	AdventureDiary.fixed(1, "Slack chain")
 	AdventureDiary.towed(2, 1)
-	AdventureDiary.picnic([1, 2])
 	var by := {}
 	for e in AdventureDiary.log_entries():
 		by[str(e["kind"])] = e
@@ -264,7 +263,6 @@ func test_highlight_log() -> void:
 	check(not by.has("nonsense"), "only highlights go in the log")
 	check(str(by.get("fine", {}).get("text", "")).contains("£250") and (by.get("fine", {}).get("who", []) as Array) == ["Dave"], "a fine, Dave's")
 	check(by.has("fix") and by.has("tow") and (by.get("tow", {}).get("who", []) as Array).size() == 2, "a roadside fix and a tow")
-	check(by.has("picnic") and (by["picnic"]["who"] as Array) == ["Tester", "Dave"] and str(by["picnic"]["text"]).contains("Dave"), "a picnic: %s" % str(by.get("picnic", {}).get("text", "")))
 	check(by.has("sunset") and (by["sunset"]["who"] as Array).is_empty(), "sunset, everyone's")
 	var e: Dictionary = by["fine"]
 	check(e.has("hours") and e.has("day") and e.has("t") and e.has("s"), "each with the clock, the day, the time since setting off and the km")

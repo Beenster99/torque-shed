@@ -1056,8 +1056,7 @@ func _physics_process_body(delta: float) -> void:
 				bike.throttle = 0.0
 				bike.front_brake = 1.0
 				bike.rear_brake = 1.0
-			# Tired out on an adventure the bars answer slower (see AdventureNeedsView.steer).
-			bike.lean_input = trip.needs.steer(_steer_input(stick.x, delta), delta)
+			bike.lean_input = _steer_input(stick.x, delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
 			bike.clutch_in = Input.is_action_pressed("clutch")
 			# LB and RB together start the engine (Controls.PAD_CHORDS): no look back meanwhile.
@@ -1081,8 +1080,6 @@ func _physics_process_body(delta: float) -> void:
 		bike.assist = Settings.assist
 		bike.direct_bars = Settings.direct_bars
 		bike.horn = active and Input.is_action_pressed("horn")
-		if bike.model:
-			bike.model.look_back = 1.0 if camera.look_back else 0.0
 		audio.rpm = bike.rpm
 		audio.gear = bike.gear
 		audio.throttle = bike.sound_load()

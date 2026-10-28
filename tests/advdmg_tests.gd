@@ -263,10 +263,16 @@ func test_ride() -> void:
 	if main.bike:
 		main.bike.linear_velocity = Vector3.ZERO
 		await _ticks(30)
+		# (the roll needs a tyre on the ground: give the bike a moment to settle back on its wheels)
+		for i in Engine.physics_ticks_per_second * 3:
+			if main.bike.wheels.all(func(w): return w["contact"]):
+				break
+			await _ticks(1)
+		var contact: Array = main.bike.wheels.map(func(w): return w["contact"])
 		main._puncture_rolls(1.0e6)
 		await _ticks(3)
 		var punctured := Roadside.active(faithful).filter(func(f): return f["kind"] == "puncture")
-		check(not punctured.is_empty(), "a tyre can still pick up a puncture on an adventure (%s)" % str(Roadside.active(faithful)))
+		check(not punctured.is_empty(), "a tyre can still pick up a puncture on an adventure (%s, wheels down %s)" % [str(Roadside.active(faithful)), str(contact)])
 		check(Roadside.active(faithful).all(func(f): return f["kind"] in ["puncture", "pressure"]), "and that's all that's wrong")
 	# Home in the same nick.
 	before = _health(faithful)
