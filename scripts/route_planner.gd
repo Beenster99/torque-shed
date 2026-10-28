@@ -1357,8 +1357,10 @@ static func _arm_key(a: Dictionary) -> Vector2:
 	return Vector2(ORDER.find(str(a["cls"])), absf(float(a["skew"])))
 
 
-## A short ring of road through edge `start_edge`: its nodes ([] when it is on none, or it is not round).
-static func find_ring(region: RealRegion, start_edge: int) -> PackedInt32Array:
+## A short ring of road through edge `start_edge`: its nodes ([] when it is on none, or it is not round). With `gentle`,
+## nor when it turns sharply anywhere (_turns_gently): the network's roads ask that; a tour's plan keeps the rings it always
+## had (its junctions are laid out for them: a little triangle of slip roads is ridden as a roundabout there).
+static func find_ring(region: RealRegion, start_edge: int, gentle := false) -> PackedInt32Array:
 	if region.edge_len[start_edge] > RING_EDGE_M:
 		return PackedInt32Array()
 	var goal := region.edge_b[start_edge]
@@ -1389,7 +1391,7 @@ static func find_ring(region: RealRegion, start_edge: int) -> PackedInt32Array:
 			var u2 := used.duplicate()
 			u2.append(ei)
 			stack.append([region.other_end(ei, node), n2, u2, total + region.edge_len[ei]])
-	if not found or not _is_round(region, best_edges) or not _turns_gently(region, best_nodes, best_edges):
+	if not found or not _is_round(region, best_edges) or (gentle and not _turns_gently(region, best_nodes, best_edges)):
 		return PackedInt32Array()
 	return best_nodes
 

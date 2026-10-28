@@ -1383,7 +1383,7 @@ func _ring(edge: int) -> PackedInt32Array:
 	_lock.unlock()
 	if r != null:
 		return r
-	var ring := RoutePlanner.find_ring(region, edge) if region.edge_len[edge] <= RoutePlanner.RING_EDGE_M else PackedInt32Array()
+	var ring := RoutePlanner.find_ring(region, edge, true) if region.edge_len[edge] <= RoutePlanner.RING_EDGE_M else PackedInt32Array()
 	if not ring.is_empty():
 		# (the ring as a set, in order of node, so it's the same whichever edge found it)
 		var sorted := ring.duplicate()
