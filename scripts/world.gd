@@ -391,11 +391,23 @@ func _build_yard_lights() -> void:
 	pole_mat.albedo_color = Color(0.32, 0.33, 0.34)
 	pole_mat.metallic = 0.6
 	pole_mat.roughness = 0.45
-	# Round the edge of the test area, clear of the lanes, and along its side nearest the shed.
-	var spots: Array[Vector3] = [Vector3(-20.0, 0.0, -16.5), Vector3(36.0, 0.0, -20.0), Vector3(-66.0, 0.0, -10.0),
-		Vector3(0.0, 0.0, 36.5), Vector3(66.0, 0.0, -10.0), Vector3(-52.0, 0.0, 36.5), Vector3(52.0, 0.0, 36.5)]
-	var aim := Vector3(YARD_CENTER.x, 0.0, YARD_CENTER.y + 8.0)
+	# Round the edge of the test area, clear of the lanes, and along its side nearest the shed;
+	# then round each wing of jump lines, aimed at its middle.
+	var spots: Array[Vector3] = [Vector3(-20.0, 0.0, -16.5), Vector3(36.0, 0.0, -20.0),
+		Vector3(0.0, 0.0, 36.5), Vector3(-52.0, 0.0, 36.5), Vector3(52.0, 0.0, 36.5)]
+	var aims: Array[Vector3] = []
 	for p in spots:
+		aims.append(Vector3(YARD_CENTER.x, 0.0, YARD_CENTER.y + 8.0))
+	for w: Rect2 in WorldYard.WINGS:
+		var mid := Vector3(w.get_center().x, 0.0, w.get_center().y)
+		var out := signf(mid.x)
+		for p: Vector3 in [Vector3(mid.x, 0.0, 36.5), Vector3(mid.x + out * (w.size.x * 0.5 + 4.0), 0.0, -10.0),
+				Vector3(mid.x, 0.0, -56.5), Vector3(mid.x - out * (w.size.x * 0.5 - 4.0), 0.0, -56.5)]:
+			spots.append(p)
+			aims.append(mid)
+	for j in spots.size():
+		var p := spots[j]
+		var aim := aims[j]
 		var pole := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
 		cyl.top_radius = 0.08
