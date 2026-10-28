@@ -24,6 +24,7 @@ const VOICE := {
 	"hatchback": ["petrol", 1.08, -6.0, 7.0, 5], "saloon": ["petrol", 0.96, -6.0, 8.0, 5],
 	"estate": ["petrol", 1.0, -6.0, 8.0, 5], "suv": ["diesel", 1.3, -5.0, 8.0, 6],
 	"van": ["diesel", 1.25, -4.0, 7.0, 5], "lorry": ["diesel", 0.8, 0.0, 3.6, 10], "coach": ["diesel", 0.9, -1.0, 4.0, 8],
+	"supercar": ["petrol", 1.5, 3.0, 12.0, 7],
 }
 
 ## The loops once made: "petrol" / "diesel" -> AudioStreamWAV (made on a worker thread).

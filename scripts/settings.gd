@@ -18,12 +18,13 @@ var satnav_hud := true
 ## The sat nav as you like it: the map over a live picture from above ({satnav_satellite}),
 ## standing tall rather than wide on the HUD ({satnav_portrait}), how far it's zoomed out (1 as
 ## it comes, {satnav_zoom_in} / {satnav_zoom_out}), and the HUD's copy's size and where it sits
-## (across and down the space it has, 0..1: 0, 1 is the bottom left corner).
+## (across and down the space it has, 0..1: 0, 1 is the bottom left corner; it comes in the middle
+## at the bottom).
 var satnav_satellite := false
 var satnav_portrait := false
 var satnav_zoom := 1.0
 var satnav_scale := 1.0
-var satnav_x := 0.0
+var satnav_x := 0.5
 var satnav_y := 1.0
 const SATNAV_ZOOM := [0.4, 3.0]
 const SATNAV_SCALE := [0.6, 2.2]
@@ -108,7 +109,6 @@ const ACTIONS := [
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part, or take down an adventure photo (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot"]],
-	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
 	["visor", "Flick your helmet visor (or goggles) up or down", ["foot", "ride"]],
 	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
 	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
@@ -199,6 +199,8 @@ func load_settings() -> void:
 		satnav_scale = clampf(float(cfg.get_value("riding", "satnav_scale", satnav_scale)), SATNAV_SCALE[0], SATNAV_SCALE[1])
 		satnav_x = clampf(float(cfg.get_value("riding", "satnav_x", satnav_x)), 0.0, 1.0)
 		satnav_y = clampf(float(cfg.get_value("riding", "satnav_y", satnav_y)), 0.0, 1.0)
+		if not cfg.has_section_key("riding", "satnav_centred") and satnav_x == 0.0 and satnav_y == 1.0:
+			satnav_x = 0.5   # it used to come in the bottom left corner: left there, it moves to the new place
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		look_into_corner = bool(cfg.get_value("riding", "look_into_corner", look_into_corner))
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
@@ -241,6 +243,7 @@ func save_settings() -> void:
 	cfg.set_value("riding", "satnav_scale", satnav_scale)
 	cfg.set_value("riding", "satnav_x", satnav_x)
 	cfg.set_value("riding", "satnav_y", satnav_y)
+	cfg.set_value("riding", "satnav_centred", true)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("riding", "look_into_corner", look_into_corner)
 	cfg.set_value("walking", "third_person", walk_third_person)
@@ -474,7 +477,6 @@ func _setup_inputs() -> void:
 	_bind("geo_reset", [KEY_BACKSPACE], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
-	_bind("eat", [KEY_Y], [JOY_BUTTON_MISC1])
 	# The visor: every letter is taken on foot or on the bike, so the apostrophe key, by Enter.
 	_bind("visor", [KEY_APOSTROPHE], [])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])

@@ -234,9 +234,9 @@ func test_nod_wave() -> void:
 	await _leave(main)
 
 
-## Holding the reverse view turns the view round behind (a tap leaves it there till the next): over the left shoulder in first person, round in
-## front of the bike looking back in the chase view, the rider's head turned. LB and RB together
-## start the engine without looking back; LB alone holds the clutch in.
+## Holding the reverse view cuts straight to a view behind, like a reversing camera (a tap leaves it there till the next):
+## from your eyes in first person, round in front of the bike looking back in the chase view, with no swing round and no
+## turn of the rider's head. LB and RB together start the engine without looking back; LB alone holds the clutch in.
 func test_look_back_and_chord() -> void:
 	var rig: Dictionary = await _riding()
 	var main: Node = rig["main"]
@@ -247,13 +247,14 @@ func test_look_back_and_chord() -> void:
 	var fwd := -bike.global_basis.z
 	check((cam.global_position - bike.global_position).dot(fwd) < 0.0, "the chase view starts behind the bike")
 	Input.action_press("look_back")
+	await _ticks(2)
+	check(cam.looking_back() == 1.0 and (cam.global_position - bike.global_position).dot(fwd) > 1.0 and (-cam.global_basis.z).dot(fwd) < -0.5,
+		"held, the view cuts at once to in front of the bike looking back past the rider (%.2f)" % cam.looking_back())
 	await _ticks(Engine.physics_ticks_per_second)
-	check(cam.looking_back() > 0.95 and (cam.global_position - bike.global_position).dot(fwd) > 1.0 and (-cam.global_basis.z).dot(fwd) < -0.5,
-		"held, it swings round in front looking back past the rider (%.2f)" % cam.looking_back())
-	check(bike.model._rider_head.basis.get_euler().y > 1.0, "and the rider's head is turned over the left shoulder")
+	check(absf(bike.model._rider_head.basis.get_euler().y) < 0.05, "and the rider's head isn't turned: it's a camera, not a look over the shoulder")
 	cam.set_mode(ChaseCamera.Mode.HELMET)
-	await _ticks(Engine.physics_ticks_per_second)
-	check((-cam.global_basis.z).dot(fwd) < -0.3, "in first person you look back over your shoulder")
+	await _ticks(2)
+	check((-cam.global_basis.z).dot(fwd) < -0.85, "in first person it's straight back down the road (%.2f)" % (-cam.global_basis.z).dot(fwd))
 	Input.action_release("look_back")
 	await _ticks(Engine.physics_ticks_per_second)
 	check(cam.looking_back() < 0.02 and (-cam.global_basis.z).dot(fwd) > 0.5, "let go, you look ahead again")

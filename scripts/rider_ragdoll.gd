@@ -106,8 +106,8 @@ func _init() -> void:
 
 static func _grip() -> PhysicsMaterial:
 	var pm := PhysicsMaterial.new()
-	pm.friction = 0.9
-	pm.bounce = 0.15
+	pm.friction = 0.6   # leathers sliding down the road
+	pm.bounce = 0.2
 	return pm
 
 

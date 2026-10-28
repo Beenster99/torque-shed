@@ -24,6 +24,14 @@ const SHIFT_FEEL := {"slick": [-8.0, 0.97, 1.05], "click": [-4.0, 0.96, 1.04], "
 ## How loud each step of a gear change is (dB): into first the loudest clunk, finding neutral
 ## a soft click.
 const STEP_DB := {"first": 0.0, "low": -3.0, "high": -5.0, "down": -2.0, "neutral": -9.0}
+## Where the first knock starts in each recorded take of the lever (s, Sfx RECORDED order), so
+## a change is heard the moment it happens: some takes open with a breath of silence, and some
+## go on to a second and third clunk, so only SHIFT_HOLD seconds from the knock are played,
+## faded out over SHIFT_FADE.
+const SHIFT_ONSET := {"slick": [0.027, 0.007, 0.0, 0.037], "click": [0.027, 0.007, 0.0, 0.037],
+	"clunk": [0.032, 0.007, 0.002, 0.042, 0.037, 0.007, 0.002, 0.047]}
+const SHIFT_HOLD := 0.16
+const SHIFT_FADE := 0.04
 ## Seconds the starter takes to fade once the engine fires (or the button's let go).
 const STARTER_FADE := 0.06
 ## The recorded starter (Sfx "starter", or "starter_struggle" for a hard start): a crank longer
@@ -73,6 +81,9 @@ var _oneshot_en: Array = []
 var _next_ex := 0
 var _next_en := 0
 var _lever: AudioStreamPlayer3D
+var _lever_t := -1.0          # seconds the lever's knock has played, -1 when it's quiet
+var _lever_db := 0.0
+var _take := 0                # which recorded take of the lever is this bike's own
 var _rng := RandomNumberGenerator.new()
 var _load := 0.0              # smoothed throttle as the sound hears it
 var _level := 0.0             # fades the engine in as it catches and out as it dies
@@ -109,6 +120,7 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 	spec = engine_spec
 	bank = EngineBank.for_spec(spec)
 	_rng.randomize()
+	_take = absi(EngineSynth.signature(spec).hash())
 	if exhaust_at == null:
 		exhaust_at = Node3D.new()
 		exhaust_at.name = "Exhaust"
@@ -200,6 +212,7 @@ func _process_body(delta: float) -> void:
 		_crank_guess -= delta
 		cranking = _crank_guess > 0.0
 	_events(delta)
+	_cut_lever(delta)
 	_last_rpm = rpm
 	# The sound's own throttle: it snaps open fast and closes a touch slower.
 	var target := maxf(throttle, _blip)
@@ -423,22 +436,40 @@ func _shift(from: int, to: int) -> void:
 
 
 ## The recorded gear lever and selector for this feel ("slick", "click", "clunk") on top of the
-## made shift sound: a different take each time (Sfx picks them), pitched to the feel and by
-## `pitch` (lower for a heavier box), `db` louder or quieter. Whether it played.
+## made shift sound: this bike's own take every time (picked once by its engine and box, so each
+## bike always sounds like itself), from its first knock, pitched to the feel and by `pitch`
+## (lower for a heavier box), `db` louder or quieter. Whether it played.
 func _lever_sound(feel: String, db := 0.0, pitch := 1.0) -> bool:
 	var sfx := get_node_or_null("/root/Sfx")
-	if _lever == null or sfx == null or not sfx.has_method("pick"):
+	if _lever == null or sfx == null or not sfx.has_method("recordings"):
 		return false
-	var s: AudioStream = sfx.call("pick", "shift_" + feel)
-	if s == null:
+	var takes: Array = sfx.call("recordings", "shift_" + feel)
+	if takes.is_empty():
 		return false
+	var i := _take % takes.size()
 	var f: Array = SHIFT_FEEL.get(feel, SHIFT_FEEL["click"])
-	_lever.stream = s
-	_lever.volume_db = float(f[0]) + db + volume_db
-	_lever.pitch_scale = _rng.randf_range(float(f[1]), float(f[2])) * pitch
-	_lever.play()
+	var onsets: Array = SHIFT_ONSET.get(feel, [])
+	_lever.stream = takes[i]
+	_lever_db = float(f[0]) + db + volume_db
+	_lever.volume_db = _lever_db
+	_lever.pitch_scale = lerpf(float(f[1]), float(f[2]), 0.5) * pitch
+	_lever.play(float(onsets[i]) if i < onsets.size() else 0.0)
+	_lever_t = 0.0
 	lever_sounds += 1
 	return true
+
+
+## Lets the lever's knock ring for SHIFT_HOLD seconds, then fades it out before any second
+## clunk in the take.
+func _cut_lever(delta: float) -> void:
+	if _lever_t < 0.0 or _lever == null:
+		return
+	_lever_t += delta
+	if _lever_t > SHIFT_HOLD + SHIFT_FADE:
+		_lever.stop()
+		_lever_t = -1.0
+	elif _lever_t > SHIFT_HOLD:
+		_lever.volume_db = _lever_db + linear_to_db(maxf(0.001, 1.0 - (_lever_t - SHIFT_HOLD) / SHIFT_FADE))
 
 
 ## An overrun pop or a backfire crack (or a bang), with the flame for the loud ones.

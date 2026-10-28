@@ -177,8 +177,8 @@ func _night_stop(trip: AdventureTrip) -> bool:
 		await _until(func(): return AdventureNeeds.all_abed(), 20.0)
 		Shed.request({"a": "needs_sleep"})
 	slept = await _until(func():
-		return int(Shed.adventure.get("nights", 0)) == 1 and AdventureNeeds.level(Shed.me(), "rest") == 1.0 \
-			and AdventureNeeds.level(other, "rest") == 1.0, 30.0)
+		return int(Shed.adventure.get("nights", 0)) == 1 and not Shed.adventure_save.is_empty() \
+			and absf(Daylight.time_of_day() - AdventureNeeds.MORNING) < 0.3 and AdventureNeeds.of(other).has("bed"), 30.0)
 	print("MP real note %s: slept till morning %s (%s)" % [role, slept, Daylight.clock_text(Daylight.time_of_day())])
 	if not slept:
 		return false

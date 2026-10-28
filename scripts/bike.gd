@@ -224,6 +224,10 @@ var _crash_timer := 0.0
 var _base_com := Vector3.ZERO
 var _rider_shape_index := -1
 var _ragdoll: RiderRagdoll
+## The fastest the bike has gone over the last FLING_MEMORY seconds, and for how long it's been
+## kept: the rider flies off at the speed they were doing, not what's left once the bike has hit.
+var _fling_vel := Vector3.ZERO
+var _fling_age := 0.0
 var _starting := 0.0
 var _shift_from_rpm := 0.0
 var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
@@ -280,6 +284,10 @@ var _passing := {}
 ## Everything the bike's body bumps into, ridden normally: the world, other bikes and the
 ## parked bikes in the shed. A ghost bumps into the world alone.
 const SOLID_MASK := 1 | 2 | 4
+## How long (s) the bike remembers its speed for throwing the rider off (see _fling_vel).
+const FLING_MEMORY := 0.25
+## How firmly a foot down holds the bike (1/s: how quickly it takes out any roll).
+const FEET_HOLD := 6.0
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
@@ -636,6 +644,10 @@ func _physics_process_body(delta: float) -> void:
 	var b := global_transform.basis
 	var fwd := -b.z
 	speed = linear_velocity.dot(fwd)
+	_fling_age += delta
+	if not is_crashed and (linear_velocity.length() >= _fling_vel.length() or _fling_age > FLING_MEMORY):
+		_fling_vel = linear_velocity
+		_fling_age = 0.0
 	_measure_attitude()
 
 	if _starting > 0.0:
@@ -1406,6 +1418,15 @@ func _apply_feet() -> void:
 	elif paddling:
 		var v := linear_velocity.dot(flat)
 		apply_central_force(flat * (-PADDLE_SPEED - v) * mass * 2.5)
+	elif feet_holding():
+		# Stopped with a foot down: the rider holds the bike where it is, on a slope too, until
+		# they pull away (or walk it back with their feet).
+		var v := linear_velocity
+		v.y = 0.0
+		var g := get_gravity()
+		var slope := g - global_transform.basis.y * global_transform.basis.y.dot(g)
+		slope.y = 0.0
+		apply_central_force(-slope * mass - v * mass * FEET_HOLD)
 	elif pushing:
 		# Wheeling it along on foot: walking pace on the throttle, held still off it. Whoever's
 		# pushing takes its weight on a slope too, so it doesn't run away down a snowy pass, or
@@ -1416,6 +1437,13 @@ func _apply_feet() -> void:
 		apply_central_force(flat * clampf(want - v, -1.5, 1.5) * mass * 2.0)
 	if tow_anchor != Vector3.INF:
 		_apply_tow()
+
+
+## Whether the rider's foot is down holding the bike still: stopped (the foot's on the ground),
+## upright on its wheels, and not asking it to go (no throttle, not paddling, pushing or towed).
+func feet_holding() -> bool:
+	return model != null and model.foot_down > 0.5 and not is_crashed and controls_enabled and throttle < 0.05 \
+		and not paddling and not pushing and tow_anchor == Vector3.INF and (wheels[0]["contact"] or wheels[1]["contact"])
 
 
 ## On the tow strap: once it's taut it pulls the bike after the towing one, springy and damped.
@@ -2034,8 +2062,18 @@ func _spawn_ragdoll() -> void:
 	_ragdoll = RiderRagdoll.new()
 	get_parent().add_child(_ragdoll)
 	_ragdoll.dress(rider_gear, rider_color)
-	_ragdoll.launch(global_transform.translated_local(Vector3(0.0, build.seat_height + 0.35, 0.0)), linear_velocity * 0.9 + Vector3.UP * 2.0,
-		Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4)))
+	var v := fling_velocity(_fling_vel if _fling_vel.length() > linear_velocity.length() else linear_velocity)
+	var tumble := 1.0 + clampf(v.length() / 15.0, 0.0, 2.0)
+	_ragdoll.launch(global_transform.translated_local(Vector3(0.0, build.seat_height + 0.35, 0.0)), v,
+		Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4)) * tumble)
+
+
+## How the rider leaves the bike in a crash at velocity `v`: carrying on at the speed they were
+## doing, thrown up off the seat, higher the faster they were going, so a big crash sends them
+## flying well clear of the bike and a tip-over at a crawl just drops them beside it.
+static func fling_velocity(v: Vector3) -> Vector3:
+	var fast := clampf((v.length() - 5.0) / 30.0, 0.0, 1.0)
+	return v * lerpf(0.9, 1.05, fast) + Vector3.UP * (2.0 + 4.5 * fast)
 
 
 func _clear_ragdoll() -> void:

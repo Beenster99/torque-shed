@@ -23,6 +23,9 @@ const TRAITS := {
 	"coach": {"pace": 0.8, "grip": 2.0, "brake": 2.2, "accel": 1.0, "power": 11.0, "town": 11, "open": 7},
 	# Never in the mix (the police are out of the game; the kind stays so old indices hold).
 	"police": {"pace": 1.0, "grip": 4.5, "brake": 6.0, "accel": 4.5, "power": 110.0, "town": 0, "open": 0},
+	# Never in the mix either: now and then one comes past on the open road, well over the limit
+	# (see TrafficStream.SUPERCAR_CHANCE).
+	"supercar": {"pace": 1.45, "grip": 7.0, "brake": 7.5, "accel": 5.5, "power": 250.0, "town": 0, "open": 0},
 }
 ## Near model within this (m, times the draw distance setting); far mesh out to DRAW_RANGE.
 const LOD_NEAR := 45.0

@@ -6,8 +6,8 @@ extends RefCounted
 ##
 ## Two halves. The highlights are the crew's, kept by the host in the shared state
 ## (Shed.adventure["log"], so every player has the same list): setting off, each stop visited,
-## onto a new surface, the high points (old diaries may also hold the ways taken at forks, police chases and fines),
-## breakdowns and roadside fixes, picnics, sunrise and sunset, and arriving. Each has its time
+## onto a new surface, the high points (old diaries may also hold the ways taken at forks, police chases, fines and
+## picnics), breakdowns and roadside fixes, sunrise and sunset, and arriving. Each has its time
 ## (the clock, and the day), how far along the road (km) and who. The photos are taken on each
 ## player's own machine (AdventurePhotos: automatically at the highlights they were part of, and
 ## whenever they take one) and shared with the whole crew (DiaryShare: everyone's diary has
@@ -218,12 +218,6 @@ static func fixed(peer: int, what: String) -> void:
 
 static func towed(peer: int, by: int) -> void:
 	note("tow", "", [_name(peer), _name(by)], s_of(peer), "On a tow strap behind %s's bike" % _name(by))
-
-
-## A picnic: `peers` sat down together.
-static func picnic(peers: Array) -> void:
-	var names := peers.map(func(p): return _name(int(p)))
-	note("picnic", "", names, s_of(int(peers[0])) if not peers.is_empty() else 0.0, "Picnic with %s" % AdventureNeeds._and_list(names))
 
 
 ## The first there: arrived.

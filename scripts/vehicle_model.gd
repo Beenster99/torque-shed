@@ -17,7 +17,7 @@ extends RefCounted
 ##
 ## Vehicle axes: forward -Z, up +Y, right +X, origin on the ground under the middle (as Car).
 
-const KINDS: Array[String] = ["hatchback", "saloon", "estate", "suv", "van", "lorry", "coach", "police"]
+const KINDS: Array[String] = ["hatchback", "saloon", "estate", "suv", "van", "lorry", "coach", "police", "supercar"]
 ## What each is, for the traffic: length, half width, height, wheel radius, the axles (z, the
 ## first steers), whether the back axle has twin tyres, and how many trims it comes in.
 const SPECS := {
@@ -30,6 +30,9 @@ const SPECS := {
 	"coach": {"len": 12.1, "w": 1.27, "h": 3.45, "r": 0.5, "tw": 0.3, "axles": [-3.45, 3.0], "dual": false, "trims": 3},
 	# The police's estate car (see _police): never in the ordinary traffic's mix.
 	"police": {"len": 4.74, "w": 0.9, "h": 1.62, "r": 0.32, "tw": 0.215, "axles": [-1.42, 1.4], "dual": false, "trims": 1},
+	# A low, wide mid-engined supercar on big wheels, out now and then on the open road (see
+	# TrafficStream.SUPERCAR_CHANCE): never in the ordinary mix.
+	"supercar": {"len": 4.6, "w": 0.99, "h": 1.14, "r": 0.34, "tw": 0.29, "axles": [-1.33, 1.37], "dual": false, "trims": 2},
 }
 ## Paint colours each kind comes in (main, and a second colour for liveries and two-tone).
 const CAR_PAINTS: Array[Color] = [Color(0.78, 0.79, 0.8), Color(0.08, 0.08, 0.09), Color(0.55, 0.05, 0.06),
@@ -37,6 +40,9 @@ const CAR_PAINTS: Array[Color] = [Color(0.78, 0.79, 0.8), Color(0.08, 0.08, 0.09
 	Color(0.62, 0.52, 0.34), Color(0.2, 0.42, 0.62), Color(0.85, 0.42, 0.08)]
 const VAN_PAINTS: Array[Color] = [Color(0.94, 0.94, 0.92), Color(0.94, 0.94, 0.92), Color(0.12, 0.2, 0.42),
 	Color(0.62, 0.62, 0.64), Color(0.1, 0.1, 0.11), Color(0.82, 0.12, 0.08)]
+## A supercar's paint: racing red, yellow, orange, lime, white, black and a bright blue.
+const SUPER_PAINTS: Array[Color] = [Color(0.72, 0.02, 0.02), Color(0.72, 0.02, 0.02), Color(0.98, 0.78, 0.02), Color(0.98, 0.42, 0.02),
+	Color(0.5, 0.85, 0.08), Color(0.94, 0.94, 0.92), Color(0.03, 0.03, 0.035), Color(0.05, 0.3, 0.85)]
 const LIVERIES: Array[Color] = [Color(0.85, 0.1, 0.08), Color(0.1, 0.25, 0.55), Color(0.1, 0.45, 0.25),
 	Color(0.95, 0.65, 0.05), Color(0.45, 0.1, 0.4), Color(0.08, 0.08, 0.1)]
 
@@ -219,7 +225,7 @@ static func look_of(kind_name: String, seed_value: int) -> Dictionary:
 	rng.seed = seed_value * 104729 + 7
 	if kind_name == "police":
 		return {"paint": Color(0.94, 0.94, 0.92), "paint2": POLICE_BLUE, "trim": 0}
-	var paints := CAR_PAINTS if kind_name in ["hatchback", "saloon", "estate", "suv"] else VAN_PAINTS
+	var paints := CAR_PAINTS if kind_name in ["hatchback", "saloon", "estate", "suv"] else (SUPER_PAINTS if kind_name == "supercar" else VAN_PAINTS)
 	var paint: Color = paints[rng.randi() % paints.size()]
 	var second: Color = LIVERIES[rng.randi() % LIVERIES.size()]
 	if kind_name == "coach" and rng.randf() < 0.5:
@@ -618,7 +624,7 @@ func _roof_rails(z0: float, z1: float, key := "metal", col := SATIN) -> void:
 
 func _build() -> void:
 	match kind:
-		"hatchback", "saloon", "estate", "suv":
+		"hatchback", "saloon", "estate", "suv", "supercar":
 			_car()
 		"van":
 			_van()
@@ -643,7 +649,7 @@ func _build() -> void:
 const SHAPING := {
 	"hatchback": [0.13, 0.6, 0.09, 0.45, 0.045], "saloon": [0.13, 0.7, 0.08, 0.5, 0.045], "estate": [0.13, 0.7, 0.06, 0.45, 0.045],
 	"suv": [0.1, 0.6, 0.06, 0.45, 0.04], "van": [0.1, 0.6, 0.025, 0.3, 0.02], "lorry": [0.035, 0.4, 0.0, 0.3, 0.0],
-	"coach": [0.05, 0.6, 0.02, 0.4, 0.0], "police": [0.13, 0.7, 0.06, 0.45, 0.045],
+	"coach": [0.05, 0.6, 0.02, 0.4, 0.0], "police": [0.13, 0.7, 0.06, 0.45, 0.045], "supercar": [0.17, 0.85, 0.1, 0.55, 0.07],
 }
 
 
@@ -691,7 +697,7 @@ func _shape_body() -> void:
 		it[1] = Transform3D()
 
 
-## The four cars, from one recipe with each one's lines.
+## The cars (and the supercar), from one recipe with each one's lines.
 func _car() -> void:
 	var w := float(s["w"])
 	var r := float(s["r"])
@@ -787,6 +793,32 @@ func _car() -> void:
 			bump_f = 0.74
 			bump_r = 0.72
 			rear_seat = 1.05
+		"supercar":
+			# Low and wide: a long sloping nose, the cabin well forward, a short raked glasshouse
+			# running back into the engine cover, two seats and nothing behind them.
+			sill = 0.17
+			ar = r + 0.035
+			belt = 0.78
+			nz = -2.3
+			tz = 2.3
+			top = [[-2.26, sill], [-2.3, 0.28], [-2.3, 0.38], [-2.24, 0.45], [-2.05, 0.52], [-1.7, 0.6], [-1.3, 0.67], [-0.95, 0.73], [-0.8, 0.76],
+				[-0.78, belt], [1.62, belt], [1.9, 0.82], [2.15, 0.83], [2.27, 0.78], [2.3, 0.66], [2.3, 0.36], [2.26, sill]]
+			gl = [[-0.78, 0.76, 0.015], [-0.6, 0.75, 0.1], [-0.38, 0.74, 0.19], [-0.15, 0.73, 0.27], [0.08, 0.72, 0.32], [0.35, 0.71, 0.34],
+				[0.62, 0.7, 0.32], [0.88, 0.68, 0.26], [1.15, 0.65, 0.17], [1.4, 0.62, 0.08], [1.62, 0.58, 0.02]]
+			gn = 3.2
+			roof_from = 0.08
+			roof_to = 0.62
+			a_foot = 0.25
+			r_foot = 0.55
+			pillars = []
+			c_from = 0.72
+			doors = [-0.76, 0.62]
+			handles = []
+			head_y = Vector2(0.5, 0.58)
+			tail_y = Vector2(0.6, 0.74)
+			bump_f = 0.42
+			bump_r = 0.5
+			rear_seat = 3.0
 	var z_ws := float(gl[0][0])
 	var zb := float(gl[-1][0])
 	# The body: one solid with the arches cut through it, rounded off at its edges.
@@ -806,7 +838,7 @@ func _car() -> void:
 	var f1 := _face(top, head_y.y, true)
 	var tilt := Vector3(atan2(f1 - f0, head_y.y - head_y.x), 0.0, 0.0)
 	var gy := (head_y.x + head_y.y) * 0.5
-	var grille_w := w * (0.5 if kind != "suv" else 0.62)
+	var grille_w := w * (0.62 if kind == "suv" else (0.4 if kind == "supercar" else 0.5))
 	_box(Vector3(grille_w * 2.0, head_y.y - head_y.x + 0.02, 0.03), Vector3(0.0, gy, (f0 + f1) * 0.5), "metal", GLOSS, tilt)
 	if not lo:
 		for i in 3:
@@ -840,7 +872,7 @@ func _car() -> void:
 	var ttilt := Vector3(atan2(t1 - t0, tail_y.y - tail_y.x), 0.0, 0.0)
 	for side in [1.0, -1.0]:
 		var x1 := w + 0.006
-		var x0 := w - (0.3 if kind != "saloon" else 0.4)
+		var x0 := w - (0.4 if kind in ["saloon", "supercar"] else 0.3)
 		var tl := _pts([[t0 - 0.12, tail_y.x], [t1 - 0.12, tail_y.y], [t1 + 0.012, tail_y.y], [t0 + 0.012, tail_y.x]])
 		if side > 0.0:
 			_prism(tl, x0, x1, 0.012, "lamps", LENS_RED, CH_TAIL)
@@ -867,6 +899,8 @@ func _car() -> void:
 		var hdy := belt - 0.12
 		_box(Vector3(0.26, 0.05, 0.02), Vector3(0.0, hdy, _face(top, hdy, false) + 0.01), "metal", CHROME if trim == 0 else GLOSS, ttilt)   # the tailgate's handle bar
 	_number_plate(tz + 0.05, (bump_r + sill) * 0.5 + 0.03, false)
+	if kind == "supercar":
+		_supercar_kit(w, tz)
 	# Mirrors, handles, shut lines, a black sill and the belt moulding.
 	_mirrors(z_ws + 0.12, belt + 0.07, w)
 	_handles(handles, belt - 0.11, w, "metal" if trim == 0 else "paint", CHROME)
@@ -889,6 +923,29 @@ func _car() -> void:
 		var fin := _pts([[roof_to - 0.25, 0.0], [roof_to - 0.08, 0.06], [roof_to - 0.02, 0.06], [roof_to, 0.0]])
 		var ry := _gp(roof_to - 0.1, PI * 0.5, 0.006).y
 		_add(CarModel.prism(fin, -0.025, 0.025, 0.01), "paint", Color.WHITE, Transform3D(Basis(), Vector3(0.0, ry - 0.005, 0.0)))
+
+
+## A supercar's extras: a rear wing on two struts over the engine cover, the side intakes ahead of
+## the back wheels, a black diffuser under the tail with the twin pipes in the middle of it, and
+## the engine cover's louvres.
+func _supercar_kit(w: float, tz: float) -> void:
+	var axles: Array = s["axles"]
+	var wing := _pts([[1.92, 1.0], [1.95, 1.025], [2.18, 1.03], [2.24, 1.01], [2.2, 0.995]])
+	_prism(wing, -w + 0.06, w - 0.06, 0.008, "metal" if trim == 1 else "paint", GLOSS)
+	for x in [-0.55, 0.55]:
+		_box(Vector3(0.03, 0.2, 0.12), Vector3(x, 0.91, 2.1), "metal", GLOSS, Vector3(deg_to_rad(-12.0), 0.0, 0.0))
+	for side in [1.0, -1.0]:
+		var intake := _pts([[float(axles[1]) - 0.95, 0.46], [float(axles[1]) - 0.85, 0.68], [float(axles[1]) - 0.42, 0.7], [float(axles[1]) - 0.45, 0.44]])
+		if side > 0.0:
+			_prism(intake, w - 0.02, w + 0.004, 0.006, "trim", UNDER)
+		else:
+			_prism(intake, -w - 0.004, -w + 0.02, 0.006, "trim", UNDER)
+	_box(Vector3(w * 1.6, 0.1, 0.35), Vector3(0.0, 0.2, tz - 0.14), "trim", BLACK, Vector3(deg_to_rad(10.0), 0.0, 0.0))
+	for x in [-0.09, 0.09]:
+		_cyl(0.045, 0.12, Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(x, 0.3, tz - 0.01)), "metal", CHROME if trim == 0 else SATIN, 12)
+	if not lo:
+		for k in 5:
+			_box(Vector3(0.7, 0.008, 0.03), Vector3(0.0, 0.825, 1.7 + k * 0.08), "trim", UNDER)
 
 
 ## A police estate's livery and kit over the estate car: battenberg checks of hi-vis yellow and
@@ -1231,9 +1288,11 @@ func _wheel_items(low: bool, twin: bool) -> Array:
 	var big := kind in ["lorry", "coach"]
 	var sides := 12 if low else 36
 	var out := []
-	var tyre := [Vector2(r * 0.66, -tw), Vector2(r * 0.86, -tw * 1.08), Vector2(r - 0.012, -tw * 0.98), Vector2(r, -tw * 0.82),
-		Vector2(r, tw * 0.82), Vector2(r - 0.012, tw * 0.98), Vector2(r * 0.86, tw * 1.08), Vector2(r * 0.66, tw)]
-	var rim_r := r * 0.66
+	var rim := 0.8 if kind == "supercar" else 0.66   # low-profile tyres on big rims
+	var wall := lerpf(rim, 1.0, 0.6)
+	var tyre := [Vector2(r * rim, -tw), Vector2(r * wall, -tw * 1.08), Vector2(r - 0.012, -tw * 0.98), Vector2(r, -tw * 0.82),
+		Vector2(r, tw * 0.82), Vector2(r - 0.012, tw * 0.98), Vector2(r * wall, tw * 1.08), Vector2(r * rim, tw)]
+	var rim_r := r * rim
 	var style := "steel" if kind == "van" and trim != 1 else ("dark" if trim == 2 else "alloy")
 	if big:
 		style = "truck"
