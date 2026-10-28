@@ -337,6 +337,8 @@ static func measure(w: AdventureWorld, s: float) -> Dictionary:
 	var ys: Array[float] = []
 	var hs: Array[float] = []
 	var edges: Array[int] = []   # (the network's road each point is on: a turn from one to the next isn't a kink)
+	var ds: Array[float] = []    # (how far along the road each point is, m: on the network, along its own line)
+	var was := Vector2(NAN, NAN)
 	var tries := 0
 	var hint := -1
 	var t := maxf(0.0, s - STRETCH)
@@ -346,6 +348,7 @@ static func measure(w: AdventureWorld, s: float) -> Dictionary:
 			ys.append(w.route.height_at_s(t))
 			hs.append(w.route.heading_at_s(t))
 			edges.append(0)
+			ds.append(t)
 		else:
 			var xz := w.route.xz_at(t, 0.0)
 			var on := w.roads.net.locate(xz[0], xz[1], hint)
@@ -354,14 +357,28 @@ static func measure(w: AdventureWorld, s: float) -> Dictionary:
 				ys.append(w.roads.net.road_y(hint, float(on["s"])))
 				hs.append(float(on["heading"]))
 				edges.append(hint if int(on["node"]) < 0 else -1 - edges.size())
+				var at := w.roads.net.point_at(hint, float(on["s"]))
+				ds.append(0.0 if ds.is_empty() else ds[ds.size() - 1] + at.distance_to(was))
+				was = at
 		t += STEP
+	# (evenly along the road itself: where the network's road bulges from the plan's line round a hairpin, the plan's
+	# points bunch up on it, and a steady climb read at them would look like a step)
+	var even: Array[float] = []
+	var k := 0
+	var d := 0.0
+	while not ds.is_empty() and d <= ds[ds.size() - 1]:
+		while k < ds.size() - 2 and ds[k + 1] < d:
+			k += 1
+		var span := ds[k + 1] - ds[k] if k + 1 < ds.size() else 0.0
+		even.append(ys[k] if span <= 0.0 else lerpf(ys[k], ys[k + 1], clampf((d - ds[k]) / span, 0.0, 1.0)))
+		d += STEP
 	var off: Array[float] = []
 	var half := int(15.0 / STEP)
-	for i in range(half, ys.size() - half):
+	for i in range(half, even.size() - half):
 		var sum := 0.0
 		for j in range(i - half, i + half + 1):
-			sum += ys[j]
-		off.append(absf(ys[i] - sum / (half * 2 + 1)))
+			sum += even[j]
+		off.append(absf(even[i] - sum / (half * 2 + 1)))
 	var sq := 0.0
 	var worst := 0.0
 	for o in off:

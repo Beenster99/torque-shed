@@ -180,9 +180,9 @@ block.ms: float                 # how long the build took on its worker
 
 | key | type | meaning |
 |---|---|---|
-| node | int | its node (for a roundabout: the lowest node of its ring) |
-| nodes | PackedInt32Array | every node it covers (one, or a roundabout's ring) |
-| kind | String | "end" (dead end), "tee", "fork" (Y), "cross", "staggered" (a tee with another tee on the other side within RoadNet.STAGGER m), "multi" (5 or more arms), "roundabout", "mini" (a roundabout too small for an island) |
+| node | int | its node (for a roundabout: the lowest node of its ring; for junctions drawn as one, the lowest of them) |
+| nodes | PackedInt32Array | every node it covers (one, a roundabout's ring, or junctions joined by a road of at most `RoadNet.CLUSTER_M` m, drawn as one: a divided road's crossing; the roads between them are all under its surface, which is the plane nearest its arms' mouths) |
+| kind | String | "end" (dead end), "tee", "fork" (Y), "cross", "staggered" (a tee with another tee on the other side within RoadNet.STAGGER m), "multi" (5 or more arms, or junctions drawn as one with other than 3 or 4), "roundabout", "mini" (a roundabout too small for an island) |
 | pos | Vector3 | its middle; y is the junction's surface height |
 | radius | float | how far its surface reaches from pos (m) |
 | arms | Array[Dictionary] | the roads out of it, clockwise from north (below) |

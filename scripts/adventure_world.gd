@@ -22,6 +22,8 @@ extends Node3D
 const ANCHOR := Vector3(0.0, 0.0, -6000.0)
 const SHIFT_DIST := 600.0
 const SHIFT_SNAP := 256.0
+## The far ground's flat sheet lies this far (m) under the planned road and the ground round you.
+const HORIZON_DROP := 70.0
 ## The road is kept this far ahead of you and behind (m); behind, also back to anyone within
 ## REMOTE_BEHIND of you, so a friend a little way back isn't riding on nothing.
 const AHEAD := 3200.0
@@ -706,7 +708,13 @@ func _follow_horizon(p: Vector3) -> void:
 		m.roughness = 0.12
 		m.metallic_specular = 0.8
 		return
-	horizon.position = Vector3(p.x, route.base[i] - 70.0, p.z)
+	# (well under the planned road there, and under the ground you're on: on the network you may be far below it, down
+	# in a valley, and the far ground's flat sheet would hang over you)
+	var y := route.base[i] - HORIZON_DROP
+	var g := route.ground_at(p.x + origin.x, p.z + origin.z)
+	if not is_nan(g):
+		y = minf(y, g - HORIZON_DROP)
+	horizon.position = Vector3(p.x, y, p.z)
 	var surf := route.surface_at_s(s)
 	var col: Color = route.look["land"][surf]
 	m.albedo_color = col.darkened(0.2)
@@ -718,5 +726,6 @@ func follow(p: Vector3) -> void:
 		ridges.follow(p.x + origin.x, p.z + origin.z)
 	if land != null:
 		land.follow(p.x + origin.x, p.z + origin.z)
-	if horizon and Vector2(horizon.position.x - p.x, horizon.position.z - p.z).length() > 200.0:
+	if horizon and (Vector2(horizon.position.x - p.x, horizon.position.z - p.z).length() > 200.0 \
+			or p.y < horizon.position.y + HORIZON_DROP * 0.5):
 		_follow_horizon(p)
