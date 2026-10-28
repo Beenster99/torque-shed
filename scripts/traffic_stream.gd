@@ -5,7 +5,8 @@ extends Node3D
 ## along the road to where the road is there, and keep `focus_s` (or `foci`, one for each group
 ## of riders) at where the riders are along it, and it keeps traffic going both ways round them,
 ## more of it where the road says it's built up. Like the town's traffic (RoadTraffic) none of it
-## is simulated: each keeps to its lane (left-hand road) at a pace of its own (a share of the
+## is simulated: each keeps to its lane (on the side of the road the country drives on, see
+## keep_left) at a pace of its own (a share of the
 ## road's limit, lorries and coaches slower), slows for the bends ahead, crawls up steep hills
 ## when it's heavy (TrafficVehicle.TRAITS "power"), and hangs back a gap behind whatever's ahead
 ## in its lane, the stream's own vehicles and anything in `blockers`. Service buses pull in at
@@ -113,6 +114,9 @@ var weigh_busy := false
 var blockers: Array = []
 ## Where service buses pull in: [{s (the shelter), dir (the way the buses that stop go)}, ...].
 var bus_stops: Array = []
+## Optional s -> whether the road drives on the left there (Britain, Ireland, Japan, India...);
+## else it does everywhere, as the town's roads.
+var keep_left: Callable
 ## Whether this machine runs it (the host, or a solo game); a client only moves them on between unpacks.
 var host := true
 ## The junctions along it, in order of s: [{s (the middle), stop (m before the middle where traffic
@@ -164,6 +168,11 @@ func _physics_process(delta: float) -> void:
 ## Where the riders are: `foci`, or just focus_s.
 func spots() -> Array:
 	return foci if not foci.is_empty() else [focus_s]
+
+
+## Which side of its way traffic keeps to at `s`: -1 its left, 1 its right (see keep_left).
+func keep(s: float) -> int:
+	return 1 if keep_left.is_valid() and not bool(keep_left.call(s)) else -1
 
 
 ## How far `s` is from the nearest focus.
@@ -464,7 +473,7 @@ func _drive(d: Dictionary, delta: float) -> void:
 func _stand(d: Dictionary, delta: float) -> float:
 	d["dwell"] = float(d["dwell"]) - delta
 	d["kerb"] = true
-	d["ind"] = 1 if float(d["dwell"]) < 2.5 else 0
+	d["ind"] = -keep(float(d["s"])) if float(d["dwell"]) < 2.5 else 0   # out from the kerb
 	if float(d["dwell"]) > 0.0:
 		return 0.0
 	d.erase("dwell")
@@ -490,7 +499,7 @@ func _bus(d: Dictionary, half: float, brake: float) -> float:
 	if best > BUS_PULL_IN * 2.0:
 		return INF
 	if best < BUS_PULL_IN:
-		d["ind"] = -1
+		d["ind"] = keep(float(d["s"]))   # in to the kerb
 		d["kerb"] = true
 	if best < 0.8 and float(d["v"]) < 0.6:
 		d["dwell"] = rng.randf_range(BUS_DWELL[0], BUS_DWELL[1])
@@ -501,12 +510,12 @@ func _bus(d: Dictionary, half: float, brake: float) -> float:
 
 ## Whether vehicle `o` is in its own lane: a scripted one put over on the other side (overtaking)
 ## or off the road (a police car in a lay-by) isn't in anyone's way there.
-static func _in_lane(o: Dictionary, hw: float) -> bool:
+func _in_lane(o: Dictionary, hw: float) -> bool:
 	if o.has("arm"):
 		# Off the main road, but for the first half of the bend off it or the last onto it.
 		return float(o["t"]) < -TURN_LEN * 0.5
 	var lat := float(o.get("lat", NAN))
-	return is_nan(lat) or (lat * int(o["dir"]) < 0.0 and absf(lat) < hw + 0.5)
+	return is_nan(lat) or (lat * int(o["dir"]) * keep(float(o["s"])) > 0.0 and absf(lat) < hw + 0.5)
 
 
 ## Holds vehicle `d` back behind something at `other_s` ahead of it in its lane: a vehicle (kept a headway behind it),
@@ -565,8 +574,8 @@ func _junction_ahead(d: Dictionary, half: float, brake: float) -> float:
 			var to_turn := (_turn_from(d) - s) * dir
 			allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * brake * 0.5 * maxf(to_turn, 0.0)))
 			if to_turn < 70.0:
-				d["ind"] = 1 if d["turn"][2] else -1
-			# Turning right: across the other lane, so it waits for a gap in what's coming.
+				d["ind"] = int(jn["arms"][int(d["turn"][1])]["side"]) * dir   # 1 right, -1 left
+			# Turning across the other lane (right where they drive on the left), so it waits for a gap in what's coming.
 			if d["turn"][2] and not _lanes_clear(jn, [-dir], d):
 				allow = minf(allow, _stop_for(to_turn, brake))
 	return allow
@@ -577,9 +586,9 @@ static func _stop_for(dist: float, brake: float) -> float:
 	return sqrt(2.0 * brake * 0.6 * maxf(dist - 0.5, 0.0))
 
 
-## Whether vehicle `d` turns off at junction `j`, and down which side road: on its left whichever
-## it is, on its right across the other lane (not at a roundabout: round the island it only takes
-## the first exit). Nothing big, no bus and no supercar (it's only passing through) goes down a side road.
+## Whether vehicle `d` turns off at junction `j`, and down which side road: on its kerb side (its
+## left where they drive on the left) whichever it is, on the other across the other lane (not at a
+## roundabout: round the island it only takes the first exit). Nothing big, no bus and no supercar (it's only passing through) goes down a side road.
 func _decide_turn(d: Dictionary, j: int) -> void:
 	var jn: Dictionary = junctions[j]
 	if d.get("bus", false) or str(d["kind"]) in ["lorry", "coach", "police", "supercar"] or d.has("dwell"):
@@ -587,11 +596,12 @@ func _decide_turn(d: Dictionary, j: int) -> void:
 	if rng.randf() > (TURN_ODDS_VILLAGE if jn.get("village", false) else TURN_ODDS):
 		return
 	var dir := int(d["dir"])
+	var kerb := keep(float(jn["s"])) * dir   # the arm side on its kerb's side
 	var can := []
 	for k in (jn["arms"] as Array).size():
 		var side := int(jn["arms"][k]["side"])
-		if side == -dir or (side == dir and not jn.has("ro")):
-			can.append([j, k, side == dir])
+		if side == kerb or (side == -kerb and not jn.has("ro")):
+			can.append([j, k, side == -kerb])
 	if not can.is_empty():
 		d["turn"] = can[rng.randi() % can.size()]
 
@@ -657,7 +667,7 @@ func _may_join(d: Dictionary) -> bool:
 		return _circle_clear(jn, d)
 	var dir := int(d["dir"])
 	var side := int(jn["arms"][int(d["k"])]["side"])
-	return _lanes_clear(jn, [dir] if side == -dir else [dir, -dir], d)
+	return _lanes_clear(jn, [dir] if side == keep(float(jn["s"])) * dir else [dir, -dir], d)
 
 
 ## A vehicle on a side road: off along it and out of sight (stopping at its end, parked there
@@ -722,7 +732,7 @@ func _arm_s(d: Dictionary) -> float:
 
 
 ## Where a vehicle on a side road is: [pos, fwd, lat] as _place (lat NAN). Along the side road on
-## its left, or on the bend, a curve from its lane on the main road to the mouth.
+## its kerb side, or on the bend, a curve from its lane on the main road to the mouth.
 func _place_arm(d: Dictionary) -> Array:
 	var jn: Dictionary = junctions[int(d["arm"])]
 	var k := int(d["k"])
@@ -733,7 +743,7 @@ func _place_arm(d: Dictionary) -> Array:
 	var a: Dictionary = arm_at.call(jn, k, maxf(t, 0.0))
 	var fwd: Vector3 = a["fwd"]
 	var travel := fwd if out else -fwd
-	var mouth: Vector3 = (a["pos"] as Vector3) - Vector3(-travel.z, 0.0, travel.x).normalized() * off
+	var mouth: Vector3 = (a["pos"] as Vector3) + Vector3(-travel.z, 0.0, travel.x).normalized() * off * keep(float(jn["s"]))
 	if t >= 0.0:
 		return [mouth, travel, NAN]
 	var js := float(jn["s"])
@@ -769,8 +779,8 @@ func unseen(pos: Vector3) -> bool:
 
 
 ## A vehicle coming out of a side road near the riders: turning up at the far end of one whose
-## end no one can see, heading in to the main road to turn left (off a roundabout's, round it),
-## or now and then right, across. Returns it, or {}.
+## end no one can see, heading in to the main road to turn onto its near side (left where they
+## drive on the left; off a roundabout's, round it), or now and then the other way, across. Returns it, or {}.
 func spawn_side() -> Dictionary:
 	if vehicles.size() >= MAX_VEHICLES or not arm_at.is_valid():
 		return {}
@@ -793,7 +803,8 @@ func spawn_side() -> Dictionary:
 	var jn: Dictionary = junctions[int(pick[0])]
 	var arm: Dictionary = jn["arms"][int(pick[1])]
 	var side := int(arm["side"])
-	var dir := -side if jn.has("ro") or rng.randf() < 0.6 else side
+	var near := side * keep(float(jn["s"]))   # the way along the main road with the arm on its kerb side
+	var dir := near if jn.has("ro") or rng.randf() < 0.6 else -near
 	var kind := TrafficVehicle.pick_kind(rng, jn.get("village", false))
 	if kind in ["lorry", "coach"] or (float(arm["w"]) < 4.0 and kind == "van"):
 		kind = "hatchback"
@@ -807,7 +818,7 @@ func spawn_side() -> Dictionary:
 # ---------------------------------------------------------------------------- drawing
 
 ## Where a vehicle is: [pos (global, its middle on the road), fwd (the way it faces), lat (m right
-## of the centre line)]. In its lane (the left of its way), wheels off the middle line and inside
+## of the centre line)]. In its lane (its kerb side, keep), wheels off the middle line and inside
 ## the road's edge, or at the kerb at a bus stop, or where a scripted driver put it.
 func _place(d: Dictionary, at := {}) -> Array:
 	var s := float(d["s"])
@@ -823,14 +834,14 @@ func _place(d: Dictionary, at := {}) -> Array:
 	var lane := minf(maxf(hw * LANE, half_w + 0.2), maxf(hw - half_w - 0.1, half_w + 0.1))
 	if is_nan(lat):
 		var kerb := maxf(hw - half_w - 0.1, lane)
-		lat = -dir * lerpf(lane, kerb, float(d.get("kerb_f", 0.0)))
+		lat = keep(s) * dir * lerpf(lane, kerb, float(d.get("kerb_f", 0.0)))
 	var heading := fwd * dir
 	for j in _near_j:
 		var jn: Dictionary = junctions[j]
 		if jn.has("rc") and absf(s - float(jn["s"])) < float(jn["rc"]) + 9.0:
-			# Round the island on its left, then back into the lane.
+			# Round the island on its kerb side, then back into the lane.
 			var ds := s - float(jn["s"])
-			var side := signf(lat) if absf(lat) > 0.3 else float(-dir)
+			var side := signf(lat) if absf(lat) > 0.3 else float(keep(s) * dir)
 			lat += side * (AdventureJunctions.swing(jn, ds, lane) - lane)
 			var slope := AdventureJunctions.swing(jn, ds + 0.5, lane) - AdventureJunctions.swing(jn, ds - 0.5, lane)
 			heading = (fwd * dir + right * side * slope * dir).normalized()

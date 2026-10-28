@@ -19,7 +19,8 @@ extends RefCounted
 ## frame's axes, on the land).
 ##
 ## The main road through a roundabout is the "straight on" exit: clockwise round from where you
-## come in, it's the 1st exit with no arm on your left, the 2nd with one (exit_number). The sat nav
+## come in (anticlockwise where they drive on the right), it's the 1st exit with no arm on your
+## near side, the 2nd with one (exit_number). The sat nav
 ## says so (instruction). The road is widened into a ring round the island (widen), and the
 ## traffic's lanes swing round it (swing).
 
@@ -381,14 +382,15 @@ static func stop_line(st: Dictionary) -> float:
 	return w * 0.5 + 2.6
 
 
-## The main road's exit at a roundabout for traffic going `dir`: counted clockwise from where it
-## comes in, every arm on its left comes first.
-static func exit_number(st: Dictionary, dir: int) -> int:
-	var left := 0
+## The main road's exit at a roundabout for traffic going `dir`: counted round from where it comes
+## in, clockwise where they drive on the left (`left`), so every arm on its left comes first, and
+## anticlockwise where they drive on the right, every arm on its right first.
+static func exit_number(st: Dictionary, dir: int, left := true) -> int:
+	var before := 0
 	for arm in st["arms"]:
-		if int(arm["side"]) == -dir:
-			left += 1
-	return 1 + left
+		if int(arm["side"]) == (-dir if left else dir):
+			before += 1
+	return 1 + before
 
 
 static func ordinal(n: int) -> String:
@@ -397,10 +399,10 @@ static func ordinal(n: int) -> String:
 
 ## What the sat nav says coming up to junction `st` going `dir`: "At the roundabout, take the 2nd
 ## exit", "Straight on at the lights"... ("" for a side road joining, where there's nothing to do).
-static func instruction(st: Dictionary, dir := 1) -> String:
+static func instruction(st: Dictionary, dir := 1, left := true) -> String:
 	match str(st.get("type", "")):
 		"roundabout":
-			return "At the roundabout, take the %s exit" % ordinal(exit_number(st, dir))
+			return "At the roundabout, take the %s exit" % ordinal(exit_number(st, dir, left))
 		"mini":
 			return "At the mini roundabout, go straight on"
 		"lights":

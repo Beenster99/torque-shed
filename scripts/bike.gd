@@ -561,6 +561,11 @@ func _hold_still() -> void:
 
 ## Picks the rider up after a crash (or a reset) and puts them back on, a ghost for
 ## BikeGhost.TIME seconds (see start_ghost).
+## The rider thrown off in a crash (RiderRagdoll), or null when they're on the bike.
+func ragdoll_body() -> Node3D:
+	return _ragdoll if is_instance_valid(_ragdoll) else null
+
+
 func respawn() -> void:
 	start_ghost()
 	var spot = respawn_at.call(global_position) if respawn_at.is_valid() else null

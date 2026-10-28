@@ -1015,9 +1015,10 @@ func _outdoors() -> PackedFloat32Array:
 
 
 ## The town's bustle out on the High Street: people talking as they pass (bursts of voice-like
-## formants in syllables and phrases, near and far), footsteps going by and the pigeons cooing.
-## Nothing that rings: a bell in a 12 s loop came round as the same ding-ding every 12 s for as
-## long as you stood out front.
+## formants in syllables and phrases, near and far) and footsteps going by. Nothing that rings or
+## holds a note: a bell in a 12 s loop came round as the same ding-ding every 12 s for as long as
+## you stood out front, and pigeons cooing as pure tones were the loudest thing in it, a chime
+## every few seconds.
 func _town() -> PackedFloat32Array:
 	var secs := 12.0
 	var d := buf(secs + 0.3)
@@ -1043,18 +1044,6 @@ func _town() -> PackedFloat32Array:
 		for step in rng.randi_range(6, 12):
 			var loud := sin(PI * float(step) / 12.0) * 0.05
 			burst(d, int((t2 + step * pace) * R), 0.035, loud, 140.0, 900.0, 5000.0, true)
-	# Pigeons: roo-COO-coo, low and soft.
-	for c in 3:
-		var start := rng.randi_range(0, n - 1)
-		var f0 := rf(250.0, 320.0)
-		var ph := 0.0
-		for note: Array in [[0.0, 0.22, 0.6], [0.3, 0.42, 1.0], [0.8, 0.3, 0.7]]:
-			var o := int(float(note[0]) * R)
-			var ln2 := int(float(note[1]) * R)
-			for i in ln2:
-				var x := float(i) / ln2
-				ph += f0 * (1.0 + 0.04 * sin(TAU * 7.0 * x)) * (1.0 - 0.1 * x) / R
-				d[(start + o + i) % n] += sin(TAU * ph) * sin(PI * x) * 0.03 * float(note[2])
 	return loopify(d, 0.3)
 
 
