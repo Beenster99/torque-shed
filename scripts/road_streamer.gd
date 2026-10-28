@@ -1,6 +1,6 @@
 class_name RoadStreamer
 extends Node3D
-## The road network round each rider on the network ride (Esc > Debug > "Road network (test)": AdventureWorld.network):
+## The road network round each rider on the network ride (the default: AdventureWorld.network):
 ## the road blocks (RoadBlock) within REACH of any rider, laid out on worker threads and put into the world one a
 ## frame, freed once every rider is past KEEP, and laid out again where the ground under them sharpens (the terrain's
 ## ground_arrived). A block is only laid out once the ground round it is final (RoadNet.ready), so every machine lays

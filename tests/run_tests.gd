@@ -29,6 +29,8 @@ var _list := false
 func _ready() -> void:
 	# The old demo bikes these were written round (a player's new shed starts empty).
 	Shed.demo_bikes = true
+	# Rides on the single planned road, as these were written round; a test of the road network turns it on itself.
+	AdventureWorld.network = false
 	await get_tree().process_frame
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shard="):
