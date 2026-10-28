@@ -79,7 +79,7 @@ func _on_ground(area: Rect2, level: int) -> void:
 
 func _exit_tree() -> void:
 	for key in _tasks:
-		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+		JobPool.drop(_tasks[key])
 	_tasks.clear()
 
 
@@ -120,18 +120,18 @@ func follow(x: float, z: float) -> void:
 func _process(_delta: float) -> void:
 	while _tasks.size() < AT_ONCE and not _queue.is_empty():
 		var key: Vector2i = _queue.pop_front()
-		_tasks[key] = WorkerThreadPool.add_task(func():
+		_tasks[key] = JobPool.add(func():
 			var arrays = _block_arrays(key)
 			_lock.lock()
 			_done[key] = arrays
-			_lock.unlock())
+			_lock.unlock(), RANGE)   # (after the near land and roads)
 	if _tasks.is_empty():
 		return
 	var put := 0
 	for key: Vector2i in _tasks.keys():
-		if put >= 2 or not WorkerThreadPool.is_task_completed(_tasks[key]):
+		if put >= 2 or not JobPool.done(_tasks[key]):
 			continue
-		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+		JobPool.wait(_tasks[key])
 		_tasks.erase(key)
 		_lock.lock()
 		var arrays = _done.get(key)

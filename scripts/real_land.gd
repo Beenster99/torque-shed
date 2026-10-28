@@ -152,7 +152,7 @@ static func water_material() -> StandardMaterial3D:
 
 func _exit_tree() -> void:
 	for key in _tasks:
-		WorkerThreadPool.wait_for_task_completion(_tasks[key]["id"])
+		JobPool.drop(_tasks[key]["id"])
 	_tasks.clear()
 
 
@@ -160,7 +160,7 @@ func _exit_tree() -> void:
 func reset() -> void:
 	_epoch += 1
 	for key in _tasks:
-		WorkerThreadPool.wait_for_task_completion(_tasks[key]["id"])
+		JobPool.drop(_tasks[key]["id"])
 	_tasks.clear()
 	_lock.lock()
 	_done.clear()
@@ -314,21 +314,21 @@ func _process(_delta: float) -> void:
 		if _tasks.has(key):
 			continue
 		var epoch := _epoch
-		_tasks[key] = {"lod": lod, "id": WorkerThreadPool.add_task(func():
+		_tasks[key] = {"lod": lod, "id": JobPool.add(func():
 			var arrays = _block_arrays(key, lod)
 			var water = _water_arrays(key, lod) if arrays != null else null
 			var shape = _ground_shape(arrays) if arrays != null and lod == 0 else null
 			_lock.lock()
 			if epoch == _epoch:
 				_done[key] = {"lod": lod, "arrays": arrays, "water": water, "shape": shape}
-			_lock.unlock())}
+			_lock.unlock(), float(item["d"]))}
 	if _tasks.is_empty():
 		return
 	var put := 0
 	for key: Vector2i in _tasks.keys():
-		if put >= PUT_PER_FRAME or not WorkerThreadPool.is_task_completed(_tasks[key]["id"]):
+		if put >= PUT_PER_FRAME or not JobPool.done(_tasks[key]["id"]):
 			continue
-		WorkerThreadPool.wait_for_task_completion(_tasks[key]["id"])
+		JobPool.wait(_tasks[key]["id"])
 		_tasks.erase(key)
 		_lock.lock()
 		var got = _done.get(key)
@@ -524,7 +524,7 @@ static func _fine_vert(fine: Dictionary, I: int, J: int, n: int) -> int:
 ## corners, so there's no crack) to `verts` (and `norms`, `cols`), indexed in `fine`; returns the finer cells
 ## {Vector2i(i, j): true} inside the block.
 func _refine(ox: float, oz: float, cells: int, sp: float, grid: PackedFloat32Array, bares: PackedFloat32Array, m: int,
-		net: Object, fine: Dictionary,
+		net: Object, memo: Dictionary, fine: Dictionary,
 		verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, knot: PackedInt32Array,
 		lats: PackedFloat32Array, n: int) -> Dictionary:
 	var fs := sp / FINE
@@ -535,8 +535,14 @@ func _refine(ox: float, oz: float, cells: int, sp: float, grid: PackedFloat32Arr
 			return land[key]
 		var x := ox + I * fs
 		var z := oz + J * fs
-		var bare := route.ground_at(x, z)
-		var y := NAN if is_nan(bare) else float(net.call("ground_at", x, z, bare))
+		# (the bare ground between the cell's corners, as they have it: the height tiles are coarser than a cell)
+		var ci := clampi(floori(float(I) / FINE), -1, cells)
+		var cj := clampi(floori(float(J) / FINE), -1, cells)
+		var tx := float(I - ci * FINE) / FINE
+		var tz := float(J - cj * FINE) / FINE
+		var g := (cj + 1) * m + (ci + 1)
+		var bare := lerpf(lerpf(bares[g], bares[g + 1], tx), lerpf(bares[g + m], bares[g + m + 1], tx), tz)
+		var y := NAN if is_nan(bare) else float(net.call("ground_at", x, z, bare, memo))
 		land[key] = y
 		return y
 	# (a corner's height, I and J multiples of FINE, -FINE to (cells + 1) * FINE)
@@ -649,6 +655,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var lo := Vector2(ox - BAND_FAR - sp, oz - BAND_FAR - sp)
 	var hi := Vector2(ox + BLOCK + BAND_FAR + sp, oz + BLOCK + BAND_FAR + sp)
 	var net: Object = roads
+	var memo := {}   # (this worker's own copy of the roads it asks after: RoadNet.ground_at)
 	var cut := net != null and bool(net.call("roads_near", Rect2(ox - sp, oz - sp, BLOCK + sp * 2.0, BLOCK + sp * 2.0)))
 	for k in range(0, route.px.size(), 4):
 		if net == null and route.px[k] >= lo.x and route.px[k] <= hi.x and route.pz[k] >= lo.y and route.pz[k] <= hi.y:
@@ -692,7 +699,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 				bare = route.base[k]
 			bares[g] = bare
 			if net != null:
-				grid[g] = float(net.call("ground_at", x, z, bare)) if cut else bare
+				grid[g] = float(net.call("ground_at", x, z, bare, memo)) if cut else bare
 				lats[g] = NET_COLOUR_LAT
 			elif d >= BAND_FAR:
 				grid[g] = bare
@@ -722,7 +729,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var fine := {}   # Vector2i(fine x, fine z) in the block -> vertex index, for the finer cells' vertices
 	var refined := {}   # Vector2i cell -> true
 	if net != null and cut and lod == 0:
-		refined = _refine(ox, oz, cells, sp, grid, bares, m, net, fine, verts, norms, cols, knot, lats, n)
+		refined = _refine(ox, oz, cells, sp, grid, bares, m, net, memo, fine, verts, norms, cols, knot, lats, n)
 	# Cells wholly under the chunks' own land are left out.
 	var idx := PackedInt32Array()
 	var any := false

@@ -120,9 +120,10 @@ var _fair := {}             # Vector3i(strand's first edge, page, pinned) -> Pac
 var _node_y := {}           # node -> float
 var _junction := {}         # node -> Dictionary ({} for a plain join)
 var _junction_guess := {}   # node -> Dictionary: its shape alone, its heights NAN (see junction_of)
-## The same worked out from ground that isn't final yet (_fair, _node_y, _raw_y and _fixes): kept, so they're not worked
+## The same worked out from ground that isn't final yet (_fair, _node_y, _raw_y, _fixes and _profiles): kept, so they're not worked
 ## out again and again, till the ground sharpens (forget_guesses).
-var _guess := {"fair": {}, "node_y": {}, "raw_y": {}, "fixes": {}}
+var _guess := {"fair": {}, "node_y": {}, "raw_y": {}, "fixes": {}, "profiles": {}}
+var _profiles := {}         # edge -> PackedFloat32Array: its road's heights as ridden (profile)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
 var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
 var _decks := {}            # edge -> Dictionary: its bridges' heights (_deck_plan)
@@ -1174,24 +1175,67 @@ func _profile_at(edge: int, k: int) -> float:
 	return y
 
 
-## The road's height at every sample along edge `edge` (samples_of of them, evenly from a to b).
+## The road's height at every sample along edge `edge` (samples_of of them, evenly from a to b). Kept once the heights
+## it's from are final (its strand's smoothed pages under it and the eases at the strand's ends); till then, as a guess
+## till the ground sharpens (forget_guesses).
 func profile(edge: int) -> PackedFloat32Array:
+	_lock.lock()
+	var got = _profiles.get(edge, _guess["profiles"].get(edge))
+	_lock.unlock()
+	if got != null:
+		return got
 	var out := PackedFloat32Array()
 	out.resize(samples_of(edge))
 	for k in out.size():
 		out[k] = _profile_at(edge, k)
+	var st := _strand_of(edge)
+	var first: int = st["edges"][0]
+	var i: int = st["index"][edge]
+	var j0 := int(float(st["start"][i]) / STEP)
+	var j1 := mini(int((float(st["start"][i]) + length_of(edge)) / STEP) + 1, int(st["count"]) - 1)
+	_lock.lock()
+	var final := _fixes.has(first)
+	for page in range(j0 / PAGE, j1 / PAGE + 1):
+		final = final and _fair.has(Vector3i(first, page, 1))
+	(_profiles if final else _guess["profiles"])[edge] = out
+	_lock.unlock()
 	return out
 
 
 ## The road's height `s` m along edge `edge` (its centre line, before the crown).
 func road_y(edge: int, s: float) -> float:
-	var n := samples_of(edge)
-	var len := length_of(edge)
+	return _y_on(profile(edge), _cum_of(edge), s)
+
+
+## The height `s` m along a road with heights `h` (profile) and lengths along `cum`.
+static func _y_on(h: PackedFloat32Array, cum: PackedFloat32Array, s: float) -> float:
+	var n := h.size()
+	var len := cum[cum.size() - 1]
 	if len <= 0.0:
-		return _profile_at(edge, 0)
+		return h[0]
 	var f := clampf(s / len, 0.0, 1.0) * float(n - 1)
 	var k := mini(int(f), n - 2)
-	return lerpf(_profile_at(edge, k), _profile_at(edge, k + 1), f - k)
+	return lerpf(h[k], h[k + 1], f - k)
+
+
+## Edge `ei`'s [line, lengths along, heights (profile), bridges], from `memo` (one worker's own) once it has them.
+func _edge_memo(ei: int, memo: Dictionary) -> Array:
+	var v = memo.get(ei)
+	if v == null:
+		v = [line_of(ei), _cum_of(ei), profile(ei), bridges_of(ei)]
+		memo[ei] = v
+	return v
+
+
+## _near_at, with the block's grid kept in `memo`.
+func _near_memo(x: float, z: float, memo: Dictionary) -> Array:
+	var key := RoadBlock.key_of(x, z)
+	var g = memo.get(key)
+	if g == null:
+		g = _grid_of(key)
+		memo[key] = g
+	var o := Vector2(key) * RoadBlock.SIZE
+	return (g as Dictionary).get(Vector2i(floori((x - o.x) / GRID), floori((z - o.y) / GRID)), _none)
 
 
 # ---------------------------------------------------------------------------- junctions
@@ -1607,8 +1651,11 @@ func _near(x: float, z: float) -> PackedInt32Array:
 ## The nearest point of edge `edge`'s line to `p`: [distance along the line, signed distance right of it (a to b),
 ## distance from it]. Only the pieces `segs` of the line are looked at (all of them, empty).
 func _project(edge: int, p: Vector2, segs := PackedInt32Array()) -> Array:
-	var line := line_of(edge)
-	var cum := _cum_of(edge)
+	return _project_on(line_of(edge), _cum_of(edge), p, segs)
+
+
+## _project on a line `line` with its lengths along `cum`.
+static func _project_on(line: PackedVector2Array, cum: PackedFloat32Array, p: Vector2, segs := PackedInt32Array()) -> Array:
 	var best_d := INF
 	var best_s := 0.0
 	var best_lat := 0.0
@@ -1769,8 +1816,10 @@ static func _inner(j: Dictionary) -> float:
 
 ## The land's height at (x, z) with the roads cut in, from the bare ground `bare` there: see road-block.md. Under a
 ## carriageway or its verges it's the road's, just under its deck (the lowest, where two overlap); further out each
-## road near holds it to its own height as much as its bank says, the nearest holding it most.
-func ground_at(x: float, z: float, bare: float) -> float:
+## road near holds it to its own height as much as its bank says, the nearest holding it most. A worker laying out a lot
+## of land passes a `memo` of its own: the roads' lines and heights it asks for are kept there, out of the lock the
+## other workers wait on.
+func ground_at(x: float, z: float, bare: float, memo = null) -> float:
 	if is_nan(bare):
 		return bare
 	var p := Vector2(x, z)
@@ -1779,19 +1828,20 @@ func ground_at(x: float, z: float, bare: float) -> float:
 	var sum_y := 0.0
 	var deck := INF
 	var below := INF   # (the lowest road within LAND_PAD of its verge: no land there is higher, see LAND_PAD)
-	var near := _near_at(x, z)
+	var near := _near_at(x, z) if memo == null else _near_memo(x, z, memo)
 	var cands: PackedInt32Array = near[0]
 	for c in cands.size():
 		var ei := cands[c]
-		var pr := _project(ei, p, near[1][c])
+		var v: Array = _edge_memo(ei, memo) if memo != null else []
+		var pr := _project(ei, p, near[1][c]) if memo == null else _project_on(v[0], v[1], p, near[1][c])
 		var off := float(pr[2]) - width_of(ei) * 0.5 - VERGE
 		if off > BANK_MAX + LAND_PAD:
 			continue
-		var y := road_y(ei, float(pr[0])) - UNDER
+		var y := (road_y(ei, float(pr[0])) if memo == null else _y_on(v[2], v[1], float(pr[0]))) - UNDER
 		if is_nan(y):
 			continue   # (no ground under it yet)
 		# (out on a bridge the land is left as it is under the deck, and only kept below it)
-		var on_bridge := bridge_at(ei, float(pr[0]))
+		var on_bridge := bridge_at(ei, float(pr[0])) if memo == null or not (v[3] as PackedInt32Array).is_empty() else 0.0
 		if off <= 0.0:
 			if on_bridge >= 1.0:
 				below = minf(below, y - BRIDGE_DEPTH)
