@@ -22,6 +22,9 @@ const NET_NEAR := 1100.0
 ## In network mode the land is coloured as the land well away from a road is (the satellite's ground showing through:
 ## PlaceLook.ground_share), wherever it is: the roads' own verges are the road blocks'.
 const NET_COLOUR_LAT := 60.0
+## How often the land's grain repeats a metre on the network (AdventureSurface.land_material's noise): near its 0.12,
+## and a whole number of times across a block, so a block's edge shows no seam.
+const NET_GRAIN := 0.125
 ## And the satellite's ground takes only this share of what it would there: the land round a rider is near it, where the
 ## place's own grass, crops and woods colour it, the satellite's only shading them.
 const NET_SATELLITE := 0.5
@@ -48,6 +51,10 @@ const UNDER_BY := 0.3
 ## A block this close to the road (its middle, m) is always at the near level, however far off the rider is: the
 ## coarser levels' cells are too big to meet the chunks' land cleanly.
 const ROAD_NEAR := 560.0
+## On the road network a near cell the roads cut into is drawn this many times finer each way (8 m cells in 2 m ones),
+## where its land strays more than REFINE_OFF (m) from the flat between its corners (RealLand._refine).
+const FINE := 4
+const REFINE_OFF := 0.12
 ## How far the edges of a block hang down at least (m), so two blocks at different levels show no crack between them.
 const SKIRT_MIN := 4.0
 ## On the road network the skirts are as deep as the land and this block's edge part, looked at every EDGE_LOOK (m), and
@@ -251,6 +258,13 @@ func set_roads(net: Object) -> void:
 	hold = true
 	reset()
 	roads = net
+	# (on the network the land beside the roads is this land, so it has the planned road's land's grain: its noise,
+	# NET_GRAIN a metre so it tiles across a block exactly)
+	var land := AdventureSurface.land_material()
+	_material.albedo_texture = land.albedo_texture if net != null else null
+	_material.uv1_triplanar = net != null
+	_material.uv1_scale = Vector3.ONE * NET_GRAIN if net != null else Vector3.ONE
+	_material.roughness = land.roughness if net != null else 1.0
 	hold = false
 
 
@@ -399,17 +413,25 @@ func _make_mesh(key: Vector2i, arrays: Array, water = null) -> MeshInstance3D:
 static func _ground_shape(arrays: Array) -> ConcavePolygonShape3D:
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	var grid := CELLS[0] + 1
 	var faces := PackedVector3Array()
 	for t in range(0, idx.size(), 3):
-		if idx[t] < grid * grid and idx[t + 1] < grid * grid and idx[t + 2] < grid * grid:
-			faces.append_array([verts[idx[t]], verts[idx[t + 1]], verts[idx[t + 2]]])
+		var a := verts[idx[t]]
+		var b := verts[idx[t + 1]]
+		var c := verts[idx[t + 2]]
+		# (not the skirts: a skirt's triangles stand on end, two of their corners one over the other)
+		if _apart(a, b) and _apart(b, c) and _apart(a, c):
+			faces.append_array([a, b, c])
 	if faces.is_empty():
 		return null
 	var shape := ConcavePolygonShape3D.new()
 	shape.backface_collision = true
 	shape.set_faces(faces)
 	return shape
+
+
+## Whether `a` and `b` aren't one over the other.
+static func _apart(a: Vector3, b: Vector3) -> bool:
+	return absf(a.x - b.x) > 0.01 or absf(a.z - b.z) > 0.01
 
 
 ## The knot (and its distance) nearest (x, z) among the knots of `ids` (every few knots of the road): [distance, knot].
@@ -487,6 +509,133 @@ static func _fill_gaps(grid: PackedFloat32Array, m: int) -> PackedFloat32Array:
 	return grid
 
 
+## The vertex index of fine point (I, J) of a block `n` vertices a side: a cell's corner is the block's own vertex.
+static func _fine_vert(fine: Dictionary, I: int, J: int, n: int) -> int:
+	if I % FINE == 0 and J % FINE == 0:
+		return (J / FINE) * n + I / FINE
+	return fine[Vector2i(I, J)]
+
+
+## The cells of a near block on the road network that the roads cut into or bank, drawn finer (FINE times, each way):
+## where the land part-way along a cell's sides or at its middle (net.ground_at) strays more than REFINE_OFF from the
+## straight line or the plane between its corners. The cell either side of the block's edge is looked at too, so the
+## finer points along a side shared with a block next door are the same in both. Adds the finer cells' vertices (their
+## heights the land's own, but along a side shared with a cell that isn't finer, on the straight line between its
+## corners, so there's no crack) to `verts` (and `norms`, `cols`), indexed in `fine`; returns the finer cells
+## {Vector2i(i, j): true} inside the block.
+func _refine(ox: float, oz: float, cells: int, sp: float, grid: PackedFloat32Array, bares: PackedFloat32Array, m: int,
+		net: Object, fine: Dictionary,
+		verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, knot: PackedInt32Array,
+		lats: PackedFloat32Array, n: int) -> Dictionary:
+	var fs := sp / FINE
+	var land := {}   # Vector2i fine point -> the land's height there (ground_at), as it's asked for
+	var land_at := func(I: int, J: int) -> float:
+		var key := Vector2i(I, J)
+		if land.has(key):
+			return land[key]
+		var x := ox + I * fs
+		var z := oz + J * fs
+		var bare := route.ground_at(x, z)
+		var y := NAN if is_nan(bare) else float(net.call("ground_at", x, z, bare))
+		land[key] = y
+		return y
+	# (a corner's height, I and J multiples of FINE, -FINE to (cells + 1) * FINE)
+	var corner := func(I: int, J: int) -> float:
+		return grid[(J / FINE + 1) * m + (I / FINE + 1)]
+	var wants := {}
+	for cj in range(-1, cells + 1):
+		if hold:
+			return {}
+		for ci in range(-1, cells + 1):
+			var I := ci * FINE
+			var J := cj * FINE
+			# (a road's cut and bank is wider than a cell, so one the roads shape has a corner they shape)
+			var g := (cj + 1) * m + (ci + 1)
+			if absf(grid[g] - bares[g]) < 0.01 and absf(grid[g + 1] - bares[g + 1]) < 0.01 and absf(grid[g + m] - bares[g + m]) < 0.01 \
+					and absf(grid[g + m + 1] - bares[g + m + 1]) < 0.01:
+				continue
+			var h00: float = corner.call(I, J)
+			var h10: float = corner.call(I + FINE, J)
+			var h01: float = corner.call(I, J + FINE)
+			var h11: float = corner.call(I + FINE, J + FINE)
+			var half := FINE / 2
+			var off := 0.0
+			for look: Array in [[half, 0, (h00 + h10) * 0.5], [0, half, (h00 + h01) * 0.5], [FINE, half, (h10 + h11) * 0.5],
+					[half, FINE, (h01 + h11) * 0.5], [half, half, (h00 + h11) * 0.5]]:
+				var y: float = land_at.call(I + int(look[0]), J + int(look[1]))
+				if not is_nan(y):
+					off = maxf(off, absf(y - float(look[2])))
+			if off > REFINE_OFF:
+				wants[Vector2i(ci, cj)] = true
+	var out := {}
+	for c: Vector2i in wants:
+		if c.x >= 0 and c.y >= 0 and c.x < cells and c.y < cells:
+			out[c] = true
+	# The finer cells' vertices: on a side shared with a cell that isn't finer, on the line between that side's corners.
+	var added := PackedInt32Array()
+	for c: Vector2i in out:
+		for fj in FINE + 1:
+			for fi in FINE + 1:
+				if (fi == 0 or fi == FINE) and (fj == 0 or fj == FINE):
+					continue
+				var I := c.x * FINE + fi
+				var J := c.y * FINE + fj
+				var key := Vector2i(I, J)
+				if fine.has(key):
+					continue
+				var y := NAN
+				var other := c
+				if fi == 0:
+					other = c + Vector2i(-1, 0)
+				elif fi == FINE:
+					other = c + Vector2i(1, 0)
+				elif fj == 0:
+					other = c + Vector2i(0, -1)
+				elif fj == FINE:
+					other = c + Vector2i(0, 1)
+				if other == c or wants.has(other):
+					y = land_at.call(I, J)
+				if is_nan(y):
+					var t := float(fj if (fi == 0 or fi == FINE) else fi) / FINE
+					if fi == 0 or fi == FINE:
+						y = lerpf(corner.call(I, c.y * FINE), corner.call(I, c.y * FINE + FINE), t)
+					elif fj == 0 or fj == FINE:
+						y = lerpf(corner.call(c.x * FINE, J), corner.call(c.x * FINE + FINE, J), t)
+					else:
+						y = lerpf(lerpf(corner.call(c.x * FINE, c.y * FINE), corner.call(c.x * FINE + FINE, c.y * FINE), float(fi) / FINE),
+							lerpf(corner.call(c.x * FINE, c.y * FINE + FINE), corner.call(c.x * FINE + FINE, c.y * FINE + FINE), float(fi) / FINE),
+							float(fj) / FINE)
+				fine[key] = verts.size()
+				added.append(verts.size())
+				verts.append(Vector3(I * fs, y, J * fs))
+				norms.append(Vector3.UP)
+				var g := (c.y + 1) * m + (c.x + 1)
+				cols.append(Color.BLACK)
+				knot.append(knot[g])   # (each finer vertex's road and lat, for its colour: its cell's corner's)
+				lats.append(lats[g])
+	# Their normals from the points either side (the land's own, or the block's vertices'), and their colours.
+	var y_at := func(I: int, J: int) -> float:
+		if I % FINE == 0 and J % FINE == 0 and I >= -FINE and J >= -FINE:
+			return corner.call(I, J)
+		var key := Vector2i(I, J)
+		if fine.has(key):
+			return verts[fine[key]].y
+		var y: float = land_at.call(I, J)
+		return y
+	var base := knot.size() - added.size()
+	for q in added.size():
+		var vi := added[q]
+		var p := verts[vi]
+		var I := roundi(p.x / fs)
+		var J := roundi(p.z / fs)
+		var dx: float = y_at.call(I - 1, J) - y_at.call(I + 1, J)
+		var dz: float = y_at.call(I, J - 1) - y_at.call(I, J + 1)
+		var nm := Vector3(dx if is_finite(dx) else 0.0, 2.0 * fs, dz if is_finite(dz) else 0.0).normalized()
+		norms[vi] = nm
+		cols[vi] = _colour(knot[base + q], lats[base + q], ox + p.x, oz + p.z, p.y, nm, true)
+	return out
+
+
 ## The mesh arrays of block `key` at level `lod`, or null when it holds no land. Any thread.
 func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var cells: int = CELLS[lod]
@@ -516,6 +665,8 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var dist := PackedFloat32Array()
 	var knot := PackedInt32Array()
 	var lats := PackedFloat32Array()
+	var bares := PackedFloat32Array()
+	bares.resize(m * m)
 	grid.resize(m * m)
 	dist.resize(m * m)
 	knot.resize(m * m)
@@ -539,6 +690,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			var bare := route.ground_at(x, z)
 			if is_nan(bare):
 				bare = route.base[k]
+			bares[g] = bare
 			if net != null:
 				grid[g] = float(net.call("ground_at", x, z, bare)) if cut else bare
 				lats[g] = NET_COLOUR_LAT
@@ -565,6 +717,12 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			verts[j * n + i] = Vector3(i * sp, h, j * sp)
 			norms[j * n + i] = Vector3(grid[g - 1] - grid[g + 1], 2.0 * sp, grid[g - m] - grid[g + m]).normalized()
 			cols[j * n + i] = _colour(knot[g], lats[g], ox + i * sp, oz + j * sp, h, norms[j * n + i], lod < WATER_LODS)
+	# On the road network, a near cell the roads cut or bank into is drawn FINE times finer (_refine), so the land
+	# follows the cuttings and banks as closely as the planned road's own land does.
+	var fine := {}   # Vector2i(fine x, fine z) in the block -> vertex index, for the finer cells' vertices
+	var refined := {}   # Vector2i cell -> true
+	if net != null and cut and lod == 0:
+		refined = _refine(ox, oz, cells, sp, grid, bares, m, net, fine, verts, norms, cols, knot, lats, n)
 	# Cells wholly under the chunks' own land are left out.
 	var idx := PackedInt32Array()
 	var any := false
@@ -573,42 +731,43 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			var a := (j + 1) * m + (i + 1)
 			if sp <= 16.0 and dist[a] < STRIP_OUT and dist[a + 1] < STRIP_OUT and dist[a + m] < STRIP_OUT and dist[a + m + 1] < STRIP_OUT:
 				continue
+			any = true
+			if refined.has(Vector2i(i, j)):
+				for fj in FINE:
+					for fi in FINE:
+						var I := i * FINE + fi
+						var J := j * FINE + fj
+						var v00 := _fine_vert(fine, I, J, n)
+						var v10 := _fine_vert(fine, I + 1, J, n)
+						var v01 := _fine_vert(fine, I, J + 1, n)
+						var v11 := _fine_vert(fine, I + 1, J + 1, n)
+						idx.append_array([v00, v10, v11, v00, v11, v01])
+				continue
 			var v := j * n + i
 			idx.append_array([v, v + 1, v + n + 1, v, v + n + 1, v + n])
-			any = true
 	if not any:
 		return null
 	# Skirts round the edge: as deep as the edge's mesh and the real ground ever part along it (the neighbour at another
-	# level, or the ridge, may be anywhere in between), and more.
+	# level, or the ridge, may be anywhere in between), and more. Every vertex along the edge has its skirt (the finer
+	# cells' too).
 	for e in 4:
 		var drop := SKIRT_MIN + _edge_gap(ox, oz, e, cells, sp, verts, n)
+		var along := PackedInt32Array()
+		for t in cells * FINE + 1:
+			var I := t if e < 2 else (0 if e == 2 else cells * FINE)
+			var J := t if e >= 2 else (0 if e == 0 else cells * FINE)
+			if t % FINE == 0:
+				along.append(_fine_vert(fine, I, J, n))
+			elif fine.has(Vector2i(I, J)):
+				along.append(fine[Vector2i(I, J)])
 		var base := verts.size()
-		for t in n:
-			var src := 0
-			match e:
-				0: src = t
-				1: src = (n - 1) * n + t
-				2: src = t * n
-				3: src = t * n + n - 1
+		for src in along:
 			verts.append(verts[src] + Vector3.DOWN * drop)
 			norms.append(norms[src])
 			cols.append(cols[src])
-		for t in n - 1:
-			var s0 := 0
-			var s1 := 0
-			match e:
-				0:
-					s0 = t
-					s1 = t + 1
-				1:
-					s0 = (n - 1) * n + t
-					s1 = (n - 1) * n + t + 1
-				2:
-					s0 = t * n
-					s1 = (t + 1) * n
-				3:
-					s0 = t * n + n - 1
-					s1 = (t + 1) * n + n - 1
+		for t in along.size() - 1:
+			var s0 := along[t]
+			var s1 := along[t + 1]
 			idx.append_array([s0, s1, base + t + 1, s0, base + t + 1, base + t])
 			idx.append_array([s0, base + t + 1, s1, s0, base + t, base + t + 1])
 	var arrays := []

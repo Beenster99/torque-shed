@@ -271,8 +271,9 @@ func test_off_plan() -> void:
 			var bare := w.route.ground_at(on_road.x * RealLand.BLOCK + v.x, z)
 			if absf(z - road.y) < FakeNet.HALF and absf(v.y - (bare - 1.0)) < 0.01:
 				dip += 1
+	# (every cell is drawn, and its skirts; the cells the cut runs through are drawn finer, so there are more)
 	check(single is Array and net is Array and (single[Mesh.ARRAY_INDEX] as PackedInt32Array).size() < full + 4 * cells * 12
-		and (net[Mesh.ARRAY_INDEX] as PackedInt32Array).size() == full + 4 * cells * 12 and dip > 0,
+		and (net[Mesh.ARRAY_INDEX] as PackedInt32Array).size() >= full + 4 * cells * 12 and dip > 0,
 		"in network mode the land under the road is drawn too, cut in where the net says (%d points)" % dip)
 	# A deep cutting through the block's edge: the skirt there hangs as deep as the land and a coarser neighbour's
 	# straight edge part, so the eye never sees through the seam.
@@ -282,11 +283,16 @@ func test_off_plan() -> void:
 	if deep is Array:
 		var dv: PackedVector3Array = deep[Mesh.ARRAY_VERTEX]
 		var n := cells + 1
+		# (edge 2, the block's west side: each grid vertex there and the lowest vertex under it, its skirt's)
+		var lowest := {}
+		for v in dv:
+			if absf(v.x) < 0.001:
+				var at_z := snappedf(v.z, 0.01)
+				lowest[at_z] = minf(float(lowest.get(at_z, INF)), v.y)
 		for t in n:
 			var z := on_road.y * RealLand.BLOCK + float(t) * RealLand.BLOCK / cells
 			if absf(z - road.y) < FakeNet.HALF:
-				# (edge 2, the block's west side: its skirt's vertices follow the grid's and the other three edges')
-				shallow = minf(shallow, dv[t * n].y - dv[n * n + 2 * n + t].y)
+				shallow = minf(shallow, dv[t * n].y - float(lowest.get(snappedf(dv[t * n].z, 0.01), INF)))
 	check(deep is Array and shallow >= 9.0, "a block's skirt hangs below a deep cutting through its edge (%.1f m)" % shallow)
 	w.land.set_roads(null)
 	w.queue_free()

@@ -847,6 +847,8 @@ func _run_all() -> void:
 	await _t(&"_test_road_kinds")
 	await _t(&"_test_road_locate")
 	await _t(&"_test_road_heights")
+	await _t(&"_test_road_strands")
+	await _t(&"_test_road_land")
 	await _t(&"_test_road_blocks")
 	await _t(&"_test_road_cell")
 	await _t(&"_test_road_meshes")
@@ -22670,6 +22672,14 @@ func _test_road_locate() -> void:
 
 func _test_road_heights() -> void:
 	_roads().test_heights()
+
+
+func _test_road_strands() -> void:
+	_roads().test_strands()
+
+
+func _test_road_land() -> void:
+	_roads().test_land()
 
 
 func _test_road_blocks() -> void:
