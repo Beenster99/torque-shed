@@ -230,6 +230,20 @@ func test_kinds() -> void:
 	check(ra["arms"].size() == 4 and float(ra["island"]) > 5.0, "four arms, and an island (%.1f m)" % float(ra["island"]))
 	check(Vector2(ra["pos"].x, ra["pos"].z).distance_to(Vector2(100, 100)) < 0.5, "its middle is the ring's")
 	check(rn.on_ring(0) and not rn.on_ring(8), "the ring's edges are on it, the roads off it aren't")
+	# Two side roads off the ring meeting just outside it make a little triangle with the ring's edge between them: that
+	# edge is still the roundabout's (the triangle, the fewer edges round, turns too sharply to be one).
+	var tri := roundabout()
+	var ta := TAU * 1.5 / 8.0
+	tri.node_pos.append(Vector2(100.0 + sin(ta) * 30.0, 100.0 - cos(ta) * 30.0))
+	tri.node_pos.append(Vector2(100.0 + sin(ta) * 300.0, 100.0 - cos(ta) * 300.0))
+	var tg := graph(Array(tri.node_pos).map(func(v: Vector2): return [v.x, v.y]),
+		[[0, 1, "secondary", 1], [1, 2, "secondary", 1], [2, 3, "secondary", 1], [3, 4, "secondary", 1], [4, 5, "secondary", 1],
+		[5, 6, "secondary", 1], [6, 7, "secondary", 1], [7, 0, "secondary", 1], [0, 8, "secondary"], [2, 9, "secondary"],
+		[4, 10, "secondary"], [6, 11, "secondary"], [1, 12, "residential"], [2, 12, "residential"], [12, 13, "residential"]])
+	var trn := RoadNet.new(tg, flat)
+	var tj := trn.junction_of(1)
+	check(trn.on_ring(1) and tj["kind"] == "roundabout" and (tj["nodes"] as PackedInt32Array).size() == 8 and not trn.on_ring(12),
+		"a little triangle of side roads beside a roundabout leaves the ring whole (%s, %d nodes)" % [tj.get("kind"), (tj.get("nodes", []) as Array).size()])
 	var sn := RoadNet.new(staggered(), flat)
 	check(sn.junction_of(0)["kind"] == "staggered" and int(sn.junction_of(0)["pair"]) == 1, "a tee with one opposite 30 m on is staggered")
 	check(sn.junction_of(1)["kind"] == "staggered" and int(sn.junction_of(1)["pair"]) == 0, "both ways")

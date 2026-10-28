@@ -1358,8 +1358,9 @@ static func _arm_key(a: Dictionary) -> Vector2:
 
 
 ## A short ring of road through edge `start_edge`: its nodes ([] when it is on none, or it is not round). With `gentle`,
-## nor when it turns sharply anywhere (_turns_gently): the network's roads ask that; a tour's plan keeps the rings it always
-## had (its junctions are laid out for them: a little triangle of slip roads is ridden as a roundabout there).
+## nor when it turns sharply anywhere (_turns_gently), and the fewest edges round that passes is taken (not the fewest
+## edges round): the network's roads ask that; a tour's plan keeps the rings it always had (its junctions are laid out for
+## them: a little triangle of slip roads is ridden as a roundabout there).
 static func find_ring(region: RealRegion, start_edge: int, gentle := false) -> PackedInt32Array:
 	if region.edge_len[start_edge] > RING_EDGE_M:
 		return PackedInt32Array()
@@ -1369,6 +1370,7 @@ static func find_ring(region: RealRegion, start_edge: int, gentle := false) -> P
 	var best_nodes := PackedInt32Array()
 	var best_edges := PackedInt32Array()
 	var found := false
+	var rings: Array = []   # (with `gentle`: every ring found, [nodes, edges])
 	while not stack.is_empty():
 		var item: Array = stack.pop_back()
 		var node: int = item[0]
@@ -1376,7 +1378,9 @@ static func find_ring(region: RealRegion, start_edge: int, gentle := false) -> P
 		var used: PackedInt32Array = item[2]
 		var total: float = item[3]
 		if node == goal and used.size() > 2:
-			if not found or used.size() < best_edges.size():
+			if gentle:
+				rings.append([nodes, used])
+			elif not found or used.size() < best_edges.size():
 				best_nodes = nodes
 				best_edges = used
 				found = true
@@ -1391,7 +1395,14 @@ static func find_ring(region: RealRegion, start_edge: int, gentle := false) -> P
 			var u2 := used.duplicate()
 			u2.append(ei)
 			stack.append([region.other_end(ei, node), n2, u2, total + region.edge_len[ei]])
-	if not found or not _is_round(region, best_edges) or (gentle and not _turns_gently(region, best_nodes, best_edges)):
+	if gentle:
+		# (the fewest edges round that's a roundabout: a little triangle of side roads beside one isn't, nor its way round)
+		rings.sort_custom(func(x: Array, y: Array) -> bool: return (x[1] as PackedInt32Array).size() < (y[1] as PackedInt32Array).size())
+		for r: Array in rings:
+			if _is_round(region, r[1]) and _turns_gently(region, r[0], r[1]):
+				return r[0]
+		return PackedInt32Array()
+	if not found or not _is_round(region, best_edges):
 		return PackedInt32Array()
 	return best_nodes
 

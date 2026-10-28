@@ -142,12 +142,11 @@ def find_ring(graph, start_edge, max_edges=RING_MAX_EDGES):
         return []
     goal = e0["b"]
     stack = [(e0["a"], [e0["a"]], [start_edge], e0["length"])]
-    best = None
+    rings = []
     while stack:
         node, nodes, used, total = stack.pop()
         if node == goal and len(used) > 2:
-            if best is None or len(used) < len(best[1]):
-                best = (nodes, used)
+            rings.append((nodes, used))
             continue
         if len(used) >= max_edges:
             continue
@@ -155,9 +154,11 @@ def find_ring(graph, start_edge, max_edges=RING_MAX_EDGES):
             if ei in used or graph.edges[ei]["length"] > RING_EDGE_M or total + graph.edges[ei]["length"] > RING_TOTAL_M:
                 continue
             stack.append((other, nodes + [other], used + [ei], total + graph.edges[ei]["length"]))
-    if best is None or not is_round(graph, best[1]) or not turns_gently(graph, best[0], best[1]):
-        return []
-    return best[0]
+    # The fewest edges round that's a roundabout: a little triangle of side roads beside one isn't, nor its way round.
+    for nodes, used in sorted(rings, key=lambda r: len(r[1])):
+        if is_round(graph, used) and turns_gently(graph, nodes, used):
+            return nodes
+    return []
 
 
 def turns_gently(graph, nodes, edge_ids):
