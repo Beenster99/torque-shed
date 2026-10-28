@@ -57,6 +57,13 @@ var _crew: Label
 var _in: Button
 var _start: Button
 var _survey: Button
+var _full: Button
+## On a shed TV (a Dashboard's page), where it has a button to open the same planner full screen (JourneyMap).
+var on_wall := false:
+	set(v):
+		on_wall = v
+		if _full:
+			_full.visible = v
 var _mode_buttons := {}
 var _tab_buttons := {}
 var _sig := ""
@@ -112,6 +119,12 @@ func _ready() -> void:
 	_survey.visible = false
 	_survey.pressed.connect(survey)
 	add_child(_survey)
+	# Full screen, on a shed TV (over the map's other top corner).
+	_full = _button("Full screen", 130.0, 20)
+	_full.position = Vector2(16.0, 16.0)
+	_full.visible = on_wall
+	_full.pressed.connect(full_screen)
+	add_child(_full)
 	# The panel: tabs, the ride or the search.
 	var panel := VBoxContainer.new()
 	panel.position = Vector2(PANEL_X, 6)
@@ -250,6 +263,12 @@ func _label(text: String, size_px: int, col: Color) -> Label:
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
+
+
+## Opens the same planner full screen (JourneyMap), from a shed TV.
+func full_screen() -> void:
+	if AdventureTrip.current:
+		AdventureTrip.current.open_journey.call_deferred()
 
 
 func _button(text: String, width: float, size_px: int, fill := BUTTON) -> Button:

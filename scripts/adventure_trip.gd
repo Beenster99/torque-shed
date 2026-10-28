@@ -47,6 +47,8 @@ var _busy := false
 ## The road isn't ready on this machine yet (its cells and land being fetched, or the plan worked out on a worker):
 ## entering waits for it, a frame at a time, instead of holding the game up (see enter).
 var _preparing := false
+## The card showing how getting the road ready is going (RideLoading), while it's up.
+var loading: RideLoading
 var _preparing_line := ""   # (the last said, and when: at most a few times a second)
 var _preparing_at := 0
 ## How long (s) the riders already on the road wait at the start for the rest of the crew to get it ready.
@@ -223,6 +225,11 @@ func enter() -> void:
 		# What it's doing, as it changes (the map's parts and tiles counted as they come).
 		var doing := AdventurePlans.progress_of(AdventurePlans.clean(plan))
 		var line := "Getting the road ready: %s..." % (doing if doing != "" else "the map and the lie of the land")
+		var at := AdventurePlans.stage_of(AdventurePlans.clean(plan))
+		if not instant:
+			_loading_card(info)
+			if not at.is_empty():
+				loading.show_step(int(at[0]), int(at[1]), int(at[2]))
 		if not _preparing or (line != _preparing_line and Time.get_ticks_msec() - _preparing_at > 400):
 			_preparing = true
 			_preparing_line = line
@@ -234,6 +241,7 @@ func enter() -> void:
 	var why := _mismatch_of(info, res)
 	if why != "":
 		_busy = false
+		_drop_loading()
 		Shed.feedback.emit(why, false)   # (trip_id stays, so this isn't tried again every frame)
 		return
 	_busy = true
@@ -257,7 +265,10 @@ func enter() -> void:
 				Shed.request({"a": "dismount", "bike": main.riding_id, "xf": main.garage_spot(main.riding_id)})
 				main._stop_riding()
 	if not instant:
+		_loading_card(info)
+		loading.show_step(RideLoading.BUILD, 0, 0, "Laying out the world")
 		await main._fade_to(1.0)
+		await get_tree().process_frame   # (the card drawn before the world's laid out)
 	if main.recovery.driving:
 		main.recovery.stop_driving(false)
 	if main.geometry.active:
@@ -281,15 +292,26 @@ func enter() -> void:
 			and Time.get_ticks_msec() < until:
 		await get_tree().physics_frame
 		if world == null:
+			_drop_loading()
 			return
 	var by := AdventureCrew.join_by(_mates_out(), _start_xz()) if start_s() <= 0.0 else -1
 	if by >= 0:
 		await _join_by(crew_at[by])
 		if world == null:
+			_drop_loading()
 			return   # (the ride ended meanwhile)
 	else:
 		var from := maxf(0.0, start_s() - 120.0)
-		world.preload_range(from, from + 420.0)
+		if instant:
+			world.preload_range(from, from + 420.0)
+		else:
+			await world.preload_range_async(from, from + 420.0, func(done: int, total: int):
+				if loading:
+					loading.show_step(RideLoading.BUILD, done, total, "Building the roads round the start, %d of %d" % [done, total]))
+			if world == null:
+				_drop_loading()
+				return
+			loading.show_step(RideLoading.SET_DOWN)
 		var bed := AdventureNeeds.resume_at(_crew_name())
 		if world.roads != null and not bed.is_empty():
 			world.roads.preload_round([Vector2(float(bed[0]), float(bed[1]))], 300.0)
@@ -314,8 +336,30 @@ func enter() -> void:
 		main.hud.flash("%s: %d km of %s to %s. Fuel stations are signed along the way. {paper_map} for the map when stopped." % [
 			str(info.get("title", "Adventure ride")), roundi(float(info["km"])), AdventureTheme.roads_of(world.route.theme), AdventureDest.name_of(str(info.get("dest", ""))).trim_prefix("the ")], 5.0)
 	_busy = false
+	_drop_loading()
 	if not instant:
 		await main._fade_to(0.0)
+
+
+## The loading card for ride `info` (made the first time it's asked for): its title and length under the heading,
+## and the planning steps it doesn't need (the map fetched: a region the game has) ticked off.
+func _loading_card(info: Dictionary) -> void:
+	if loading != null:
+		return
+	loading = RideLoading.new()
+	main.add_child(loading)
+	var title := str(info.get("title", ""))
+	var km := roundi(float(info.get("km", 0.0)))
+	loading.set_route(("%s: %d km" % [title, km] if km > 0 else title) if title != "" else "")
+	var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
+	if not str(plan.get("region", "")).begins_with(RealRegion.AREA_PREFIX):
+		loading.show_step(1)
+
+
+func _drop_loading() -> void:
+	if loading != null:
+		loading.queue_free()
+		loading = null
 
 
 ## The theme's sky and weather (AdventureTheme), or on a real ride the place's (`look`, PlaceLook:
@@ -342,6 +386,7 @@ func apply_theme(theme: String, seed: int, fresh: bool, look := {}) -> void:
 ## Back to the shed from the adventure: the bike you're on parked in its bay (fuel, wear and
 ## muck as the road left them), you on foot at the shed door.
 func leave() -> void:
+	_drop_loading()
 	_busy = true
 	# The diary put together while the road's still here, to open back at the shed.
 	var kept := photos.diary_id if photos.finish() else ""
@@ -1113,6 +1158,7 @@ func _process(delta: float) -> void:
 		enter()
 	elif _preparing and int(Shed.adventure.get("id", 0)) != trip_id:
 		_preparing = false   # (the ride ended before this machine got to it)
+		_drop_loading()
 
 
 ## Never left in the black: going out on the road or back to the shed happens in a blink behind

@@ -564,11 +564,12 @@ class AdventureNav:
 		var i := int(s / AdventureRoute.STEP)
 		for st in AdventureJunctions.near(world.route, i, i + int(JUNCTION_AHEAD / AdventureRoute.STEP)):
 			var d := float(st["s"]) - s
-			var text := AdventureJunctions.instruction(st, 1)
+			var left := AdventureTraffic.current.keeps_left(float(st["s"])) if AdventureTraffic.current else true
+			var text := AdventureJunctions.instruction(st, 1, left)
 			if d < -2.0 or d > JUNCTION_AHEAD or text == "":
 				continue
 			return {"text": text, "type": str(st["type"]), "distance": maxf(d, 0.0),
-				"exit": AdventureJunctions.exit_number(st, 1) if str(st["type"]) == "roundabout" else 0}
+				"exit": AdventureJunctions.exit_number(st, 1, left) if str(st["type"]) == "roundabout" else 0}
 		return {}
 
 	func satnav_road_name(pos: Vector2) -> String:

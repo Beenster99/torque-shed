@@ -289,8 +289,19 @@ func heading_at(s: float) -> float:
 	return -route.heading_at_s(s)
 
 
+## Which side of the road they keep to where local `p` is: -1 the left (as at home, and wherever the
+## country isn't known), 1 the right (its country's facts, RegionKit).
+func keep_at(p: Vector3) -> int:
+	if route == null or route.real == null or route.real.terrain == null:
+		return -1
+	var xz := route_xz(p)
+	var t: RealTerrain = route.real.terrain
+	var f: Dictionary = RegionKit.at_frame(t.lat0, t.lon0, xz[0], xz[1]).get("facts", {})
+	return 1 if str(f.get("drive", "left")) == "right" else -1
+
+
 ## Where a bike that came to rest at local `p` off the road is put back on it: the nearest point
-## along it, on the left half and facing on towards the destination. null when `p` is on the
+## along it, on the half the country drives on and facing on towards the destination. null when `p` is on the
 ## road (or nowhere near it), so it's picked up where it lies.
 func back_on_road(p: Vector3):
 	if roads != null:
@@ -302,10 +313,10 @@ func back_on_road(p: Vector3):
 	if absf(float(hit["lat"])) <= route.width_at_s(s) * 0.5 + OFF_ROAD and p.y > route.height_at_s(s) - 5.0:
 		return null
 	s = clampf(s, 2.0, route.total - 20.0)
-	return transform_at(s, -route.width_at_s(s) * 0.25)
+	return transform_at(s, keep_at(p) * route.width_at_s(s) * 0.25)
 
 
-## back_on_road on the network ride: the nearest road's left half, facing along it (a to b).
+## back_on_road on the network ride: the nearest road's half the country drives on, facing along it (a to b).
 func _back_on_network(p: Vector3):
 	var xz := route_xz(p)
 	var hit := roads.net.locate(xz[0], xz[1])
@@ -316,15 +327,16 @@ func _back_on_network(p: Vector3):
 	var ei := int(hit["edge"])
 	var s := float(hit["s"])
 	var h := float(hit["heading"])
-	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (-float(hit["width"]) * 0.25)
+	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (keep_at(p) * float(hit["width"]) * 0.25)
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(at.x, roads.net.road_y(ei, s) + RoadNet.CROWN, at.y))
 
 
-## Where player `slot` starts: two by two on the left half of the road behind the start banner.
+## Where player `slot` starts: two by two behind the start banner, on the half of the road the
+## country drives on.
 func start_xf(slot: int) -> Transform3D:
 	var s := 36.0 - 5.0 * float(slot / 2)
 	var w := route.width_at_s(maxf(s, 0.0))
-	var lat := -w * 0.25 + (0.7 if slot % 2 == 1 else -0.7)
+	var lat := keep_at(transform_at(maxf(s, 2.0), 0.0).origin) * w * 0.25 + (0.7 if slot % 2 == 1 else -0.7)
 	return transform_at(maxf(s, 2.0), lat)
 
 
@@ -614,6 +626,30 @@ func preload_range(s0: float, s1: float) -> void:
 			var data := AdventureChunk.build(route, c)
 			_note_build(data)
 			_commit(data)
+
+
+## As preload_range, letting the frames go on while it's done (for a loading screen): `report` is told (done, out of)
+## as it goes.
+func preload_range_async(s0: float, s1: float, report := Callable()) -> void:
+	if roads != null:
+		var at: Array[Vector2] = []
+		for s in [s0, (s0 + s1) * 0.5, s1]:
+			var xz := route.xz_at(clampf(s, 0.0, route.total), 0.0)
+			at.append(Vector2(xz[0], xz[1]))
+		await roads.preload_round_async(at, 300.0, report)
+		return
+	var c0 := maxi(0, AdventureRoute.chunk_of(s0))
+	var c1 := mini(route.chunk_count() - 1, AdventureRoute.chunk_of(s1))
+	for c in range(c0, c1 + 1):
+		if report.is_valid():
+			report.call(c - c0, c1 - c0 + 1)
+		await get_tree().process_frame
+		if not chunks.has(c):
+			var data := AdventureChunk.build(route, c)
+			_note_build(data)
+			_commit(data)
+	if report.is_valid():
+		report.call(c1 - c0 + 1, c1 - c0 + 1)
 
 
 ## Whether the chunk under `s` is in the world (its collision there to ride on).

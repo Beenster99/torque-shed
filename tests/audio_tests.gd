@@ -344,16 +344,16 @@ static func _ring_ms(d: PackedFloat32Array) -> float:
 	return (i2 - at) * 2.0
 
 
-## The ringing tones (dings) in `d`: a narrow tone between 1 and 5 kHz standing well over the
-## sound's own level and ringing on for 0.2 s or more. [[seconds, Hz, ms], ...]
-static func dings(d: PackedFloat32Array) -> Array:
+## The ringing tones (dings) in `d`: a narrow tone between `from` Hz (1 kHz unless said) and 5 kHz
+## standing well over the sound's own level and ringing on for 0.2 s or more. [[seconds, Hz, ms], ...]
+static func dings(d: PackedFloat32Array, from := 1000.0) -> Array:
 	var win := 441   # 10 ms (a 100 Hz wide look, so the 4% steps miss nothing)
 	var total := 0.0
 	for x in d:
 		total += x * x
 	var rms := sqrt(total / maxf(d.size(), 1.0))
 	var out := []
-	var f := 1000.0
+	var f := from
 	while f < 5000.0:
 		var w := TAU * f / SfxSynth.R
 		var c := 2.0 * cos(w)
@@ -407,6 +407,9 @@ func test_idle_quiet() -> void:
 	for sound in ["amb_town", "amb_out", "tone_shed", "tone_sales", "hum_fluoro", "crickets"]:
 		var found := dings(SfxSynth.make(sound, 0))
 		check(found.is_empty(), "there's no bell in the %s loop: nothing rings round it %s" % [sound, str(found.slice(0, 3))])
+	# Nor a held note lower down: pigeons cooing as pure tones came round as a chime every few seconds.
+	var low := dings(SfxSynth.make("amb_town", 0), 150.0)
+	check(low.is_empty(), "and nothing in the town's bustle holds a note, down to 150 Hz %s" % str(low.slice(0, 3)))
 	# Nobody rings the shop bell or the door chime by themselves: customers come in quietly.
 	for path in ["res://scripts/contracts_view.gd", "res://scripts/sales_view.gd", "res://scripts/customer.gd", "res://scripts/sfx_ambience.gd"]:
 		var src := FileAccess.get_file_as_string(path)

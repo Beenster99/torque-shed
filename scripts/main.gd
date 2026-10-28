@@ -77,13 +77,10 @@ var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
 ## The nod button held on the bike (s), and whether this hold has become a wave yet.
 var _nod_held := 0.0
 ## The reverse view: latched on by a tap (see _rear_view_step), and how long the button's been held.
-var _rear_latched := false
 var _rear_held := 0.0
 var _waved := false
 ## Held this long (s), the nod button raises the left hand in a wave instead.
 const WAVE_HOLD := 0.35
-## A press of the reverse view button shorter than this (s) is a tap: it toggles the view.
-const REAR_TAP := 0.3
 var _fade: ColorRect        # the black that fades in and out going back to the garage
 var _going_home := false
 ## The bike you've just got off, and when (ticks, ms): online the shed still has you on it
@@ -728,10 +725,13 @@ func _start_riding(bike_id: int) -> void:
 	bike.place(xf.origin, xf.basis.get_euler().y)
 	bike.respawn_at = trip.respawn_spot   # a crash off an adventure's road: back on it
 	_safe_xf = Transform3D()
-	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
+	bike.crashed.connect(func():
+		hud.flash("Crashed!", 1.5, true)
+		camera.crash_view())   # watched from the roadside till you're back on (respawned)
 	# Back on after a crash or a reset: a ghost for a moment (see BikeGhost), said with whatever
 	# put it back (an adventure's "Back on the road.").
 	bike.respawned.connect(func():
+		camera.crash_over()
 		if bike != null and bike.is_ghost():
 			var ghost := "A ghost for %d s: nothing can knock you off" % int(BikeGhost.TIME)
 			var said := str(hud.get("_flash_raw")) if float(hud.get("_message_timer")) > 0.0 else ""
@@ -861,7 +861,6 @@ func _stop_riding() -> void:
 		_left_at = Time.get_ticks_msec()
 	riding_id = 0
 	camera.look_back = false
-	_rear_latched = false
 	_rear_held = 0.0
 	_nod_held = 0.0
 	if bike:
@@ -1373,22 +1372,16 @@ static func hud_rect(screen: Vector2) -> Rect2:
 	return Rect2(Vector2(24.0, 24.0) + room * Vector2(Settings.satnav_x, Settings.satnav_y), s)
 
 
-## The reverse view button on the bike: a tap turns the view round to look behind and leaves it
-## there till the next tap; held longer than REAR_TAP it looks behind only while it's held.
+## The reverse view button on the bike: it looks behind for as long as it's held.
 ## Whether to look behind now. (LB and RB together start the engine: no reverse view meanwhile.)
-func _rear_view_step(delta: float) -> bool:
+func _rear_view_step(_delta: float) -> bool:
 	var down := Input.is_action_pressed("look_back")
 	if Controls.chord_held() or (down and _rear_held < 0.0):
 		# Part of the engine chord: this press doesn't count (-1 until it's let go).
 		_rear_held = -1.0 if down or Controls.chord_held() else 0.0
-		return _rear_latched
-	if down:
-		_rear_held += delta
-		return true
-	if _rear_held > 0.0:
-		_rear_latched = not _rear_latched if _rear_held < REAR_TAP else false
+		return false
 	_rear_held = 0.0
-	return _rear_latched
+	return down
 
 
 ## The nod button on the bike: a tap nods to a biker you're passing, held it's a wave with the
