@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 13
+const VERSION := 14
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -18,9 +18,10 @@ const CLEAR := 1.0
 const NUDGE_M := 3.0
 ## The deck's points across (edge, quarter, crown, quarter, edge), as the single-line road's.
 const ACROSS := 5
-## A roundabout's arm's verges, from its mouth in towards the ring, are laid in this many pieces (stopping at the first
-## that would lie on the ring).
-const ARM_VERGE_STEPS := 4
+## How far (m) clear of a roundabout's deck an arm's mouth comes onto the ring's plane.
+const RING_CLEAR := 0.6
+## How many rows a roundabout arm's mouth is laid in, from its mouth to the ring.
+const MOUTH_ROWS := 4
 ## How far the verge falls from the road's edge to its outer edge (m): to just above the land held RoadNet.UNDER below
 ## the road there, so there's no step down off it.
 const VERGE_FALL := RoadNet.UNDER - 0.02
@@ -855,24 +856,17 @@ func _junction_mesh(j: Dictionary) -> void:
 	var centre: Vector3 = j["pos"]
 	if j["kind"] in ["roundabout", "mini"]:
 		for a in arms:
-			var node := int(a["node"])
-			var np := net.region.node_pos[node]
-			var at := Vector3(np.x, net.node_y(node), np.y)
-			var m: Vector3 = a["mouth"]
-			var out := RoadNet._bearing(Vector2(m.x - at.x, m.z - at.z))
-			var right := Vector3(cos(out), 0.0, sin(out)) * float(a["width"]) * 0.5
-			# (from the ring's middle line, where the arm's own node is: no further in, or it pokes into the island)
-			_fan(g, surf, col, at - o, [at - right * 1.6 - o, m - right - o, m + right - o, at + right * 1.6 - o])
+			var sides := _ring_mouth(a, g, surf, col)
 			# Its verges either side, from its mouth in to where they'd meet the ring's own: no slab's edge to fall off.
-			for side: float in [-1.0, 1.0]:
-				var from: Vector3 = m + right * side
-				var to: Vector3 = at + right * side * 1.6
-				var way := Vector3(to.z - from.z, 0.0, from.x - to.x).normalized()
-				if way.dot(right * side) < 0.0:
-					way = -way
-				for q in ARM_VERGE_STEPS:
-					var p0 := from.lerp(to, float(q) / ARM_VERGE_STEPS)
-					var p1 := from.lerp(to, float(q + 1) / ARM_VERGE_STEPS)
+			for side in 2:
+				var line: PackedVector3Array = sides[side]
+				var other: PackedVector3Array = sides[1 - side]
+				for q in line.size() - 1:
+					var p0 := line[q]
+					var p1 := line[q + 1]
+					var way := Vector3(p1.z - p0.z, 0.0, p0.x - p1.x).normalized()
+					if way.dot(p0 - other[q]) < 0.0:
+						way = -way
 					if _on_other(p1 + way * RoadNet.VERGE, int(a["edge"])) or _on_other(p0 + way * RoadNet.VERGE, int(a["edge"])):
 						break
 					_verge_strip(p0 - o, p1 - o, way, way, _verge_colour(surf), _verge_colour(surf, true))
@@ -918,6 +912,122 @@ func _junction_mesh(j: Dictionary) -> void:
 		if kerb[k] == 0 or not keep[k] or not keep[k1]:
 			continue
 		_verge_strip(pts[k], pts[k1], at[k], at[k1], verge_col, _verge_colour(surf, true))
+
+
+## A roundabout arm's mouth: its road from its mouth in onto the ring, widening (to 1.6 times its width at its node), each
+## line along it on the arm's crowned road at its mouth, curving onto the ring's deck (run on out level from its edge)
+## RING_CLEAR short of it, and on along it, just under, to the ring's middle line, so the two meet in one
+## surface (the ring's never standing proud of it, nor it of the ring). Into grid `g` and collision `surf`. Gives its two outer lines (region frame, mouth first): [left, right].
+func _ring_mouth(a: Dictionary, g: Dictionary, surf: String, col: Color) -> Array:
+	var o := anchor()
+	var node := int(a["node"])
+	var np := net.region.node_pos[node]
+	var m: Vector3 = a["mouth"]
+	var out := RoadNet._bearing(Vector2(m.x - np.x, m.z - np.y))
+	var right := Vector2(cos(out), sin(out))
+	var half := float(a["width"]) * 0.5
+	# The arm's grade at its mouth, going in.
+	var ei := int(a["edge"])
+	var ms := net.mouth(ei, node)
+	var len := net.length_of(ei)
+	var at_a := net.region.edge_a[ei] == node
+	var grade := (net.road_y(ei, ms - 1.0 if at_a else len - ms + 1.0) - net.road_y(ei, ms if at_a else len - ms)) / 1.0 \
+		if ms > 1.0 else 0.0
+	var rj := net.junction_of(node)
+	var centre := Vector2(rj["pos"].x, rj["pos"].z)
+	var outer := float(rj["ring_r"]) + float(rj["ring_w"]) * 0.5
+	var ring_edges := PackedInt32Array()
+	for n in rj["nodes"]:
+		for e2 in net.region.adjacent[n]:
+			if net.on_ring(e2) and not ring_edges.has(e2):
+				ring_edges.append(e2)
+	var rows := []   # each line across: [mouth, ..., where it comes to the ring, on to its middle] (Vector3)
+	for q in ACROSS:
+		var f := float(q) / float(ACROSS - 1) * 2.0 - 1.0
+		var from := Vector2(m.x, m.z) + right * f * half
+		var to := np + right * f * half * 1.6
+		var line := PackedVector3Array([Vector3(from.x, m.y + RoadNet.CROWN * (1.0 - f * f), from.y)])
+		# Where it comes within RING_CLEAR of the ring's deck (round its middle: the deck's own edge, laid in straight runs,
+		# is a little in or out of its line), and where it reaches the ring's middle line (or its node).
+		var t_out := _ring_cut(from, to, centre, outer + RING_CLEAR)
+		var t_in := maxf(_ring_cut(from, to, centre, float(rj["ring_r"])), t_out)
+		var at := from.lerp(to, t_out)
+		var y_at := _ring_deck_y(ring_edges, at)
+		# (from there in, on the ring's deck as it's laid, level across, run on out past its edge, and just under it: one
+		# surface with it, whatever its edge does; out to its mouth on a curve from the arm's own slope to the ring's, so
+		# there's no fold at either)
+		var way := (to - from).normalized()
+		var run := from.distance_to(at)
+		var g1 := (_ring_deck_y(ring_edges, at + way * 0.5) - y_at) / 0.5
+		for k in range(1, MOUTH_ROWS):
+			var t := float(k) / MOUTH_ROWS
+			var p := from.lerp(at, t)
+			line.append(Vector3(p.x, _hermite(line[0].y, y_at, grade * run, g1 * run, t), p.y))
+		line.append(Vector3(at.x, y_at, at.y))
+		var inn := from.lerp(to, t_in)
+		line.append(Vector3(inn.x, _ring_deck_y(ring_edges, inn) - 0.005, inn.y))
+		rows.append(line)
+	var base := (g["v"] as PackedVector3Array).size()
+	var v := PackedVector3Array()
+	var count: int = (rows[0] as PackedVector3Array).size()
+	for line: PackedVector3Array in rows:
+		for p in line:
+			v.append(p - o)
+			g["uv"].append(Vector2(p.x, p.z) / 3.0)
+			g["c"].append(col)
+	for q in ACROSS - 1:
+		for k in count - 1:
+			var i0 := q * count + k
+			for tri: Array in [[i0, i0 + 1, i0 + count + 1], [i0, i0 + count + 1, i0 + count]]:
+				var i1: int = tri[1]
+				var i2: int = tri[2]
+				if (v[i1] - v[i0]).cross(v[i2] - v[i0]).y < 0.0:
+					var t := i1
+					i1 = i2
+					i2 = t
+				g["i"].append_array([base + i0, base + i2, base + i1])
+				_face(surf, v[i0], v[i1], v[i2])
+	g["v"].append_array(v)
+	return [(rows[0] as PackedVector3Array).slice(0, count - 1), (rows[ACROSS - 1] as PackedVector3Array).slice(0, count - 1)]
+
+
+## The cubic from `y0` (slope `d0` over the run) to `y1` (slope `d1`) at `t` (0 to 1).
+static func _hermite(y0: float, y1: float, d0: float, d1: float, t: float) -> float:
+	var t2 := t * t
+	var t3 := t2 * t
+	return (2.0 * t3 - 3.0 * t2 + 1.0) * y0 + (t3 - 2.0 * t2 + t) * d0 + (-2.0 * t3 + 3.0 * t2) * y1 + (t3 - t2) * d1
+
+
+## The height of a roundabout's deck (its ring's edges `ring_edges`) at `p`: the nearest one's, level across and
+## crowned as its pieces are, run on level past its edges.
+func _ring_deck_y(ring_edges: PackedInt32Array, p: Vector2) -> float:
+	var best := NAN
+	var best_d := INF
+	for ei in ring_edges:
+		var pr := net._project(ei, p)
+		if float(pr[2]) >= best_d:
+			continue
+		var f := clampf(float(pr[1]) / (net.width_of(ei) * 0.5), -1.0, 1.0)
+		best_d = float(pr[2])
+		best = net.road_y(ei, float(pr[0])) + RoadNet.CROWN * (1.0 - f * f)
+	return best
+
+
+## How far (0 to 1) from `from` to `to` the line between them first comes within `r` of `centre` (1 if it never does).
+static func _ring_cut(from: Vector2, to: Vector2, centre: Vector2, r: float) -> float:
+	if from.distance_to(centre) <= r:
+		return 0.0
+	if to.distance_to(centre) > r:
+		return 1.0
+	var lo := 0.0
+	var hi := 1.0
+	for _i in 20:
+		var mid := (lo + hi) * 0.5
+		if from.lerp(to, mid).distance_to(centre) > r:
+			lo = mid
+		else:
+			hi = mid
+	return hi
 
 
 ## A fan of triangles from `c` round `pts` (closed if `closed`), into grid `g` and collision `surf`.

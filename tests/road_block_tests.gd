@@ -102,6 +102,41 @@ func test_strands() -> void:
 		sharp = maxf(sharp, absf(side[k + 1] - 2.0 * side[k] + side[k - 1]) / (sp * sp))
 	check(absf(side[0] - net.node_y(0)) < 0.01 and sharp < 0.003,
 		"the side road meets the junction at its height and eases away (the sharpest bend %.4f a metre)" % sharp)
+	# Through roads that themselves ease away (onto other roads they end at, nearby): every side road meets each where
+	# it is, not where it would be without those eases. A grid of streets on a lumpy hillside: every street ends on
+	# another, so the eases chain from junction to junction.
+	var lumps := func(x: float, z: float) -> float: return 20.0 + x * 0.05 + sin(x * 0.07) * 4.0 + cos(z * 0.05) * 5.0
+	var gn := []
+	var ge := []
+	for gz in 4:
+		for gx in 4:
+			gn.append([gx * 90 + (gz % 2) * 25, gz * 80])
+	for gz in 4:
+		for gx in 4:
+			var k := gz * 4 + gx
+			if gx < 3:
+				ge.append([k, k + 1, "secondary" if gz % 2 == 0 else "residential"])
+			if gz < 3:
+				ge.append([k, k + 4, "residential" if gx % 2 == 0 else "tertiary"])
+	var grid := RoadNet.new(graph(gn, ge), lumps)
+	var meet := 0.0
+	for n in grid.region.node_count():
+		if grid.region.adjacent[n].size() < 3:
+			continue
+		for ei in grid.region.adjacent[n]:
+			meet = maxf(meet, absf(grid.road_y(ei, 0.0 if grid.region.edge_a[ei] == n else grid.length_of(ei)) - grid.node_y(n)))
+	check(meet < 0.01, "every road meets its junctions at their height, through roads easing away from them too (%.3f m off at most)" % meet)
+	# A side road leaving at a slant comes away level with the road it leaves, so the junction between the two isn't
+	# folded across, and only then climbs its own way.
+	var hillside := func(x: float, z: float) -> float: return 10.0 + z * 0.12
+	var fork := RoadNet.new(graph([[100, 100], [-300, 100], [500, 100], [400, 200]],
+		[[1, 0, "primary"], [0, 2, "primary"], [0, 3, "residential"]]), hillside)
+	var across := 0.0
+	for d in range(10, 30, 2):
+		var s := float(d)
+		var p := fork.point_at(2, s)
+		across = maxf(across, absf(fork.road_y(2, s) - fork._across_y(Vector2i(0, 1), p)) / maxf(fork._project(1, p)[2] - 3.0, 1.0))
+	check(across < 0.15, "a side road leaving at a slant keeps near the through road's height while beside it (%.2f m a metre between them at most)" % across)
 	# The junction's surface follows the through road across it.
 	var mid := Vector2(100.0, 103.0)
 	check(absf(net.surface_y(0, mid) - net.road_y(1, net.length_of(1))) < 0.05 and
@@ -326,16 +361,62 @@ func test_heights() -> void:
 			lo = minf(lo, d)
 			hi = maxf(hi, d)
 	check(hi - lo < 0.3, "a roundabout's ring is a circle (%.2f to %.2f m from its middle)" % [lo, hi])
-	# And level between its arms: over a mound where it bends, each piece of a big ring runs straight from one node to the
-	# next.
-	var ripple := RoadNet.new(roundabout(38.0), func(x: float, z: float) -> float: return 3.0 * exp(-(pow(x - 130.0, 2.0) + pow(z - 75.0, 2.0)) / 300.0))
-	var off_line := 0.0
+	# And on one plane: over a mound where it bends, a big ring doesn't hump between its arms, nor dip into a V at each
+	# arm's node; tipped with the hill it's on.
+	var ripple := RoadNet.new(roundabout(38.0), func(x: float, z: float) -> float: return 3.0 * exp(-(pow(x - 130.0, 2.0) + pow(z - 75.0, 2.0)) / 300.0) + x * 0.04)
+	var ps := PackedVector2Array()
+	var ys := PackedFloat32Array()
 	for ei in 8:
 		var h := ripple.profile(ei)
 		for k in h.size():
-			var t := float(k) / float(h.size() - 1)
-			off_line = maxf(off_line, absf(h[k] - lerpf(h[0], h[h.size() - 1], t)))
-	check(off_line < 0.01, "a roundabout's ring runs straight between its nodes over a mound (%.2f m off at most)" % off_line)
+			ps.append(ripple.point_at(ei, ripple.length_of(ei) * float(k) / float(h.size() - 1)) - Vector2(100, 100))
+			ys.append(h[k])
+	var pl := RoadNet._plane(ps, ys)
+	var off_plane := 0.0
+	for k in ps.size():
+		off_plane = maxf(off_plane, absf(ys[k] - (pl.x + pl.y * ps[k].x + pl.z * ps[k].y)))
+	check(off_plane < 0.01 and absf(pl.y - 0.04) < 0.02,
+		"a roundabout's ring lies on one plane over a mound (%.3f m off it at most), tipped with the hill (%.3f)" % [off_plane, pl.y])
+	# Its arms come onto it in one surface: across each arm's mouth, from the arm's road onto the ring's deck, the
+	# collision never steps.
+	var rb := RoadBlock.build(ripple, RoadBlock.key_of(100.0, 100.0))
+	var faces := PackedVector3Array()
+	for surf: String in rb.arrays["deck"]:
+		var g: Dictionary = rb.arrays["deck"][surf]
+		for i: int in g["i"]:
+			faces.append((g["v"] as PackedVector3Array)[i] + rb.anchor())
+	var step := 0.0
+	for k in 4:
+		var ang := TAU * k / 4.0
+		var way := Vector2(sin(ang), -cos(ang))
+		var last := NAN
+		for d in range(30, 60):
+			var q := Vector2(100, 100) + way * d * 1.0
+			var y := _deck_y(faces, q)
+			if not is_nan(y) and not is_nan(last):
+				step = maxf(step, absf(y - last) - 0.1)
+			last = y
+	check(step < 0.03, "and its arms run onto its deck without a step (%.3f m past their own slope at most)" % step)
+
+
+## The highest of `faces`' (triangles, region frame) heights at `p`, or NAN where none is.
+static func _deck_y(faces: PackedVector3Array, p: Vector2) -> float:
+	var best := NAN
+	for t in faces.size() / 3:
+		var a := faces[t * 3]
+		var b := faces[t * 3 + 1]
+		var c := faces[t * 3 + 2]
+		var den := (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z)
+		if absf(den) < 1e-9:
+			continue
+		var u := ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.y - c.z)) / den
+		var v := ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.y - c.z)) / den
+		if u < -1e-4 or v < -1e-4 or u + v > 1.0 + 1e-4:
+			continue
+		var y := a.y * u + b.y * v + c.y * (1.0 - u - v)
+		if is_nan(best) or y > best:
+			best = y
+	return best
 
 
 ## A road crossing from one block into the next is in both, the two meeting at the seam; the same block twice is the
