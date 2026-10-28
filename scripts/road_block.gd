@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 15
+const VERSION := 16
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -49,6 +49,10 @@ const SHRUBS := 7
 const SHRUB_COLOURS: Array[Color] = [Color(0.16, 0.34, 0.12), Color(0.3, 0.42, 0.14), Color(0.55, 0.3, 0.42)]
 ## A junction's surface is drawn in this many rings out from its middle (_drape).
 const DRAPE_RINGS := 4
+## Where its outline folds back seen from its middle, it's drawn as one sheet instead (_sheet), its points this far (m)
+## apart, eased onto its outline over this many passes.
+const SHEET_STEP := 4.0
+const SHEET_PASSES := 60
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
@@ -1056,6 +1060,8 @@ func _fan(g: Dictionary, surf: String, col: Color, c: Vector3, pts: Array, close
 ## height across from it (RoadNet.surface_y), easing to the outline's own heights (the arms' mouths) at its edge, so the
 ## through road rides on through it as it does either side and a side road comes into it without a kink.
 func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, pts: Array, closed := false) -> void:
+	if closed and _folds(c, pts) and _sheet(g, surf, col, j, pts):
+		return
 	var o := anchor()
 	var node := int(j["node"])
 	var base := (g["v"] as PackedVector3Array).size()
@@ -1090,6 +1096,159 @@ func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, 
 			tri.call(a + k, b + k, b + k1)
 			tri.call(a + k, b + k1, a + k1)
 	g["v"].append_array(v)
+
+
+## Whether outline `pts` goes back on itself anywhere, seen from `c` (its rings out from there would lie over one another:
+## junctions drawn as one with a road's mouths inside them, or two roads leaving side by side).
+static func _folds(c: Vector3, pts: Array) -> bool:
+	var turn := 0.0
+	for k in pts.size():
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[(k + 1) % pts.size()]
+		var d := wrapf(atan2(b.z - c.z, b.x - c.x) - atan2(a.z - c.z, a.x - c.x), -PI, PI)
+		if d * turn < 0.0:
+			return true
+		if d != 0.0:
+			turn = signf(d)
+	return false
+
+
+## A junction's surface as one sheet, for one whose outline `pts` (block space) folds (_folds): over the outline and the
+## roads between its nodes (a junction drawn as one: its kerbs can cut in across them), points round its edge (the
+## outline's own, and every SHEET_STEP along its longer sides) and over the inside a grid SHEET_STEP apart, joined in
+## triangles (Delaunay, those inside kept), each on its through road's height (RoadNet.surface_y) eased onto the
+## outline's heights as smoothly as can be (each other point's easing the mean of its neighbours', the outline's
+## fixed: a membrane stretched to its rim), so no two faces lie over one another. False where there's no such sheet.
+func _sheet(g: Dictionary, surf: String, col: Color, j: Dictionary, pts: Array) -> bool:
+	var o := anchor()
+	var node := int(j["node"])
+	var n := pts.size()
+	var poly := PackedVector2Array()
+	for p: Vector3 in pts:
+		poly.append(Vector2(p.x, p.z))
+	if Geometry2D.triangulate_polygon(poly).is_empty():
+		return false
+	# (the roads between its nodes, as wide as they are)
+	var nodes: PackedInt32Array = j["nodes"]
+	var r := net.region
+	var area := poly
+	for m in nodes:
+		for ei in r.adjacent[m]:
+			if r.edge_a[ei] != m or not nodes.has(r.edge_b[ei]) or net.mouth(ei, m) < net.length_of(ei):
+				continue
+			var line := PackedVector2Array()
+			var len := net.length_of(ei)
+			var s := 0.0
+			while s < len + SHEET_STEP:
+				line.append(net.point_at(ei, minf(s, len)) - Vector2(o.x, o.z))
+				s += SHEET_STEP
+			for road: PackedVector2Array in Geometry2D.offset_polyline(line, net.width_of(ei) * 0.5):
+				var merged := Geometry2D.merge_polygons(area, road)
+				var best := PackedVector2Array()
+				for q: PackedVector2Array in merged:
+					if not Geometry2D.is_polygon_clockwise(q) == Geometry2D.is_polygon_clockwise(area) or q.size() <= best.size():
+						continue
+					best = q
+				if best.size() >= 3:
+					area = best
+	var fixed := {}   # the outline's own points: Vector2i (cm) -> its height less its through road's there
+	var y_of := func(q: Vector2) -> float: return net.surface_y(node, q + Vector2(o.x, o.z))
+	var key := func(q: Vector2) -> Vector2i: return Vector2i(roundi(q.x * 100.0), roundi(q.y * 100.0))
+	for k in n:
+		fixed[key.call(poly[k])] = (pts[k] as Vector3).y - float(y_of.call(poly[k]))
+	var at := PackedVector2Array()
+	var ease := PackedFloat32Array()   # each point's height less its through road's there
+	var held := PackedByteArray()      # 1 where it's the outline's
+	var m := area.size()
+	for k in m:
+		var a := area[k]
+		var b := area[(k + 1) % m]
+		var cuts := maxi(1, ceili(a.distance_to(b) / SHEET_STEP))
+		var ea = fixed.get(key.call(a))
+		var eb = fixed.get(key.call(b))
+		for q in cuts:
+			var p := a.lerp(b, float(q) / cuts)
+			if not at.is_empty() and (at[at.size() - 1].distance_squared_to(p) < 0.01 or (k == m - 1 and at[0].distance_squared_to(p) < 0.01)):
+				continue   # (two points of the outline at one spot)
+			at.append(p)
+			# (along a side of the outline's own, its heights between its points; elsewhere eased with the rest)
+			var both: bool = ea != null and eb != null and (q == 0 or poly.find(b) == (poly.find(a) + 1) % n or poly.find(a) == (poly.find(b) + 1) % n)
+			if q == 0 and ea != null:
+				ease.append(float(ea))
+				held.append(1)
+			elif both:
+				var ya := float(ea) + float(y_of.call(a))
+				var yb := float(eb) + float(y_of.call(b))
+				ease.append(lerpf(ya, yb, float(q) / cuts) - float(y_of.call(p)))
+				held.append(1)
+			else:
+				ease.append(0.0)
+				held.append(0)
+	var lo := area[0]
+	var hi := area[0]
+	for q in area:
+		lo = lo.min(q)
+		hi = hi.max(q)
+	var x := lo.x + SHEET_STEP * 0.5
+	while x < hi.x:
+		var z := lo.y + SHEET_STEP * 0.5
+		while z < hi.y:
+			var q := Vector2(x, z)
+			if Geometry2D.is_point_in_polygon(q, area):
+				var clear := INF
+				for k in m:
+					clear = minf(clear, Geometry2D.get_closest_point_to_segment(q, area[k], area[(k + 1) % m]).distance_to(q))
+				if clear > SHEET_STEP * 0.4:
+					at.append(q)
+					ease.append(0.0)
+					held.append(0)
+			z += SHEET_STEP
+		x += SHEET_STEP
+	var tris := Geometry2D.triangulate_delaunay(at)
+	var kept := PackedInt32Array()
+	var next := []   # each point's neighbours
+	next.resize(at.size())
+	for k in at.size():
+		next[k] = {}
+	for t in tris.size() / 3:
+		var ia := tris[t * 3]
+		var ib := tris[t * 3 + 1]
+		var ic := tris[t * 3 + 2]
+		if not Geometry2D.is_point_in_polygon((at[ia] + at[ib] + at[ic]) / 3.0, area):
+			continue
+		kept.append_array([ia, ib, ic])
+		for e: Array in [[ia, ib], [ib, ic], [ic, ia]]:
+			next[e[0]][e[1]] = true
+			next[e[1]][e[0]] = true
+	if kept.is_empty():
+		return false
+	# (the rest eased as the mean of its neighbours, over and over: the outline's own stay)
+	for _pass in SHEET_PASSES:
+		for k in at.size():
+			if held[k] == 1 or (next[k] as Dictionary).is_empty():
+				continue
+			var sum := 0.0
+			for w: int in next[k]:
+				sum += ease[w]
+			ease[k] = sum / (next[k] as Dictionary).size()
+	var base := (g["v"] as PackedVector3Array).size()
+	var v := PackedVector3Array()
+	for k in at.size():
+		v.append(Vector3(at[k].x, float(y_of.call(at[k])) + ease[k], at[k].y))
+		g["uv"].append(at[k] / 3.0)
+		g["c"].append(col)
+	for t in kept.size() / 3:
+		var i0 := kept[t * 3]
+		var i1 := kept[t * 3 + 1]
+		var i2 := kept[t * 3 + 2]
+		if (v[i1] - v[i0]).cross(v[i2] - v[i0]).y < 0.0:
+			var sw := i1
+			i1 = i2
+			i2 = sw
+		g["i"].append_array([base + i0, base + i2, base + i1])
+		_face(surf, v[i0], v[i1], v[i2])
+	g["v"].append_array(v)
+	return true
 
 
 ## A roundabout's island: a kerbed disc of grass a little above the ring.
