@@ -365,7 +365,7 @@ static func measure(w: AdventureWorld, s: float) -> Dictionary:
 	# points bunch up on it, and a steady climb read at them would look like a step)
 	var even: Array[float] = []
 	var k := 0
-	var d := 0.0
+	var d := ds[0] if not ds.is_empty() else 0.0
 	while not ds.is_empty() and d <= ds[ds.size() - 1]:
 		while k < ds.size() - 2 and ds[k + 1] < d:
 			k += 1

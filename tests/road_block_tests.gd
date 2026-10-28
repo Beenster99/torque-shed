@@ -43,13 +43,13 @@ static func cross() -> RealRegion:
 		[[1, 0, "primary"], [0, 2, "primary"], [3, 0, "track"], [0, 4, "track"]])
 
 
-## A roundabout of eight one-way edges, 16 m across from the middle, round (100, 100), with four roads off it.
-static func roundabout() -> RealRegion:
+## A roundabout of eight one-way edges, `radius` m from the middle, round (100, 100), with four roads off it.
+static func roundabout(radius := 16.0) -> RealRegion:
 	var nodes := []
 	var edges := []
 	for k in 8:
 		var a := TAU * k / 8.0
-		nodes.append([100.0 + sin(a) * 16.0, 100.0 - cos(a) * 16.0])
+		nodes.append([100.0 + sin(a) * radius, 100.0 - cos(a) * radius])
 	for k in 8:
 		edges.append([k, (k + 1) % 8, "secondary", 1])
 	var outs := [[100, -300], [500, 100], [100, 500], [-300, 100]]
@@ -326,14 +326,26 @@ func test_heights() -> void:
 			lo = minf(lo, d)
 			hi = maxf(hi, d)
 	check(hi - lo < 0.3, "a roundabout's ring is a circle (%.2f to %.2f m from its middle)" % [lo, hi])
+	# And level between its arms: over a mound where it bends, each piece of a big ring runs straight from one node to the
+	# next.
+	var ripple := RoadNet.new(roundabout(38.0), func(x: float, z: float) -> float: return 3.0 * exp(-(pow(x - 130.0, 2.0) + pow(z - 75.0, 2.0)) / 300.0))
+	var off_line := 0.0
+	for ei in 8:
+		var h := ripple.profile(ei)
+		for k in h.size():
+			var t := float(k) / float(h.size() - 1)
+			off_line = maxf(off_line, absf(h[k] - lerpf(h[0], h[h.size() - 1], t)))
+	check(off_line < 0.01, "a roundabout's ring runs straight between its nodes over a mound (%.2f m off at most)" % off_line)
 
 
 ## A road crossing from one block into the next is in both, the two meeting at the seam; the same block twice is the
 ## same; every piece of road is in a block.
 func test_blocks() -> void:
 	var r := graph([[-300, 100], [300, 100], [300, 700]], [[0, 1, "primary"], [1, 2, "tertiary", 0, [400, 300, 350, 500]]])
-	# A house the map has standing on the road (drawn a little off), and one beside it.
-	r.buildings = [[100.0, 102.0, 9.0, 7.0, 0.0, 6.0, 0], [100.0, 125.0, 9.0, 7.0, 0.0, 6.0, 0]]
+	# A house the map has standing on the road (drawn a little off), one beside it, and one fronting the street a metre
+	# into its verge.
+	var clear := float(RoutePlanner.WIDTH["primary"]) * 0.5 + RoadNet.VERGE + RoadBlock.CLEAR + 3.5
+	r.buildings = [[100.0, 102.0, 9.0, 7.0, 0.0, 6.0, 0], [100.0, 125.0, 9.0, 7.0, 0.0, 6.0, 0], [150.0, 100.0 + clear - 1.0, 9.0, 7.0, 0.0, 6.0, 0]]
 	var net := RoadNet.new(r, flat)
 	var west := net.block(Vector2i(-1, 0))
 	var east := net.block(Vector2i(0, 0))
@@ -344,7 +356,11 @@ func test_blocks() -> void:
 		var seam := float(pw[0]["s1"]) - float(pe[0]["s0"])
 		check(seam > 0.0 and seam <= RoadBlock.SEAM * 2.0 + 0.01, "overlapping at the seam by %.3f m" % seam)
 		check(absf(float(pw[0]["s1"]) - 300.0 - RoadBlock.SEAM) < 0.01, "cut at x = 0, 300 m along it")
-	check(east.buildings.size() == 1 and is_equal_approx(float(east.buildings[0][1]), 125.0), "the house on the road is left out, the one beside it stands")
+	var zs: Array = east.buildings.map(func(b): return float(b[1]))
+	check(east.buildings.size() == 2 and zs.has(125.0), "the house on the road is left out, the one beside it stands")
+	var front: Array = east.buildings.filter(func(b): return is_equal_approx(float(b[0]), 150.0))
+	check(front.size() == 1 and float(front[0][1]) >= 100.0 + clear - 0.01 and float(front[0][1]) < 100.0 + clear + 0.2,
+		"the one in the verge is pushed back clear of it, not left out (%s)" % str(front.map(func(b): return snappedf(float(b[1]) - 100.0 - clear, 0.01))))
 	check(net.block(Vector2i(0, 0)).pieces == east.pieces and net.block(Vector2i(0, 0)).junctions == east.junctions, "the same block twice is the same")
 	# The bent street leaves block (0, 0) east and comes back: two pieces of it there, and one in (0, 1).
 	var covered := 0.0

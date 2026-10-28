@@ -8,12 +8,14 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 11
+const VERSION := 12
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
-## A building stands at least this far past a road's verge (m), or it's left out (_over_road).
+## A building stands at least this far past a road's verge (m), pushed back to it from as much as NUDGE_M over, or it's
+## left out (_clear_of_roads).
 const CLEAR := 1.0
+const NUDGE_M := 3.0
 ## The deck's points across (edge, quarter, crown, quarter, edge), as the single-line road's.
 const ACROSS := 5
 ## A roundabout's arm's verges, from its mouth in towards the ring, are laid in this many pieces (stopping at the first
@@ -111,8 +113,9 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 		seen[int(j["node"])] = true
 		b.junctions.append(_public(j))
 	b.junctions.sort_custom(func(p, q): return int(p["node"]) < int(q["node"]))
-	for row: Array in n.buildings_in(k):
-		if b._over_road(row) or n.in_flat(float(row[0]), float(row[1]), maxf(float(row[2]), float(row[3])) * 0.5):
+	for got: Array in n.buildings_in(k):
+		var row := b._clear_of_roads(got)
+		if row.is_empty() or n.in_flat(float(row[0]), float(row[1]), maxf(float(row[2]), float(row[3])) * 0.5):
 			continue
 		var out := row.duplicate()
 		out.append(b._building_y(row))
@@ -457,21 +460,47 @@ func kit_of() -> Dictionary:
 	return RegionKit.choose(PlaceProfile.of_cell(RealRegion.cell_of(ll.x, ll.y)))
 
 
-## Whether building `row` stands on a road or its verge, or in a junction (the map's buildings and its roads are each
-## drawn a little off, and a road's own line wins).
-func _over_road(row: Array) -> bool:
+## `row` (a RealRegion.buildings row) moved clear of the roads, or [] where it can't stand: in a junction, or more than
+## NUDGE_M into a road's verge (the map's buildings front streets drawn narrower than the net lays them, so a corner
+## just over the verge is pushed back from the road rather than the street left bare).
+func _clear_of_roads(row: Array) -> Array:
+	var out := row
+	for tries in 2:
+		var push := Vector2.ZERO
+		for p in _corners(out):
+			var on := net.locate(p.x, p.y, -1, false)
+			if on.is_empty():
+				continue
+			if int(on["node"]) >= 0:
+				return []
+			var over := float(on["width"]) * 0.5 + RoadNet.VERGE + CLEAR - absf(float(on["lat"]))
+			if over <= 0.0:
+				continue
+			var away := p - net.point_at(int(on["edge"]), float(on["s"]))
+			if over > NUDGE_M or tries > 0 or away.length() < 0.01:
+				return []
+			var by := away.normalized() * (over + 0.05)
+			if by.length() > push.length():
+				push = by
+		if push == Vector2.ZERO:
+			return out
+		out = row.duplicate()
+		out[0] = float(row[0]) + push.x
+		out[1] = float(row[1]) + push.y
+	return []
+
+
+## Building `row`'s centre and four corners (x, z).
+static func _corners(row: Array) -> Array[Vector2]:
 	var bx := float(row[0])
 	var bz := float(row[1])
 	var w := float(row[2])
 	var d := float(row[3])
 	var yaw := float(row[4])
+	var out: Array[Vector2] = []
 	for c: Vector2 in [Vector2.ZERO, Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5)]:
-		var px := bx + (c.x * w) * cos(yaw) + (c.y * d) * sin(yaw)
-		var pz := bz - (c.x * w) * sin(yaw) + (c.y * d) * cos(yaw)
-		var on := net.locate(px, pz, -1, false)
-		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + CLEAR):
-			return true
-	return false
+		out.append(Vector2(bx + (c.x * w) * cos(yaw) + (c.y * d) * sin(yaw), bz - (c.x * w) * sin(yaw) + (c.y * d) * cos(yaw)))
+	return out
 
 
 ## Which road (x, z) is on (RoadNet.locate).
