@@ -3643,7 +3643,8 @@ func _test_road_traffic() -> void:
 			tr._drive(0, stuck_a, 0.05)
 			if step >= 20 and not held:
 				held = float(stuck_a["v"]) < 0.3 and tr._ahead(int(stuck_a["road"]), float(stuck_a["s"]), float(stuck_b["s"]), int(stuck_a["dir"])) > 0.0
-			if int(stuck_a["road"]) == ri and tr._ahead(ri, float(stuck_a["s"]), float(stuck_b["s"]), int(stuck_a["dir"])) < 0.0:
+			# (past it, or turned off at a junction between them: either way it's away)
+			if int(stuck_a["road"]) != ri or tr._ahead(ri, float(stuck_a["s"]), float(stuck_b["s"]), int(stuck_a["dir"])) < 0.0:
 				passed = step * 0.05
 				break
 		check(held and passed > RoadTraffic.STUCK_TIME and passed < RoadTraffic.STUCK_TIME * 2.0 + RoadTraffic.PUSH_TIME,   # (not stuck twice)
