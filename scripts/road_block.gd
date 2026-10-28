@@ -332,6 +332,14 @@ func _roadside(kit: Dictionary) -> void:
 	for kind: String in tries:
 		if not kind in AdventureChunk.TREES and int(tries[kind]) > 0:
 			near.append(kind)
+	# The planned road scatters them out to REAL_REACH either side of one road; where many roads run through a block
+	# their reaches overlap, so the block as a whole gets no more than one road's worth across it.
+	var total := 0.0
+	for p in pieces:
+		var at: PackedFloat32Array = p["at"]
+		if at.size() >= 2:
+			total += at[at.size() - 1] - at[0]
+	var thin := minf(1.0, SIZE * SIZE / (2.0 * AdventureChunk.REAL_REACH) / maxf(total, 1.0))
 	for p in pieces:
 		var pts: PackedVector3Array = p["points"]
 		var at: PackedFloat32Array = p["at"]
@@ -358,7 +366,7 @@ func _roadside(kit: Dictionary) -> void:
 		# Rocks, bushes and the rest out from the verge, as many to the metre as the planned road has to a chunk.
 		var len := at[at.size() - 1] - at[0]
 		for kind: String in near:
-			var many := float(tries[kind]) * len / AdventureRoute.CHUNK_LEN
+			var many := float(tries[kind]) * len / AdventureRoute.CHUNK_LEN * thin
 			for n in int(many + rng.randf()):
 				var k := rng.randi_range(0, pts.size() - 1)
 				var side := -1.0 if rng.randf() < 0.5 else 1.0
