@@ -645,6 +645,26 @@ func test_land() -> void:
 		check(off_land == 0, "each finer point inside a cell is on the land the roads cut (%d off it)" % off_land)
 		check(over <= 0.01, "and none stands over a road's deck (the most %.2f m over)" % over)
 		check(ms < 3000, "a near block lays out in good time (%d ms)" % ms)
+		# The roadside, as the planned road's: the Dales' marker posts on the verge, rocks and bushes out past it.
+		var posts := 0
+		var astray := 0
+		var stones := 0
+		var b0 := RoadBlock.key_of(xz[0], xz[1])
+		for dk: Vector2i in [Vector2i.ZERO, Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]:
+			var b := RoadBlock.build(net, b0 + dk)
+			for kind: String in b.roadside:
+				for xf: Transform3D in b.roadside[kind]:
+					posts += 1
+					var at := xf.origin + b.anchor()
+					var hit := net.locate(at.x, at.z)
+					if hit.is_empty() or int(hit["node"]) >= 0 or absf(float(hit["lat"])) < float(hit["width"]) * 0.5 + 0.5:
+						astray += 1
+			for kind: String in ["rock", "bush"]:
+				stones += (b.trees.get(kind, []) as Array).size()
+		print("  road land: %d posts by the road, %d rocks and bushes, in five blocks" % [posts, stones])
+		check(posts > 20, "the roads have their marker posts and fences (%d)" % posts)
+		check(astray == 0, "each stands on the verge, off the road and out of the junctions (%d not)" % astray)
+		check(stones > 20, "rocks and bushes stand out from the verge (%d)" % stones)
 		w.free()
 	CellStore.dir = was[0]
 	CellStore.offline = was[1]

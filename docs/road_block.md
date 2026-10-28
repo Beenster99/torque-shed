@@ -1,4 +1,4 @@
-# Road block: interface (T6), version 8
+# Road block: interface (T6), version 9
 
 Owner: T6 Road network core. Readers: T7 Satnav and journeys, T8 Regional kits (markings, buildings), T9 Co-op,
 T10 Life on the network, and T5 Terrain around the rider (the ground under the roads).
@@ -149,7 +149,10 @@ block.arrays["signals"]: Array  # traffic lights at its crossroads in town: [{no
 block.buildings: Array          # RealRegion.buildings rows standing in the block, with their ground "y" appended
                                 # (none on a road, its verge or a junction: the map's line for the road wins)
 block.trees: Dictionary         # kind (AdventureProps.mesh) -> Array of Transform3D from the block's corner: the trees
-                                # and bushes on its land (net.dress), none on a road or its verge
+                                # and bushes on its land (net.dress), none on a road or its verge; rocks too
+block.roadside: Dictionary      # the posts on its verges (net.dress): "kit_post_<style>" (RegionKit.post_mesh, the
+                                # place's marker posts every POST_GAP m, none in town, on a bridge or in a junction)
+                                # and "post" (a fence's, along farmland) -> Array of Transform3D from the block's corner
 block.locate(x, z) -> Dictionary   # the same as net.locate
 block.arrays: Dictionary        # the mesh and collision arrays the streamer commits (T6's own; may change freely)
 block.ms: float                 # how long the build took on its worker
