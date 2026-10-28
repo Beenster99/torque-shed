@@ -3614,6 +3614,31 @@ func _test_road_traffic() -> void:
 	check(not into_yard, "and never into the yard, the test area or the cafe car park")
 	check(switched, "they turn off at junctions onto other roads")
 	check(lean > deg_to_rad(10.0) and lean < deg_to_rad(30.0), "and lean into the bends, slowing for the tight ones (up to %.0f deg)" % rad_to_deg(lean))
+	# Stuck behind one that won't move (a knot at a junction): before long it pulls through instead of waiting for ever.
+	var stuck_a: Dictionary = tr.riders[0]
+	var stuck_b: Dictionary = tr.riders[1]
+	if not stuck_a.is_empty() and not stuck_b.is_empty():
+		var ri := int(stuck_a["road"])
+		stuck_b["road"] = ri
+		stuck_b["dir"] = int(stuck_a["dir"])
+		stuck_b["s"] = tr._wrap_s(ri, float(stuck_a["s"]) + int(stuck_a["dir"]) * 12.0)
+		stuck_b["turn"] = {}
+		stuck_b["round"] = -1.0
+		stuck_a["turn"] = {}
+		stuck_a["round"] = -1.0
+		stuck_a.erase("push")
+		var passed := -1.0
+		var held := false
+		for step in 400:
+			stuck_b["v"] = 0.0   # (it never goes)
+			tr._drive(0, stuck_a, 0.05)
+			if step == 60:
+				held = float(stuck_a["v"]) < 0.5 and tr._ahead(int(stuck_a["road"]), float(stuck_a["s"]), float(stuck_b["s"]), int(stuck_a["dir"])) > 0.0
+			if int(stuck_a["road"]) == ri and tr._ahead(ri, float(stuck_a["s"]), float(stuck_b["s"]), int(stuck_a["dir"])) < 0.0:
+				passed = step * 0.05
+				break
+		check(held and passed > RoadTraffic.STUCK_TIME and passed < RoadTraffic.STUCK_TIME + 8.0,
+			"one stuck behind another that never moves waits a while, then pulls through (after %.1f s)" % passed)
 	# Far from everyone, they go.
 	var gone: Dictionary = tr.riders[0]
 	if not gone.is_empty():
