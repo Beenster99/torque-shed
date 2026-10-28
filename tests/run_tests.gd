@@ -23818,6 +23818,10 @@ func _test_sound_two_stroke_synth() -> void:
 	_sound_t().test_two_stroke_synth()
 
 
+func _test_sound_valve_ticks_quiet() -> void:
+	_sound_t().test_valve_ticks_quiet()
+
+
 # ---------------------------------------------------------------------------- offers and kept headlights (tests/offer_tests.gd)
 
 func _offer_suite() -> RefCounted:
