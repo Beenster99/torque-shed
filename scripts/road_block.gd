@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 12
+const VERSION := 13
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -326,11 +326,12 @@ func _roadside(kit: Dictionary) -> void:
 	var bounds: Array = look.get("bounds", [])
 	var bound_kind := "fence" if bounds.is_empty() else str(bounds[0])
 	var tries: Dictionary = look.get("plants", AdventureChunk.REAL_TRIES)
-	var bush := "bush"
+	# Everything of the place's that isn't a tree (the canopy has those, _plant): its rocks, bushes, tussock, agave,
+	# cactus and sheep.
+	var near: Array[String] = []
 	for kind: String in tries:
-		if kind in AdventureChunk.BUSHES:
-			bush = kind
-			break
+		if not kind in AdventureChunk.TREES and int(tries[kind]) > 0:
+			near.append(kind)
 	for p in pieces:
 		var pts: PackedVector3Array = p["points"]
 		var at: PackedFloat32Array = p["at"]
@@ -354,10 +355,10 @@ func _roadside(kit: Dictionary) -> void:
 					var xf := _verge_spot(ei, at[k], pts[k], d, (e + 1.0) * side, atan2(-d.x, -d.y), o)
 					if xf != Transform3D():
 						_put(roadside, "kit_post_" + style, xf)
-		# Rocks and bushes out from the verge, as many to the metre as the planned road has to a chunk.
+		# Rocks, bushes and the rest out from the verge, as many to the metre as the planned road has to a chunk.
 		var len := at[at.size() - 1] - at[0]
-		for kind: String in ["rock", bush]:
-			var many := float(tries.get(kind, AdventureChunk.REAL_TRIES.get(kind, 0))) * len / AdventureRoute.CHUNK_LEN
+		for kind: String in near:
+			var many := float(tries[kind]) * len / AdventureRoute.CHUNK_LEN
 			for n in int(many + rng.randf()):
 				var k := rng.randi_range(0, pts.size() - 1)
 				var side := -1.0 if rng.randf() < 0.5 else 1.0
@@ -366,7 +367,7 @@ func _roadside(kit: Dictionary) -> void:
 				var z := pts[k].z + dirs[k].x * lat
 				var c := t.cover(x, z)
 				var cover := RealPack.COVER[c] if c >= 0 and c < RealPack.COVER.size() else ""
-				var odds: Dictionary = AdventureChunk.ODDS["rocks" if kind == "rock" else "bushes"]
+				var odds: Dictionary = AdventureChunk.ODDS["rocks" if kind == "rock" else ("bushes" if kind in AdventureChunk.BUSHES else "other")]
 				if rng.randf() < float(odds.get(cover, AdventureChunk.OTHER_ODDS)):
 					var size := rng.randf_range(0.7, 1.35)
 					_stand(t, kind, x, z, 1.0, o, rng, Vector3.ONE * size)

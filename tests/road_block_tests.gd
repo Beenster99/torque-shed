@@ -685,6 +685,7 @@ func test_land() -> void:
 		var posts := 0
 		var astray := 0
 		var stones := 0
+		var others := {}
 		var b0 := RoadBlock.key_of(xz[0], xz[1])
 		for dk: Vector2i in [Vector2i.ZERO, Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]:
 			var b := RoadBlock.build(net, b0 + dk)
@@ -697,10 +698,16 @@ func test_land() -> void:
 						astray += 1
 			for kind: String in ["rock", "bush"]:
 				stones += (b.trees.get(kind, []) as Array).size()
-		print("  road land: %d posts by the road, %d rocks and bushes, in five blocks" % [posts, stones])
+			for kind: String in b.trees:
+				if not kind in AdventureChunk.TREES and not kind in ["rock", "bush"]:
+					others[kind] = int(others.get(kind, 0)) + (b.trees[kind] as Array).size()
+		print("  road land: %d posts by the road, %d rocks and bushes, in five blocks; and %s" % [posts, stones, str(others)])
 		check(posts > 20, "the roads have their marker posts and fences (%d)" % posts)
 		check(astray == 0, "each stands on the verge, off the road and out of the junctions (%d not)" % astray)
 		check(stones > 20, "rocks and bushes stand out from the verge (%d)" % stones)
+		var plants: Dictionary = net.dress.get("look", {}).get("plants", {})
+		var missing := plants.keys().filter(func(k): return not k in AdventureChunk.TREES and int(plants[k]) >= 50 and not others.has(k) and not k in ["rock", "bush"])
+		check(not others.is_empty() and missing.is_empty(), "and the place's other plants and beasts as the planned road has them (%s; %s missing)" % [str(others), str(missing)])
 		w.free()
 	CellStore.dir = was[0]
 	CellStore.offline = was[1]
