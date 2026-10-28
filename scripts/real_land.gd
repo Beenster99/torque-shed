@@ -656,7 +656,8 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var hi := Vector2(ox + BLOCK + BAND_FAR + sp, oz + BLOCK + BAND_FAR + sp)
 	var net: Object = roads
 	var memo := {}   # (this worker's own copy of the roads it asks after: RoadNet.ground_at)
-	var cut := net != null and bool(net.call("roads_near", Rect2(ox - sp, oz - sp, BLOCK + sp * 2.0, BLOCK + sp * 2.0)))
+	# (the far level lies past where the road blocks are drawn, RoadStreamer.REACH: the roads don't cut it)
+	var cut := net != null and lod < 2 and bool(net.call("roads_near", Rect2(ox - sp, oz - sp, BLOCK + sp * 2.0, BLOCK + sp * 2.0)))
 	for k in range(0, route.px.size(), 4):
 		if net == null and route.px[k] >= lo.x and route.px[k] <= hi.x and route.pz[k] >= lo.y and route.pz[k] <= hi.y:
 			near.append(k)
@@ -758,7 +759,7 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	# level, or the ridge, may be anywhere in between), and more. Every vertex along the edge has its skirt (the finer
 	# cells' too).
 	for e in 4:
-		var drop := SKIRT_MIN + _edge_gap(ox, oz, e, cells, sp, verts, n)
+		var drop := SKIRT_MIN + _edge_gap(ox, oz, e, cells, sp, verts, n, memo if cut else null)
 		var along := PackedInt32Array()
 		for t in cells * FINE + 1:
 			var I := t if e < 2 else (0 if e == 2 else cells * FINE)
@@ -986,8 +987,9 @@ static func _water_mesh(verts: PackedVector3Array, idx: PackedInt32Array) -> Var
 
 
 ## How far (m) the real ground part-way between a block's edge samples lies from the line between them, the most along
-## edge `e` (0 north, 1 south, 2 west, 3 east): the crack a neighbour at another level could show.
-func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int) -> float:
+## edge `e` (0 north, 1 south, 2 west, 3 east): the crack a neighbour at another level could show. With `memo` (a block
+## the roads cut, RoadNet.ground_at's), the cut land's too (_net_edge_gap).
+func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int, memo = null) -> float:
 	var gap := 0.0
 	for t in cells:
 		var a := 0
@@ -1028,16 +1030,16 @@ func _edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: Packe
 		var mid_h := terrain.height((xa + xb) * 0.5, (za + zb) * 0.5)
 		if not is_nan(mid_h):
 			gap = maxf(gap, absf(mid_h - (verts[a].y + verts[b].y) * 0.5))
-	if roads != null:
-		gap = maxf(gap, _net_edge_gap(ox, oz, e, cells, sp, verts, n))
+	if roads != null and memo != null:
+		gap = maxf(gap, _net_edge_gap(ox, oz, e, cells, sp, verts, n, memo))
 	return gap
 
 
-## _edge_gap on the road network, where the land is cut and banked for the roads at every level: how far this block's
+## _edge_gap on the road network, where the land is cut and banked for the roads at the near levels: how far this block's
 ## edge `e` and a neighbour's at any level can part along it. Both are the same land (ground_at) at the points they
 ## share, every EDGE_KNOT (the coarsest level's cell), and straight or nearly so between: so the most this edge strays
 ## from the land, or the land from a straight line between those points, every EDGE_LOOK along it.
-func _net_edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int) -> float:
+func _net_edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: PackedVector3Array, n: int, memo := {}) -> float:
 	var looks := int(BLOCK / EDGE_LOOK)
 	var land := PackedFloat32Array()
 	land.resize(looks + 1)
@@ -1046,7 +1048,7 @@ func _net_edge_gap(ox: float, oz: float, e: int, cells: int, sp: float, verts: P
 		var x := ox + (t if e < 2 else (0.0 if e == 2 else BLOCK))
 		var z := oz + (t if e >= 2 else (0.0 if e == 0 else BLOCK))
 		var bare := route.ground_at(x, z)
-		land[k] = NAN if is_nan(bare) else float(roads.call("ground_at", x, z, bare))
+		land[k] = NAN if is_nan(bare) else float(roads.call("ground_at", x, z, bare, memo))
 	var gap := 0.0
 	var per := int(EDGE_KNOT / EDGE_LOOK)
 	for k in looks + 1:
