@@ -247,6 +247,30 @@ func commit(b: RoadBlock) -> Node3D:
 		# (a block's trees go as one: drawn while any of the block is within reach)
 		AdventureChunk._range(mmi, TREES_REACH)
 		node.add_child(mmi)
+	# The posts by the road (RoadBlock._roadside), and the fences' rails, walls and hedges: as the trees, drawn while
+	# any of the block is within reach.
+	for kind: String in b.roadside:
+		var list: Array = b.roadside[kind]
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.mesh = RegionKit.post_mesh(kind.trim_prefix("kit_post_")) if kind.begins_with("kit_post_") else AdventureProps.mesh(kind)
+		multi.instance_count = list.size()
+		for k in list.size():
+			multi.set_instance_transform(k, list[k])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Roadside_" + kind
+		mmi.multimesh = multi
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		AdventureChunk._range(mmi, TREES_REACH)
+		node.add_child(mmi)
+	var walls: Dictionary = b.arrays.get("walls", {})
+	if not walls.is_empty() and not (walls["v"] as PackedVector3Array).is_empty():
+		var wmi := MeshInstance3D.new()
+		wmi.name = "Walls"
+		wmi.mesh = AdventureProps.to_mesh(walls)
+		wmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		AdventureChunk._range(wmi, TREES_REACH)
+		node.add_child(wmi)
 	for s: Dictionary in b.arrays.get("signals", []):
 		# The traffic lights at a crossroads in town (RoadBlock._signals), as the planned road's are.
 		var sig := AdventureJunctions.Signals.new()

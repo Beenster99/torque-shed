@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 8
+const VERSION := 9
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -57,6 +57,9 @@ var buildings: Array = []
 ## The trees and bushes standing in the block (RoadNet.dress): kind (AdventureProps.mesh) -> Array of Transform3D, from
 ## the block's corner (anchor).
 var trees := {}
+## The posts by the road (_roadside): kind ("kit_post_<style>", a region kit's marker posts, RegionKit.post_mesh; "post",
+## a fence's, AdventureProps.mesh) -> Array of Transform3D from the block's corner. They stand on the verge.
+var roadside := {}
 ## The mesh and collision arrays the streamer commits (T6's own business; their shape may change freely).
 var arrays := {}
 var ms := 0.0
@@ -295,6 +298,149 @@ func _stand(t: RealTerrain, kind: String, x: float, z: float, clear: float, o: V
 	(trees[kind] as Array).append(xf)
 
 
+## The roadside of the block's pieces, as the planned road's (AdventureChunk._scenery, RegionKit.roadside): the place's
+## marker posts either side every RegionKit.POST_GAP m (none in town, on a bridge or by a junction), rocks and bushes
+## out from the verge as the ground's cover has them (into trees), and along farmland a fence, wall or hedge (its posts
+## into roadside, its rails and stones into arrays["walls"]). Only on a dressed net (net.dress).
+func _roadside(kit: Dictionary) -> void:
+	arrays["walls"] = AdventureProps.new_arrays()
+	if net.dress.is_empty():
+		return
+	var t: RealTerrain = net.dress["terrain"]
+	var look: Dictionary = net.dress.get("look", {})
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([net.region.hash, "roadside", key])
+	var o := anchor()
+	var style := str((kit.get("facts", {}) as Dictionary).get("posts", "none"))
+	var bounds: Array = look.get("bounds", [])
+	var bound_kind := "fence" if bounds.is_empty() else str(bounds[0])
+	var tries: Dictionary = look.get("plants", AdventureChunk.REAL_TRIES)
+	var bush := "bush"
+	for kind: String in tries:
+		if kind in AdventureChunk.BUSHES:
+			bush = kind
+			break
+	for p in pieces:
+		var pts: PackedVector3Array = p["points"]
+		var at: PackedFloat32Array = p["at"]
+		var ei := int(p["edge"])
+		var e := float(p["width"]) * 0.5
+		if pts.size() < 2:
+			continue
+		# Each point's way along (dir) and to its right (x east, z south: right of (dx, dz) is (-dz, dx)).
+		var dirs: Array[Vector2] = []
+		for k in pts.size():
+			var a := pts[maxi(k - 1, 0)]
+			var b := pts[mini(k + 1, pts.size() - 1)]
+			dirs.append(Vector2(b.x - a.x, b.z - a.z).normalized())
+		# Marker posts.
+		if style in RegionKit.POST_STYLES:
+			for k in range(1, pts.size()):
+				if floorf(at[k] / RegionKit.POST_GAP) == floorf(at[k - 1] / RegionKit.POST_GAP) or _town(pts[k], dirs[k], e):
+					continue
+				var d := dirs[k]
+				for side: float in [-1.0, 1.0]:
+					var xf := _verge_spot(ei, at[k], pts[k], d, (e + 1.0) * side, atan2(-d.x, -d.y), o)
+					if xf != Transform3D():
+						_put(roadside, "kit_post_" + style, xf)
+		# Rocks and bushes out from the verge, as many to the metre as the planned road has to a chunk.
+		var len := at[at.size() - 1] - at[0]
+		for kind: String in ["rock", bush]:
+			var many := float(tries.get(kind, AdventureChunk.REAL_TRIES.get(kind, 0))) * len / AdventureRoute.CHUNK_LEN
+			for n in int(many + rng.randf()):
+				var k := rng.randi_range(0, pts.size() - 1)
+				var side := -1.0 if rng.randf() < 0.5 else 1.0
+				var lat := (e + RoadNet.VERGE + 1.0 + pow(rng.randf(), 1.5) * AdventureChunk.REAL_REACH) * side
+				var x := pts[k].x - dirs[k].y * lat
+				var z := pts[k].z + dirs[k].x * lat
+				var c := t.cover(x, z)
+				var cover := RealPack.COVER[c] if c >= 0 and c < RealPack.COVER.size() else ""
+				var odds: Dictionary = AdventureChunk.ODDS["rocks" if kind == "rock" else "bushes"]
+				if rng.randf() < float(odds.get(cover, AdventureChunk.OTHER_ODDS)):
+					var size := rng.randf_range(0.7, 1.35)
+					_stand(t, kind, x, z, 1.0, o, rng, Vector3.ONE * size)
+		_bounds(p, dirs, e, bound_kind, t, o)
+
+
+## Whether the road at `p` (way `d`, half `e` wide) runs through a built-up place, as RegionKit.built_up has it.
+func _town(p: Vector3, d: Vector2, e: float) -> bool:
+	var t: RealTerrain = net.dress["terrain"]
+	for side: float in [-1.0, 1.0]:
+		var c := t.cover(p.x - d.y * (e + 10.0) * side, p.z + d.x * (e + 10.0) * side)
+		if c >= 0 and c < RealPack.COVER.size() and RealPack.COVER[c] == "urban":
+			return true
+	return false
+
+
+## A post's transform `lat` m to the right of edge `ei`'s point `p` (`s` m along it, way `d`), turned `angle`, on the
+## land there, from `o`; an empty one on a bridge, a stop's flat, in a junction or nearer another road.
+func _verge_spot(ei: int, s: float, p: Vector3, d: Vector2, lat: float, angle: float, o: Vector3) -> Transform3D:
+	if net.bridge_at(ei, s) > 0.0:
+		return Transform3D()
+	var x := p.x - d.y * lat
+	var z := p.z + d.x * lat
+	if net.in_flat(x, z, 1.0):
+		return Transform3D()
+	var on := net.locate(x, z, -1, false)
+	if on.is_empty() or int(on["node"]) >= 0 or int(on["edge"]) != ei:
+		return Transform3D()
+	var bare := float(net.height.call(x, z))
+	if is_nan(bare):
+		return Transform3D()
+	return Transform3D(Basis(Vector3.UP, angle), Vector3(x, net.ground_at(x, z, bare) - 0.05, z) - o)
+
+
+## Along farmland either side of piece `p` (a good part of the land beside it cropland), a fence (a post every
+## RoadNet.STEP with two rails between), a dry-stone wall or a hedge (`kind`, the place's look's "bounds"), as the
+## planned road's (AdventureChunk._scenery); broken where a post can't stand (_verge_spot).
+func _bounds(p: Dictionary, dirs: Array[Vector2], e: float, kind: String, t: RealTerrain, o: Vector3) -> void:
+	var pts: PackedVector3Array = p["points"]
+	var at: PackedFloat32Array = p["at"]
+	var ei := int(p["edge"])
+	var crop := 0
+	var total := 0
+	for k in range(0, pts.size(), 8):
+		for side: float in [-1.0, 1.0]:
+			var c := t.cover(pts[k].x - dirs[k].y * (e + 12.0) * side, pts[k].z + dirs[k].x * (e + 12.0) * side)
+			total += 1
+			if c >= 0 and c < RealPack.COVER.size() and RealPack.COVER[c] == "crop":
+				crop += 1
+	if total == 0 or float(crop) / total <= 0.25:
+		return
+	if kind == "wall_hedge":
+		kind = "wall" if absi(hash([net.region.hash, "hedge", ei])) % 2 == 0 else "hedge"
+	var walls: Dictionary = arrays["walls"]
+	var rail := Color(0.45, 0.35, 0.24)
+	for side: float in [-1.0, 1.0]:
+		var prev := Vector3.INF
+		for k in pts.size():
+			var d := dirs[k]
+			var xf := _verge_spot(ei, at[k], pts[k], d, (e + (4.0 if kind == "fence" else 2.6)) * side, atan2(d.x, d.y), o)
+			if xf == Transform3D():
+				prev = Vector3.INF
+				continue
+			if kind == "fence":
+				_put(roadside, "post", xf)
+			if prev != Vector3.INF:
+				match kind:
+					"fence":
+						for y: float in [0.55, 0.95]:
+							AdventureChunk._rail(walls, prev + Vector3.UP * y, xf.origin + Vector3.UP * y, rail)
+					"wall":
+						var shade := 0.8 + 0.35 * float(absi(hash([ei, k, side])) % 100) / 100.0
+						AdventureChunk._wall(walls, prev, xf.origin, 0.95, 0.55, Color(0.42, 0.4, 0.35) * shade)
+					"hedge":
+						var shade := 0.88 + 0.2 * float(absi(hash([ei, k, side])) % 100) / 100.0
+						AdventureChunk._wall(walls, prev, xf.origin, 1.55, 1.1, Color(0.17, 0.3, 0.11) * shade)
+			prev = xf.origin
+
+
+static func _put(d: Dictionary, kind: String, xf: Transform3D) -> void:
+	if not d.has(kind):
+		d[kind] = []
+	(d[kind] as Array).append(xf)
+
+
 ## The region kit (T8's RegionKit) of the place the block's middle is in: how its buildings are built.
 func kit_of() -> Dictionary:
 	var r := net.region
@@ -349,6 +495,7 @@ func _lay_out() -> void:
 		_junction_mesh(j)
 	_join_caps()
 	arrays["signals"] = _signals(kit)
+	_roadside(kit)
 	var houses := AdventureProps.new_arrays()
 	var o := anchor()
 	if _marked:
