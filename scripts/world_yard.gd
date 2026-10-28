@@ -7,19 +7,23 @@ extends Node3D
 ##  - a slalom line and a jump line (cones, posts and ramps from Shed's yard kit),
 ##  - a slow-control area west of the shed: a U-turn box, a figure of eight and a lane of
 ##    speed humps for the suspension,
-##  - an obstacle corner, and a marked drop-off box where ordered yard kit is left.
+##  - an obstacle corner, and a marked drop-off box where ordered yard kit is left,
+##  - either side of all that, the jump park (west) and the bus jump and jump lines (east):
+##    ramps, tabletops, landings and whoops built into the yard, so they stay put (LINES).
 ## It's reached from the shed's forecourt on the High Street (see WorldTown) by a lane either
 ## side of the buildings (GROUND: the yard, and the forecourt and lanes, all one level slab).
 ## The slab's top is flush with the grass round it (see WorldTerrain.HOME_LEVEL), so there's
 ## no kerb at its edge. The loop's start gantry stands where the loop passes the town.
 
 const CENTER := Vector2(0.0, -10.0)
-const HALF := Vector2(65.0, 45.0)
+const HALF := Vector2(130.0, 45.0)
 ## The acceleration lane runs along x from START_X to the brake line at BRAKE_X, then the
 ## braking zone (marked every 5 m) to BRAKE_END, between z LANE_Z.x and LANE_Z.y.
 const START_X := -58.0
 const BRAKE_X := 0.0
 const BRAKE_END := 40.0
+## Where the run-off past the braking zone ends (x), short of the east wing's jump lines.
+const RUN_END := 62.0
 const LANE_Z := Vector2(-14.0, -6.0)
 const SKID_PAD := Vector3(50.0, 0.0, -36.0)
 const SKID_RADIUS := 11.0
@@ -34,9 +38,48 @@ const FIGURE_EIGHT_R := 6.0
 const DROP_OFF := Rect2(-62.0, -5.0, 32.0, 16.0)
 ## The level slab, as x/z rectangles: the yard itself, and the forecourt along the front of the
 ## buildings out to the High Street's kerb with the lanes either side of them up to the yard.
-const GROUND: Array[Rect2] = [Rect2(-65.0, -55.0, 130.0, 90.0), Rect2(-45.0, 35.0, 90.0, 53.5)]
+const GROUND: Array[Rect2] = [Rect2(-130.0, -55.0, 260.0, 90.0), Rect2(-45.0, 35.0, 90.0, 53.5)]
 ## The lanes from the forecourt up to the yard, either side of the buildings (x/z rectangles).
 const LANES: Array[Rect2] = [Rect2(-45.0, 35.0, 12.0, 30.0), Rect2(33.0, 35.0, 12.0, 30.0)]
+
+## The jump lines built into the yard either side of the test area. Each is ridden from `at`
+## (x, z) heading `yaw` (0 north, -PI/2 east), and is painted with its name. Its pieces are
+## [yard kit model, metres from `at` to the piece's middle, how it's turned, and for a launch
+## ramp with a landing beyond it, the speed (km/h) to hit it at, painted on the run-up]:
+## "" faces the rider (ramps rise away), "back" turns a landing to face back down the line and
+## "across" parks it side on. Each landing's high end is the gap the speed clears from its lip.
+const LINES := [
+	{"name": "FIRST AIR", "at": Vector2(-76.0, 31.0), "yaw": 0.0, "pieces": [
+		["ramp_small", 12.0, ""],
+		["ramp_medium", 33.0, "", 42], ["ramp_landing", 42.1, "back"],
+		["tabletop", 58.0, ""], ["ramp_kicker", 72.0, ""]]},
+	{"name": "DOUBLES", "at": Vector2(-91.0, 31.0), "yaw": 0.0, "pieces": [
+		["ramp_medium", 10.0, "", 42], ["ramp_landing", 19.1, "back"],
+		["ramp_large", 34.0, "", 45], ["ramp_landing", 47.9, "back"],
+		["tabletop", 67.0, ""]]},
+	{"name": "BIG AIR", "at": Vector2(-106.0, 31.0), "yaw": 0.0, "pieces": [
+		["ramp_xl", 14.0, "", 50], ["car_wreck", 22.0, "across"], ["landing_xl", 32.25, "back"],
+		["ramp_large", 52.0, "", 45], ["ramp_landing", 65.9, "back"]]},
+	{"name": "WHOOPS", "at": Vector2(-121.0, 31.0), "yaw": 0.0, "pieces": [
+		["tabletop", 58.0, ""], ["ramp_kicker", 74.0, ""]]},
+	{"name": "BUS JUMP", "at": Vector2(30.0, 19.0), "yaw": -PI * 0.5, "pieces": [
+		["ramp_huge", 56.0, "", 60], ["bus_row", 67.75, ""], ["landing_huge", 80.5, "back"]]},
+	{"name": "RHYTHM", "at": Vector2(86.0, 8.0), "yaw": 0.0, "pieces": [
+		["tabletop", 8.0, ""], ["tabletop", 20.0, ""], ["tabletop", 32.0, ""], ["ramp_kicker", 46.0, ""]]},
+	{"name": "KICKERS", "at": Vector2(110.0, 8.0), "yaw": 0.0, "pieces": [
+		["ramp_kicker", 6.0, ""], ["ramp_small", 22.0, ""], ["ramp_kicker", 38.0, ""], ["ramp_medium", 52.0, ""]]},
+]
+## The whoops: a run of earth rollers down the WHOOPS line, before its tabletop: the first's
+## middle this far down the line, then one every PITCH metres; each LENGTH long and HEIGHT high.
+const WHOOPS_LINE := 3
+const WHOOPS_FROM := 8.0
+const WHOOPS_COUNT := 9
+const WHOOPS_PITCH := 4.0
+const WHOOPS_LENGTH := 3.2
+const WHOOPS_HEIGHT := 0.5
+const WHOOPS_WIDTH := 4.0
+## The two wings the jump lines stand in (x, z), outlined and floodlit.
+const WINGS: Array[Rect2] = [Rect2(-128.0, -53.0, 61.0, 86.0), Rect2(66.0, -53.0, 62.0, 86.0)]
 
 var _paint := SurfaceTool.new()
 var _labels := []
@@ -76,6 +119,52 @@ static func starting_kit() -> Array:
 	return kit
 
 
+## Which way a line in LINES is ridden.
+static func line_forward(line: Dictionary) -> Vector3:
+	return Basis(Vector3.UP, float(line["yaw"])) * Vector3.FORWARD
+
+
+## The point `along` metres down a line in LINES, `side` metres to its right.
+static func line_point(line: Dictionary, along: float, side := 0.0) -> Vector3:
+	var b := Basis(Vector3.UP, float(line["yaw"]))
+	var at: Vector2 = line["at"]
+	return Vector3(at.x, 0.0, at.y) + b * Vector3(side, 0.0, -along)
+
+
+## The fixed pieces of every jump line: [model, transform, the line's index].
+static func fixed_kit() -> Array:
+	var out := []
+	for i in LINES.size():
+		var line: Dictionary = LINES[i]
+		var b := Basis(Vector3.UP, float(line["yaw"]))
+		for p: Array in line["pieces"]:
+			var turn := Basis()
+			if str(p[2]) == "back":
+				turn = Basis(Vector3.UP, PI)
+			elif str(p[2]) == "across":
+				turn = Basis(Vector3.UP, PI * 0.5)
+			out.append([str(p[0]), Transform3D(b * turn, line_point(line, float(p[1]))), i])
+	return out
+
+
+## Where each whoops roller's middle is.
+static func whoops() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for k in WHOOPS_COUNT:
+		out.append(line_point(LINES[WHOOPS_LINE], WHOOPS_FROM + k * WHOOPS_PITCH))
+	return out
+
+
+## How far a piece reaches over the ground (x, z): its footprint turned as it stands.
+static func footprint(model: String, xf: Transform3D) -> Rect2:
+	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
+	var r := Rect2(xf.origin.x, xf.origin.z, 0.0, 0.0)
+	for c: Vector3 in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(1, 0, 1), Vector3(-1, 0, 1)]:
+		var p := xf * (c * size * 0.5)
+		r = r.expand(Vector2(p.x, p.z))
+	return r
+
+
 func build(world: World) -> void:
 	name = "Yard"
 	_build_slab(world)
@@ -85,6 +174,7 @@ func build(world: World) -> void:
 	_mark_slalom_and_jumps()
 	_mark_slow_area()
 	_mark_drop_off()
+	_mark_jump_lines()
 	_paint.generate_normals()
 	var paint := MeshInstance3D.new()
 	paint.name = "Markings"
@@ -99,6 +189,9 @@ func build(world: World) -> void:
 	_build_cones()
 	_build_boards()
 	_build_gantry(world)
+	_build_jump_lines()
+	_build_whoops(world)
+	_build_bunting()
 
 
 ## The concrete slab: solid to the tyres, its top at y = 0.
@@ -206,7 +299,7 @@ func _words(text: String, at: Vector3, size: int, color: Color, angle := 0.0) ->
 
 func _mark_acceleration_lane() -> void:
 	var mid := (LANE_Z.x + LANE_Z.y) * 0.5
-	var run_end := HALF.x - 3.0
+	var run_end := RUN_END
 	# Lane edges and the dashed divider.
 	for z in [LANE_Z.x, LANE_Z.y]:
 		_rect((START_X + run_end) * 0.5, z, run_end - START_X, 0.18, WHITE)
@@ -286,6 +379,43 @@ func _mark_slow_area() -> void:
 	# The hump lane.
 	_outline(Rect2(HUMPS_X[0] - 6.0, HUMPS_Z - 1.8, HUMPS_X[HUMPS_X.size() - 1] - HUMPS_X[0] + 12.0, 3.6), 0.15, WHITE)
 	_words("SPEED HUMPS", Vector3(HUMPS_X[0] - 2.0, 0.0, HUMPS_Z + 3.0), 110, WHITE)
+
+
+## Each jump line: a start line with its name, dashed edges, the speed to hit each launch ramp
+## at on its run-up, and earth under the whoops; and the two wings outlined, with the park's name.
+func _mark_jump_lines() -> void:
+	for line: Dictionary in LINES:
+		var yaw: float = line["yaw"]
+		var pieces: Array = line["pieces"]
+		var last: Array = pieces[pieces.size() - 1]
+		var end := float(last[1]) + float(Equipment.get_model(str(last[0]))["size"].z) * 0.5 + 6.0
+		var start := line_point(line, 0.0)
+		_rect(start.x, start.z, 5.6, 0.4, WHITE, yaw)
+		var title := line_point(line, -2.2)
+		_words(str(line["name"]), title, 150, YELLOW, yaw)
+		for side: float in [-2.8, 2.8]:
+			var d := 1.0
+			while d < end:
+				var p := line_point(line, d + 1.0, side)
+				_rect(p.x, p.z, 0.15, 2.0, WHITE, yaw)
+				d += 4.0
+		for piece: Array in pieces:
+			if piece.size() < 4:
+				continue
+			var toe := float(piece[1]) - float(Equipment.get_model(str(piece[0]))["size"].z) * 0.5
+			for k in 3:
+				# Chevrons pointing up the line at the ramp.
+				var l := line_point(line, toe - 3.0 - k * 1.2, -0.62)
+				var r := line_point(line, toe - 3.0 - k * 1.2, 0.62)
+				_rect(l.x, l.z, 1.4, 0.3, AMBER, yaw + 0.55)
+				_rect(r.x, r.z, 1.4, 0.3, AMBER, yaw - 0.55)
+			_words("%d km/h" % int(piece[3]), line_point(line, toe - 8.0), 110, WHITE, yaw)
+	var dirt_len := (WHOOPS_COUNT - 1) * WHOOPS_PITCH + WHOOPS_LENGTH + 2.0
+	var mid := line_point(LINES[WHOOPS_LINE], WHOOPS_FROM + (WHOOPS_COUNT - 1) * WHOOPS_PITCH * 0.5)
+	_rect(mid.x, mid.z, WHOOPS_WIDTH + 1.2, dirt_len, Color(0.3, 0.21, 0.13), float(LINES[WHOOPS_LINE]["yaw"]), 0.004)
+	for w in WINGS:
+		_outline(w, 0.25, YELLOW)
+	_words("JUMP PARK", Vector3(WINGS[0].get_center().x, 0.0, WINGS[0].position.y + 3.0), 260, YELLOW)
 
 
 func _mark_drop_off() -> void:
@@ -478,3 +608,157 @@ func _build_gantry(world: World) -> void:
 	line.material_override = lm
 	line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(line)
+
+
+## The jump lines' ramps, tabletops, landings and buses: yard kit, but fixed in place.
+func _build_jump_lines() -> void:
+	var holder := Node3D.new()
+	holder.name = "JumpLines"
+	add_child(holder)
+	for item: Array in fixed_kit():
+		var piece := Node3D.new()
+		piece.name = "%s_%d" % [item[0], holder.get_child_count()]
+		piece.transform = item[1]
+		holder.add_child(piece)
+		YardKit.build(piece, str(item[0]))
+	# Course flags either side of each line's start.
+	for line: Dictionary in LINES:
+		for side: float in [-3.4, 3.4]:
+			var flag := Node3D.new()
+			flag.transform = Transform3D(Basis(Vector3.UP, float(line["yaw"])), line_point(line, 0.0, side))
+			holder.add_child(flag)
+			YardKit.build(flag, "flag_red" if side < 0.0 else "flag_blue")
+
+
+## The whoops: earth rollers across the WHOOPS line, smooth from the ground up and over, solid
+## dirt to the tyres, so the suspension has to soak them up (or the bike skims their tops).
+func _build_whoops(world: World) -> void:
+	var earth := StandardMaterial3D.new()
+	earth.albedo_color = Color(0.42, 0.3, 0.19)
+	earth.roughness = 1.0
+	earth.albedo_texture = world._noise_texture(0.4, Color(0.75, 0.72, 0.7), Color(1.12, 1.08, 1.02))
+	earth.uv1_scale = Vector3(2.0, 2.0, 2.0)
+	world._wet(earth, 0.5)
+	var profile := whoop_profile()
+	var half := WHOOPS_WIDTH * 0.5
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in profile.size() - 1:
+		var a := profile[k]
+		var b := profile[k + 1]
+		# The top, and the sides down to the ground (narrowing a little, like a shovelled bank).
+		var q := [Vector3(-half, a.y, a.x), Vector3(-half, b.y, b.x), Vector3(half, b.y, b.x), Vector3(half, a.y, a.x)]
+		for i in [0, 2, 1, 0, 3, 2]:
+			st.set_uv(Vector2(q[i].x, q[i].z) * 0.5)
+			st.add_vertex(q[i])
+		for s: float in [-1.0, 1.0]:
+			var side := [Vector3(s * half, a.y, a.x), Vector3(s * (half + 0.4), 0.0, a.x), Vector3(s * (half + 0.4), 0.0, b.x), Vector3(s * half, b.y, b.x)]
+			var order := [0, 1, 2, 0, 2, 3] if s > 0.0 else [0, 2, 1, 0, 3, 2]
+			for i in order:
+				st.set_uv(Vector2(side[i].z, side[i].y) * 0.5)
+				st.add_vertex(side[i])
+	st.generate_normals()
+	var mesh := st.commit()
+	var yaw := float(LINES[WHOOPS_LINE]["yaw"])
+	for at in whoops():
+		var body := StaticBody3D.new()
+		body.name = "Whoop"
+		body.set_meta("surface", "dirt")
+		body.transform = Transform3D(Basis(Vector3.UP, yaw), at)
+		body.add_child(whoop_shape())
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = earth
+		body.add_child(mi)
+		add_child(body)
+
+
+## A whoop's line over the top, front (+Z) to back: (z, height), level with the ground at
+## both ends.
+static func whoop_profile() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for k in 17:
+		var t := float(k) / 16.0
+		out.append(Vector2((t - 0.5) * WHOOPS_LENGTH, WHOOPS_HEIGHT * (1.0 - cos(TAU * t)) * 0.5))
+	return out
+
+
+## A whoop's collision: the top and its banked sides.
+static func whoop_shape() -> CollisionShape3D:
+	var half := WHOOPS_WIDTH * 0.5
+	var pts := PackedVector3Array()
+	for p in whoop_profile():
+		pts.append_array([Vector3(-half - 0.4, 0.0, p.x), Vector3(-half, p.y, p.x), Vector3(half, p.y, p.x), Vector3(half + 0.4, 0.0, p.x)])
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = pts
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	return cs
+
+
+## Bunting: strings of little coloured flags on masts along the start of each wing and either
+## side of the bus jump, sagging between them.
+func _build_bunting() -> void:
+	var runs: Array = []
+	for w in WINGS:
+		runs.append([Vector3(w.position.x + 2.0, 0.0, w.end.y + 2.6), Vector3(w.end.x - 2.0, 0.0, w.end.y + 2.6), 5])
+	var bus: Dictionary = LINES[4]
+	for side: float in [-7.0, 7.0]:
+		runs.append([line_point(bus, 50.0, side), line_point(bus, 86.0, side), 4])
+	var mast_mat := StandardMaterial3D.new()
+	mast_mat.albedo_color = Color(0.9, 0.9, 0.88)
+	mast_mat.roughness = 0.5
+	var mast_mesh := CylinderMesh.new()
+	mast_mesh.top_radius = 0.04
+	mast_mesh.bottom_radius = 0.06
+	mast_mesh.height = 5.0
+	mast_mesh.radial_segments = 8
+	var flags := SurfaceTool.new()
+	flags.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var colours := [RED, YELLOW, BLUE, Color(0.95, 0.95, 0.92), GREEN, AMBER]
+	var n := 0
+	for run: Array in runs:
+		var a: Vector3 = run[0]
+		var b: Vector3 = run[1]
+		var spans: int = run[2]
+		var masts: Array[Vector3] = []
+		for k in spans + 1:
+			masts.append(a.lerp(b, float(k) / spans))
+		for m in masts:
+			var mast := MeshInstance3D.new()
+			mast.mesh = mast_mesh
+			mast.material_override = mast_mat
+			mast.position = m + Vector3.UP * 2.5
+			add_child(mast)
+		for k in spans:
+			var p0 := masts[k] + Vector3.UP * 4.8
+			var p1 := masts[k + 1] + Vector3.UP * 4.8
+			var length := p0.distance_to(p1)
+			var along := (p1 - p0).normalized()
+			var count := int(length / 0.55)
+			var sag := length * 0.06
+			var hang := func(t: float) -> Vector3:
+				return p0.lerp(p1, t) + Vector3.DOWN * sag * 4.0 * t * (1.0 - t)
+			# The string, then a flag every 55 cm hanging off it.
+			for i in count:
+				var s0: Vector3 = hang.call(float(i) / count)
+				var s1: Vector3 = hang.call(float(i + 1) / count)
+				flags.set_color(Color(0.85, 0.85, 0.82))
+				for v in [s0, s1, s1 + Vector3.DOWN * 0.02, s0, s1 + Vector3.DOWN * 0.02, s0 + Vector3.DOWN * 0.02]:
+					flags.add_vertex(v)
+				var c: Vector3 = hang.call((i + 0.5) / count)
+				flags.set_color(colours[n % colours.size()])
+				n += 1
+				for v in [c - along * 0.15, c + along * 0.15, c + Vector3.DOWN * 0.34]:
+					flags.add_vertex(v)
+	flags.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.name = "Bunting"
+	mi.mesh = flags.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 0.8
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
