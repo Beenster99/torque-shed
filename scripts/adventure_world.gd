@@ -289,8 +289,19 @@ func heading_at(s: float) -> float:
 	return -route.heading_at_s(s)
 
 
+## Which side of the road they keep to where local `p` is: -1 the left (as at home, and wherever the
+## country isn't known), 1 the right (its country's facts, RegionKit).
+func keep_at(p: Vector3) -> int:
+	if route == null or route.real == null or route.real.terrain == null:
+		return -1
+	var xz := route_xz(p)
+	var t: RealTerrain = route.real.terrain
+	var f: Dictionary = RegionKit.at_frame(t.lat0, t.lon0, xz[0], xz[1]).get("facts", {})
+	return 1 if str(f.get("drive", "left")) == "right" else -1
+
+
 ## Where a bike that came to rest at local `p` off the road is put back on it: the nearest point
-## along it, on the left half and facing on towards the destination. null when `p` is on the
+## along it, on the half the country drives on and facing on towards the destination. null when `p` is on the
 ## road (or nowhere near it), so it's picked up where it lies.
 func back_on_road(p: Vector3):
 	if roads != null:
@@ -302,10 +313,10 @@ func back_on_road(p: Vector3):
 	if absf(float(hit["lat"])) <= route.width_at_s(s) * 0.5 + OFF_ROAD and p.y > route.height_at_s(s) - 5.0:
 		return null
 	s = clampf(s, 2.0, route.total - 20.0)
-	return transform_at(s, -route.width_at_s(s) * 0.25)
+	return transform_at(s, keep_at(p) * route.width_at_s(s) * 0.25)
 
 
-## back_on_road on the network ride: the nearest road's left half, facing along it (a to b).
+## back_on_road on the network ride: the nearest road's half the country drives on, facing along it (a to b).
 func _back_on_network(p: Vector3):
 	var xz := route_xz(p)
 	var hit := roads.net.locate(xz[0], xz[1])
@@ -316,15 +327,16 @@ func _back_on_network(p: Vector3):
 	var ei := int(hit["edge"])
 	var s := float(hit["s"])
 	var h := float(hit["heading"])
-	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (-float(hit["width"]) * 0.25)
+	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (keep_at(p) * float(hit["width"]) * 0.25)
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(at.x, roads.net.road_y(ei, s) + RoadNet.CROWN, at.y))
 
 
-## Where player `slot` starts: two by two on the left half of the road behind the start banner.
+## Where player `slot` starts: two by two behind the start banner, on the half of the road the
+## country drives on.
 func start_xf(slot: int) -> Transform3D:
 	var s := 36.0 - 5.0 * float(slot / 2)
 	var w := route.width_at_s(maxf(s, 0.0))
-	var lat := -w * 0.25 + (0.7 if slot % 2 == 1 else -0.7)
+	var lat := keep_at(transform_at(maxf(s, 2.0), 0.0).origin) * w * 0.25 + (0.7 if slot % 2 == 1 else -0.7)
 	return transform_at(maxf(s, 2.0), lat)
 
 

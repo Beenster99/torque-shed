@@ -423,7 +423,7 @@ func step(delta: float) -> void:
 	for d in bikers:
 		if d.has("arm"):
 			continue
-		var lane := int(d["dir"]) if float(d["lat"]) * int(d["dir"]) < -0.7 else 0
+		var lane := int(d["dir"]) if float(d["lat"]) * int(d["dir"]) * stream.keep(float(d["s"])) > 0.7 else 0
 		stream.blockers.append([float(d["s"]), lane, 1.1])
 
 
@@ -573,12 +573,12 @@ func _traffic_ahead(d: Dictionary, at: Dictionary, delta: float, in_line: bool) 
 	var passing: bool = d.get("pass", false)
 	var hw := float(at.get("hw", 3.5))
 	for o in stream.vehicles:
-		if int(o["dir"]) == dir and TrafficStream._in_lane(o, hw) and not passing:
+		if int(o["dir"]) == dir and stream._in_lane(o, hw) and not passing:
 			hold = minf(hold, _gap_speed(s, dir, float(o["s"]), TrafficVehicle.half_length_of(str(o["kind"]))))
 	if in_line:
 		return hold
 	for r in riders:
-		if passing or not _rider_lane(r, hw, dir):
+		if passing or not _rider_lane(r, hw, dir, stream.keep(s)):
 			continue
 		# Side by side in the lane (on the other track, as riding staggered) isn't in its way.
 		var along := (float(r["s"]) - s) * dir
@@ -589,7 +589,7 @@ func _traffic_ahead(d: Dictionary, at: Dictionary, delta: float, in_line: bool) 
 	for o in bikers:
 		if o == d or o.has("arm") or int(o["dir"]) != dir or int(o["lead"]) == group:
 			continue
-		if passing != (float(o["lat"]) * dir > 0.0):
+		if passing != (float(o["lat"]) * dir * stream.keep(s) < 0.0):
 			continue   # in the other lane
 		hold = minf(hold, _gap_speed(s, dir, float(o["s"]), 1.1))
 	if hold < float(d["pace"]) * traffic.limit_at(s) - PASS_SLOWER:
@@ -600,12 +600,12 @@ func _traffic_ahead(d: Dictionary, at: Dictionary, delta: float, in_line: bool) 
 
 
 ## Whether rider `r` is in the way of the lane going `dir` (as AdventureTraffic's blockers: in
-## that lane, or astride the middle).
-static func _rider_lane(r: Dictionary, hw: float, dir: int) -> bool:
+## that lane, or astride the middle), on a road keeping to `keep` (TrafficStream.keep).
+static func _rider_lane(r: Dictionary, hw: float, dir: int, keep := -1) -> bool:
 	var lat := float(r["lat"])
 	if is_nan(float(r["s"])) or absf(lat) > hw + 0.4:
 		return false
-	return lat * dir < 0.7
+	return lat * dir * keep > -0.7
 
 
 func _gap_speed(s: float, dir: int, other_s: float, other_half: float) -> float:
@@ -640,7 +640,7 @@ func _pass_lat(d: Dictionary, at: Dictionary, lane_lat: float, _delta: float) ->
 				in_way = true
 	for r in riders:
 		var along := (float(r["s"]) - s) * dir
-		if not is_nan(float(r["s"])) and along > -PASS_BY and along < 40.0 and _rider_lane(r, float(at.get("hw", 3.5)), dir):
+		if not is_nan(float(r["s"])) and along > -PASS_BY and along < 40.0 and _rider_lane(r, float(at.get("hw", 3.5)), dir, stream.keep(s)):
 			in_way = true
 	var coming := not _other_side_clear(s, dir, 90.0)
 	if (not in_way and (s - float(d["pass_from"])) * dir > PASS_BY) or coming or (s - float(d["pass_from"])) * dir > 600.0:
@@ -648,7 +648,7 @@ func _pass_lat(d: Dictionary, at: Dictionary, lane_lat: float, _delta: float) ->
 		d["held"] = 0.0
 		return lane_lat
 	var hw := float(at.get("hw", 3.5))
-	return dir * _lane_off(hw)
+	return -stream.keep(s) * dir * _lane_off(hw)
 
 
 ## Whether the other lane is clear for `dist` m ahead of `s` (going `dir`): nothing coming in
@@ -664,7 +664,7 @@ func _other_side_clear(s: float, dir: int, dist: float) -> bool:
 			return false
 	for r in riders:
 		var along := (float(r["s"]) - s) * dir
-		if not is_nan(float(r["s"])) and float(r["lat"]) * dir > -0.7 and along > -10.0 and along < dist:
+		if not is_nan(float(r["s"])) and float(r["lat"]) * dir * stream.keep(s) < 0.7 and along > -10.0 and along < dist:
 			return false
 	for jn in stream.junctions:
 		var along := (float(jn["s"]) - s) * dir
@@ -722,14 +722,15 @@ func _crew_lat(d: Dictionary, at: Dictionary) -> float:
 	var lane := _lane_off(hw)
 	var stag := minf(STAGGER, maxf(0.0, hw - lane - 0.6))
 	var r: Dictionary = riders[int(d["rider"])]
-	var theirs := -float(r["lat"]) * dir   # how far left of the middle they are, going our way
+	var kerb_side := stream.keep(float(d["s"])) * dir
+	var theirs := float(r["lat"]) * kerb_side   # how far to the kerb side of the middle they are, going our way
 	var inner := theirs < lane   # they're on the middle side of the lane: we take the kerb side
 	var n := absi(int(d["jslot"]))
 	var kerb := inner if n % 2 == 1 else not inner
-	return -dir * (lane + (stag if kerb else -stag))
+	return kerb_side * (lane + (stag if kerb else -stag))
 
 
-## How far left of the middle line a rider keeps on a road `hw` wide each side.
+## How far to the kerb side of the middle line a rider keeps on a road `hw` wide each side.
 static func _lane_off(hw: float) -> float:
 	return clampf(hw * LANE, 0.6, maxf(0.6, hw - 0.6))
 
@@ -744,10 +745,11 @@ func _track_lat(d: Dictionary, at: Dictionary) -> float:
 	for o in bikers:
 		if int(o["lead"]) == int(d["id"]):
 			grouped = true
+	var kerb_side := stream.keep(float(d["s"])) * dir
 	if not grouped:
-		return -dir * lane
+		return kerb_side * lane
 	var stag := minf(STAGGER, maxf(0.0, hw - lane - 0.6))
-	return -dir * (lane + (stag if int(d["slot"]) % 2 == 1 else -stag))
+	return kerb_side * (lane + (stag if int(d["slot"]) % 2 == 1 else -stag))
 
 
 # ---------------------------------------------------------------------------- joining and parting
@@ -810,7 +812,8 @@ func _part(d: Dictionary, wave: bool) -> void:
 	d["jslot"] = 0
 
 
-## Its time with the crew's up: the next side road on its left within PEEL_LOOK, if there is one.
+## Its time with the crew's up: the next side road on its kerb side (its left where they drive on
+## the left) within PEEL_LOOK, if there is one.
 func _find_peel(d: Dictionary) -> bool:
 	var s := float(d["s"])
 	var dir := int(d["dir"])
@@ -820,13 +823,13 @@ func _find_peel(d: Dictionary) -> bool:
 		if along < PEEL_LOOK[0] or along > PEEL_LOOK[1] or jn.has("ro"):
 			continue
 		for k in (jn["arms"] as Array).size():
-			if int(jn["arms"][k]["side"]) == -dir:
+			if int(jn["arms"][k]["side"]) == stream.keep(float(jn["s"])) * dir:
 				peel_at(d, j, k)
 				return true
 	return false
 
 
-## Biker `d` turns off down junction `j`'s side road `k` (on its left): it signals, slows, waves
+## Biker `d` turns off down junction `j`'s side road `k` (on its kerb side): it signals, slows, waves
 ## to the crew, and turns, and the rest of its own group with it.
 func peel_at(d: Dictionary, j: int, k: int) -> void:
 	d["peel"] = [j, k]
@@ -843,11 +846,13 @@ func _turn_from(d: Dictionary) -> float:
 ## Slowing for the turn it's peeling off at (and signalling, and a wave as it goes).
 func _peel_ahead(d: Dictionary) -> float:
 	var to := (_turn_from(d) - float(d["s"])) * int(d["dir"])
+	var jn: Dictionary = stream.junctions[int(d["peel"][0])]
+	var way := int(jn["arms"][int(d["peel"][1])]["side"]) * int(d["dir"])   # 1 right, -1 left
 	if to < PEEL_SIGNAL:
-		d["ind"] = -1
+		d["ind"] = way
 	if to < 40.0 and int(d["rider"]) >= 0:
 		_part(d, true)
-		d["ind"] = -1
+		d["ind"] = way
 	return sqrt(TURN_SPEED * TURN_SPEED + 2.0 * BRAKE * 0.5 * maxf(to, 0.0))
 
 
@@ -1006,10 +1011,10 @@ func _draw(delta: float) -> void:
 			for j in stream._near_j:
 				var jn: Dictionary = stream.junctions[j]
 				if jn.has("rc") and absf(s - float(jn["s"])) < float(jn["rc"]) + 9.0:
-					# Round the island on its left, then back into the lane (as the traffic).
+					# Round the island on its kerb side, then back into the lane (as the traffic).
 					var ds := s - float(jn["s"])
 					var lane := absf(lat)
-					var side := signf(lat) if lane > 0.3 else float(-dir)
+					var side := signf(lat) if lane > 0.3 else float(stream.keep(s) * dir)
 					lat += side * (AdventureJunctions.swing(jn, ds, lane) - lane)
 					var slope := AdventureJunctions.swing(jn, ds + 0.5, lane) - AdventureJunctions.swing(jn, ds - 0.5, lane)
 					heading = (f * dir + right * side * slope * dir).normalized()

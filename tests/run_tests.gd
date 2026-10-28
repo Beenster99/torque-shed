@@ -3627,6 +3627,8 @@ func _test_road_traffic() -> void:
 		stuck_a["turn"] = {}
 		stuck_a["round"] = -1.0
 		stuck_a.erase("push")
+		stuck_a["stuck"] = 0.0   # (however long it had been stood before)
+		stuck_a["v"] = 0.0   # (and stood: at speed it couldn't stop in the 12 m)
 		var passed := -1.0
 		var held := false
 		for step in 400:
@@ -23074,6 +23076,11 @@ func _test_adv_traffic_sounds() -> void:
 
 func _test_adv_traffic_perf() -> void:
 	await _adv_traffic().test_perf()
+
+
+func _test_adv_traffic_drive_side() -> void:
+	_adv_traffic().test_drive_side()
+
 # ---------------------------------------------------------------------------- adventure themes (tests/adventure_themes_tests.gd)
 
 func _adv_themes() -> RefCounted:
