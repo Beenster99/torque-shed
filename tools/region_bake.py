@@ -45,6 +45,9 @@ PLACE_REACH = 1500.0        # a town or village this far from any road is on the
 PLACE_KINDS = {"locality": "town", "county": "town", "borough": "town", "macrohood": "village", "microhood": "village",
                "neighborhood": "village"}
 BUILDING_MAX = 60000
+# Each class's carriageway width (m), as the game lays it (RoutePlanner.WIDTH): the buildings are kept off it.
+ROAD_WIDTH = {"motorway": 7.4, "trunk": 7.4, "primary": 7.4, "secondary": 6.0, "tertiary": 6.0, "unclassified": 4.6,
+              "residential": 4.6, "living_street": 4.6, "track": 3.3}
 GENERIC = list(rb.CLASSES)
 SURFACES = ["tarmac", "gravel"]
 
@@ -177,6 +180,16 @@ def road_points(rows, spacing=SAMPLE_M):
     return np.vstack(out) if out else np.zeros((0, 2))
 
 
+def road_lines(rows):
+    """Every road's line with half its width (land_bake.RoadLines): the buildings are kept off all of them."""
+    nodes = rows["nodes"]
+    out = []
+    for e in rows["edges"]:
+        line = [tuple(nodes[e["a"]])] + [(e["p"][i], e["p"][i + 1]) for i in range(0, len(e["p"]), 2)] + [tuple(nodes[e["b"]])]
+        out.append((line, ROAD_WIDTH.get(rows["classes"][e["c"]], 4.6) * 0.5))
+    return land_bake.RoadLines(out)
+
+
 def region_hash(out):
     h = hashlib.sha256()
     for root, _, files in sorted(os.walk(out)):
@@ -216,7 +229,7 @@ def bake(args, log=print):
         tiles, has_sea, land = rb.bake_terrain(
             args.out, frame, pts, dems,
             lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log,
-                                                    cover_levels=cover_levels), log,
+                                                    cover_levels=cover_levels, roads=road_lines(rows)), log,
             heights=getattr(args, "heights", "baked") == "baked", cover_levels=cover_levels)
     finally:
         land_bake.BUILDING_MAX = old_max
