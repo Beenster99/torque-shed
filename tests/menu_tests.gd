@@ -135,3 +135,25 @@ func test_fix_bike() -> void:
 	Shed.bikes[bike]["rider"] = 0
 	tab.queue_free()
 	await _frames(1)
+
+
+## The opening film (SplashVideo): a headless run never plays it, and played anyway it shows
+## the film over everything, a key press skips it, and it fades away and is gone.
+func test_splash() -> void:
+	check(SplashVideo.play_over(t) == null, "splash: a headless run plays no opening film")
+	check(ResourceLoader.exists(SplashVideo.PATH), "splash: the opening film is in the game")
+	var s := SplashVideo.new()
+	t.add_child(s)
+	await _frames(3)
+	check(s.player.stream != null and s.player.is_playing(), "splash: the film plays")
+	check(s.layer > 1, "splash: the film shows over the title screen")
+	var ended := [false]
+	s.finished.connect(func(): ended[0] = true)
+	var key := InputEventKey.new()
+	key.keycode = KEY_SPACE
+	key.pressed = true
+	Input.parse_input_event(key)
+	await _frames(2)
+	await t.get_tree().create_timer(SplashVideo.FADE + 0.3).timeout
+	check(ended[0], "splash: a key press skips the film")
+	check(not is_instance_valid(s), "splash: the skipped film is gone")
