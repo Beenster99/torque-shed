@@ -116,16 +116,17 @@ class Buildings(unittest.TestCase):
 
     def test_kept_off_every_road(self):
         # The planned road along z = 0, and a side street up x = 300 the knots don't follow: a building on the side
-        # street, or with a corner on its verge, is left out (the game would leave it out), so the cap is spent on ones
+        # street, or with a corner on it, is left out (the game would leave it out), so the cap is spent on ones
         # that stand.
         roads = lb.RoadLines([([(0.0, 0.0), (600.0, 0.0)], 3.7), ([(300.0, 0.0), (300.0, 200.0)], 2.3)])
         rows = [self.row(300, 60, 10, 8),       # on the side street: dropped
-                self.row(308, 100, 10, 8),      # its corner on the street's verge (308 - 5 - 2.3 < 2.5): dropped
+                self.row(306, 100, 10, 8),      # its corner on the street (306 - 5 - 2.3 < 0): dropped
+                self.row(309, 120, 10, 8),      # its corner on the verge only (the game pushes it off): kept
                 self.row(320, 100, 10, 8),      # clear of it: kept
                 self.row(100, 40, 10, 8)]       # by the planned road, clear: kept
         out = lb.make_buildings(rows, FRAME, self.knots, roads=roads)
-        self.assertEqual(sorted(round(b[0]) for b in out), [100, 320])
-        self.assertEqual(len(lb.make_buildings(rows, FRAME, self.knots)), 4)   # (without the roads, as before)
+        self.assertEqual(sorted(round(b[0]) for b in out), [100, 309, 320])
+        self.assertEqual(len(lb.make_buildings(rows, FRAME, self.knots)), 5)   # (without the roads, as before)
         self.assertLess(roads.clear(300.0, 60.0), 0.0)
         self.assertAlmostEqual(roads.clear(310.0, 100.0), 10.0 - 2.3, places=3)
         self.assertGreater(roads.clear(320.0, 300.0), 1e8)   # (past the reach it files them by)

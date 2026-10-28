@@ -47,7 +47,7 @@ WATER_SKIP = {"ocean", "sea", "bay", "strait", "swimming_pool"}
 
 BUILDING_REACH = 500.0       # buildings are kept this far either side of the road
 BUILDING_GAP = 4.0           # and this far clear of the road's edge
-ROAD_CLEAR = 2.5             # and no corner within this of any road's carriageway (RoadNet.VERGE + RoadBlock.CLEAR)
+ROAD_CLEAR = 0.0             # and no corner on any road's carriageway (the game pushes one on a verge back off it)
 BUILDING_MAX = 14000
 BUILDING_MIN_AREA = 9.0
 BUILDING_MAX_AREA = 2500.0
@@ -263,8 +263,8 @@ def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, m
     """Building boxes within `reach` of the road, clear of it: [[x, z, w, d, yaw, h, kind id]], nearest the road first.
 
     With `roads` (a RoadLines of every road, not only the one the knots follow), a building with its middle or a corner
-    on a road or its verge (within ROAD_CLEAR of a carriageway's edge) is left out, as the game would leave it out:
-    so the ones kept (up to `max_count`) are all ones that will stand."""
+    on a road's carriageway (ROAD_CLEAR) is left out, as the game would leave it out (RoadBlock._clear_of_roads: one
+    just over a verge it pushes back), so the ones kept (up to `max_count`) are ones that will stand."""
     max_count = BUILDING_MAX if max_count is None else max_count   # (read now: a region bakes with more)
     cell = 64.0
     grid = {}
