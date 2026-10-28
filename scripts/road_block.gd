@@ -549,7 +549,7 @@ func _lay_out() -> void:
 		for k: String in ["v", "n", "c"]:
 			arrays["lines"][k].append_array(marks["lines"][k])
 			houses[k].append_array(marks["signs"][k])
-		# (the speed bumps' humps are ridden over)
+		# (anything the paint lays on the road is ridden over)
 		if not (marks["faces"] as PackedVector3Array).is_empty():
 			_faces_of("tarmac")
 			arrays["faces"]["tarmac"].append_array(marks["faces"])
