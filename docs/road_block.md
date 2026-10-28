@@ -99,7 +99,8 @@ to ride into), the deck's sides and underside, and piers down to the land where 
 
 ### locate: "which road am I on"
 
-`net.locate(x, z, hint)` gives the nearest road to (x, z) within `RoadNet.REACH` m of its edge, or `{}`:
+`net.locate(x, z, hint, heights := true)` gives the nearest road to (x, z) within `RoadNet.REACH` m of its edge, or `{}`
+(with `heights` false its `y` is NAN, sparing the work of the road's faired height):
 
 | key | type | meaning |
 |---|---|---|

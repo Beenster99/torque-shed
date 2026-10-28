@@ -138,7 +138,7 @@ static func place(n: RoadNet, route: AdventureRoute, s: float, kind: String) -> 
 ## of three or more roads within `along` and JUNCTION_CLEAR.
 static func _spot(n: RoadNet, route: AdventureRoute, s: float, along: float) -> Dictionary:
 	var xz := route.xz_at(s)
-	var on := n.locate(xz[0], xz[1])
+	var on := n.locate(xz[0], xz[1], -1, false)
 	if on.is_empty() or int(on["node"]) >= 0 or absf(float(on["lat"])) > float(on["width"]) * 0.5:
 		return {}
 	var e := int(on["edge"])

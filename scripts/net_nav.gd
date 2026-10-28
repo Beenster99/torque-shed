@@ -114,7 +114,7 @@ func _find_sites() -> void:
 	var scale := route.at_m[route.dest_step] / maxf(world.route.length, 1.0)
 	for st in world.route.sites:
 		var xz := world.route.xz_at(float(st["s"]))
-		var on := net.locate(xz[0], xz[1])
+		var on := net.locate(xz[0], xz[1], -1, false)
 		var m := route.metres_on(int(on["edge"]), float(on["s"]), float(st["s"]) * scale) if not on.is_empty() else -1.0
 		if m < 0.0:
 			m = float(st["s"]) * scale
@@ -131,7 +131,7 @@ func update(pos: Vector2, fwd: Vector2) -> void:
 	_memo = memo
 	_take_found()
 	var xz := _region(pos)
-	hit = net.locate(xz.x, xz.y, int(hit.get("edge", -1)))
+	hit = net.locate(xz.x, xz.y, int(hit.get("edge", -1)), false)
 	var m := crew_mode()
 	if m != mode:
 		mode = m

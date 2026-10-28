@@ -279,7 +279,7 @@ func _stand(t: RealTerrain, kind: String, x: float, z: float, clear: float, o: V
 	if t.cover(x, z) == RealPack.WATER or net.in_flat(x, z, 3.0):
 		return
 	if not net._near(x, z).is_empty():
-		var on := net.locate(x, z)
+		var on := net.locate(x, z, -1, false)
 		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + clear):
 			return
 	for row: Array in buildings:
@@ -314,7 +314,7 @@ func _over_road(row: Array) -> bool:
 	for c: Vector2 in [Vector2.ZERO, Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(-0.5, 0.5), Vector2(0.5, 0.5)]:
 		var px := bx + (c.x * w) * cos(yaw) + (c.y * d) * sin(yaw)
 		var pz := bz - (c.x * w) * sin(yaw) + (c.y * d) * cos(yaw)
-		var on := net.locate(px, pz)
+		var on := net.locate(px, pz, -1, false)
 		if not on.is_empty() and (int(on["node"]) >= 0 or absf(float(on["lat"])) < float(on["width"]) * 0.5 + RoadNet.VERGE + CLEAR):
 			return true
 	return false

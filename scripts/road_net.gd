@@ -119,6 +119,10 @@ var _raw_y := {}            # node -> float (_raw_node_y)
 var _fair := {}             # Vector3i(strand's first edge, page, pinned) -> PackedFloat32Array: its heights smoothed (_fair_page)
 var _node_y := {}           # node -> float
 var _junction := {}         # node -> Dictionary ({} for a plain join)
+var _junction_guess := {}   # node -> Dictionary: its shape alone, its heights NAN (see junction_of)
+## The same worked out from ground that isn't final yet (_fair, _node_y, _raw_y and _fixes): kept, so they're not worked
+## out again and again, till the ground sharpens (forget_guesses).
+var _guess := {"fair": {}, "node_y": {}, "raw_y": {}, "fixes": {}}
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
 var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
 var _decks := {}            # edge -> Dictionary: its bridges' heights (_deck_plan)
@@ -662,6 +666,8 @@ func _fair_page(st: Dictionary, page: int, pinned := true) -> PackedFloat32Array
 	var key := Vector3i(edges[0], page, 1 if pinned else 0)
 	_lock.lock()
 	var f = _fair.get(key)
+	if f == null:
+		f = _guess["fair"].get(key)
 	_lock.unlock()
 	if f != null:
 		return f
@@ -736,10 +742,12 @@ func _fair_page(st: Dictionary, page: int, pinned := true) -> PackedFloat32Array
 		if not (plan["lifts"] as PackedVector2Array).is_empty() and not is_nan(res[j - k0]):
 			var sp := length_of(e) / float(samples_of(e) - 1)
 			res[j - k0] = maxf(res[j - k0], _lifted(plan, at.y / sp, sp))   # (smoothing would take the top off its climb over a road)
+	_lock.lock()
 	if final and (not ready.is_valid() or bool(ready.call(box.grow(STEP)))):
-		_lock.lock()
 		_fair[key] = res
-		_lock.unlock()
+	else:
+		_guess["fair"][key] = res
+	_lock.unlock()
 	return res
 
 
@@ -1053,15 +1061,15 @@ func _fair_j(st: Dictionary, j: int) -> float:
 ## road's. A road that ends at a junction (a side road) eases onto it (_strand_fix).
 func node_y(node: int) -> float:
 	_lock.lock()
-	var y = _node_y.get(node)
+	var y = _node_y.get(node, _guess["node_y"].get(node))
 	_lock.unlock()
 	if y != null:
 		return y
 	var out := _node_mean(node, false)
-	if _final(region.node_pos[node], PAGE_PAD * STEP + STEP * 2.0 + EASE_MOST):
-		_lock.lock()
-		_node_y[node] = out
-		_lock.unlock()
+	var final := _final(region.node_pos[node], PAGE_PAD * STEP + STEP * 2.0 + EASE_MOST)
+	_lock.lock()
+	(_node_y if final else _guess["node_y"])[node] = out
+	_lock.unlock()
 	return out
 
 
@@ -1069,15 +1077,15 @@ func node_y(node: int) -> float:
 ## junction eases onto (so no height eases onto another that is itself easing).
 func _raw_node_y(node: int) -> float:
 	_lock.lock()
-	var y = _raw_y.get(node)
+	var y = _raw_y.get(node, _guess["raw_y"].get(node))
 	_lock.unlock()
 	if y != null:
 		return y
 	var out := _node_mean(node, true)
-	if _final(region.node_pos[node], PAGE_PAD * STEP + STEP * 2.0 + PIN):
-		_lock.lock()
-		_raw_y[node] = out
-		_lock.unlock()
+	var final := _final(region.node_pos[node], PAGE_PAD * STEP + STEP * 2.0 + PIN)
+	_lock.lock()
+	(_raw_y if final else _guess["raw_y"])[node] = out
+	_lock.unlock()
 	return out
 
 
@@ -1115,7 +1123,7 @@ func _node_mean(node: int, raw: bool) -> float:
 func _strand_fix(st: Dictionary) -> Vector4:
 	var edges: PackedInt32Array = st["edges"]
 	_lock.lock()
-	var got = _fixes.get(edges[0])
+	var got = _fixes.get(edges[0], _guess["fixes"].get(edges[0]))
 	_lock.unlock()
 	if got != null:
 		return got
@@ -1142,10 +1150,9 @@ func _strand_fix(st: Dictionary) -> Vector4:
 			out.z = d
 			out.w = reach
 		final = final and _raw_y.has(node) and _final(region.node_pos[node], EASE_MOST + PAGE_PAD * STEP)
-	if final:
-		_lock.lock()
-		_fixes[edges[0]] = out
-		_lock.unlock()
+	_lock.lock()
+	(_fixes if final else _guess["fixes"])[edges[0]] = out
+	_lock.unlock()
 	return out
 
 
@@ -1223,32 +1230,47 @@ func on_ring(edge: int) -> bool:
 	return not _ring(edge).is_empty()
 
 
-## The junction at node `node` (see road-block.md), or {} where just two roads join end to end.
-func junction_of(node: int) -> Dictionary:
+## The junction at node `node` (see road-block.md), or {} where just two roads join end to end. Without `heights`, its
+## shape alone (unless it's already known whole): its heights NAN, sparing the work of the roads' faired heights.
+func junction_of(node: int, heights := true) -> Dictionary:
 	_lock.lock()
 	var j = _junction.get(node)
+	if j == null and not heights:
+		j = _junction_guess.get(node)
 	_lock.unlock()
 	if j != null:
 		return j
-	var out := _make_junction(node)
-	# (its heights are kept only once the ground round it is final)
-	if not _final(region.node_pos[node], MOUTH_MOST + EASE + PAGE_PAD * STEP + RoutePlanner.RING_TOTAL_M * 0.5):
-		return out
+	# (its heights are kept only once the ground round it is final; without heights, its shape alone is kept, its
+	# heights NAN)
+	var keep := _junction_guess
+	if heights:
+		if not _final(region.node_pos[node], MOUTH_MOST + EASE + PAGE_PAD * STEP + RoutePlanner.RING_TOTAL_M * 0.5):
+			return _make_junction(node)
+		keep = _junction
+	var out := _make_junction(node, heights)
 	_lock.lock()
 	if out.has("nodes"):
 		for n in out["nodes"]:
-			_junction[n] = out
+			keep[n] = out
 	else:
-		_junction[node] = out
+		keep[node] = out
 	_lock.unlock()
 	return out
 
 
-func _make_junction(node: int) -> Dictionary:
+## Forgets the heights worked out from ground that wasn't final yet (the ground has sharpened: see RoadStreamer).
+func forget_guesses() -> void:
+	_lock.lock()
+	for k: String in _guess:
+		_guess[k] = {}
+	_lock.unlock()
+
+
+func _make_junction(node: int, heights := true) -> Dictionary:
 	for ei in region.adjacent[node]:
 		var ring := _ring(ei)
 		if not ring.is_empty():
-			return _roundabout(ring)
+			return _roundabout(ring, heights)
 	var deg := region.adjacent[node].size()
 	if deg == 2:
 		return {}
@@ -1272,10 +1294,10 @@ func _make_junction(node: int) -> Dictionary:
 		if pair >= 0:
 			kind = "staggered"
 	var pos := region.node_pos[node]
-	var y := node_y(node)
+	var y := node_y(node) if heights else NAN
 	var out := {"node": node, "nodes": PackedInt32Array([node]), "kind": kind, "pos": Vector3(pos.x, y, pos.y),
 		"island": 0.0, "pair": pair, "arms": arms}
-	_shape(out)
+	_shape(out, heights)
 	return out
 
 
@@ -1357,7 +1379,7 @@ func _stagger_pair(node: int, arms: Array) -> int:
 
 
 ## A roundabout: the ring of `ring` nodes, its arms the roads off it.
-func _roundabout(ring: PackedInt32Array) -> Dictionary:
+func _roundabout(ring: PackedInt32Array, heights := true) -> Dictionary:
 	var set := {}
 	for n in ring:
 		set[n] = true
@@ -1378,7 +1400,7 @@ func _roundabout(ring: PackedInt32Array) -> Dictionary:
 	var y := 0.0
 	for n in ring:
 		radius += region.node_pos[n].distance_to(centre)
-		y += node_y(n)
+		y += node_y(n) if heights else NAN
 	radius /= ring.size()
 	y /= ring.size()
 	var arms := _arms(ring, skip)
@@ -1402,12 +1424,12 @@ func _roundabout(ring: PackedInt32Array) -> Dictionary:
 	var out := {"node": ring[0], "nodes": ring, "kind": "mini" if radius <= RoutePlanner.MINI_RING_M else "roundabout",
 		"pos": Vector3(centre.x, y, centre.y), "island": island, "pair": -1, "arms": arms, "ring_w": ring_w,
 		"ring_r": radius}
-	_shape(out)
+	_shape(out, heights)
 	return out
 
 
 ## Works out how far each arm's plain road starts from its node (its mouth), the junction's radius and its outline.
-func _shape(j: Dictionary) -> void:
+func _shape(j: Dictionary, heights := true) -> void:
 	var arms: Array = j["arms"]
 	var n := arms.size()
 	var centre := Vector2(j["pos"].x, j["pos"].z)
@@ -1432,7 +1454,7 @@ func _shape(j: Dictionary) -> void:
 		var s := m if bool(a["_from_a"]) else length_of(ei) - m
 		var p := point_at(ei, s)
 		a["mouth_s"] = m
-		a["mouth"] = Vector3(p.x, road_y(ei, s), p.y)
+		a["mouth"] = Vector3(p.x, road_y(ei, s) if heights else NAN, p.y)
 	var radius := 0.0
 	var outline := PackedVector2Array()
 	var outline_y := PackedFloat32Array()
@@ -1609,8 +1631,9 @@ func _project(edge: int, p: Vector2, segs := PackedInt32Array()) -> Array:
 
 
 ## Which road (x, z) is on, or nearest within REACH of its edge: see road-block.md. `hint` (the edge from last time) is
-## tried first; the answer doesn't depend on it.
-func locate(x: float, z: float, hint := -1) -> Dictionary:
+## tried first; the answer doesn't depend on it. Without `heights` its "y" is NAN (the road's height, faired along its
+## strand, is work a caller after only which road and where across it is spared).
+func locate(x: float, z: float, hint := -1, heights := true) -> Dictionary:
 	var p := Vector2(x, z)
 	var best := -1
 	var best_key := INF
@@ -1641,11 +1664,11 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 	var lat: float = best_proj[1]
 	var w := width_of(best)
 	var f := clampf(lat / maxf(w * 0.5, 0.1), -1.0, 1.0)
-	var y := road_y(best, s) + CROWN * (1.0 - f * f)
+	var y := road_y(best, s) + CROWN * (1.0 - f * f) if heights else NAN
 	var node := -1
 	var on := float(best_proj[2]) <= w * 0.5   # (its distance, not lat: past a dead end isn't on it)
 	for n: int in [region.edge_a[best], region.edge_b[best]]:
-		var j := junction_of(n)
+		var j := junction_of(n, heights)
 		if j.is_empty() or j["kind"] == "end":
 			continue
 		if Geometry2D.is_point_in_polygon(p, j["outline"]) or Vector2(j["pos"].x, j["pos"].z).distance_to(p) <= _inner(j):

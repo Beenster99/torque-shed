@@ -134,11 +134,22 @@ func _work(k: Vector2i) -> void:
 	_lock.unlock()
 
 
-## Lays out every wanted block round `at` here and now, and puts it in (the start, behind a fade).
+## Lays out every wanted block round `at` here and now (on every core at once), and puts it in (the start, behind a
+## fade).
 func preload_round(at: Array[Vector2], reach := 600.0) -> void:
+	var keys: Array[Vector2i] = []
 	for k in wanted(at, reach):
 		if not blocks.has(k) and can_build(k):
-			commit(net.block(k))
+			keys.append(k)
+	if keys.is_empty():
+		return
+	var laid: Array[RoadBlock] = []
+	laid.resize(keys.size())
+	var group := WorkerThreadPool.add_group_task(func(i: int): laid[i] = net.block(keys[i]), keys.size(), -1, true,
+		"Road blocks round the start")
+	WorkerThreadPool.wait_for_group_task_completion(group)
+	for b in laid:
+		commit(b)
 
 
 ## Whether a block with its collision is in under region-frame (x, z).
@@ -147,6 +158,7 @@ func has_ground(x: float, z: float) -> bool:
 
 
 func _on_ground_arrived(area: Rect2, _level := 0) -> void:
+	net.forget_guesses()
 	if world != null:
 		world.forget_network_y.call_deferred()
 	_lock.lock()
