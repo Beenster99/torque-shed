@@ -13,13 +13,29 @@ extends Node
 ##   side   on the verge, looking out across the land
 ##   back   a little above the road, looking back the way it came
 ##   vista  high above and behind, looking down the road ahead over the land
+##
+## With --network the same rides are drawn on the road network (AdventureWorld.network, the Esc > Debug toggle) at the
+## same spots, and each place measures what is round its road either way (measure), so the sheet shows the gap between
+## the two and how it closes (postcards.sh --both draws every place both ways).
 
 const Sheet := preload("res://tests/postcards/sheet.gd")
 const WORLD := "res://tests/postcards/world"
 const PLACES := "res://tests/postcards/places.json"
 ## Frames timed at each view once it has settled, and the frames it waits for the land before giving up on it.
 const TIMED := 12
-const SETTLE_MS := 60000
+const SETTLE_MS := 90000
+## The land near the camera (m: RealLand.NET_NEAR, where the network ride's is finest) a view waits for, and how long it
+## waits after that for the far land before taking the view as it is (ms).
+const NEAR_LAND := 1100.0
+const FAR_WAIT_MS := 15000
+## How far round the road view's spot measure counts what there is (m), and how far along the road either side it
+## follows its height and heading, every STEP.
+const REACH := 400.0
+const STRETCH := 300.0
+const STEP := 2.0
+## The names the things set beside the road are given (AdventureProps, AdventureJunctions, AdventureStops), counted by
+## measure.
+const SITES := ["LimitSign", "FuelStation", "Banner", "Junction_", "Stop_"]
 
 var out_dir := "user://postcards"
 ## The size each view is rendered at.
@@ -31,7 +47,7 @@ var fetch := false
 ## No frame times: just the pictures (a quick look at a change of your own).
 var quick := false
 ## The network ride (AdventureWorld.network, the Esc > Debug toggle): every road round the camera, not just the plan's.
-## Its land follows the camera off the ride's own tiles, so it fetches heights (and keeps none).
+## Its land follows the camera off the ride's own tiles: --fetch --network fills world/heights with those too.
 var network := false
 ## Just the pictures and stats.json: postcards.sh makes the sheet once every place is done.
 var no_sheet := false
@@ -101,8 +117,6 @@ func _run(spec: Dictionary) -> void:
 		push_error(stats["places"][0]["error"])
 		return
 	use_own_world(fetch)
-	if network:
-		HeightTiles.offline = false
 	get_window().size = size
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
@@ -156,13 +170,14 @@ static func merged(spec: Dictionary, dirs: Array, into: String) -> Dictionary:
 				out[k] = v[k]
 		out["seconds"] = float(out["seconds"]) + float(v.get("seconds", 0.0))
 		for p: Dictionary in v.get("places", []):
-			by_id[p["id"]] = p
+			by_id["%s %s" % [p["id"], p.get("mode", "single")]] = p
 		for name in DirAccess.get_files_at(d):
 			if name.ends_with(".png") and not name.begins_with("contact-sheet") and d != into:
 				DirAccess.copy_absolute(d.path_join(name), into.path_join(name))
 	for p: Dictionary in spec["places"]:
-		if by_id.has(p["id"]):
-			out["places"].append(by_id[p["id"]])
+		for mode in ["single", "network"]:
+			if by_id.has("%s %s" % [p["id"], mode]):
+				out["places"].append(by_id["%s %s" % [p["id"], mode]])
 	return out
 
 
@@ -228,7 +243,8 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 		prof.get("density", "?"), " (guessed)" if bool(prof.get("guessed", false)) else ""]
 	got["theme"] = pack.theme
 	got["month"] = PlaceLook.month_override
-	if fetch:
+	got["mode"] = "network" if network else "single"
+	if fetch and not network:
 		return got   # (planning fetched the ride's heights: that's all a fetch is for)
 	var w := AdventureWorld.new()
 	AdventureWorld.network = network
@@ -250,10 +266,16 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	for view: String in spec["views"]:
 		cam.global_transform = view_xf(w, s, view)
 		w.follow(cam.global_position)   # (as a ride does under its rider: the land and skyline round the camera)
+		var t_view := Time.get_ticks_msec()
 		var settled := await _settle(w)
+		print("postcards: %s %s %s in %.1f s" % [place["id"], view, "built" if settled else "not all built", (Time.get_ticks_msec() - t_view) / 1000.0])
 		got["load_s"] = got.get("load_s", (Time.get_ticks_msec() - t0) / 1000.0)
+		if view == spec["views"][0]:
+			got["gap"] = measure(w, s)
+		if fetch:
+			continue   # (the network ride's land fetched its heights round the camera: that's all a fetch is for)
 		var img := get_viewport().get_texture().get_image()
-		img.save_png(out_dir.path_join("%s_%s.png" % [place["id"], view]))
+		img.save_png(out_dir.path_join(picture(place["id"], network, view)))
 		var v := {} if quick else await _timed()
 		v["settled"] = settled
 		got["views"][view] = v
@@ -266,6 +288,119 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	return got
 
 
+## The file name of place `id`'s picture from `view`, on the road network or not.
+static func picture(id: String, on_network: bool, view: String) -> String:
+	return "%s%s_%s.png" % [id, "-net" if on_network else "", view]
+
+
+## What there is round `s` metres along `w`'s road, to set one way of drawing it beside the other (the sheet's gap):
+##   things     roadside things within REACH of it by kind (trees, bushes, posts, signs, stops...): MultiMesh instances
+##              count one each, and a kind is its node's name without its MM_/Trees_ prefix and its number
+##   road_pts   the points of the road's surface (and its markings: line_pts) within REACH, how finely it's made
+##   bumps_cm   how far the road's height strays from its own 30 m average along STRETCH either side (RMS, and the
+##              worst: bump_max_cm), so a lumpy road shows however hilly the place
+##   kink_deg   the sharpest turn of the road's heading between two points STEP apart along the plan's line (on the
+##              network, on the same road and out of its junctions)
+##   found      the share of the plan's line with a road under it (the network's roads only follow the plan's)
+static func measure(w: AdventureWorld, s: float) -> Dictionary:
+	var centre := w.transform_at(s, 0.0).origin
+	var things := {}
+	var road_pts := 0
+	var line_pts := 0
+	var stack: Array[Node] = [w]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is MultiMeshInstance3D:
+			var mm: MultiMesh = n.multimesh
+			if mm == null:
+				continue
+			var xf: Transform3D = (n as Node3D).global_transform
+			var k := _kind(n.name)
+			for i in mm.visible_instance_count if mm.visible_instance_count >= 0 else mm.instance_count:
+				if (xf * mm.get_instance_transform(i).origin).distance_to(centre) <= REACH:
+					things[k] = int(things.get(k, 0)) + 1
+		elif n is MeshInstance3D:
+			var nm := str(n.name)
+			var road := nm == "Road" or nm.begins_with("Deck_")
+			if road or nm == "Lines":
+				var pts := _points_within((n as MeshInstance3D), centre)
+				if road:
+					road_pts += pts
+				else:
+					line_pts += pts
+		elif n is Label3D or (n.get_class() == "Node3D" and SITES.any(func(pre): return str(n.name).begins_with(pre))):
+			# (a sign's words, and the things set beside the road: stops, junctions, banners, limit signs)
+			if (n as Node3D).global_position.distance_to(centre) <= REACH:
+				var k := "sign words" if n is Label3D else _kind(n.name)
+				things[k] = int(things.get(k, 0)) + 1
+	var ys: Array[float] = []
+	var hs: Array[float] = []
+	var edges: Array[int] = []   # (the network's road each point is on: a turn from one to the next isn't a kink)
+	var tries := 0
+	var hint := -1
+	var t := maxf(0.0, s - STRETCH)
+	while t <= minf(w.route.length, s + STRETCH):
+		tries += 1
+		if w.roads == null:
+			ys.append(w.route.height_at_s(t))
+			hs.append(w.route.heading_at_s(t))
+			edges.append(0)
+		else:
+			var xz := w.route.xz_at(t, 0.0)
+			var on := w.roads.net.locate(xz[0], xz[1], hint)
+			if not on.is_empty() and bool(on["on_road"]):
+				hint = int(on["edge"])
+				ys.append(w.roads.net.road_y(hint, float(on["s"])))
+				hs.append(float(on["heading"]))
+				edges.append(hint if int(on["node"]) < 0 else -1 - edges.size())
+		t += STEP
+	var off: Array[float] = []
+	var half := int(15.0 / STEP)
+	for i in range(half, ys.size() - half):
+		var sum := 0.0
+		for j in range(i - half, i + half + 1):
+			sum += ys[j]
+		off.append(absf(ys[i] - sum / (half * 2 + 1)))
+	var sq := 0.0
+	var worst := 0.0
+	for o in off:
+		sq += o * o
+		worst = maxf(worst, o)
+	var kink := 0.0
+	for i in range(1, hs.size()):
+		if edges[i] != edges[i - 1]:
+			continue
+		kink = maxf(kink, absf(wrapf(hs[i] - hs[i - 1], -PI * 0.5, PI * 0.5)))
+	return {"things": things, "road_pts": road_pts, "line_pts": line_pts,
+		"bumps_cm": snappedf(sqrt(sq / maxi(1, off.size())) * 100.0, 0.1), "bump_max_cm": snappedf(worst * 100.0, 0.1),
+		"kink_deg": snappedf(rad_to_deg(kink), 0.1), "found": snappedf(float(ys.size()) / maxi(1, tries), 0.01)}
+
+
+## A thing's kind from its node's name: "MM_autumn_tree" and "Trees_autumn_tree" are both "autumn tree".
+static func _kind(node_name: String) -> String:
+	var k := node_name.rstrip("0123456789_-@").trim_prefix("@")
+	for pre in ["MM_", "Trees_", "kit_"]:
+		k = k.trim_prefix(pre)
+	return k.to_snake_case().replace("_", " ").strip_edges()
+
+
+## How many of mesh `mi`'s points are within REACH of `centre`.
+static func _points_within(mi: MeshInstance3D, centre: Vector3) -> int:
+	if mi.mesh == null:
+		return 0
+	var xf := mi.global_transform
+	if not (xf * mi.get_aabb()).grow(REACH).has_point(centre):
+		return 0
+	var n := 0
+	for i in mi.mesh.get_surface_count():
+		var v: PackedVector3Array = mi.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+		for p in v:
+			if (xf * p).distance_to(centre) <= REACH:
+				n += 1
+	return n
+
+
 ## Waits until the world round the camera is all built (its chunks, land and ridges), then a few frames more for the
 ## shadows and the eye to adjust. False when it gave up waiting.
 func _settle(w: AdventureWorld) -> bool:
@@ -275,15 +410,40 @@ func _settle(w: AdventureWorld) -> bool:
 	await _frames(4)
 	var end := Time.get_ticks_msec() + SETTLE_MS
 	var done := false
+	var near_in := -1
 	while Time.get_ticks_msec() < end:
 		await _frames(3)
-		var roads_in := w.roads == null or RoadStreamer.wanted(w.roads.riders(), 600.0).all(func(k): return w.roads.blocks.has(k))
-		if w.wanted_chunks().all(func(c): return w.chunks.has(c)) and (w.land == null or not w.land.busy()) and roads_in:
+		# (the network ride's roads are its blocks, the planned road's its chunks)
+		# (a block whose ground isn't all in can't be laid out: the land's wait covers that ground)
+		var roads_in := RoadStreamer.wanted(w.roads.riders(), 600.0).all(func(k): return w.roads.blocks.has(k) or not w.roads.can_build(k)) \
+			if w.roads != null else w.wanted_chunks().all(func(c): return w.chunks.has(c))
+		if not roads_in:
+			continue
+		if w.land == null or not w.land.busy():
 			done = true
 			break
+		# (the far land can take minutes more, where it's built up on the network ride: once the near land is in, it gets
+		# FAR_WAIT_MS more and then the view is taken as it is)
+		if _near_land_in(w.land):
+			if near_in < 0:
+				near_in = Time.get_ticks_msec()
+			elif Time.get_ticks_msec() - near_in > FAR_WAIT_MS:
+				done = true
+				break
 	RenderingServer.render_loop_enabled = true
 	await _frames(6)
 	return done
+
+
+## Whether `land` has laid out all it's going to within NEAR_LAND of where it follows (its finest blocks).
+static func _near_land_in(land: RealLand) -> bool:
+	for item: Dictionary in land._queue:
+		if float(item["d"]) <= NEAR_LAND:
+			return false
+	for k: Vector2i in land._tasks:
+		if RealLand._centre(k).distance_to(land._at) <= NEAR_LAND:
+			return false
+	return true
 
 
 ## The frame times (ms: mean, 95th percentile, worst) over TIMED frames, and what the last of them drew.
