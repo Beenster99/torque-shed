@@ -37,6 +37,7 @@ RING_EDGE_M = 90.0
 RING_TOTAL_M = 260.0
 RING_MAX_EDGES = 8
 RING_ROUNDNESS = 0.18   # the spread of a ring's radius over its mean: a circle is 0, a square about 0.1, a long thin loop 0.5
+RING_CORNER = 65.0      # degrees: a ring turning sharper than this at any corner is a town's block, not a roundabout
 MINI_RING_M = 12.0     # a ring of about this radius or less is a mini roundabout
 
 # Real places the adventure's stops can adopt (Overture basic_category -> the stop's kind). `fuel`: where the
@@ -154,9 +155,33 @@ def find_ring(graph, start_edge, max_edges=RING_MAX_EDGES):
             if ei in used or graph.edges[ei]["length"] > RING_EDGE_M or total + graph.edges[ei]["length"] > RING_TOTAL_M:
                 continue
             stack.append((other, nodes + [other], used + [ei], total + graph.edges[ei]["length"]))
-    if best is None or not is_round(graph, best[1]):
+    if best is None or not is_round(graph, best[1]) or not turns_gently(graph, best[0], best[1]):
         return []
     return best[0]
+
+
+def turns_gently(graph, nodes, edge_ids):
+    """Whether the road round a ring (its `nodes` in order and its `edge_ids`, as find_ring has them) turns no sharper than RING_CORNER
+    anywhere: a roundabout bends round as a circle, a town's block (a loop of straight streets, its points only at its
+    corners, so as "round" as a circle by its radius alone) turns square at each corner."""
+    pts = []
+    for i, ei in enumerate(edge_ids):
+        line = edge_line_from(graph, ei, nodes[i - 1])   # (the first edge runs from the last node round to the first)
+        for p in line[:-1]:
+            if not pts or math.hypot(p[0] - pts[-1][0], p[1] - pts[-1][1]) > 0.05:
+                pts.append(p)
+    n = len(pts)
+    if n < 3:
+        return False
+    for k in range(n):
+        ax, az = pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]
+        bx, bz = pts[(k + 1) % n][0] - pts[k][0], pts[(k + 1) % n][1] - pts[k][1]
+        if ax * ax + az * az < 1e-4 or bx * bx + bz * bz < 1e-4:
+            continue
+        turn = math.degrees(abs(math.atan2(ax * bz - az * bx, ax * bx + az * bz)))
+        if turn > RING_CORNER:
+            return False
+    return True
 
 
 def is_round(graph, edge_ids):

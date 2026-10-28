@@ -131,6 +131,15 @@ class Junctions(unittest.TestCase):
         steps, knots = route(g, "A", "D")
         self.assertEqual([j["type"] for j in rf.junctions_along(g, steps, knots) if j["type"] in ("roundabout", "mini")], [])
 
+    def test_a_town_block_is_not_a_roundabout(self):
+        # a square block of straight one-way streets, 60 m a side: its points are at its corners only, so it is as
+        # "round" as a circle by its radius, but it turns square at each corner
+        block = [seg("W", "N", [(1000, 0), (1000, -60)]), seg("N", "E", [(1000, -60), (1060, -60)]),
+                 seg("E", "S", [(1060, -60), (1060, 0)]), seg("S", "W", [(1060, 0), (1000, 0)])]
+        g = rb.Graph([seg("A", "W", [(0, 0), (1000, 0)]), seg("S", "D", [(1060, 0), (2000, 0)])] + block, F)
+        steps, knots = route(g, "A", "D")
+        self.assertEqual([j["type"] for j in rf.junctions_along(g, steps, knots) if j["type"] in ("roundabout", "mini")], [])
+
     def test_a_tiny_ring_is_a_mini_roundabout(self):
         r = 6.0
         cx = 1000.0

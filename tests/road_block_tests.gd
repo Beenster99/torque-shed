@@ -200,6 +200,15 @@ func test_kinds() -> void:
 	check(heads == [90.0, 180.0, 270.0], "a tee's arms go east, south, west, clockwise from north (%s)" % str(heads))
 	check(j["arms"].map(func(a): return a["main"]) == [true, false, true], "its main road is east to west")
 	check(float(j["arms"][1]["width"]) < float(j["arms"][0]["width"]), "the side road is narrower")
+	# A town's block (a loop of straight one-way streets, 60 m a side, a street off each corner) is four junctions,
+	# not a roundabout: it's "round" by its corners' distance from its middle, but turns square at each.
+	var block := RoadNet.new(graph([[100, 100], [160, 100], [160, 160], [100, 160], [100, -200], [460, 100], [160, 460], [-200, 160]],
+		[[0, 1, "residential", 1], [1, 2, "residential", 1], [2, 3, "residential", 1], [3, 0, "residential", 1],
+		[0, 4, "residential"], [1, 5, "residential"], [2, 6, "residential"], [3, 7, "residential"]]), flat)
+	var kinds := []
+	for n in 4:
+		kinds.append(block.junction_of(n)["kind"])
+	check(not block.on_ring(0) and not kinds.has("roundabout"), "a town's square block isn't a roundabout (%s)" % str(kinds))
 	var cn := RoadNet.new(cross(), flat)
 	var c := cn.junction_of(0)
 	check(c["kind"] == "cross" and c["arms"].size() == 4, "a crossroads has four arms")

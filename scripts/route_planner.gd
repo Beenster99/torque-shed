@@ -85,6 +85,8 @@ const RING_EDGE_M := 90.0
 const RING_TOTAL_M := 260.0
 const RING_MAX_EDGES := 8
 const RING_ROUNDNESS := 0.18
+## A ring turning sharper than this at any corner isn't a roundabout (a block of a town's streets: _turns_gently).
+const RING_CORNER := deg_to_rad(65.0)
 const MINI_RING_M := 12.0
 const JUNCTION_GAP_KNOTS := 100
 
@@ -1387,9 +1389,36 @@ static func find_ring(region: RealRegion, start_edge: int) -> PackedInt32Array:
 			var u2 := used.duplicate()
 			u2.append(ei)
 			stack.append([region.other_end(ei, node), n2, u2, total + region.edge_len[ei]])
-	if not found or not _is_round(region, best_edges):
+	if not found or not _is_round(region, best_edges) or not _turns_gently(region, best_nodes, best_edges):
 		return PackedInt32Array()
 	return best_nodes
+
+
+## Whether the road round a ring (its `nodes` in order and its `edge_ids`, as find_ring has them) turns gently all the way round, no
+## corner sharper than RING_CORNER: a roundabout bends round as a circle, a town's block (a loop of straight streets,
+## its points only at its corners, so as "round" as a circle by its radius alone) turns square at each corner.
+static func _turns_gently(region: RealRegion, nodes: PackedInt32Array, edge_ids: PackedInt32Array) -> bool:
+	var pts := PackedVector2Array()
+	for i in edge_ids.size():
+		var line: PackedVector2Array = region.edge_line[edge_ids[i]]
+		# (the first edge runs from the last node round to the first; each after it from the node before its own)
+		if region.edge_a[edge_ids[i]] != nodes[(i + nodes.size() - 1) % nodes.size()]:
+			line = line.duplicate()
+			line.reverse()
+		for k in line.size() - 1:
+			if pts.is_empty() or pts[pts.size() - 1].distance_to(line[k]) > 0.05:
+				pts.append(line[k])
+	var n := pts.size()
+	if n < 3:
+		return false
+	for k in n:
+		var a := pts[k] - pts[(k + n - 1) % n]
+		var b := pts[(k + 1) % n] - pts[k]
+		if a.length_squared() < 1e-4 or b.length_squared() < 1e-4:
+			continue
+		if absf(a.angle_to(b)) > RING_CORNER:
+			return false
+	return true
 
 
 ## Whether the road along these edges lies about a circle of a plausible size.
