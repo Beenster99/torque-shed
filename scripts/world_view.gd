@@ -19,6 +19,9 @@ const RIVER := Color(0.42, 0.6, 0.8)
 const BORDER := Color(0.6, 0.4, 0.45)
 const INK := Color(0.2, 0.17, 0.13)
 const NOTE := Color(0.1, 0.1, 0.12, 0.8)
+## The bar along the foot while the map waits (shown_progress): its height (px) and its empty part's colour.
+const BAR_H := 6.0
+const BAR_BACK := Color(1.0, 1.0, 1.0, 0.15)
 const ROUTE := Color(0.82, 0.1, 0.55)
 const PIN := Color(0.78, 0.1, 0.1)
 const PIN_FIRST := Color(0.15, 0.55, 0.25)
@@ -75,6 +78,8 @@ var _task_id := ""
 var _task_result: Array = []   # [region, bbox, note] when the worker is done
 var _task_lock := Mutex.new()
 var _progress := ""
+var _progress_frac := -1.0     # how far the worker is through fetching the roads (0 to 1), -1 when it can't say
+var _shown_tick := -1          # the tick the foot's clock and bar were last drawn at (see poll)
 var _world_task := -1
 ## The cells in view nobody has mapped (baked) yet, for the Survey button.
 var unmapped: Array[Vector2i] = []
@@ -189,6 +194,7 @@ func _start_task() -> void:
 	_task_id = id
 	_stale = false
 	_progress = "Fetching the roads here..."
+	_progress_frac = -1.0
 	note = _progress
 	_task = WorkerThreadPool.add_task(func(): _load_roads(id))
 
@@ -209,7 +215,12 @@ func _load_roads(id: String) -> void:
 		why = CellStore.fetch_cells(cells, func(done: int, total: int):
 			_task_lock.lock()
 			_progress = "Fetching the roads here (%d of %d)..." % [done, total]
+			_progress_frac = float(done) / float(maxi(total, 1))
 			_task_lock.unlock())
+	_task_lock.lock()
+	_progress = "Drawing the roads here..."
+	_progress_frac = -1.0
+	_task_lock.unlock()
 	var r: RealRegion = null
 	var said := ""
 	if states.has("here") or states.has("baked"):
@@ -279,6 +290,12 @@ func poll() -> bool:
 			_start_task()
 	if size.x > 10.0 and _want == "" and span <= ROADS_SPAN:
 		_want_roads()
+	# (while it's waiting, the clock and the bar along its foot are drawn again every second, or half second as it sweeps)
+	var frac := shown_progress()
+	var tick := -1 if is_nan(frac) else int(Time.get_ticks_msec() / (500 if frac < 0.0 else 1000))
+	if tick != _shown_tick:
+		_shown_tick = tick
+		again = true
 	return _poll_survey() or again
 
 
@@ -317,16 +334,48 @@ func surveying() -> Array[Vector2i]:
 	return out
 
 
-## What the map says along its foot: a survey going on here, or what the surveyors said, or the note.
+## What the map says along its foot: a survey going on here (how long it's been, about how long to go, when the index
+## was last looked at), or what the surveyors said, or the note.
 func shown_note() -> String:
 	var here := surveying()
 	var s: Dictionary = Shed.route_tv.get("survey", {})
 	var ago := Time.get_unix_time_from_system() - float(s.get("since", 0.0))
-	if not here.is_empty():
-		return "Being surveyed: %d cell%s, about ten minutes (asked %d min ago)." % [here.size(), "" if here.size() == 1 else "s", int(ago / 60.0)]
+	if not here.is_empty() and _task < 0:   # (once its cells come, what the fetching says)
+		var cells := "%d cell%s" % [here.size(), "" if here.size() == 1 else "s"]
+		var looked := "looking for them now" if _look_task >= 0 \
+			else "last looked %d s ago" % int((Time.get_ticks_msec() - _look_at) / 1000.0)
+		if ago < Survey.TAKES:
+			return "Surveying the roads here (%s): %s gone, about %d min to go. %s." % [cells, _clock(ago),
+				ceili((Survey.TAKES - ago) / 60.0), looked[0].to_upper() + looked.substr(1)]
+		return "Surveying the roads here (%s): %s gone, longer than usual. Still looking every minute; %s." % [cells,
+			_clock(ago), looked]
 	if not s.is_empty() and (s.get("cells", []) as Array).is_empty() and str(s.get("said", "")) != "" and ago < 90.0 and _want != "":
 		return str(s["said"])
 	return note
+
+
+## How far along what the map is waiting for is, for the bar along its foot: 0 to 1, or -1 when it can't say (the bar
+## then sweeps to and fro, so it's plain nothing has stuck); NAN when it isn't waiting.
+func shown_progress() -> float:
+	if not surveying().is_empty() and _task < 0:
+		var s: Dictionary = Shed.route_tv.get("survey", {})
+		var ago := Time.get_unix_time_from_system() - float(s.get("since", 0.0))
+		return minf(ago / Survey.TAKES, 0.95) if ago < Survey.TAKES else -1.0
+	if _task >= 0:
+		_task_lock.lock()
+		var f := _progress_frac
+		_task_lock.unlock()
+		return f
+	var s: Dictionary = Shed.route_tv.get("survey", {})
+	if not s.is_empty() and (s.get("cells", []) as Array).is_empty() and str(s.get("said", "")).ends_with("...") \
+			and Time.get_unix_time_from_system() - float(s.get("since", 0.0)) < 90.0:
+		return -1.0   # (asking the surveyors)
+	return NAN
+
+
+## `secs` as minutes and seconds ("4:07").
+static func _clock(secs: float) -> String:
+	return "%d:%02d" % [int(secs) / 60, int(secs) % 60]
 
 
 ## Whether the view is waiting for anything (the world's map, the roads, the world's index, the main roads' sketch and
@@ -661,8 +710,20 @@ func _draw() -> void:
 		var fs := 18 if big else 14
 		var w := font.get_string_size(said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var box := Rect2(Vector2((size.x - w) * 0.5 - 10.0, size.y - fs - 22.0), Vector2(w + 20.0, fs + 14.0))
+		var frac := shown_progress()
+		if not is_nan(frac):
+			# (waiting: a bar along the box's foot, filling as it goes, or sweeping to and fro when it can't say how far)
+			box = Rect2(box.position - Vector2(0.0, BAR_H + 4.0), box.size + Vector2(0.0, BAR_H + 4.0))
 		draw_rect(box, NOTE)
 		draw_string(font, box.position + Vector2(10.0, fs + 3.0), said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+		if not is_nan(frac):
+			var bar := Rect2(box.position + Vector2(10.0, box.size.y - BAR_H - 8.0), Vector2(box.size.x - 20.0, BAR_H))
+			draw_rect(bar, BAR_BACK)
+			if frac >= 0.0:
+				draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), ROUTE)
+			else:
+				var t := pingpong(float(Time.get_ticks_msec() / 500) / 8.0, 1.0)
+				draw_rect(Rect2(bar.position + Vector2((bar.size.x * 0.75) * t, 0.0), Vector2(bar.size.x * 0.25, bar.size.y)), ROUTE)
 
 
 func _draw_lines(layer: String, view_m: Rect2, k: float, m0: Vector2, col: Color, width: float) -> void:
