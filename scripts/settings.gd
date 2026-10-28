@@ -182,6 +182,10 @@ func _ready() -> void:
 	add_child(perf)
 
 
+func _exit_tree() -> void:
+	JobPool.stop()
+
+
 func load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) == OK:

@@ -20,7 +20,7 @@ var world: AdventureWorld
 var net: RoadNet
 var blocks := {}         # Vector2i -> Node3D in the world
 var stats := {"built": 0, "build_ms_max": 0.0, "commit_ms_max": 0.0}
-var _tasks := {}         # Vector2i -> WorkerThreadPool task id
+var _tasks := {}         # Vector2i -> JobPool job id
 var _done := {}          # Vector2i -> RoadBlock, laid out by a worker (read under the lock)
 var _waiting := {}       # Vector2i -> RoadBlock, laid out and waiting its turn to go in
 var _lock := Mutex.new()
@@ -38,7 +38,7 @@ func setup(w: AdventureWorld, n: RoadNet) -> void:
 
 func _exit_tree() -> void:
 	for k in _tasks:
-		WorkerThreadPool.wait_for_task_completion(_tasks[k])
+		JobPool.drop(_tasks[k])
 	_tasks.clear()
 
 
@@ -102,11 +102,11 @@ func stream(at: Array[Vector2]) -> void:
 	var want := wanted(at)
 	_lock.lock()
 	for k in _done.keys():
-		if WorkerThreadPool.is_task_completed(_tasks[k]):
+		if JobPool.done(_tasks[k]):
 			if not (_done[k] as RoadBlock).stale:
 				_waiting[k] = _done[k]
 			_done.erase(k)
-			WorkerThreadPool.wait_for_task_completion(_tasks[k])
+			JobPool.wait(_tasks[k])
 			_tasks.erase(k)
 	_lock.unlock()
 	# One a frame, nearest first; any no longer wanted (or laid out on ground that has since sharpened) dropped.
@@ -124,7 +124,7 @@ func stream(at: Array[Vector2]) -> void:
 			break
 		if (blocks.has(k) and not _stale.has(k)) or _tasks.has(k) or _waiting.has(k) or not can_build(k):
 			continue
-		_tasks[k] = WorkerThreadPool.add_task(_work.bind(k), false, "Road block")
+		_tasks[k] = JobPool.add(_work.bind(k), _centre(k).distance_to(at[0]))
 
 
 func _work(k: Vector2i) -> void:
@@ -145,9 +145,12 @@ func preload_round(at: Array[Vector2], reach := 600.0) -> void:
 		return
 	var laid: Array[RoadBlock] = []
 	laid.resize(keys.size())
-	var group := WorkerThreadPool.add_group_task(func(i: int): laid[i] = net.block(keys[i]), keys.size(), -1, true,
-		"Road blocks round the start")
-	WorkerThreadPool.wait_for_group_task_completion(group)
+	# (ahead of all else on the workers, and this thread lends a hand: no more threads at work than there are cores)
+	var ids: Array[int] = []
+	for i in keys.size():
+		ids.append(JobPool.add(func(): laid[i] = net.block(keys[i]), -INF))
+	for id in ids:
+		JobPool.wait(id)
 	for b in laid:
 		commit(b)
 

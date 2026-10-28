@@ -54,7 +54,8 @@ net.junction_of(node: int) -> Dictionary            # the junction at node (belo
 net.surface_y(node: int, p: Vector2) -> float       # junction node's surface height at p: its through road's across from p
 net.mouth(edge: int, node: int) -> float            # how far from node (m along the edge) the plain road starts
 net.locate(x: float, z: float, hint := -1) -> Dictionary   # which road am I on (below)
-net.ground_at(x: float, z: float, bare: float) -> float    # the land with the roads cut in (below)
+net.ground_at(x: float, z: float, bare: float, memo = null) -> float    # the land with the roads cut in (below); a
+                                                    # worker laying out land passes a {} of its own as memo
 net.block(key: Vector2i) -> RoadBlock               # builds the block (pure: call it on a worker)
 net.dress: Dictionary                               # {terrain: RealTerrain, look: the place's look}: what blocks plant trees by
                                                     # ({} plants none; the ride sets it)

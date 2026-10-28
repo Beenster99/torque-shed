@@ -634,7 +634,15 @@ func test_land() -> void:
 				var I := roundi(p.x / fs)
 				var J := roundi(p.z / fs)
 				var on_side := I % RealLand.FINE == 0 or J % RealLand.FINE == 0
-				var want := net.ground_at(x, z, w.route.ground_at(x, z))
+				# (the bare ground under a finer point is the cell's corners', in between: the tiles are coarser than a cell)
+				var sp: float = fs * RealLand.FINE
+				var cx := o.x + floorf(p.x / sp) * sp
+				var cz := o.y + floorf(p.z / sp) * sp
+				var tx := (x - cx) / sp
+				var tz := (z - cz) / sp
+				var bare := lerpf(lerpf(w.route.ground_at(cx, cz), w.route.ground_at(cx + sp, cz), tx),
+						lerpf(w.route.ground_at(cx, cz + sp), w.route.ground_at(cx + sp, cz + sp), tx), tz)
+				var want := net.ground_at(x, z, bare)
 				if absf(p.y - want) > 0.02 and not on_side:
 					off_land += 1
 				var hit := net.locate(x, z)
