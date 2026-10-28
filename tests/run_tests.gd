@@ -24117,6 +24117,10 @@ func _test_net_saves() -> void:
 	_net().test_saves()
 
 
+func _test_net_loading() -> void:
+	await _net().test_loading()
+
+
 # ---------------------------------------------------------------------------- road markings (tests/road_markings_tests.gd)
 
 func _road_markings() -> RefCounted:

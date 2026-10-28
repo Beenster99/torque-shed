@@ -395,3 +395,41 @@ func test_saves() -> void:
 	check(is_equal_approx(AdventureNeeds.resume_s("Jo"), 12004.0), "Jo at %.0f m" % AdventureNeeds.resume_s("Jo"))
 	Shed.adventure = was_adv
 	Shed.crew = was_crew
+
+
+## The loading card while a ride gets ready (RideLoading): each step's share of the bar, and the roads round the start
+## built without holding the game up, counted out as they're laid (RoadStreamer.preload_round_async), till the
+## ground's there to ride on.
+func test_loading() -> void:
+	var card := RideLoading.new()
+	t.add_child(card)
+	card.show_step(3, 40, 120)
+	check(absf(card.fraction() - (0.15 + 0.08 + 0.07 + 0.35 / 3.0)) < 0.002 and card.detail_text().contains("40 of 120"),
+		"shaping the land, 40 of 120 tiles: the bar %.0f%% along (\"%s\")" % [card.fraction() * 100.0, card.detail_text()])
+	card.show_step(RideLoading.SET_DOWN)
+	check(card.fraction() > 0.94 and card.fraction() < 0.96, "and nearly full setting you down at the start")
+	card.queue_free()
+	var plan := AdventurePlans.tour("dales", 3)
+	var was := AdventureWorld.network
+	AdventureWorld.network = true
+	var w := AdventureWorld.new()
+	w.roads_region = RealRegion.get_region("dales")
+	w.setup(AdventurePlans.pack_for(plan), 1)
+	AdventureWorld.network = was
+	RealLand.roam = false
+	t.add_child(w)
+	var seen: Array = []
+	var frames := [0]
+	var count_frames := func(): frames[0] += 1
+	t.get_tree().process_frame.connect(count_frames)
+	await w.preload_range_async(0.0, 420.0, func(done: int, total: int): seen.append([done, total]))
+	t.get_tree().process_frame.disconnect(count_frames)
+	var rising := true
+	for i in range(1, seen.size()):
+		rising = rising and int(seen[i][0]) >= int(seen[i - 1][0])
+	check(not seen.is_empty() and rising and int(seen[-1][0]) == int(seen[-1][1]) and int(seen[-1][1]) > 0,
+		"the roads round the start counted out as they're built (%d reports, %s at the end)" % [seen.size(), str(seen[-1]) if not seen.is_empty() else "none"])
+	check(frames[0] >= 2, "the game kept going while they were (%d frames)" % frames[0])
+	check(w.has_ground(10.0) and w.has_ground(400.0), "and the ground's there to ride on at the start")
+	w.queue_free()
+	await t.get_tree().process_frame

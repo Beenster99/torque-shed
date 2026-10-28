@@ -628,6 +628,30 @@ func preload_range(s0: float, s1: float) -> void:
 			_commit(data)
 
 
+## As preload_range, letting the frames go on while it's done (for a loading screen): `report` is told (done, out of)
+## as it goes.
+func preload_range_async(s0: float, s1: float, report := Callable()) -> void:
+	if roads != null:
+		var at: Array[Vector2] = []
+		for s in [s0, (s0 + s1) * 0.5, s1]:
+			var xz := route.xz_at(clampf(s, 0.0, route.total), 0.0)
+			at.append(Vector2(xz[0], xz[1]))
+		await roads.preload_round_async(at, 300.0, report)
+		return
+	var c0 := maxi(0, AdventureRoute.chunk_of(s0))
+	var c1 := mini(route.chunk_count() - 1, AdventureRoute.chunk_of(s1))
+	for c in range(c0, c1 + 1):
+		if report.is_valid():
+			report.call(c - c0, c1 - c0 + 1)
+		await get_tree().process_frame
+		if not chunks.has(c):
+			var data := AdventureChunk.build(route, c)
+			_note_build(data)
+			_commit(data)
+	if report.is_valid():
+		report.call(c1 - c0 + 1, c1 - c0 + 1)
+
+
 ## Whether the chunk under `s` is in the world (its collision there to ride on).
 func has_ground(s: float) -> bool:
 	if roads != null:

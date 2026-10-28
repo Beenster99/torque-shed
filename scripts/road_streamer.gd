@@ -152,6 +152,36 @@ func preload_round(at: Array[Vector2], reach := 600.0) -> void:
 		commit(b)
 
 
+## As preload_round, without holding the game up while it's done (so a loading screen can show how it's getting on):
+## the blocks are laid out on every core while `report` is told (done, out of) each frame, then put in a few a frame.
+## The streaming round the riders waits meanwhile.
+func preload_round_async(at: Array[Vector2], reach := 600.0, report := Callable()) -> void:
+	var keys: Array[Vector2i] = []
+	for k in wanted(at, reach):
+		if not blocks.has(k) and can_build(k):
+			keys.append(k)
+	if keys.is_empty():
+		return
+	var was := is_processing()
+	set_process(false)
+	var laid: Array[RoadBlock] = []
+	laid.resize(keys.size())
+	var group := WorkerThreadPool.add_group_task(func(i: int): laid[i] = net.block(keys[i]), keys.size(), -1, true,
+		"Road blocks round the start")
+	while not WorkerThreadPool.is_group_task_completed(group):
+		if report.is_valid():
+			report.call(WorkerThreadPool.get_group_processed_element_count(group), keys.size())
+		await get_tree().process_frame
+	WorkerThreadPool.wait_for_group_task_completion(group)
+	for i in laid.size():
+		commit(laid[i])
+		if i % 4 == 3 and i + 1 < laid.size():
+			await get_tree().process_frame
+	if report.is_valid():
+		report.call(keys.size(), keys.size())
+	set_process(was)
+
+
 ## Whether a block with its collision is in under region-frame (x, z).
 func has_ground(x: float, z: float) -> bool:
 	return blocks.has(RoadBlock.key_of(x, z))

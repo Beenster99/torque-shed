@@ -18,6 +18,11 @@ static var _tasks := {}
 static var _lock := Mutex.new()
 ## key -> what a worker planning it is doing ("the map: 3 of 9 parts of the world"), while it does (progress_of).
 static var _progress := {}
+## key -> [stage (STAGES), done, out of], while a worker plans it (stage_of).
+static var _stages := {}
+## The steps of planning a road, in order (stage_of): fetching the map of that part of the world, reading its roads,
+## rivers and trees, planning the road along them, and shaping the land along it.
+const STAGES: Array[String] = ["map", "roads", "route", "land"]
 
 
 ## `v` as a plan this game can plan, or {} when it is not one (no such region, too few or too many pins, a pin off the map).
@@ -72,21 +77,21 @@ static func _run(plan: Dictionary) -> Dictionary:
 	var k := key(plan)
 	if str(plan["region"]).begins_with(RealRegion.AREA_PREFIX):
 		# An area of the world's cells: those the game hasn't got are fetched first (on this worker).
-		_say(k, "the map")
+		_say(k, "the map", 0)
 		var why := RealRegion.fetch_area(str(plan["region"]), func(done: int, total: int):
-			_say(k, "the map, %d of %d parts of the world" % [done, total]))
+			_say(k, "the map, %d of %d parts of the world" % [done, total], 0, done, total))
 		if why != "":
 			_say(k, "")
 			return {"ok": false, "error": why, "pack": null}
-	_say(k, "the roads, the rivers and the trees")
+	_say(k, "the roads, the rivers and the trees", 1)
 	var region := RealRegion.get_region(str(plan["region"]))
 	if region == null:
 		return {"ok": false, "error": "This game doesn't have that part of the world.", "pack": null}
 	if str(plan.get("region_hash", "")) != "" and str(plan["region_hash"]) != region.hash:
 		return {"ok": false, "error": "Your copy of the %s map isn't the host's: update the game to join." % region.title, "pack": null}
-	_say(k, "the road")
+	_say(k, "the road", 2)
 	var res := RoutePlanner.plan(region, _request(plan), func(done: int, total: int):
-		_say(k, "the lie of the land, %d of %d map tiles" % [done, total]))
+		_say(k, "the lie of the land, %d of %d map tiles" % [done, total], 3, done, total))
 	_say(k, "")
 	if bool(res["ok"]):
 		RealPack.register(res["pack"])
@@ -94,13 +99,25 @@ static func _run(plan: Dictionary) -> Dictionary:
 	return res
 
 
-static func _say(k: String, what: String) -> void:
+static func _say(k: String, what: String, stage := -1, done := 0, total := 0) -> void:
 	_lock.lock()
 	if what == "":
 		_progress.erase(k)
+		_stages.erase(k)
 	else:
 		_progress[k] = what
+		if stage >= 0:
+			_stages[k] = [stage, done, total]
 	_lock.unlock()
+
+
+## Where a worker planning `plan` has got to: [stage (its place in STAGES), done, out of (0 when it isn't counted)],
+## or [] when none is.
+static func stage_of(plan: Dictionary) -> Array:
+	_lock.lock()
+	var at: Array = (_stages.get(key(plan), []) as Array).duplicate()
+	_lock.unlock()
+	return at
 
 
 ## What a worker planning `plan` is doing now ("the lie of the land, 40 of 120 map tiles"), or "" when none is.
