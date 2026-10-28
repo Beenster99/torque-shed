@@ -130,21 +130,16 @@ func test_paint() -> void:
 	var rgb := RoadMarkings.paint(rb, _kit("GB"))
 	check(_has(rfr["signs"], RoadMarkings.BLUE) and not _has(rgb["signs"], RoadMarkings.BLUE),
 		"a French roundabout has its blue discs, a British one doesn't")
-	# Speed bumps on a long town street, by the country's count (Mexico's topes), none out of town; bollards round a
-	# town junction's corners.
+	# No speed bumps anywhere (Simon, 2026-10-28), not even Mexico's topes; bollards round a town junction's corners.
 	var street := RoadNet.new(load("res://tests/road_block_tests.gd").graph([[100, 100], [-200, 100], [490, 100], [100, 500]],
 		[[1, 0, "residential"], [0, 2, "residential"], [0, 3, "residential"]]), load("res://tests/road_block_tests.gd").flat)
 	var sb := street.block(RoadBlock.key_of(100.0, 100.0))
 	var mx_town := RoadMarkings.paint(sb, _kit("MX", "town"))
-	check((mx_town["faces"] as PackedVector3Array).size() > 0 and _has(mx_town["signs"], RoadMarkings.YELLOW),
-		"a Mexican town street has its topes, striped, to ride over (%d faces)" % [(mx_town["faces"] as PackedVector3Array).size() / 3])
-	check((RoadMarkings.paint(sb, _kit("MX"))["faces"] as PackedVector3Array).is_empty(), "and none out of town")
+	check((mx_town["faces"] as PackedVector3Array).is_empty(),
+		"a Mexican town street has no topes, nor any other speed bump")
 	var gb_street := RoadMarkings.paint(sb, _kit("GB", "town"))
+	check((gb_street["faces"] as PackedVector3Array).is_empty(), "nor a British one")
 	check(_has(gb_street["signs"], RoadMarkings.BOLLARDS["british_isles"][1]), "a British town junction has its black and gold bollards")
-	var ok := true
-	for p: Vector3 in mx_town["faces"]:
-		ok = ok and p.is_finite() and absf(p.y + sb.anchor().y - 10.0) < 0.3
-	check(ok, "the bumps lie on the road")
 	# Shop names in the country's own words.
 	var rng := RandomNumberGenerator.new()
 	check(SignWords.shop_words("ja").has(SignWords.shop_word(_kit("JP")["facts"], rng)), "Japan's shops are named in Japanese")

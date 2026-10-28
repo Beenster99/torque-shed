@@ -359,6 +359,7 @@ func test_sites() -> void:
 					spots += 1
 			check(spots > 0 or str(p["site"]["kind"]) == "layby", "with somewhere to sit or buy food (%d)" % spots)
 			check(ns.build_some(100) == 0, "and not built again")
+		_check_meets_road(net, p)
 		# Slept at it: woken on the road beside it, facing on along the route, the next rider a bike length back.
 		var bed := [xf.origin.x + xf.basis.x.x * 10.0, xf.origin.z + xf.basis.x.z * 10.0, 0.0]
 		var wake = w.net_wake_xf(bed, 0)
@@ -373,7 +374,45 @@ func test_sites() -> void:
 				"on the road's left half (%s)" % str(on.get("lat")))
 			check(Vector2(fwd.x, fwd.z).dot(Vector2(sin(rh), -cos(rh))) > 0.7, "facing on along the route")
 			check(absf((wake as Transform3D).origin.distance_to((wake2 as Transform3D).origin) - 4.0) < 0.5, "the next a bike length back")
+	# The first fuel station too.
+	for p: Dictionary in ns.places:
+		if str(p["site"]["kind"]) == "fuel":
+			w.roads.preload_round([w.roads.net.point_at(int(p["edge"]), float(p["s"]))], 300.0)
+			_check_meets_road(w.roads.net, p)
+			break
 	w.free()
+
+
+## Place `p` (NetSites) stands clear of its road's edge all along it, and leans with the road so its ground meets the
+## road all along it and its own ground beside it is where it stands.
+func _check_meets_road(net: RoadNet, p: Dictionary) -> void:
+	var kind := str(p["site"]["kind"])
+	var along := NetSites.along_of(kind) * 0.8
+	var e := int(p["edge"])
+	var es := float(p["s"])
+	var xf := NetSites.frame_of(net, p, Vector2.ZERO)
+	var x := Vector2(xf.basis.x.x, xf.basis.x.z).normalized()
+	var o := Vector2(xf.origin.x, xf.origin.z)
+	var gap := INF
+	var off_road := 0.0
+	var off_ground := 0.0
+	var t := -along
+	while t <= along:
+		var q := es + t
+		if q >= 0.0 and q <= net.length_of(e):
+			gap = minf(gap, (o - net.point_at(e, q)).dot(x) - net.width_of(e) * 0.5)
+			# (the place's own floor at the verge beside this bit of road, and the ground 8 m in)
+			var c := net.point_at(e, q)
+			var zh := Vector2(xf.basis.z.x, xf.basis.z.z)
+			var local_z := (c - o).dot(zh.normalized()) / zh.length()
+			var floor_y := (xf * Vector3(0.0, 0.0, local_z)).y
+			off_road = maxf(off_road, absf(floor_y - net.road_y(e, q)))
+			var g := xf * Vector3(8.0, 0.0, local_z)
+			off_ground = maxf(off_ground, absf(net.ground_at(g.x, g.z, float(net.height.call(g.x, g.z))) - (g.y - RoadNet.UNDER)))
+		t += 5.0
+	check(gap >= 0.9 + NetSites.CLEAR - 0.05, "the %s clear of its road's edge all along it (%.2f m)" % [kind, gap])
+	check(off_road < 0.35, "the %s meets its road all along it (%.2f m out at most)" % [kind, off_road])
+	check(off_ground < 0.1, "the %s's ground level with it all along it (%.2f m out at most)" % [kind, off_ground])
 
 
 ## A night's save on the network ride keeps where each rider's bed is, and carries it on.
@@ -395,3 +434,41 @@ func test_saves() -> void:
 	check(is_equal_approx(AdventureNeeds.resume_s("Jo"), 12004.0), "Jo at %.0f m" % AdventureNeeds.resume_s("Jo"))
 	Shed.adventure = was_adv
 	Shed.crew = was_crew
+
+
+## The loading card while a ride gets ready (RideLoading): each step's share of the bar, and the roads round the start
+## built without holding the game up, counted out as they're laid (RoadStreamer.preload_round_async), till the
+## ground's there to ride on.
+func test_loading() -> void:
+	var card := RideLoading.new()
+	t.add_child(card)
+	card.show_step(3, 40, 120)
+	check(absf(card.fraction() - (0.15 + 0.08 + 0.07 + 0.35 / 3.0)) < 0.002 and card.detail_text().contains("40 of 120"),
+		"shaping the land, 40 of 120 tiles: the bar %.0f%% along (\"%s\")" % [card.fraction() * 100.0, card.detail_text()])
+	card.show_step(RideLoading.SET_DOWN)
+	check(card.fraction() > 0.94 and card.fraction() < 0.96, "and nearly full setting you down at the start")
+	card.queue_free()
+	var plan := AdventurePlans.tour("dales", 3)
+	var was := AdventureWorld.network
+	AdventureWorld.network = true
+	var w := AdventureWorld.new()
+	w.roads_region = RealRegion.get_region("dales")
+	w.setup(AdventurePlans.pack_for(plan), 1)
+	AdventureWorld.network = was
+	RealLand.roam = false
+	t.add_child(w)
+	var seen: Array = []
+	var frames := [0]
+	var count_frames := func(): frames[0] += 1
+	t.get_tree().process_frame.connect(count_frames)
+	await w.preload_range_async(0.0, 420.0, func(done: int, total: int): seen.append([done, total]))
+	t.get_tree().process_frame.disconnect(count_frames)
+	var rising := true
+	for i in range(1, seen.size()):
+		rising = rising and int(seen[i][0]) >= int(seen[i - 1][0])
+	check(not seen.is_empty() and rising and int(seen[-1][0]) == int(seen[-1][1]) and int(seen[-1][1]) > 0,
+		"the roads round the start counted out as they're built (%d reports, %s at the end)" % [seen.size(), str(seen[-1]) if not seen.is_empty() else "none"])
+	check(frames[0] >= 2, "the game kept going while they were (%d frames)" % frames[0])
+	check(w.has_ground(10.0) and w.has_ground(400.0), "and the ground's there to ride on at the start")
+	w.queue_free()
+	await t.get_tree().process_frame

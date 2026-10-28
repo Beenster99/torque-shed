@@ -591,6 +591,16 @@ func test_diary_ride() -> void:
 		main.walker._read_diary(fid)
 		check(trip.diary_open() and trip.diary.diary.get("id", "") == id, "and reading it opens the diary")
 		trip.close_diary()
+	# A shed TV's planner opens the same planner full screen; the full-screen one has no such button.
+	var wall_tv := RouteTv.new()
+	wall_tv.on_wall = true
+	main.add_child(wall_tv)
+	check(wall_tv._full.visible, "a shed TV's route planner has a Full screen button")
+	wall_tv.full_screen()
+	await main.get_tree().process_frame
+	check(trip.journey_open() and not trip.journey_map.planner._full.visible, "which opens the route planner full screen (and that one has none)")
+	wall_tv.queue_free()
+	trip.close_journey()
 	# From the route planner: the shelf.
 	trip.open_journey()
 	trip.open_diary()
