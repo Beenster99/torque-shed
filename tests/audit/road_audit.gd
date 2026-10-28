@@ -19,7 +19,8 @@ extends Node
 ## has changed for isn't audited again. The findings of all of them, worst first by class, go to OUT/report.json, and a
 ## short summary to OUT/summary.txt.
 ##
-## Arguments (after --): --cells=ROW_COL,... | --places (the postcards' places) | --all; --heights (fetch the land's
+## Arguments (after --): --cells=ROW_COL,... | --places (the postcards' places) | --sample (those and sample.json's: Rio
+## and thirty cells at random) | --all; --heights (fetch the land's
 ## heights round the roads and do the height checks); --out=DIR; --limit=N (at most N cells); --top=N (in each class);
 ## --shard=K/N (every Nth cell from the Kth: CI's machines share them); --report (just the report, from the findings
 ## kept in OUT/cells: the machines' put together).
@@ -37,6 +38,7 @@ const EDGE_PAD := 60.0
 const BUILDING_MAX := 60000
 ## The code the findings depend on: a change to any of it audits every cell again.
 const CODE := ["res://scripts/road_net.gd", "res://scripts/road_block.gd", "res://scripts/real_region.gd",
+	"res://scripts/real_terrain.gd", "res://scripts/height_tiles.gd",
 	"res://scripts/route_planner.gd", "res://tests/audit/road_audit.gd"]
 
 var out_dir := "/tmp/road-audit"
@@ -59,6 +61,8 @@ func _ready() -> void:
 				cells.append(Vector2i(int(rc[0]), int(rc[1])))
 		elif a == "--places":
 			mode = "places"
+		elif a == "--sample":
+			mode = "sample"
 		elif a == "--all":
 			mode = "all"
 		elif a == "--heights":
@@ -90,13 +94,18 @@ func _ready() -> void:
 		printerr("AUDIT: couldn't read the world's index")
 		get_tree().quit(1)
 		return
-	if mode == "places":
+	if mode == "sample":
+		for key: String in JSON.parse_string(FileAccess.get_file_as_string("res://tests/audit/sample.json"))["cells"]:
+			var rc := key.split("_")
+			cells.append(Vector2i(int(rc[0]), int(rc[1])))
+	if mode == "places" or mode == "sample":
 		var spec = JSON.parse_string(FileAccess.get_file_as_string("res://tests/postcards/places.json"))
 		for place: Dictionary in spec["places"]:
 			var a: Array = place["from"]
 			var c := RealRegion.cell_of(float(a[0]), float(a[1]))
 			if not cells.has(c):
 				cells.append(c)
+		cells.sort()
 	elif mode == "all":
 		for key: String in idx["cells"]:
 			if not (idx["cells"][key] as Dictionary).has("empty"):
@@ -104,7 +113,7 @@ func _ready() -> void:
 				cells.append(Vector2i(int(rc[0]), int(rc[1])))
 		cells.sort()
 	if cells.is_empty():
-		printerr("AUDIT: no cells (--cells=ROW_COL,... | --places | --all)")
+		printerr("AUDIT: no cells (--cells=ROW_COL,... | --places | --sample | --all)")
 		get_tree().quit(1)
 		return
 	if limit > 0:

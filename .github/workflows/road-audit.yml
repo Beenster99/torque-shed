@@ -3,11 +3,11 @@ name: Road audit
 # The world road audit (tests/audit): the road network's faults in the world's cells (roads crossing with no junction
 # or bridge, bridges to nowhere, steps, humps and bumps, buildings on roads), found from the data alone. A workflow of
 # its own, never in CI's test shards. On a pull request that changes how the roads are laid out or baked (the paths
-# below), and on a push to main, the postcards' places with their heights: a few minutes. Run by hand (Actions > Road
-# audit > Run workflow) it does every cell in the world's store, map checks only unless asked for heights, over eight
-# machines. Each cell's findings are kept between runs (a cell neither it nor the road code has changed for isn't
-# audited again), with the cells and heights fetched. The report is the "road-audit" artifact: report.json and
-# summary.txt.
+# below), and on a push to main, a fixed sample with its heights (tests/audit/sample.json: Rio, thirty cells at random
+# and the postcards' places). Every night, and by hand (Actions > Road audit > Run workflow), every cell in the world's
+# store over eight machines, map checks only unless asked for heights. Each cell's findings are kept between runs (a
+# cell neither it nor the road code has changed for isn't audited again), with the cells and heights fetched. The
+# report is the "road-audit" artifact: report.json and summary.txt (also on the run's page).
 
 on:
   push:
@@ -24,13 +24,15 @@ on:
       - ".github/workflows/road-audit.yml"
   pull_request:
     paths: *paths
+  schedule:
+    - cron: "17 2 * * *"
   workflow_dispatch:
     inputs:
       scope:
-        description: "Which cells: places (the postcards') or all"
+        description: "Which cells: all, or the fixed sample"
         default: all
         type: choice
-        options: [all, places]
+        options: [all, sample]
       heights:
         description: "With the land's heights (steps, humps, bumps, bridge ends): slow over the whole world"
         default: false
@@ -47,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.scope == 'all' && '[0,1,2,3,4,5,6,7]' || '[0]') }}
+        shard: ${{ fromJSON((github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scope == 'all')) && '[0,1,2,3,4,5,6,7]' || '[0]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Godot
@@ -60,12 +62,12 @@ jobs:
       - name: Which cells
         id: what
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.scope }}" = "all" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.scope }}" = "all" ]; }; then
             echo "args=--all --shard=${{ matrix.shard }}/${{ strategy.job-total }}${{ inputs.heights && ' --heights' || '' }}" >> "$GITHUB_OUTPUT"
             echo "key=all-${{ inputs.heights && 'h' || 'm' }}-${{ matrix.shard }}" >> "$GITHUB_OUTPUT"
           else
-            echo "args=--places --heights" >> "$GITHUB_OUTPUT"
-            echo "key=places-h" >> "$GITHUB_OUTPUT"
+            echo "args=--sample --heights" >> "$GITHUB_OUTPUT"
+            echo "key=sample-h" >> "$GITHUB_OUTPUT"
           fi
       - name: Keep the fetched world and findings
         uses: actions/cache@v4
