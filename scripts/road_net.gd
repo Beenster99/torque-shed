@@ -1183,6 +1183,10 @@ func _strand_fix(st: Dictionary) -> Vector4:
 ## The road's height at edge `edge`'s sample `k`: its strand's smoothed height, eased at the strand's ends onto the
 ## junctions there (_strand_fix).
 func _profile_at(edge: int, k: int) -> float:
+	if region.edge_a[edge] != region.edge_b[edge] and not _ring_of_edge(edge).is_empty():
+		# A roundabout's ring runs straight from one of its nodes to the next (the land rising inside it isn't followed,
+		# or the ring humps between the arms).
+		return lerpf(_raw_node_y(region.edge_a[edge]), _raw_node_y(region.edge_b[edge]), float(k) / float(samples_of(edge) - 1))
 	var st := _strand_of(edge)
 	var y := _fair_at(edge, k)
 	var fix := _strand_fix(st)
