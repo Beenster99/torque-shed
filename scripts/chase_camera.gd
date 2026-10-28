@@ -254,9 +254,10 @@ func _chase(delta: float) -> void:
 	_pivot = _pivot.lerp(t.origin, 1.0 - exp(-10.0 * delta))
 	var dir := Vector3(sin(_heading) * cos(_elev), sin(_elev), cos(_heading) * cos(_elev))
 	var desired := _pivot + dir * radius
-	# Looking ahead down the road from behind; at the bike itself once swung round it.
+	# Looking ahead down the road from behind; at the bike itself once swung round it. Looking back, the same the
+	# other way (the same way down at the road, so the horizon sits where it does looking ahead).
 	var swung := clampf(absf(orbit_yaw) / 0.6, 0.0, 1.0)
-	var look := t.origin + Vector3.UP * 0.9 + flat * 2.0 * (1.0 - swung) * (1.0 - _back) - flat * 4.0 * _back
+	var look := t.origin + Vector3.UP * 0.9 + flat * 2.0 * (1.0 - swung) * (1.0 - _back) - flat * 2.0 * _back
 	# Keep the camera out of hills and walls.
 	var from := t.origin + Vector3.UP * 1.2
 	var q := PhysicsRayQueryParameters3D.create(from, desired, 1)
@@ -283,8 +284,9 @@ func _helmet(delta := 0.0) -> void:
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
 	if _back > 0.0:
-		# The reverse view: straight back down the road from where your eyes are.
-		global_basis = global_basis * Basis(Vector3.UP, PI)
+		# The reverse view: straight back down the road from where your eyes are, turned about the world's up so the
+		# horizon sits where it does looking ahead (turned about the head's own up, a head looking down looked up).
+		global_basis = Basis(Vector3.UP, PI) * global_basis
 	elif orbiting():
 		# Turning your head inside the helmet.
 		global_basis = global_basis * Basis(Vector3.UP, orbit_yaw) * Basis(Vector3.RIGHT, -orbit_pitch)

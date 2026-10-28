@@ -234,7 +234,7 @@ func test_nod_wave() -> void:
 	await _leave(main)
 
 
-## Holding the reverse view cuts straight to a view behind, like a reversing camera (a tap leaves it there till the next):
+## Holding the reverse view cuts straight to a view behind, like a reversing camera, for as long as it is held:
 ## from your eyes in first person, round in front of the bike looking back in the chase view, with no swing round and no
 ## turn of the rider's head. LB and RB together start the engine without looking back; LB alone holds the clutch in.
 func test_look_back_and_chord() -> void:
@@ -259,17 +259,24 @@ func test_look_back_and_chord() -> void:
 	await _ticks(Engine.physics_ticks_per_second)
 	check(cam.looking_back() < 0.02 and (-cam.global_basis.z).dot(fwd) > 0.5, "let go, you look ahead again")
 	cam.set_mode(ChaseCamera.Mode.CHASE)
-	# A tap turns it round and leaves it there; the next tap turns it back.
+	# Only while it's held: a tap doesn't leave it on.
 	Input.action_press("look_back")
 	await _ticks(6)
 	Input.action_release("look_back")
 	await _ticks(Engine.physics_ticks_per_second)
-	check(cam.look_back and cam.looking_back() > 0.95, "a tap leaves the reverse view on")
-	Input.action_press("look_back")
-	await _ticks(6)
-	Input.action_release("look_back")
-	await _ticks(Engine.physics_ticks_per_second)
-	check(not cam.look_back and cam.looking_back() < 0.02, "and the next tap turns it off")
+	check(not cam.look_back and cam.looking_back() < 0.02, "a tap doesn't leave the reverse view on")
+	# The horizon where it is looking ahead: the same way down at the road, in either view.
+	for m in [ChaseCamera.Mode.CHASE, ChaseCamera.Mode.HELMET]:
+		cam.set_mode(m)
+		await _ticks(Engine.physics_ticks_per_second)
+		var ahead := (-cam.global_basis.z).y
+		Input.action_press("look_back")
+		await _ticks(Engine.physics_ticks_per_second)
+		var behind := (-cam.global_basis.z).y
+		Input.action_release("look_back")
+		await _ticks(Engine.physics_ticks_per_second)
+		check(absf(behind - ahead) < 0.04, "%s: looking back, the view's as level as looking ahead (%.3f, %.3f)" % [["chase", "helmet"][0 if m == ChaseCamera.Mode.CHASE else 1], ahead, behind])
+	cam.set_mode(ChaseCamera.Mode.CHASE)
 	# The engine on LB and RB together.
 	bike.stop_engine()
 	await _ticks(3)

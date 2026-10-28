@@ -77,7 +77,6 @@ var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
 ## The nod button held on the bike (s), and whether this hold has become a wave yet.
 var _nod_held := 0.0
 ## The reverse view: latched on by a tap (see _rear_view_step), and how long the button's been held.
-var _rear_latched := false
 var _rear_held := 0.0
 var _waved := false
 ## Held this long (s), the nod button raises the left hand in a wave instead.
@@ -860,7 +859,6 @@ func _stop_riding() -> void:
 		_left_at = Time.get_ticks_msec()
 	riding_id = 0
 	camera.look_back = false
-	_rear_latched = false
 	_rear_held = 0.0
 	_nod_held = 0.0
 	if bike:
@@ -1372,22 +1370,16 @@ static func hud_rect(screen: Vector2) -> Rect2:
 	return Rect2(Vector2(24.0, 24.0) + room * Vector2(Settings.satnav_x, Settings.satnav_y), s)
 
 
-## The reverse view button on the bike: a tap turns the view round to look behind and leaves it
-## there till the next tap; held longer than REAR_TAP it looks behind only while it's held.
+## The reverse view button on the bike: it looks behind for as long as it's held.
 ## Whether to look behind now. (LB and RB together start the engine: no reverse view meanwhile.)
-func _rear_view_step(delta: float) -> bool:
+func _rear_view_step(_delta: float) -> bool:
 	var down := Input.is_action_pressed("look_back")
 	if Controls.chord_held() or (down and _rear_held < 0.0):
 		# Part of the engine chord: this press doesn't count (-1 until it's let go).
 		_rear_held = -1.0 if down or Controls.chord_held() else 0.0
-		return _rear_latched
-	if down:
-		_rear_held += delta
-		return true
-	if _rear_held > 0.0:
-		_rear_latched = not _rear_latched if _rear_held < REAR_TAP else false
+		return false
 	_rear_held = 0.0
-	return _rear_latched
+	return down
 
 
 ## The nod button on the bike: a tap nods to a biker you're passing, held it's a wave with the
