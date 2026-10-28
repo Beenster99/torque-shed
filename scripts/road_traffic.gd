@@ -497,9 +497,8 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	# than it could stop in before the gap runs out if the other stopped dead.
 	var mine := half_length(d)
 	var look := maxf(45.0, v * v / (2.0 * brake) + GAP + 15.0)
+	var squeezing := false
 	for o in _users(slot):
-		if pushing and int(o[2]) >= 0:
-			continue   # (pulling through a knot of the traffic)
 		var off: Vector3 = o[0] - here
 		var along := off.dot(fwd)
 		var other: Dictionary = riders[int(o[2])] if int(o[2]) >= 0 else {}
@@ -510,6 +509,11 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 			along = _ahead(ri, float(d["s"]), float(other["s"]), dir)
 			off = fwd * along
 		var clear := along - mine - float(o[1])
+		if pushing and int(o[2]) >= 0:
+			# Pulling through a knot of the traffic: past them whatever, and not given up halfway
+			# (a slow lorry needs longer than PUSH_TIME to get by).
+			squeezing = squeezing or (along > -mine - float(o[1]) and clear < GAP and (off - fwd * along).length() < 2.4)
+			continue
 		if along > 0.0 and clear < look and (off - fwd * along).length() < 2.4 and absf(off.y) < 3.0:
 			var vo := maxf((o[3] as Vector3).dot(fwd), 0.0) if other.is_empty() or int(other["road"]) != ri else float(other["v"])
 			var want := GAP + HEADWAY * vo
@@ -517,6 +521,8 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 				allow = minf(allow, sqrt(vo * vo + 2.0 * brake * (clear - want)))
 			else:
 				allow = minf(allow, vo * maxf(clear - GAP, 0.0) / maxf(want - GAP, 0.01))
+	if squeezing:
+		d["push"] = maxf(float(d["push"]), 0.5)
 	# Turning off onto a road with someone just there: wait at the junction till it's clear.
 	var turning: Dictionary = d["turn"]
 	if not turning.is_empty():
