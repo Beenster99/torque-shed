@@ -18,11 +18,11 @@ def table(stats):
            " card): compare them run to run. The contact sheet is in the **postcards** artifact."
            % (str(stats.get("preset", "")).capitalize(), stats.get("renderer", ""), len(stats.get("places", [])),
               float(stats.get("seconds", 0.0))), "",
-           "| Place | km | Laid out | Memory | " + " | ".join(views) + " |",
-           "|---|---|---|---|" + "---|" * len(views)]
+           "| Place | km | Laid out | Memory | Road (bumps, worst) | By the road | " + " | ".join(views) + " |",
+           "|---|---|---|---|---|---|" + "---|" * len(views)]
     for p in stats.get("places", []):
         if p.get("error"):
-            out.append("| %s | | **%s** | |%s" % (p.get("title", p["id"]), p["error"], " |" * len(views)))
+            out.append("| %s | | **%s** | | | |%s" % (name(p), p["error"], " |" * len(views)))
             continue
         cells = []
         for v in views:
@@ -31,9 +31,18 @@ def table(stats):
             if not t.get("settled", True):
                 cell += " (not all built)"
             cells.append(cell)
-        out.append("| %s | %.1f | %.1f s | %.0f MB | %s |" % (p.get("title", p["id"]), float(p.get("km", 0)),
-                   float(p.get("load_s", 0)), float(p.get("static_mb", 0)), " | ".join(cells)))
+        gap = p.get("gap", {})
+        road = "%.1f cm, %.1f cm" % (gap["bumps_cm"], gap["bump_max_cm"]) if gap else ""
+        things = str(int(sum(gap.get("things", {}).values()))) if gap else ""
+        out.append("| %s | %.1f | %.1f s | %.0f MB | %s | %s | %s |" % (name(p), float(p.get("km", 0)),
+                   float(p.get("load_s", 0)), float(p.get("static_mb", 0)), road, things, " | ".join(cells)))
     return "\n".join(out) + "\n"
+
+
+def name(p):
+    """A place's title, and on the road network (postcards.gd --network) said so."""
+    title = p.get("title", p["id"])
+    return title + " (network)" if p.get("mode") == "network" else title
 
 
 if __name__ == "__main__":

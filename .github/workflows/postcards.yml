@@ -2,8 +2,10 @@ name: Postcards
 
 # The eight postcard places (tests/postcards), four views each, and their contact sheet with frame times and memory: on
 # a pull request only when it changes how the world is drawn or what it's made of (the paths below), and on every push to
-# main. A workflow of its own, so it runs beside CI's test shards and never holds them up: four machines draw two
-# places each, then one makes the sheet (about four minutes in all). The sheet is the "postcards" artifact.
+# main. Each place is drawn both ways, on its single planned road and on the road network (Esc > Debug), with the gap
+# between the two measured beside it, so the network's catching up shows build by build. A workflow of its own, so it
+# runs beside CI's test shards and never holds them up: eight machines draw a place each, then one makes the sheet (about
+# six minutes in all). The sheet is the "postcards" artifact.
 
 on:
   push:
@@ -30,6 +32,7 @@ on:
       - "scripts/height_tiles.gd"
       - "scripts/cell_store.gd"
       - "scripts/route_planner.gd"
+      - "scripts/net_*"
       - "**.gdshader"
       - "data/**"
       - "project.godot"
@@ -48,13 +51,13 @@ env:
 
 jobs:
   draw:
-    name: postcards (${{ matrix.group }} of 4)
+    name: postcards (${{ matrix.group }} of 8)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        group: [0, 1, 2, 3]
+        group: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - id: mesa
@@ -73,7 +76,7 @@ jobs:
       - name: Import project
         run: godot --headless --path . --import > /dev/null 2>&1 || true
       - name: Draw this machine's places
-        run: tests/postcards/postcards.sh --group=${{ matrix.group }}/4 --renderer=forward_plus --out="$PWD/part"
+        run: tests/postcards/postcards.sh --group=${{ matrix.group }}/8 --both --renderer=forward_plus --out="$PWD/part"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

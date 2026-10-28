@@ -3,10 +3,12 @@
 #   tests/postcards/postcards.sh                     # all eight, into /tmp/postcards (about six minutes)
 #   tests/postcards/postcards.sh --only=dales        # one place, under a minute, to check a change of your own
 #   tests/postcards/postcards.sh --only=dales --quick   # just the pictures, no frame times
-#   tests/postcards/postcards.sh --only=dales --network # the network ride (Esc > Debug): fetches the heights round it
+#   tests/postcards/postcards.sh --only=dales --network # on the road network (Esc > Debug) instead
+#   tests/postcards/postcards.sh --both              # each place both ways, side by side with the gap between them
 #   tests/postcards/postcards.sh --group=1/4 --out=DIR --label="PR 61"   # CI: the second of every four places
 #   tests/postcards/postcards.sh --merge=DIR,DIR --out=DIR               # CI: one sheet of the machines' shares
 #   tests/postcards/postcards.sh --fetch             # fill world/heights for the rides (after bake.py; needs the network)
+#   tests/postcards/postcards.sh --fetch --network   # and for the land round the network ride's views
 # Each place is drawn by a game of its own, so its memory is its own and not what the places before it left behind. It
 # needs a screen, so it runs under xvfb-run when there isn't one, with a user:// of its own (fresh settings, nothing of
 # yours touched). GODOT names the Godot to use.
@@ -18,6 +20,7 @@ ONLY=""
 GROUP="0/1"
 LABEL=""
 SINGLE=0
+BOTH=0
 ARGS=()
 for a in "$@"; do
 	case "$a" in
@@ -26,6 +29,7 @@ for a in "$@"; do
 		--group=*) GROUP="${a#--group=}" ;;
 		--label=*) LABEL="${a#--label=}" ;;
 		--merge=*|--fetch) SINGLE=1; ARGS+=("$a") ;;
+		--both) BOTH=1 ;;
 		*) ARGS+=("$a") ;;
 	esac
 done
@@ -64,6 +68,10 @@ DIRS=()
 for id in $IDS; do
 	godot_run --out="$OUT/$id" --only="$id" --no-sheet "${ARGS[@]}" || status=1
 	DIRS+=("$OUT/$id")
+	if [ "$BOTH" = 1 ]; then
+		godot_run --out="$OUT/$id-net" --only="$id" --no-sheet --network "${ARGS[@]}" || status=1
+		DIRS+=("$OUT/$id-net")
+	fi
 done
 if [ "${#DIRS[@]}" -gt 0 ]; then
 	godot_run --out="$OUT" --merge="$(IFS=,; echo "${DIRS[*]}")" --label="$LABEL" || status=1
