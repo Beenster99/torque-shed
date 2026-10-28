@@ -1681,7 +1681,9 @@ func locate(x: float, z: float, hint := -1, heights := true) -> Dictionary:
 
 # ---------------------------------------------------------------------------- flat ground for the stops
 
-## Sets the stops' flat ground (flats) from `list` ({edge, s, side, out, along} each).
+## Sets the stops' flat ground (flats) from `list` ({edge, s, side, out, along, shift (m further out the stop stands,
+## where the road bends its way: 0 if left out)} each). Each flat climbs with its road (climb_at), so it meets the road
+## all along its length on a hill.
 func set_flats(list: Array) -> void:
 	flats.clear()
 	_flats_by_block.clear()
@@ -1691,7 +1693,7 @@ func set_flats(list: Array) -> void:
 		var h := heading_at(e, s)
 		var g := {"edge": e, "s": s, "side": signf(float(f["side"])), "out": float(f["out"]), "along": float(f["along"]),
 			"c": point_at(e, s), "fwd": Vector2(sin(h), -cos(h)), "right": Vector2(cos(h), sin(h)),
-			"in": width_of(e) * 0.5 + VERGE + float(f["out"])}
+			"shift": float(f.get("shift", 0.0)), "in": width_of(e) * 0.5 + VERGE + float(f["out"]) + float(f.get("shift", 0.0))}
 		var reach := Vector2(float(g["along"]), float(g["in"])).length() + BANK_MAX
 		g["box"] = Rect2(g["c"], Vector2.ZERO).grow(reach)
 		var i := flats.size()
@@ -1715,7 +1717,8 @@ func flats_hash_of(k: Vector2i) -> String:
 	var text := ""
 	for i in ids:
 		var f: Dictionary = flats[i]
-		text += "|%d,%.1f,%d,%.1f,%.1f" % [int(f["edge"]), float(f["s"]), int(f["side"]), float(f["out"]), float(f["along"])]
+		text += "|%d,%.1f,%d,%.1f,%.1f,%.1f" % [int(f["edge"]), float(f["s"]), int(f["side"]), float(f["out"]), float(f["along"]),
+			float(f["shift"])]
 	return text.sha1_text().substr(0, 12)
 
 
@@ -1737,7 +1740,9 @@ func _flat_at(x: float, z: float, bare: float) -> Vector2:
 		var f: Dictionary = flats[i]
 		if not (f["box"] as Rect2).has_point(Vector2(x, z)):
 			continue
-		var y := road_y(int(f["edge"]), float(f["s"])) - UNDER
+		var along := float(f["along"])
+		var on := clampf((Vector2(x, z) - (f["c"] as Vector2)).dot(f["fwd"]), -along, along)
+		var y := road_y(int(f["edge"]), float(f["s"])) - UNDER + climb_at(int(f["edge"]), float(f["s"]), along) * on
 		if is_nan(y):
 			continue
 		var bank := _bank_width(absf(bare - y))
@@ -1745,6 +1750,17 @@ func _flat_at(x: float, z: float, bare: float) -> Vector2:
 		if t > best.x:
 			best = Vector2(t, y)
 	return best
+
+
+## How the road climbs along edge `e` about `s` (rise per metre from its a end towards its b end), over `along` m either
+## way as far as the edge goes: what a stop there leans with (NetSites.frame_of) and its flat ground with it, so both
+## meet the road all along. NAN where the road's heights aren't in.
+func climb_at(e: int, s: float, along: float) -> float:
+	var a := maxf(s - along, 0.0)
+	var b := minf(s + along, length_of(e))
+	if b - a < 1.0:
+		return 0.0
+	return (road_y(e, b) - road_y(e, a)) / (b - a)
 
 
 ## How wide a road's bank is (m past where it starts) where it makes up `rise` m of height.
