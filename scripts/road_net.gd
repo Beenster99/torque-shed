@@ -1182,6 +1182,10 @@ func _strand_fix(st: Dictionary, time := EASES) -> Vector4:
 		var e := e0 if end == 0 else e1
 		var at_a := region.edge_a[e] == node
 		var d := _eased_node_y(node, time - 1) - _fair_at(e, 0 if at_a else samples_of(e) - 1)
+		if is_nan(d):
+			# (no ground there yet: not eased till there is, or the gap would spread all along the strand)
+			d = 0.0
+			final = false
 		var reach := minf(clampf(sqrt(absf(d) * EASE_BEND), EASE, EASE_MOST), total * 0.5)
 		if end == 0:
 			out.x = d
