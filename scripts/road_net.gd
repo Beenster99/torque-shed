@@ -68,6 +68,13 @@ const KERB_STEPS := 6
 ## A three-armed junction whose straightest pair of arms is within this much (radians) of straight on is a tee;
 ## otherwise it's a fork.
 const TEE_STRAIGHT := deg_to_rad(35.0)
+## Junctions joined by a road no longer than this (m) are drawn as one (_cluster): a divided road's two carriageways
+## crossing another road, or a road parting into two one-ways just short of a junction. Drawn apart, their surfaces lay
+## one over another, folded and gapped.
+const CLUSTER_M := 25.0
+## The most junctions drawn as one, all within CLUSTER_SPAN (m) of the lowest.
+const CLUSTER_MOST := 6
+const CLUSTER_SPAN := 45.0
 ## The crown of the road (m): its middle is this much higher than its edges, as the single-line road's.
 const CROWN := 0.04
 ## The grid locate and ground_at look a point up in (m a side), within each 512 m block.
@@ -120,6 +127,7 @@ var _fair := {}             # Vector3i(strand's first edge, page, pinned) -> Pac
 var _node_y := {}           # node -> float
 var _junction := {}         # node -> Dictionary ({} for a plain join)
 var _junction_guess := {}   # node -> Dictionary: its shape alone, its heights NAN (see junction_of)
+var _clusters := {}         # node -> PackedInt32Array: the junctions drawn as one with it (_cluster)
 ## The same worked out from ground that isn't final yet (_fair, _node_y, _raw_y, _fixes and _profiles): kept, so they're not worked
 ## out again and again, till the ground sharpens (forget_guesses).
 var _guess := {"fair": {}, "node_y": {}, "raw_y": {}, "fixes": {}, "profiles": {}}
@@ -562,6 +570,21 @@ func _main_edges(node: int) -> Vector2i:
 ## it, so the through road runs on through it as it rides either side (node_y where it has none: a roundabout, a dead
 ## end).
 func surface_y(node: int, p: Vector2) -> float:
+	if _cluster(node).size() > 1:
+		# (junctions drawn as one: the plane its roads' mouths lie nearest, _compound)
+		_lock.lock()
+		var j = _junction.get(node, _junction_guess.get(node))
+		_lock.unlock()
+		if j == null or not (j as Dictionary).has("plane"):
+			j = junction_of(node)
+		var pl: Vector3 = j["plane"]
+		var c: Vector3 = j["pos"]
+		return pl.x + pl.y * (p.x - c.x) + pl.z * (p.y - c.z)
+	return _surface_one(node, p)
+
+
+## surface_y for junction `node` on its own.
+func _surface_one(node: int, p: Vector2) -> float:
 	var main := _main_edges(node)
 	if main.x < 0 or not _ring(main.x).is_empty():
 		return node_y(node)
@@ -1318,6 +1341,9 @@ func _make_junction(node: int, heights := true) -> Dictionary:
 	var deg := region.adjacent[node].size()
 	if deg == 2:
 		return {}
+	var cluster := _cluster(node)
+	if cluster.size() > 1:
+		return _compound(cluster, heights)
 	var arms := _arms(PackedInt32Array([node]), {})
 	var kind := "end"
 	var main := Vector2i(-1, -1)
@@ -1343,6 +1369,147 @@ func _make_junction(node: int, heights := true) -> Dictionary:
 		"island": 0.0, "pair": pair, "arms": arms}
 	_shape(out, heights)
 	return out
+
+
+## The junction nodes drawn as one with `node` (CLUSTER_M), lowest first: just `node` where there are none, at a
+## roundabout, or where two roads join end to end. All of those joined to it by such short roads, the same whichever of
+## them asks; none at all where they'd be more than CLUSTER_MOST, or spread over more than CLUSTER_SPAN (a town's grid
+## of short streets is its own junctions).
+func _cluster(node: int) -> PackedInt32Array:
+	_lock.lock()
+	var got = _clusters.get(node)
+	_lock.unlock()
+	if got != null:
+		return got
+	var out := PackedInt32Array([node])
+	if _clusters_at(node):
+		var k := 0
+		while k < out.size() and out.size() <= CLUSTER_MOST:
+			var n := out[k]
+			k += 1
+			for ei in region.adjacent[n]:
+				var other := region.other_end(ei, n)
+				if region.edge_len[ei] <= CLUSTER_M and other != n and not out.has(other) and _clusters_at(other):
+					out.append(other)
+		out.sort()
+		var spread := 0.0
+		for n in out:
+			spread = maxf(spread, region.node_pos[n].distance_to(region.node_pos[out[0]]))
+		if out.size() > CLUSTER_MOST or spread > CLUSTER_SPAN:
+			out = PackedInt32Array([node])
+	_lock.lock()
+	if out.size() == 1:
+		_clusters[node] = out
+	else:
+		for n in out:
+			_clusters[n] = out
+	_lock.unlock()
+	return out
+
+
+## Whether node `node` can be drawn as one with a junction near it (_cluster): three roads or more meet there, none of
+## them a roundabout's ring.
+func _clusters_at(node: int) -> bool:
+	if region.adjacent[node].size() < 3:
+		return false
+	for ei in region.adjacent[node]:
+		if on_ring(ei) or region.edge_a[ei] == region.edge_b[ei]:
+			return false
+	return true
+
+
+## Whether edge `edge` is one of junction `j`'s own: it runs between two of its nodes, short enough to be under its
+## surface (CLUSTER_M).
+func _inside(j: Dictionary, edge: int) -> bool:
+	var nodes: PackedInt32Array = j["nodes"]
+	return region.edge_len[edge] <= CLUSTER_M and nodes.has(region.edge_a[edge]) and nodes.has(region.edge_b[edge])
+
+
+## The junctions `nodes` (_cluster) drawn as one: its arms the roads out of any of them but those between them, their
+## headings from its middle (as a roundabout's), and its surface each one's through road's (surface_y).
+func _compound(nodes: PackedInt32Array, heights := true) -> Dictionary:
+	var skip := {}
+	var centre := Vector2.ZERO
+	for n in nodes:
+		centre += region.node_pos[n] / float(nodes.size())
+		for ei in region.adjacent[n]:
+			if region.edge_len[ei] <= CLUSTER_M and nodes.has(region.other_end(ei, n)):
+				skip[ei] = true
+	var arms := _arms(nodes, skip)
+	for a in arms:
+		var len := length_of(int(a["edge"]))
+		var s := minf(12.0, len * 0.5)
+		var p := point_at(int(a["edge"]), s if bool(a["_from_a"]) else len - s)
+		a["heading"] = _bearing(p - centre) if p.distance_to(centre) > 0.5 else float(a["heading"])
+	arms.sort_custom(func(p, q): return float(p["heading"]) < float(q["heading"]))
+	var kind := "multi"
+	var main := Vector2i(-1, -1)
+	if arms.size() >= 2:
+		main = _main_pair(arms)
+		if arms.size() == 3:
+			var bend := absf(PI - _angle_between(float(arms[main.x]["heading"]), float(arms[main.y]["heading"])))
+			kind = "tee" if bend <= TEE_STRAIGHT else "fork"
+		elif arms.size() == 4:
+			kind = "cross"
+	# (its main roads the greatest class there, a divided road's carriageways all four, where two or more are; else the
+	# straightest pair)
+	var best := RoutePlanner.ORDER.size()
+	for a in arms:
+		best = mini(best, maxi(RoutePlanner.ORDER.find(str(a["class"])), 0))
+	var top := arms.filter(func(a): return maxi(RoutePlanner.ORDER.find(str(a["class"])), 0) == best).size()
+	for k in arms.size():
+		arms[k]["main"] = maxi(RoutePlanner.ORDER.find(str(arms[k]["class"])), 0) == best if top >= 2 else (k == main.x or k == main.y)
+	var out := {"node": nodes[0], "nodes": nodes, "kind": kind, "pos": Vector3(centre.x, NAN, centre.y), "island": 0.0,
+		"pair": -1, "arms": arms}
+	_shape(out, heights)
+	# Its surface: the plane nearest its arms' mouths (least squares), its middle on it; the drape eases it onto each
+	# mouth's own height at its edge (RoadBlock._drape).
+	var pl := Vector3(NAN, 0.0, 0.0)
+	if heights:
+		var ys := PackedFloat32Array()
+		var ps := PackedVector2Array()
+		for a in arms:
+			var m: Vector3 = a["mouth"]
+			ps.append(Vector2(m.x, m.z) - centre)
+			ys.append(m.y)
+		pl = _plane(ps, ys)
+	out["plane"] = pl
+	out["pos"] = Vector3(centre.x, pl.x, centre.y)
+	return out
+
+
+## The plane y = a + b x + c z nearest heights `ys` at points `ps` (least squares): Vector3(a, b, c); level at their
+## mean where they don't fix a slope (fewer than three, or all in a line).
+static func _plane(ps: PackedVector2Array, ys: PackedFloat32Array) -> Vector3:
+	var n := float(ps.size())
+	var mean := 0.0
+	for y in ys:
+		mean += y / n
+	var sxx := 0.0
+	var sxz := 0.0
+	var szz := 0.0
+	var sxy := 0.0
+	var szy := 0.0
+	var mx := 0.0
+	var mz := 0.0
+	for p in ps:
+		mx += p.x / n
+		mz += p.y / n
+	for k in ps.size():
+		var dx := ps[k].x - mx
+		var dz := ps[k].y - mz
+		var dy := ys[k] - mean
+		sxx += dx * dx
+		sxz += dx * dz
+		szz += dz * dz
+		sxy += dx * dy
+		szy += dz * dy
+	var det := sxx * szz - sxz * sxz
+	if ps.size() < 3 or absf(det) < 1e-3:
+		return Vector3(mean, 0.0, 0.0)
+	var b := (sxy * szz - szy * sxz) / det
+	var c := (szy * sxx - sxy * sxz) / det
+	return Vector3(mean - b * mx - c * mz, b, c)
 
 
 ## The arms out of the nodes `nodes` (leaving out the edges in `skip`), clockwise from north: each {edge, node, heading,
@@ -1592,6 +1759,8 @@ func mouth(edge: int, node: int) -> float:
 	for a in j["arms"]:
 		if int(a["edge"]) == edge and int(a["node"]) == node:
 			return float(a["mouth_s"])
+	if (j["nodes"] as PackedInt32Array).size() > 1 and _inside(j, edge):
+		return length_of(edge)   # (a road between junctions drawn as one: all of it is the junction's surface)
 	return 0.0
 
 
@@ -1842,6 +2011,23 @@ func ground_at(x: float, z: float, bare: float, memo = null) -> float:
 			continue   # (no ground under it yet)
 		# (out on a bridge the land is left as it is under the deck, and only kept below it)
 		var on_bridge := bridge_at(ei, float(pr[0])) if memo == null or not (v[3] as PackedInt32Array).is_empty() else 0.0
+		# (inside a junction's outline, between its roads, the land is under its surface too: a roundabout's island too)
+		if on_bridge <= 0.0:
+			for n: int in [region.edge_a[ei], region.edge_b[ei]]:
+				if region.adjacent[n].size() < 3 or region.node_pos[n].distance_to(p) > MOUTH_MOST + CLUSTER_SPAN:
+					continue
+				var j: Dictionary = (memo.get(-1 - n) if memo != null and memo.has(-1 - n) else junction_of(n))
+				if memo != null:
+					memo[-1 - n] = j
+				if j.is_empty() or j["kind"] == "end" or not j.has("outline_y") \
+						or Vector2(j["pos"].x, j["pos"].z).distance_to(p) > float(j["radius"]) \
+						or not Geometry2D.is_point_in_polygon(p, j["outline"]):
+					continue
+				var low := float(j["pos"].y) if j["kind"] in ["roundabout", "mini"] else surface_y(n, p)
+				for h in j["outline_y"] as PackedFloat32Array:
+					low = minf(low, h)
+				if not is_nan(low):
+					deck = minf(deck, low - UNDER)
 		if off <= 0.0:
 			if on_bridge >= 1.0:
 				below = minf(below, y - BRIDGE_DEPTH)

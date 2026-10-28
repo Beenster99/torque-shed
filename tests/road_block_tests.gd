@@ -189,6 +189,18 @@ func test_kinds() -> void:
 	var sn := RoadNet.new(staggered(), flat)
 	check(sn.junction_of(0)["kind"] == "staggered" and int(sn.junction_of(0)["pair"]) == 1, "a tee with one opposite 30 m on is staggered")
 	check(sn.junction_of(1)["kind"] == "staggered" and int(sn.junction_of(1)["pair"]) == 0, "both ways")
+	# A divided road's two carriageways 20 m apart, crossed by a lane: one junction, the lane between them under it.
+	var dn := RoadNet.new(graph([[0, -10], [0, 10], [-300, -10], [300, -10], [-300, 10], [300, 10], [0, -300], [0, 300]],
+		[[3, 0, "primary", 1], [0, 2, "primary", 1], [4, 1, "primary", 1], [1, 5, "primary", 1], [6, 0, "residential"],
+		[0, 1, "residential"], [1, 7, "residential"]]), flat)
+	var dj := dn.junction_of(0)
+	check(dj["nodes"] == PackedInt32Array([0, 1]) and dn.junction_of(1) == dj, "a divided road's crossing is one junction (%s)" % str(dj.get("nodes")))
+	check(dj["arms"].size() == 6 and dj["arms"].filter(func(a): return a["main"]).size() == 4,
+		"six arms, the divided road's four its main roads")
+	check(dn.mouth(5, 0) >= dn.length_of(5) - 0.01, "the lane between the carriageways is all under it")
+	check(Geometry2D.is_point_in_polygon(Vector2(0, 0), dj["outline"]) and int(dn.locate(0.0, 0.0)["node"]) == 0,
+		"between them is on it")
+	check(absf(dn.surface_y(1, Vector2(0, 0)) - 10.0) < 0.01, "level on level ground")
 	var fork := RoadNet.new(graph([[0, 0], [0, 300], [-260, -150], [260, -150]],
 		[[1, 0, "primary"], [0, 2, "primary"], [0, 3, "secondary"]]), flat)
 	check(fork.junction_of(0)["kind"] == "fork", "a Y is a fork")

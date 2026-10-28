@@ -402,6 +402,15 @@ static func instruction(n: RoadNet, steps: Array[Vector2i], k: int) -> Dictionar
 		return {}
 	var arm_in := _arm(j, cur.x, node)
 	var arm_out := _arm(j, nxt.x, node)
+	if not arm_in.is_empty() and arm_out.is_empty() and (j["nodes"] as PackedInt32Array).size() > 1:
+		# (junctions drawn as one, a divided road's crossing: the way out is the first road on that's one of its arms)
+		for i in range(k + 2, steps.size()):
+			if not (j["nodes"] as PackedInt32Array).has(steps[i].y):
+				break
+			arm_out = _arm(j, steps[i].x, steps[i].y)
+			if not arm_out.is_empty():
+				nxt = steps[i]
+				break
 	if arm_in.is_empty() or arm_out.is_empty():
 		return {}
 	var turn := wrapf(float(arm_out["heading"]) - (float(arm_in["heading"]) + PI), -PI, PI)

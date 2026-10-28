@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 9
+const VERSION := 11
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -16,6 +16,14 @@ const SEAM := 0.05
 const CLEAR := 1.0
 ## The deck's points across (edge, quarter, crown, quarter, edge), as the single-line road's.
 const ACROSS := 5
+## A roundabout's arm's verges, from its mouth in towards the ring, are laid in this many pieces (stopping at the first
+## that would lie on the ring).
+const ARM_VERGE_STEPS := 4
+## How far the verge falls from the road's edge to its outer edge (m): to just above the land held RoadNet.UNDER below
+## the road there, so there's no step down off it.
+const VERGE_FALL := RoadNet.UNDER - 0.02
+## How far the verge's colour has gone to the land's at its outer edge.
+const VERGE_FADE := 0.6
 ## The verge's skirt: from the verge's outer edge it runs this far further out and down under the land (m).
 const SKIRT_OUT := 1.6
 const SKIRT_DOWN := 1.2
@@ -555,6 +563,19 @@ static func _up(a: Dictionary, p0: Vector3, p1: Vector3, p2: Vector3, col: Color
 		AdventureProps._tri(a, p0, p2, p1, col)
 
 
+## _up with a colour at each corner: triangle `p` [p0, p1, p2] coloured `c` [c0, c1, c2], facing up.
+static func _up_fade(a: Dictionary, p: Array, c: Array) -> void:
+	var nrm: Vector3 = ((p[1] as Vector3) - p[0]).cross((p[2] as Vector3) - p[0])
+	if nrm.y < 0.0:
+		p = [p[0], p[2], p[1]]
+		c = [c[0], c[2], c[1]]
+		nrm = -nrm
+	nrm = nrm.normalized()
+	a["v"].append_array([p[0], p[2], p[1]])
+	a["n"].append_array([nrm, nrm, nrm])
+	a["c"].append_array([c[0], c[2], c[1]])
+
+
 ## Adds triangle (i0, i1, i2) of grid `g` (its vertices `v`, which may not be in it yet) facing up.
 static func _grid_tri(g: Dictionary, v: PackedVector3Array, i0: int, i1: int, i2: int) -> void:
 	if (v[i1] - v[i0]).cross(v[i2] - v[i0]).y < 0.0:
@@ -597,6 +618,7 @@ func _piece_mesh(p: Dictionary) -> void:
 	var surf := str(p["surface"])
 	var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
 	var verge_col := _verge_colour(surf)
+	var verge_out := _verge_colour(surf, true)
 	var e := float(p["width"]) * 0.5
 	var o := anchor()
 	var g := _deck_of(surf)
@@ -640,8 +662,8 @@ func _piece_mesh(p: Dictionary) -> void:
 	g["i"].append_array(idx)
 	_faces_of(surf)
 	arrays["faces"][surf].append_array(faces)
-	# The verges, level with the road's edge, then the skirt down under the land: none where they'd lie on another road,
-	# nor out on a bridge (its parapets instead).
+	# The verges, from the road's edge down to the land beside it, then the skirt under the land: none where they'd lie
+	# on another road, nor out on a bridge (its parapets instead).
 	var ei := int(p["edge"])
 	var ws := PackedFloat32Array()
 	for a: float in p["at"]:
@@ -658,7 +680,7 @@ func _piece_mesh(p: Dictionary) -> void:
 				continue
 			var side := -1.0 if q == 0 else 1.0
 			_verge_strip(pts[k] - o + rights[k] * side * e, pts[k + 1] - o + rights[k + 1] * side * e, rights[k] * side,
-				rights[k + 1] * side, verge_col)
+				rights[k + 1] * side, verge_col, verge_out)
 	_bridge_sides(pts, rights, e, ws, surf)
 	if surf == "tarmac" and not _marked:
 		_piece_lines(p, pts, rights, e, s0)
@@ -705,27 +727,31 @@ func _bridge_sides(pts: PackedVector3Array, rights: Array, e: float, ws: PackedF
 			AdventureProps.box(arr, xf, Vector3(e * 2.0 + 0.8, bottom - ground + 0.5, 1.6), stone.darkened(0.12), false)
 
 
-## The verge's colour beside a road of surface `surf`: the place's own, as the land beside it is.
-func _verge_colour(surf: String) -> Color:
+## The verge's colour beside a road of surface `surf`: the place's own, as the land beside it is; at its `outer` edge,
+## most of the way to the land's, so the one fades into the other as the planned road's do.
+func _verge_colour(surf: String, outer := false) -> Color:
 	var col: Color = AdventureSurface.VERGE_COLOR.get(surf, AdventureSurface.VERGE_COLOR["tarmac"])
 	var look: Dictionary = net.dress.get("look", {})
 	if look.has("verge"):
 		col = (look["verge"] as Dictionary).get(surf, col)
+	if outer and look.has("land"):
+		col = col.lerp((look["land"] as Dictionary).get(surf, col), VERGE_FADE)
 	return col
 
 
-## A stretch of verge out from the road's edge a to b (block space), out along `ra` and `rb`, level with the edge, then
-## its skirt down under the land; and its collision.
-func _verge_strip(a0: Vector3, b0: Vector3, ra: Vector3, rb: Vector3, col: Color) -> void:
+## A stretch of verge out from the road's edge a to b (block space), out along `ra` and `rb`, falling from the edge to
+## just above the land there (RoadNet.ground_at holds it UNDER the road), coloured `col` fading to `out`; then its skirt
+## down under the land; and its collision.
+func _verge_strip(a0: Vector3, b0: Vector3, ra: Vector3, rb: Vector3, col: Color, out: Color) -> void:
 	var verge: Dictionary = arrays["verge"]
-	var a1 := a0 + ra * RoadNet.VERGE + Vector3(0.0, -0.03, 0.0)
-	var b1 := b0 + rb * RoadNet.VERGE + Vector3(0.0, -0.03, 0.0)
+	var a1 := a0 + ra * RoadNet.VERGE + Vector3(0.0, -VERGE_FALL, 0.0)
+	var b1 := b0 + rb * RoadNet.VERGE + Vector3(0.0, -VERGE_FALL, 0.0)
 	var a2 := a0 + ra * (RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
 	var b2 := b0 + rb * (RoadNet.VERGE + SKIRT_OUT) + Vector3(0.0, -SKIRT_DOWN, 0.0)
-	_up(verge, a0, b0, b1, col)
-	_up(verge, a0, b1, a1, col)
-	_up(verge, a1, b1, b2, col.darkened(0.1))
-	_up(verge, a1, b2, a2, col.darkened(0.1))
+	_up_fade(verge, [a0, b0, b1], [col, col, out])
+	_up_fade(verge, [a0, b1, a1], [col, out, out])
+	_up(verge, a1, b1, b2, out.darkened(0.1))
+	_up(verge, a1, b2, a2, out.darkened(0.1))
 	_face("grass", a0, b0, b1)
 	_face("grass", a0, b1, a1)
 
@@ -799,6 +825,19 @@ func _junction_mesh(j: Dictionary) -> void:
 			var right := Vector3(cos(out), 0.0, sin(out)) * float(a["width"]) * 0.5
 			# (from the ring's middle line, where the arm's own node is: no further in, or it pokes into the island)
 			_fan(g, surf, col, at - o, [at - right * 1.6 - o, m - right - o, m + right - o, at + right * 1.6 - o])
+			# Its verges either side, from its mouth in to where they'd meet the ring's own: no slab's edge to fall off.
+			for side: float in [-1.0, 1.0]:
+				var from: Vector3 = m + right * side
+				var to: Vector3 = at + right * side * 1.6
+				var way := Vector3(to.z - from.z, 0.0, from.x - to.x).normalized()
+				if way.dot(right * side) < 0.0:
+					way = -way
+				for q in ARM_VERGE_STEPS:
+					var p0 := from.lerp(to, float(q) / ARM_VERGE_STEPS)
+					var p1 := from.lerp(to, float(q + 1) / ARM_VERGE_STEPS)
+					if _on_other(p1 + way * RoadNet.VERGE, int(a["edge"])) or _on_other(p0 + way * RoadNet.VERGE, int(a["edge"])):
+						break
+					_verge_strip(p0 - o, p1 - o, way, way, _verge_colour(surf), _verge_colour(surf, true))
 		_island(j)
 		return
 	var full := net.junction_of(int(j["node"]))
@@ -840,7 +879,7 @@ func _junction_mesh(j: Dictionary) -> void:
 		var k1 := (k + 1) % pts.size()
 		if kerb[k] == 0 or not keep[k] or not keep[k1]:
 			continue
-		_verge_strip(pts[k], pts[k1], at[k], at[k1], verge_col)
+		_verge_strip(pts[k], pts[k1], at[k], at[k1], verge_col, _verge_colour(surf, true))
 
 
 ## A fan of triangles from `c` round `pts` (closed if `closed`), into grid `g` and collision `surf`.
