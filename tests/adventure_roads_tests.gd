@@ -31,7 +31,35 @@ static func _with_junction(type: String) -> Array:
 		for st in r.sites_of(AdventureJunctions.KIND):
 			if st["type"] == type and float(st["s"]) > 1500.0:
 				return [7, r, st, Rides.tour_pack(region_id)]
+	# (the tours' real roads have no roundabout: one of their crossroads is made one, to try what's built for it)
+	if type in ["roundabout", "mini"]:
+		for region_id in AdventurePlans.TOURS:
+			var pack := _pack_with(region_id, type)
+			var r := AdventureRoute.new()
+			r.plan_real(pack, 7, pack.max_km())
+			for st in r.sites_of(AdventureJunctions.KIND):
+				if st["type"] == type and float(st["s"]) > 1500.0:
+					return [7, r, st, pack]
 	return []
+
+
+## Tour `region_id`'s pack with each of its crossroads 2 km or more along it made a roundabout (or a mini, `type`).
+static func _pack_with(region_id: String, type: String) -> RealPack:
+	var src := Rides.tour_pack(region_id)
+	var pack := RealPack.new()
+	for p in src.get_property_list():
+		if int(p["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			pack.set(p["name"], src.get(p["name"]))
+	var rows := []
+	for row: Dictionary in src.junctions:
+		var got := row.duplicate(true)
+		if got["type"] == "cross" and float(got["k"]) * src.step > 2000.0:
+			got["type"] = type
+			got["ri"] = 9.0 if type == "roundabout" else 5.6
+			got["ro"] = 15.8 if type == "roundabout" else 12.4
+		rows.append(got)
+	pack.junctions = rows
+	return pack
 
 
 ## A world along the road `found` (see _with_junction) came from.
