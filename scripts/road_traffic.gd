@@ -71,6 +71,12 @@ const CRASH_SPEED := 4.0
 ## A biker this close (m) to you when you nod or wave nods back, after NOD_BACK_DELAY seconds.
 const NOD_REACH := 45.0
 const NOD_BACK_DELAY := 0.5
+## Stopped this long (s, plus a little more for each later slot so they don't all go at once) for others in the
+## traffic that are stopped too, a driver gives up waiting and pulls through for PUSH_TIME, minding only the riders:
+## two waiting on each other at a junction, or a knot of them, never stops the town.
+const STUCK_TIME := 5.0
+const STUCK_STAGGER := 0.6
+const PUSH_TIME := 4.0
 
 var main: Node
 var world: World
@@ -448,6 +454,9 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	var brake := float(tr["brake"])
 	var bike := kind_of(d) == "bike"
 	d["ind"] = 0
+	var pushing := float(d.get("push", 0.0)) > 0.0
+	if pushing:
+		d["push"] = float(d["push"]) - delta
 	# The pace it can take now: its own cruise, the bends ahead, the junction it's turning
 	# off at, a dead end or the edge of the yard it turns round before.
 	var allow := float(d["cruise"]) if bike else float(d.get("pace", 1.0)) * limit_at(here)
@@ -489,6 +498,8 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	var mine := half_length(d)
 	var look := maxf(45.0, v * v / (2.0 * brake) + GAP + 15.0)
 	for o in _users(slot):
+		if pushing and int(o[2]) >= 0:
+			continue   # (pulling through a knot of the traffic)
 		var off: Vector3 = o[0] - here
 		var along := off.dot(fwd)
 		var other: Dictionary = riders[int(o[2])] if int(o[2]) >= 0 else {}
@@ -513,12 +524,20 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		# (Someone just pulled away along it is always waited for; anyone else not for ever, as
 		# two waiting on each other go after a few seconds.)
 		var taken := _taken(int(turning["road"]), float(turning["s"]), int(turning["dir"]), slot, gap)
-		if gap < 30.0 and (taken == 1 or (taken == 2 and float(d.get("waited", 0.0)) < 4.0)):
+		if not pushing and gap < 30.0 and (taken == 1 or (taken == 2 and float(d.get("waited", 0.0)) < 4.0)):
 			allow = minf(allow, sqrt(2.0 * brake * maxf(gap - 4.0, 0.0)))
 			if v < 0.5:
 				d["waited"] = float(d.get("waited", 0.0)) + delta
 	else:
 		d.erase("waited")
+	# Stopped for the traffic for too long: pull through it.
+	if v < 0.3 and allow < 0.5:
+		d["stuck"] = float(d.get("stuck", 0.0)) + delta
+		if float(d["stuck"]) > STUCK_TIME + STUCK_STAGGER * slot:
+			d["push"] = PUSH_TIME
+			d["stuck"] = 0.0
+	elif v >= 0.3:
+		d["stuck"] = 0.0
 	v = move_toward(v, allow, (brake * 1.6 if allow < v else float(tr["accel"])) * delta)
 	# A kink it couldn't see coming (just round a junction onto a new road): scrub off what it
 	# must so it never corners harder than a rider would.
@@ -553,9 +572,13 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		if _heads_into_yard(pr, ps, pd):
 			pd = -pd
 		# Someone just there on it: wait at the end of this road till they've pulled away.
-		if _taken(pr, ps, pd, slot) == 1:
+		if not pushing and _taken(pr, ps, pd, slot) == 1:
 			d["s"] = clampf(s, 0.0, length)
 			d["v"] = 0.0
+			d["stuck"] = float(d.get("stuck", 0.0)) + delta
+			if float(d["stuck"]) > STUCK_TIME + STUCK_STAGGER * slot:
+				d["push"] = PUSH_TIME
+				d["stuck"] = 0.0
 			return
 		d["road"] = pr
 		d["s"] = ps

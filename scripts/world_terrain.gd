@@ -14,8 +14,12 @@ const COARSE := 4                    # the far mesh keeps every 4th sample
 const SKIRT := 6.0                   # chunk edges hang down this far to hide seams
 ## The flat ground round the shed, its yard and the town it stands in, and the height of the
 ## grass on it (just under the yard's surface, so the slab's edge is no kerb).
-const HOME := Rect2(-115.0, -62.0, 225.0, 212.0)
+const HOME := Rect2(-145.0, -62.0, 290.0, 212.0)
 const HOME_LEVEL := -0.03
+## The grass round the yard's slab is level for this far past its edge, then blends back
+## into the land (and any road's banks) over the second distance.
+const YARD_VERGE := 4.0
+const YARD_VERGE_BLEND := 14.0
 ## How far under a road's surface the ground beneath it sits.
 const ROAD_DROP := {"tarmac": 0.16, "dirt": 0.13}
 ## Past the road's edge the ground stays at road level for this far, then blends back into
@@ -195,6 +199,17 @@ func build(roads: WorldRoads) -> void:
 		var w := road_w[i]
 		if w > 0.0:
 			heights[i] = lerpf(heights[i], road_h[i], w)
+	# The yard's slab meets level grass all round, even where the loop's cutting reaches it:
+	# flat for YARD_VERGE past its edge, then easing into the land over YARD_VERGE_BLEND.
+	var yard: Rect2 = WorldYard.GROUND[0]
+	var vb := _grid_box(yard.grow(YARD_VERGE + YARD_VERGE_BLEND))
+	for gz in range(vb.position.y, vb.end.y):
+		for gx in range(vb.position.x, vb.end.x):
+			var px := gx * SPACING - HALF
+			var pz := gz * SPACING - HALF
+			var hd := Vector2(maxf(maxf(yard.position.x - px, px - yard.end.x), 0.0), maxf(maxf(yard.position.y - pz, pz - yard.end.y), 0.0)).length()
+			var i := gz * SIZE + gx
+			heights[i] = lerpf(heights[i], HOME_LEVEL, 1.0 - smoothstep(YARD_VERGE, YARD_VERGE + YARD_VERGE_BLEND, hd))
 	HomePlots.level_ground(self, roads, true)
 	_build_normals()
 	_build_colors()
