@@ -287,6 +287,7 @@ func _ready() -> void:
 	Shed.pinged.connect(_on_ping)
 	Shed.emoted.connect(_on_emote)
 	menu.show_title()
+	SplashVideo.play_over(self)
 
 
 ## A film's saved (MovieClip): where it is, the clips folder's path copied to paste into

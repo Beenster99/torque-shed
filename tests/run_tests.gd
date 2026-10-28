@@ -212,6 +212,7 @@ func _run_all() -> void:
 	await _t(&"_test_pad_menus")
 	await _t(&"_test_menu_layout")
 	await _t(&"_test_menu_fix_bike")
+	await _t(&"_test_splash")
 	await _t(&"_test_hints_follow_device")
 	await _t(&"_test_hints_name_no_keys")
 	await _t(&"_test_board_posters")
@@ -23761,6 +23762,10 @@ func _test_menu_layout() -> void:
 
 func _test_menu_fix_bike() -> void:
 	await _menu_suite().test_fix_bike()
+
+
+func _test_splash() -> void:
+	await _menu_suite().test_splash()
 
 
 # ---------------------------------------------------------------------------- recorded starters and the two-stroke (tests/sound_tests.gd)
