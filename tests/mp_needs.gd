@@ -19,6 +19,7 @@ var notes := []
 
 
 func _ready() -> void:
+	AdventureWorld.network = false   # (the single planned road: this pair checks it, the network has its own)
 	Shed.demo_bikes = true
 	AdventureTrip.instant = true
 	for a in OS.get_cmdline_user_args():

@@ -14,6 +14,7 @@ var main: Node
 
 
 func _ready() -> void:
+	AdventureWorld.network = false   # (the single planned road: this pair checks it, the network has its own)
 	Shed.demo_bikes = true
 	AdventureTrip.instant = true
 	CellStore.offline = true   # (the TV's world needs no cells from the network here)

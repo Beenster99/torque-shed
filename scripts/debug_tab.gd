@@ -177,7 +177,7 @@ func _ready() -> void:
 	# Ride Anywhere v2's road network (see AdventureWorld.network): this machine's next ride streams every road round you.
 	var net_toggle := CheckButton.new()
 	net_toggle.name = "RoadNetworkToggle"
-	net_toggle.text = "Road network (test): my next ride builds every road and junction round me, plan or no plan"
+	net_toggle.text = "Road network: my next ride builds every road and junction round me (off: the single planned road)"
 	net_toggle.button_pressed = AdventureWorld.network
 	net_toggle.toggled.connect(func(on): AdventureWorld.network = on)
 	box.add_child(net_toggle)

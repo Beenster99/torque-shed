@@ -44,10 +44,11 @@ const SHELTER_IN := 30.0
 signal origin_shifted(delta: Vector3)
 
 static var current: AdventureWorld
-## The network ride (Esc > Debug > "Road network (test)", Ride Anywhere v2): a ride set up while it's on streams the
-## road blocks of its whole region round each rider (RoadStreamer) instead of the planned road's chunks, and the planned
-## road is only advice (found only within NETWORK_ADVICE of it). Per machine, for testing: co-op on the network is T9's.
-static var network := false
+## The network ride (Ride Anywhere v2), on by default: a ride set up while it's on streams the road blocks of its whole
+## region round each rider (RoadStreamer) instead of the planned road's chunks, and the planned road is only advice
+## (found only within NETWORK_ADVICE of it). The host's choice is the crew's (Shed.adventure "network"). Off (Esc >
+## Debug, for now) is the single planned road, kept as the fallback.
+static var network := true
 ## On the network ride the planned road answers locate_local only this close to it (m), so riding off it is riding on.
 const NETWORK_ADVICE := 60.0
 
