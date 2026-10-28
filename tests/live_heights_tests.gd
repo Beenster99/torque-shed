@@ -105,6 +105,25 @@ func test_tiles() -> void:
 	HeightTiles.disk = was[0]
 	HeightTiles.keep = was[1]
 	HeightTiles._used_now = was[2]
+	# A pit in the source (one in Rio drops 700 m under the street, and roads dived into it) is filled from the pixels
+	# round it; a valley's floor, wider than a pixel, is left as it is.
+	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
+	var put := func(i: int, j: int, h: float) -> void:
+		var v := int((h + 32768.0) * 256.0)
+		img.set_pixel(i, j, Color8(v >> 16, (v >> 8) & 255, v & 255))
+	for j in 16:
+		for i in 16:
+			put.call(i, j, 300.0 if i < 10 else 300.0 - (i - 9) * 30.0)   # (a valley side, 30 m a pixel deeper to the east)
+	put.call(4, 5, -705.9)
+	put.call(5, 5, -484.2)
+	put.call(3, 5, -82.4)
+	var pitted := HeightTiles.decode(img.save_png_to_buffer(), Vector3i(-1, -1, -1), true)
+	check(pitted != null and absf(pitted.at(4, 5) - 300.0) < 0.01 and absf(pitted.at(5, 5) - 300.0) < 0.01 and absf(pitted.at(3, 5) - 300.0) < 0.01
+		and absf(pitted.at(14, 8) - (300.0 - 5 * 30.0)) < 0.01 and absf(pitted.at(12, 8) - (300.0 - 3 * 30.0)) < 0.01,
+		"a pit in the source is filled from the ground round it (%.1f m), and the ground falling away beside it is kept (%.1f m)" % [pitted.at(4, 5) if pitted else NAN, pitted.at(14, 8) if pitted else NAN])
+	# (the game's own tiles aren't looked over: no time spent on them, as a ride's land is laid)
+	var kept := HeightTiles.decode(img.save_png_to_buffer())
+	check(kept != null and kept.at(4, 5) < 0.0, "a tile read without looking for pits is left as it is (%.1f m, under the sea's floor)" % (kept.at(4, 5) if kept else NAN))
 	_restore()
 
 

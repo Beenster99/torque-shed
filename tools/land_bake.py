@@ -47,6 +47,7 @@ WATER_SKIP = {"ocean", "sea", "bay", "strait", "swimming_pool"}
 
 BUILDING_REACH = 500.0       # buildings are kept this far either side of the road
 BUILDING_GAP = 4.0           # and this far clear of the road's edge
+ROAD_CLEAR = 0.0             # and no corner on any road's carriageway (the game pushes one on a verge back off it)
 BUILDING_MAX = 14000
 BUILDING_MIN_AREA = 9.0
 BUILDING_MAX_AREA = 2500.0
@@ -224,8 +225,46 @@ def building_kind(row, w, d):
 DEFAULT_HEIGHT = {"house": 5.5, "shed": 3.0, "barn": 6.0, "shop": 6.5, "block": 14.0, "industrial": 7.5, "worship": 8.0, "civic": 8.5}
 
 
-def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, max_count=None):
-    """Building boxes within `reach` of the road, clear of it: [[x, z, w, d, yaw, h, kind id]], nearest the road first."""
+class RoadLines:
+    """Every road's line and half its carriageway's width, filed in CELL squares, for how far a point is clear of the
+    nearest road's edge (the game's own measure: RoadNet.locate)."""
+
+    CELL = 32.0
+
+    def __init__(self, roads):
+        self.segs = []      # (ax, az, bx, bz, half width)
+        self.grid = {}
+        pad = max([w for _, w in roads] + [0.0]) + ROAD_CLEAR + 8.0
+        for pts, half in roads:
+            for i in range(1, len(pts)):
+                ax, az = float(pts[i - 1][0]), float(pts[i - 1][1])
+                bx, bz = float(pts[i][0]), float(pts[i][1])
+                k = len(self.segs)
+                self.segs.append((ax, az, bx, bz, half))
+                for gx in range(int(math.floor((min(ax, bx) - pad) / self.CELL)), int(math.floor((max(ax, bx) + pad) / self.CELL)) + 1):
+                    for gz in range(int(math.floor((min(az, bz) - pad) / self.CELL)), int(math.floor((max(az, bz) + pad) / self.CELL)) + 1):
+                        self.grid.setdefault((gx, gz), []).append(k)
+
+    def clear(self, x, z):
+        """How far (x, z) is outside the nearest carriageway (negative on one), up to the grid's reach (else 1e9)."""
+        best = 1e9
+        for k in self.grid.get((int(math.floor(x / self.CELL)), int(math.floor(z / self.CELL))), ()):
+            ax, az, bx, bz, half = self.segs[k]
+            dx, dz = bx - ax, bz - az
+            l2 = dx * dx + dz * dz
+            t = min(1.0, max(0.0, ((x - ax) * dx + (z - az) * dz) / l2)) if l2 > 0.0 else 0.0
+            d = math.hypot(x - ax - dx * t, z - az - dz * t) - half
+            if d < best:
+                best = d
+        return best
+
+
+def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, max_count=None, roads=None):
+    """Building boxes within `reach` of the road, clear of it: [[x, z, w, d, yaw, h, kind id]], nearest the road first.
+
+    With `roads` (a RoadLines of every road, not only the one the knots follow), a building with its middle or a corner
+    on a road's carriageway (ROAD_CLEAR) is left out, as the game would leave it out (RoadBlock._clear_of_roads: one
+    just over a verge it pushes back), so the ones kept (up to `max_count`) are ones that will stand."""
     max_count = BUILDING_MAX if max_count is None else max_count   # (read now: a region bakes with more)
     cell = 64.0
     grid = {}
@@ -264,6 +303,8 @@ def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, m
             near, knot = road_distance(cx, cz)
             if near > reach or near < gap + math.hypot(w, d) * 0.5 * 0.55 + 2.0:
                 continue
+            if roads is not None and not _clear_of(roads, cx, cz, w, d, yaw):
+                continue
             kind = building_kind(row, w, d)
             height = row.get("height")
             floors = row.get("num_floors")
@@ -274,6 +315,21 @@ def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, m
     kept = [b for _, b in out[:max_count]]
     kept.sort(key=lambda b: (b[7], b[0], b[1]))   # along the road
     return kept
+
+
+def _clear_of(roads, cx, cz, w, d, yaw):
+    """Whether a box (middle, size, yaw as min_rect gives it) stands clear of every road in `roads` by ROAD_CLEAR: its
+    middle and corners (the game's RoadBlock._corners)."""
+    c = roads.clear(cx, cz)
+    if c >= math.hypot(w, d) * 0.5 + ROAD_CLEAR:
+        return True   # (well clear: no corner can reach a road)
+    if c < ROAD_CLEAR:
+        return False
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    for u, v in ((-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)):
+        if roads.clear(cx + u * w * cy + v * d * sy, cz - u * w * sy + v * d * cy) < ROAD_CLEAR:
+            return False
+    return True
 
 
 def level_ground(heights, tx, tz, buildings, margin=2.5, feather=5.0):
@@ -348,7 +404,7 @@ def make_landmarks(places, peaks, frame, knots):
 
 # ---------------------------------------------------------------------------- the lot
 
-def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=None, cover_levels=None):
+def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=None, cover_levels=None, roads=None):
     """Fetches and writes the cover tiles, buildings, landmarks and places to stop; returns {buildings, landmarks, pois}.
 
     `tiles` is {level name: [(tx, tz)]} for the levels that have cover (`cover_levels`, by default levels.COVER_LEVELS)."""
@@ -363,7 +419,7 @@ def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=No
     rows = fetch(bucket, release, "buildings", "building", box,
                  ["geometry", "height", "num_floors", "class", "subtype", "is_underground"])
     log("buildings: %d footprints in the box" % len(rows))
-    buildings = make_buildings(rows, frame, knots)
+    buildings = make_buildings(rows, frame, knots, roads=roads)
     log("buildings: %d kept" % len(buildings))
     places = fetch(bucket, release, "places", "place", box, ["geometry", "basic_category", "names", "confidence"])
     peaks = fetch(bucket, release, "base", "land", box, ["geometry", "class", "names"])

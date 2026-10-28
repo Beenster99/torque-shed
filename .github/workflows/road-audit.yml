@@ -1,0 +1,118 @@
+name: Road audit
+
+# The world road audit (tests/audit): the road network's faults in the world's cells (roads crossing with no junction
+# or bridge, bridges to nowhere, steps, humps and bumps, buildings on roads), found from the data alone. A workflow of
+# its own, never in CI's test shards. On a pull request that changes how the roads are laid out or baked (the paths
+# below), and on a push to main, a fixed sample with its heights (tests/audit/sample.json: Rio, thirty cells at random
+# and the postcards' places). Every night, and by hand (Actions > Road audit > Run workflow), every cell in the world's
+# store over eight machines, map checks only unless asked for heights. Each cell's findings are kept between runs (a
+# cell neither it nor the road code has changed for isn't audited again), with the cells and heights fetched. The
+# report is the "road-audit" artifact: report.json and summary.txt (also on the run's page).
+
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - "scripts/road_net.gd"
+      - "scripts/road_block.gd"
+      - "scripts/real_region.gd"
+      - "scripts/route_planner.gd"
+      - "scripts/cell_store.gd"
+      - "scripts/height_tiles.gd"
+      - "tools/*bake*.py"
+      - "tests/audit/**"
+      - ".github/workflows/road-audit.yml"
+  pull_request:
+    paths: *paths
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Which cells: all, or the fixed sample"
+        default: all
+        type: choice
+        options: [all, sample]
+      heights:
+        description: "With the land's heights (steps, humps, bumps, bridge ends): slow over the whole world"
+        default: false
+        type: boolean
+
+env:
+  GODOT_VERSION: 4.6.2-stable
+
+jobs:
+  audit:
+    name: audit (${{ matrix.shard }} of ${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON((github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scope == 'all')) && '[0,1,2,3,4,5,6,7]' || '[0]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        run: |
+          curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
+      - name: Import project
+        run: godot --headless --path . --import || true
+      - name: Which cells
+        id: what
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.scope }}" = "all" ]; }; then
+            echo "args=--all --shard=${{ matrix.shard }}/${{ strategy.job-total }}${{ inputs.heights && ' --heights' || '' }}" >> "$GITHUB_OUTPUT"
+            echo "key=all-${{ inputs.heights && 'h' || 'm' }}-${{ matrix.shard }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=--sample --heights" >> "$GITHUB_OUTPUT"
+            echo "key=sample-h" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Keep the fetched world and findings
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/road-audit
+            audit-out/cells
+          key: road-audit-${{ steps.what.outputs.key }}-${{ github.run_id }}
+          restore-keys: road-audit-${{ steps.what.outputs.key }}-
+      - name: Audit
+        run: tests/audit/road_audit.sh ${{ steps.what.outputs.args }} --out=audit-out
+      - name: Keep this machine's findings
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-audit-${{ matrix.shard }}
+          path: audit-out
+          retention-days: 30
+
+  report:
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        run: |
+          curl -sSLo godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
+      - name: Import project
+        run: godot --headless --path . --import || true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: road-audit-*
+          path: shares
+      - name: Put the machines' findings together
+        run: |
+          mkdir -p audit-out/cells
+          cp shares/*/cells/*.json audit-out/cells/
+          tests/audit/road_audit.sh --report --out=audit-out
+          cat audit-out/summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: road-audit
+          path: |
+            audit-out/report.json
+            audit-out/summary.txt
+          retention-days: 90
