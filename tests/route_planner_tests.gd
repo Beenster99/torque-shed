@@ -589,8 +589,23 @@ func test_survey() -> void:
 		and Survey.going() == baking,
 		"a touch asks the surveyors for the cells in view, and the crew's TVs know which are being baked (%s)" % str(Survey.going()))
 	await pump.call(func(): return not board._survey.visible, 5.0)
-	check(board.view.shown_note().begins_with("Being surveyed: 2 cells") and not board._survey.visible,
-		"the map says they're being surveyed, and there's no second survey to ask for (%s)" % board.view.shown_note())
+	check(board.view.shown_note().begins_with("Surveying the roads here (2 cells): 0:0") and board.view.shown_note().contains("about 10 min to go")
+		and not board._survey.visible,
+		"the map says they're being surveyed, how long it's been and about how long to go, and there's no second survey to ask for (%s)" % board.view.shown_note())
+	# Along its foot a bar fills as the survey goes, and the clock moves on, so it's plain nothing has stuck.
+	var s0: Dictionary = Shed.route_tv["survey"]
+	var since := float(s0["since"])
+	var bar0 := board.view.shown_progress()
+	s0["since"] = since - 300.0
+	var bar1 := board.view.shown_progress()
+	var note1 := board.view.shown_note()
+	s0["since"] = since - Survey.TAKES - 60.0
+	var late := board.view.shown_note()
+	var bar2 := board.view.shown_progress()
+	s0["since"] = since
+	check(bar0 >= 0.0 and bar0 < 0.05 and absf(bar1 - 0.5) < 0.02 and note1.contains("5:0") and note1.contains("about 5 min to go")
+		and late.contains("longer than usual") and bar2 == -1.0,
+		"a bar along the map's foot fills as the survey goes (%.2f, then %.2f: %s), and sweeps once it's taking longer than usual (%s)" % [bar0, bar1, note1, late])
 	# The cells come into the world's index: the TV fetches them and draws their roads.
 	for name in ["c577_711", "c577_712"]:
 		var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(CellsTests.CELLS.path_join(name).path_join("region.json")))
@@ -598,9 +613,16 @@ func test_survey() -> void:
 		index["cells"][name.trim_prefix("c")] = {"hash": meta["hash"], "bytes": (host.files["/zips/%s.zip" % name] as PackedByteArray).size(),
 			"url": "http://127.0.0.1:%d/dl/%s" % [host.port, name]}
 	host.files["/index.json"] = JSON.stringify(index).to_utf8_buffer()
-	var came: bool = await pump.call(func(): return board.view.roads_shown() and board.view.roads.edge_count() > 1000 and not board.view.busy(), 60.0)
+	var seen := []   # (what the map's foot said while it fetched and drew them, with its bar)
+	var came: bool = await pump.call(func():
+		if board.view._task >= 0 and not is_nan(board.view.shown_progress()) and not seen.has(board.view.shown_note()):
+			seen.append(board.view.shown_note())
+		return board.view.roads_shown() and board.view.roads.edge_count() > 1000 and not board.view.busy(), 60.0)
+	check(seen.any(func(n): return str(n).begins_with("Fetching the roads here")),
+		"as the cells come, the map says it's fetching and drawing them, with its bar (%s)" % ", ".join(seen))
 	check(came and board.view.surveying().is_empty() and not board.view.unmapped.has(Vector2i(577, 711)) and RealRegion.cell_dir(Vector2i(577, 711)).begins_with(store),
 		"when the cells come into the index the TV fetches them and draws their roads (%d)" % (board.view.roads.edge_count() if board.view.roads else 0))
+	check(is_nan(board.view.shown_progress()), "and once they're drawn the bar's gone")
 	# Busy surveyors: nothing more is baked, and the map says so.
 	host.files["/survey"] = JSON.stringify({"status": "busy", "cells": [], "message": "The surveyors are busy: try again in a few minutes."}).to_utf8_buffer()
 	Shed.request({"a": "adventure_survey", "cells": ["100_100"]})

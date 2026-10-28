@@ -10,6 +10,8 @@ extends RefCounted
 
 const URL := "https://torque-shed-survey.simonbennett3.workers.dev/survey"
 const MAX_CELLS := 16
+## About how long a survey takes (s), for the map's bar: the bake, and the index taking it in.
+const TAKES := 600.0
 ## How long a survey shows as going (s): longer than a bake takes, so a slow one isn't forgotten.
 const LASTS := 1800.0
 
