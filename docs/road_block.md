@@ -1,4 +1,4 @@
-# Road block: interface (T6), version 4
+# Road block: interface (T6), version 7
 
 Owner: T6 Road network core. Readers: T7 Satnav and journeys, T8 Regional kits (markings, buildings), T9 Co-op,
 T10 Life on the network, and T5 Terrain around the rider (the ground under the roads).
@@ -51,6 +51,7 @@ net.road_y(edge: int, s: float) -> float            # the road's height at s (ce
 net.bridges_of(edge: int) -> PackedInt32Array       # its bridges (the map's), as samples [first, last, ...]
 net.bridge_at(edge: int, s: float) -> float         # how far out on a bridge it is at s: 1 over what it crosses, 0 off one
 net.junction_of(node: int) -> Dictionary            # the junction at node (below), {} for a plain join (two roads)
+net.surface_y(node: int, p: Vector2) -> float       # junction node's surface height at p: its through road's across from p
 net.mouth(edge: int, node: int) -> float            # how far from node (m along the edge) the plain road starts
 net.locate(x: float, z: float, hint := -1) -> Dictionary   # which road am I on (below)
 net.ground_at(x: float, z: float, bare: float) -> float    # the land with the roads cut in (below)
@@ -69,8 +70,16 @@ The net is read-only once made apart from its caches, which are locked, so one n
 Heights come only from `height(x, z)`: the net asks the terrain by position and nothing else (T5's rule).
 Everything it returns is the same on every machine for the same region and the same heights.
 
-The road's height anywhere depends only on the ground within about 80 m of it (smoothed over some 50 m, eased over
-the last 40 m into each junction, which every road meeting there shares). The net keeps a height only once
+The road's heights are worked out as the planned road's are (RoutePlanner._heights, AdventureRoute.fair_heights): a
+moving average over 9 steps of 4 m, then three over 19, along whole roads at once rather than an edge at a time. A
+road's **height strand** is its edges one after another through every plain join and along each junction's through
+road (the widest pair of arms nearest straight on), so a road rides smoothly through its own junctions; the strand's
+heights are kept every `RoadNet.STEP` m along it exactly. A road that ends at a junction (a side road, or one onto a
+roundabout) is held at its through road's height for its first `RoadNet.PIN` m before smoothing, then eased onto
+that height over `RoadNet.EASE` to `RoadNet.EASE_MOST` m (the further it has to come, the longer it takes). A
+junction's surface follows its through road's height across from each point (`net.surface_y(node, p)`), easing to
+its arms' own heights at their mouths. The road's height anywhere depends only on the ground within about 300 m of
+it along the road. The net keeps a height only once
 `ready` says the ground there is final, so it never holds on to a coarse guess. The streamer builds a block only
 once `terrain.ready(block.rect.grow(128), 0)` is true, and so every machine with the fine tiles builds the same
 block. Where a road crosses into a block whose ground isn't in yet, nothing is built there until it is.
@@ -110,10 +119,11 @@ depend on it.
 
 `net.ground_at(x, z, bare)` takes the bare ground height at (x, z) and returns the land's height with the roads
 in it: just under the deck (`RoadNet.UNDER` m) across the carriageway and its verges (the lowest deck's, where two
-overlap), then eased back to `bare` over a cutting or embankment whose width grows with the height to make up
-(1 in 3 slopes, `RoadNet.BANK_MIN` to `RoadNet.BANK_MAX` m). Where the land rises past the road (a cutting) it's
-held level with the road `RoadNet.LAND_PAD` m further past the verge before its bank starts, so that no 8 m cell
-of the land lies over the deck; where it falls away (an embankment), `RoadNet.FALL_PAD` m, so the verge's skirt is
+overlap), then eased back to `bare` over a cutting or embankment as the planned road's is: `RoadNet.BANK_BASE` m
+wide and `RoadNet.BANK_WIDEN` m more for each metre of height it makes up (`RoadNet.BANK_MIN` to
+`RoadNet.BANK_MAX` m). T5's land draws the cells the roads cut into in 2 m cells (`RealLand.FINE`). Where the land
+rises past the road (a cutting) it's held level with the road `RoadNet.LAND_PAD` m further past the verge before its
+bank starts, so that no 2 m cell of the land lies over the deck; where it falls away (an embankment), `RoadNet.FALL_PAD` m, so the verge's skirt is
 never left in the air. Where several roads are near, the one whose bank it's nearest the top of has its way.
 Away from every road it returns `bare` unchanged. T5's land blocks call it for every
 vertex near a road (`net.roads_near(rect: Rect2) -> bool` says whether a rectangle has any within reach); the
@@ -134,6 +144,7 @@ block.rect: Rect2               # in the region frame
 block.hash: String              # 12 hex of VERSION, the region's hash (and its flats') and the key: co-op compares these
 block.pieces: Array[Dictionary] # the roads (below)
 block.junctions: Array[Dictionary]
+block.arrays["signals"]: Array  # traffic lights at its crossroads in town: [{node, green, phase, heads: [[Transform3D, role]]}]
 block.buildings: Array          # RealRegion.buildings rows standing in the block, with their ground "y" appended
                                 # (none on a road, its verge or a junction: the map's line for the road wins)
 block.trees: Dictionary         # kind (AdventureProps.mesh) -> Array of Transform3D from the block's corner: the trees
@@ -173,6 +184,12 @@ block.ms: float                 # how long the build took on its worker
 | island | float | a roundabout's island radius (m), 0 otherwise |
 | pair | int | a staggered junction's other node, else -1 |
 | outline | PackedVector2Array | its surface's edge, clockwise, region frame (x, z): across each arm's mouth, then a curved kerb (`RoadNet.KERB_STEPS` pieces) round to the next arm, or a straight one where the two arms' edges don't meet (a tee's far side); a roundabout's is the circle round its ring's outer edge |
+
+The block dresses its junctions as the planned road's are: a roundabout's island at least `RoadBlock.MOUND_FROM` m
+across has a grassy mound with shrubs from `RoadBlock.MOUND_IN` m inside its kerb (the ring outside that is kept
+clear, for T8's chevron boards), and a crossroads on built-up ground (the cover says "urban") has traffic lights, a
+head at each arm's mouth on the side its traffic keeps to, lit by the host's clock as the planned road's are
+(`block.arrays["signals"]`, stood up by the streamer as `AdventureJunctions.Signals`).
 
 An arm: `{edge: int, node: int (the node it leaves from), heading: float (out of the junction, as locate's; a
 roundabout's is the bearing from its middle),

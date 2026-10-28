@@ -185,6 +185,8 @@ func commit(b: RoadBlock) -> Node3D:
 			var mi := MeshInstance3D.new()
 			mi.name = part.capitalize()
 			mi.mesh = AdventureProps.to_mesh(a)
+			if part == "verge":
+				mi.material_override = AdventureSurface.land_material()   # (grained as the land beside it is, as the planned road's verge)
 			node.add_child(mi)
 	var bridge: Dictionary = b.arrays.get("bridge", {})
 	if not bridge.is_empty() and not (bridge["v"] as PackedVector3Array).is_empty():
@@ -222,6 +224,21 @@ func commit(b: RoadBlock) -> Node3D:
 		# (a block's trees go as one: drawn while any of the block is within reach)
 		AdventureChunk._range(mmi, TREES_REACH)
 		node.add_child(mmi)
+	for s: Dictionary in b.arrays.get("signals", []):
+		# The traffic lights at a crossroads in town (RoadBlock._signals), as the planned road's are.
+		var sig := AdventureJunctions.Signals.new()
+		sig.name = "Signals_%d" % int(s["node"])
+		sig.site = {"green": s["green"], "phase": s["phase"]}
+		var poles := AdventureProps.new_arrays()
+		var sbody := StaticBody3D.new()
+		sbody.collision_layer = 1
+		for h: Array in s["heads"]:
+			AdventureJunctions._head(sig, poles, sbody, h[0], str(h[1]))
+		var pmi := MeshInstance3D.new()
+		pmi.mesh = AdventureProps.to_mesh(poles)
+		sig.add_child(pmi)
+		sig.add_child(sbody)
+		node.add_child(sig)
 	for surf: String in b.arrays["faces"]:
 		var body := StaticBody3D.new()
 		body.name = "Body_" + surf

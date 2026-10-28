@@ -65,6 +65,50 @@ static func staggered() -> RealRegion:
 		[[2, 0, "primary"], [0, 1, "primary"], [1, 3, "primary"], [0, 4, "residential"], [1, 5, "residential"]])
 
 
+## Heights along whole roads (RoadNet's height strands): a road runs on through its plain joins and its junctions'
+## through road without a kink, smoothed as the planned road is; a side road eases onto the junction.
+func test_strands() -> void:
+	# A main road west to east over rolling ground, split at a plain join (node 4) and a tee (node 0), a side road south.
+	var roll := func(x: float, z: float) -> float: return 60.0 + sin(x * 0.012) * 9.0 + x * 0.02 + maxf(0.0, z - 100.0) * 0.1
+	var r := graph([[100, 100], [-400, 100], [600, 100], [100, 400], [-150, 100]],
+		[[1, 4, "primary"], [4, 0, "primary"], [0, 2, "primary"], [0, 3, "residential"]])
+	var net := RoadNet.new(r, roll)
+	var st: Dictionary = net._strand_of(2)
+	check(st == net._strand_of(0) and st == net._strand_of(1) and (st["edges"] as PackedInt32Array).size() == 3,
+		"the main road is one strand through its plain join and its junction, whichever edge asks first")
+	check((net._strand_of(3)["edges"] as PackedInt32Array).size() == 1, "and the side road a strand of its own")
+	# Ridden west to east, every 4 m or so: how sharply the grade changes (per metre).
+	var xs := PackedFloat64Array()
+	var ys := PackedFloat64Array()
+	var run := 0.0
+	for e: int in [0, 1, 2]:
+		var len := net.length_of(e)
+		var steps := int(ceil(len / 4.0))
+		for k in range(0 if e == 0 else 1, steps + 1):
+			xs.append(run + len * k / steps)
+			ys.append(net.road_y(e, len * k / steps))
+		run += len
+	var bend := 0.0
+	for k in range(1, ys.size() - 1):
+		var h0 := xs[k] - xs[k - 1]
+		var h1 := xs[k + 1] - xs[k]
+		bend = maxf(bend, absf(((ys[k + 1] - ys[k]) / h1 - (ys[k] - ys[k - 1]) / h0) * 2.0 / (h0 + h1)))
+	check(bend < 0.002, "it rides on through the join and the junction with no kink (the sharpest bend %.4f a metre)" % bend)
+	# The side road comes in at the junction's height and eases onto its own over the hill, never sharply.
+	var side := net.profile(3)
+	var sp := net.length_of(3) / float(side.size() - 1)
+	var sharp := 0.0
+	for k in range(1, side.size() - 1):
+		sharp = maxf(sharp, absf(side[k + 1] - 2.0 * side[k] + side[k - 1]) / (sp * sp))
+	check(absf(side[0] - net.node_y(0)) < 0.01 and sharp < 0.003,
+		"the side road meets the junction at its height and eases away (the sharpest bend %.4f a metre)" % sharp)
+	# The junction's surface follows the through road across it.
+	var mid := Vector2(100.0, 103.0)
+	check(absf(net.surface_y(0, mid) - net.road_y(1, net.length_of(1))) < 0.05 and
+		absf(net.surface_y(0, Vector2(120.0, 98.0)) - net.road_y(2, 20.0)) < 0.05,
+		"the junction's surface is the through road's height across from each point")
+
+
 ## What the interface says a block holds, key by key, with its type.
 func test_interface() -> void:
 	var net := RoadNet.new(tee(), flat)
@@ -233,8 +277,8 @@ func test_heights() -> void:
 		jump = maxf(jump, absf(g - prev))
 		prev = g
 	check(jump < 1.0, "it eases out to the bare land without a step (the biggest a metre %.2f m)" % jump)
-	# In a cutting the land is held level with the road a cell's width past the verge, so the land's 8 m cells never
-	# lie over the deck; where it falls away it falls from a little past the verge.
+	# In a cutting the land is held level with the road a cell's width past the verge, so the land's 2 m cells there
+	# never lie over the deck; where it falls away it falls from a little past the verge.
 	var vee := func(_x: float, z: float) -> float: return 50.0 + absf(z - 100.0) * 0.5
 	var cut := RoadNet.new(cross(), vee)
 	var road := cut.road_y(int(hit["edge"]), float(hit["s"]))
@@ -247,19 +291,19 @@ func test_heights() -> void:
 	var shelf := bank.ground_at(300.0, edge + RoadNet.FALL_PAD - 0.5, float(dip.call(300.0, edge + RoadNet.FALL_PAD - 0.5)))
 	check(absf(shelf - (road - RoadNet.UNDER)) < 0.01, "on an embankment the land is level with the road %.0f m past the verge, under its skirt (%.2f m against the road's %.2f)" % [RoadNet.FALL_PAD, shelf, road])
 	var below := bank.ground_at(300.0, edge + RoadNet.FALL_PAD + 12.0, float(dip.call(300.0, edge + RoadNet.FALL_PAD + 12.0)))
-	check(below < road - 1.0 and below > road - 6.0, "then falls away down a bank one in three (%.2f m under the road %.0f m out)" % [road - below, RoadNet.FALL_PAD + 12.0])
+	check(below < road - 1.0 and below > road - 6.0, "then falls away down its bank (%.2f m under the road %.0f m out)" % [road - below, RoadNet.FALL_PAD + 12.0])
 	# A dual carriageway across a slope, its halves 16 m apart: no land between them or beside them stands higher than
 	# the nearer half (it would lie over its deck).
 	var slope := func(_x: float, z: float) -> float: return 10.0 + z * 0.15
 	var dual := RoadNet.new(graph([[-300, 92], [300, 92], [300, 108], [-300, 108]], [[0, 1, "primary", 1], [2, 3, "primary", 1]]), slope)
 	var over := 0.0
 	for z in range(80, 121):
-		var at := dual.locate(0.0, float(z))
 		var g := dual.ground_at(0.0, float(z), float(slope.call(0.0, float(z))))
-		var lowest := minf(dual.road_y(0, dual.length_of(0) * 0.5), dual.road_y(1, dual.length_of(1) * 0.5))
-		if absf(float(z) - 100.0) < 8.0 + RoadNet.LAND_PAD:
-			over = maxf(over, g - (lowest if absf(float(z) - 100.0) <= 8.0 else float(at["y"])))
-	check(over <= 0.01, "no land over a dual carriageway's decks or between them (the most %.2f m over)" % over)
+		for e in 2:
+			var off := absf(float(z) - (92.0 if e == 0 else 108.0)) - dual.width_of(e) * 0.5 - RoadNet.VERGE
+			if off < RoadNet.LAND_PAD:
+				over = maxf(over, g - (dual.road_y(e, dual.length_of(e) * 0.5) - RoadNet.UNDER))
+	check(over <= 0.01, "no land within a cell of either half's verge stands over its deck (the most %.2f m over)" % over)
 	# A roundabout is round: its ring's lines keep to one circle round its middle.
 	var rn := RoadNet.new(roundabout(), flat)
 	var lo := INF
@@ -540,3 +584,74 @@ func test_ride() -> void:
 	w.queue_free()
 	RealLand.roam = false
 	await t.get_tree().process_frame
+
+
+## The land the roads cut into, on a real place (the postcards' Dales, offline): RealLand draws the cells the roads
+## shape finer (RealLand.FINE), each finer point on the land the net cuts, or on the straight side of a cell next to it
+## that isn't finer (so there's no crack between them), and no land stands over a road's deck.
+func test_land() -> void:
+	var was := [CellStore.dir, CellStore.offline, RealRegion.cell_dirs, HeightTiles.dirs, HeightTiles.offline, HeightTiles.disk,
+		AdventureWorld.network]
+	var pc = load("res://tests/postcards/postcards.gd")
+	pc.use_own_world()
+	HeightTiles.reset()
+	var spec = JSON.parse_string(FileAccess.get_file_as_string("res://tests/postcards/places.json"))
+	var place: Dictionary = (spec["places"] as Array).filter(func(p): return p["id"] == "dales")[0]
+	var plan: Dictionary = pc.plan_of(place)
+	var res := AdventurePlans.result(plan, true)
+	check(bool(res.get("ok", false)), "the Dales ride plans from the postcards' world")
+	if bool(res.get("ok", false)):
+		var w := AdventureWorld.new()
+		AdventureWorld.network = true
+		w.roads_region = RealRegion.get_region(str(plan["region"]))
+		w.setup(res["pack"], 1)
+		var land: RealLand = w.land
+		var net: RoadNet = land.roads
+		var xz := w.route.xz_at(w.route.length * 0.35, 0.0)
+		var key := Vector2i(floori(xz[0] / RealLand.BLOCK), floori(xz[1] / RealLand.BLOCK))
+		var t0 := Time.get_ticks_msec()
+		var arr = land._block_arrays(key, 0)
+		var ms := Time.get_ticks_msec() - t0
+		var n: int = RealLand.CELLS[0] + 1
+		var fs: float = RealLand.BLOCK / RealLand.CELLS[0] / RealLand.FINE
+		var o := Vector2(key) * RealLand.BLOCK
+		var finer := 0
+		var off_land := 0
+		var over := 0.0
+		if arr is Array:
+			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var skirts := 4 * (RealLand.CELLS[0] * RealLand.FINE + 1)
+			for i in range(n * n, v.size()):
+				var p := v[i]
+				var x := o.x + p.x
+				var z := o.y + p.z
+				if p.z < -0.01 or p.y < -1000.0:
+					continue
+				# (the skirts hang under the edge: only the ground's own points)
+				if i >= v.size() - skirts and (is_zero_approx(p.x) or is_zero_approx(p.z) or is_equal_approx(p.x, RealLand.BLOCK) or is_equal_approx(p.z, RealLand.BLOCK)):
+					continue
+				finer += 1
+				var I := roundi(p.x / fs)
+				var J := roundi(p.z / fs)
+				var on_side := I % RealLand.FINE == 0 or J % RealLand.FINE == 0
+				var want := net.ground_at(x, z, w.route.ground_at(x, z))
+				if absf(p.y - want) > 0.02 and not on_side:
+					off_land += 1
+				var hit := net.locate(x, z)
+				if not hit.is_empty() and bool(hit["on_road"]) and int(hit["node"]) < 0 and net.bridge_at(int(hit["edge"]), float(hit["s"])) <= 0.0:
+					over = maxf(over, p.y - float(hit["y"]))
+		print("  road land: a near block in %d ms, %d finer points" % [ms, finer])
+		check(arr is Array and finer > 500, "the cells the roads cut into are drawn finer (%d finer points)" % finer)
+		check(off_land == 0, "each finer point inside a cell is on the land the roads cut (%d off it)" % off_land)
+		check(over <= 0.01, "and none stands over a road's deck (the most %.2f m over)" % over)
+		check(ms < 3000, "a near block lays out in good time (%d ms)" % ms)
+		w.free()
+	CellStore.dir = was[0]
+	CellStore.offline = was[1]
+	RealRegion.cell_dirs = was[2]
+	HeightTiles.dirs = was[3]
+	HeightTiles.offline = was[4]
+	HeightTiles.disk = was[5]
+	AdventureWorld.network = was[6]
+	HeightTiles.reset()
+	PlaceProfile.forget()

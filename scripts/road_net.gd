@@ -19,20 +19,22 @@ const REACH := 30.0
 const UNDER := 0.12
 ## The verge either side of the carriageway, level with it (m).
 const VERGE := 1.5
-## The cutting or embankment past the verge: as wide as the height it makes up times BANK_SLOPE (one in three), between
-## BANK_MIN and BANK_MAX (m).
-const BANK_SLOPE := 3.0
+## The cutting or embankment past the verge, as the planned road's (AdventureRoute._bank_height): BANK_BASE wide and
+## BANK_WIDEN more for each metre of height it makes up (so the steeper the difference, the further out it runs, never a
+## sheer wall), between BANK_MIN and BANK_MAX (m); the land eases from the road's height to its own across it.
+const BANK_BASE := 12.5
+const BANK_WIDEN := 0.9
 const BANK_MIN := 8.0
 const BANK_MAX := 40.0
 ## Where the land would rise past the road (a cutting, sidelong ground), it's held down level with the road this much
-## further out past the verge before its bank starts (m): the land is a grid of 8 m cells (RealLand's near level), and
-## a cell with a corner up the bank and another under the deck would lie over the road. A cell's diagonal and a little.
-## Nowhere this near a road's verge is the land higher than that road, whatever other road is near (a dual
-## carriageway's other half, a roundabout's ring), so no cell reaching over a deck can stand up through it.
-const LAND_PAD := 12.0
+## further out past the verge before its bank starts (m): RealLand draws the land the roads cut into in 2 m cells
+## (RealLand.FINE), and a cell with a corner up the bank and another under the deck would lie over the road. A cell's
+## diagonal and a little. Nowhere this near a road's verge is the land higher than that road, whatever other road is
+## near (a dual carriageway's other half, a roundabout's ring), so no cell reaching over a deck can stand up through it.
+const LAND_PAD := 3.0
 ## Where the land falls away from the road (an embankment), it's held level with the road this much past the verge
 ## before its bank starts, so the verge's skirt is never left in the air over a cell of land that has already fallen.
-const FALL_PAD := 4.0
+const FALL_PAD := 1.5
 ## A tee with another on the far side of its main road within this distance (m) is a staggered junction.
 const STAGGER := 40.0
 ## The heights along an edge are smoothed over this many STEPs, three times over (much like a bell curve some 60 m
@@ -40,10 +42,19 @@ const STAGGER := 40.0
 ## the height of the node there, which every road meeting there shares.
 const FAIR_STEPS := AdventureRoute.FAIR_KNOTS
 const EASE := 40.0
-## The smoothed heights are worked out PAGE samples at a time, from the bare ones PAGE_PAD either side (as far as three
-## passes of FAIR_STEPS reach).
+## A road ending at a junction eases onto it over at least EASE m and as much as EASE_MOST, longer the further it has to
+## come: sqrt(the height to make up times EASE_BEND), so a 1 m ease takes some 60 m.
+const EASE_MOST := 160.0
+const EASE_BEND := 3200.0
+## A road that ends at a junction (a side road, or one onto a roundabout) runs on its through road's height for this far
+## (m) along it from the junction before it's smoothed (_pin_y), so it comes in level with the junction.
+const PIN := 24.0
+## Before that they're smoothed over PRE_STEPS, as the planned road's are (RoutePlanner._heights).
+const PRE_STEPS := 9
+## The smoothed heights are worked out PAGE samples at a time, from the bare ones PAGE_PAD either side (as far as a pass
+## of PRE_STEPS and three of FAIR_STEPS reach).
 const PAGE := 64
-const PAGE_PAD := 27
+const PAGE_PAD := 31
 ## A junction's arm starts its plain road at least this far (m) past where its kerbs clear the arms either side, and at
 ## most MOUTH_MOST from the node (and never past half the edge).
 const FILLET := 3.0
@@ -101,7 +112,11 @@ var _nodes_by_block := {}   # Vector2i -> PackedInt32Array
 var _buildings_by_block := {}   # Vector2i -> Array of rows
 var _lines := {}            # edge -> PackedVector2Array: its line smoothed (line_of)
 var _cum := {}              # edge -> PackedFloat32Array: distance along its line at each point
-var _fair := {}             # Vector2i(edge, page) -> PackedFloat32Array: its heights smoothed (_fair_page)
+var _strands := {}          # edge -> Dictionary: the height strand it's on (_strand_of)
+var _mains := {}            # node -> Vector2i: its through road's edges (_main_edges)
+var _fixes := {}            # strand's first edge -> Vector4: how it eases onto the junctions at its ends (_strand_fix)
+var _raw_y := {}            # node -> float (_raw_node_y)
+var _fair := {}             # Vector3i(strand's first edge, page, pinned) -> PackedFloat32Array: its heights smoothed (_fair_page)
 var _node_y := {}           # node -> float
 var _junction := {}         # node -> Dictionary ({} for a plain join)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
@@ -499,41 +514,203 @@ func _final(p: Vector2, r: float) -> bool:
 	return not ready.is_valid() or bool(ready.call(Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0)))
 
 
-## The bare heights along edge `edge`, smoothed, for its samples in page `page` (PAGE of them): three passes of a moving
-## average FAIR_STEPS long, worked out from the bare heights PAGE_PAD samples either side, so a page is the same as the
-## whole edge done at once and only needs the ground near it. Kept once the ground there is final.
-func _fair_page(edge: int, page: int) -> PackedFloat32Array:
-	var key := Vector2i(edge, page)
+## The edge on from edge `from` through node `node` that the road's heights run on along without a break (its height
+## strand, see _strand_of): through a plain join the other edge, and through a junction its through road's other arm
+## (a roundabout's and a self-loop's ends are a strand's ends); -1 where the strand ends at `node`.
+func _height_on(node: int, from: int) -> int:
+	var adj := region.adjacent[node]
+	if adj.size() == 2:
+		return _through(node, from)
+	if adj.size() < 3:
+		return -1
+	for ei in adj:
+		if on_ring(ei) or region.edge_a[ei] == region.edge_b[ei]:
+			return -1
+	var main := _main_edges(node)
+	if main.x < 0 or not _ring_of_edge(main.x).is_empty() or not _ring_of_edge(main.y).is_empty():
+		return -1
+	return main.y if from == main.x else (main.x if from == main.y else -1)
+
+
+## The two edges of junction `node`'s through road (_main_pair), or (-1, -1) where it has none (fewer than three roads
+## meet there, or its through road is one edge both ways).
+func _main_edges(node: int) -> Vector2i:
+	_lock.lock()
+	var got = _mains.get(node)
+	_lock.unlock()
+	if got != null:
+		return got
+	var out := Vector2i(-1, -1)
+	if region.adjacent[node].size() >= 3:
+		var arms := _arms(PackedInt32Array([node]), {})
+		var main := _main_pair(arms)
+		out = Vector2i(int(arms[main.x]["edge"]), int(arms[main.y]["edge"]))
+		if out.x == out.y:
+			out = Vector2i(-1, -1)
+	_lock.lock()
+	_mains[node] = out
+	_lock.unlock()
+	return out
+
+
+## The height of junction `node`'s surface at (x, z) `p`: its through road's, level across from the nearest point on
+## it, so the through road runs on through it as it rides either side (node_y where it has none: a roundabout, a dead
+## end).
+func surface_y(node: int, p: Vector2) -> float:
+	var main := _main_edges(node)
+	if main.x < 0 or not _ring(main.x).is_empty():
+		return node_y(node)
+	var a := _project(main.x, p)
+	var b := _project(main.y, p)
+	return road_y(main.x, float(a[0])) if float(a[2]) <= float(b[2]) else road_y(main.y, float(b[0]))
+
+
+## The height strand edge `edge` is on: the edges the road's heights run on along without a break, as the planned road's
+## do (one edge after another through plain joins and along each junction's through road: _height_on), so they're
+## smoothed along it as one road, never eased into a node part way. {edges: PackedInt32Array in order, fwd:
+## PackedByteArray (1 where the strand runs an edge a to b), start: PackedFloat64Array (how far along the strand each
+## edge starts, m), length (m), count: its samples, index: {edge: where it is in edges}}. The same whichever of its edges
+## asks first: it runs from the end whose edge is the lower, and a loop from its lowest edge, a to b. Its heights are
+## kept every STEP m along it exactly (its edges' own samples are a little closer, each edge's evenly spread).
+func _strand_of(edge: int) -> Dictionary:
+	_lock.lock()
+	var got = _strands.get(edge)
+	_lock.unlock()
+	if got != null:
+		return got
+	var seen := {edge: true}
+	var behind := []   # [edge, the node it's left by, walking away from `edge`]
+	var ahead := []
+	var loop := false
+	if region.edge_a[edge] != region.edge_b[edge] and _ring_of_edge(edge).is_empty():
+		for dir: int in [0, 1]:
+			var cur := edge
+			var node := region.edge_a[edge] if dir == 0 else region.edge_b[edge]
+			while true:
+				var next := _height_on(node, cur)
+				if next == edge:
+					loop = true
+				if next < 0 or seen.has(next):
+					break
+				seen[next] = true
+				var far := region.other_end(next, node)
+				(behind if dir == 0 else ahead).append([next, far])
+				node = far
+				cur = next
+	# In order: [edge, its far node going along], from behind's far end.
+	var order := []
+	for k in range(behind.size() - 1, -1, -1):
+		var e := int(behind[k][0])
+		var far := int(behind[k][1])
+		order.append([e, region.other_end(e, far)])   # (walked back towards `edge`, it's left by the node nearer it)
+	order.append([edge, region.edge_b[edge]])
+	for st: Array in ahead:
+		order.append([int(st[0]), int(st[1])])
+	if loop:
+		var low := 0
+		for k in order.size():
+			if int(order[k][0]) < int(order[low][0]):
+				low = k
+		order = order.slice(low) + order.slice(0, low)
+		if int(order[0][1]) != region.edge_b[int(order[0][0])]:
+			order.reverse()
+			for st: Array in order:
+				st[1] = region.other_end(int(st[0]), int(st[1]))
+			order = order.slice(order.size() - 1) + order.slice(0, order.size() - 1)
+	elif order.size() > 1 and int(order[order.size() - 1][0]) < int(order[0][0]):
+		order.reverse()
+		for st: Array in order:
+			st[1] = region.other_end(int(st[0]), int(st[1]))
+	var out := {"edges": PackedInt32Array(), "fwd": PackedByteArray(), "start": PackedFloat64Array(), "length": 0.0, "count": 0,
+		"index": {}}
+	var at := 0.0
+	for st: Array in order:
+		var e := int(st[0])
+		out["index"][e] = (out["edges"] as PackedInt32Array).size()
+		out["edges"].append(e)
+		out["fwd"].append(1 if int(st[1]) == region.edge_b[e] else 0)
+		out["start"].append(at)
+		at += length_of(e)
+	out["length"] = at
+	out["count"] = int(ceil(at / STEP)) + 1
+	_lock.lock()
+	for e in out["edges"]:
+		if not _strands.has(e):
+			_strands[e] = out
+	out = _strands[edge]
+	_lock.unlock()
+	return out
+
+
+## Where `d` m along strand `st` is: Vector2(which of its edges, how far along that edge from its a end, m).
+func _strand_at(st: Dictionary, d: float) -> Vector2:
+	var start: PackedFloat64Array = st["start"]
+	var i := clampi(start.bsearch(d, false) - 1, 0, start.size() - 1)
+	var e: int = st["edges"][i]
+	var len := length_of(e)
+	var s := clampf(d - start[i], 0.0, len)
+	return Vector2(i, s if st["fwd"][i] == 1 else len - s)
+
+
+## The bare heights along strand `st`, smoothed, for its samples in page `page` (PAGE of them): as the planned road's
+## are (RoutePlanner._heights, then AdventureRoute.fair_heights), a moving average PRE_STEPS long and then three of
+## FAIR_STEPS, worked out from the bare heights PAGE_PAD samples either side, so a page is the same as the whole strand
+## done at once and needs only the ground near it. A bridge's deck is in the bare heights (_decked) and its climb over
+## a road put back after (_lifted). Kept once the ground there is final.
+func _fair_page(st: Dictionary, page: int, pinned := true) -> PackedFloat32Array:
+	var edges: PackedInt32Array = st["edges"]
+	var key := Vector3i(edges[0], page, 1 if pinned else 0)
 	_lock.lock()
 	var f = _fair.get(key)
 	_lock.unlock()
 	if f != null:
 		return f
-	var n := samples_of(edge)
-	var len := length_of(edge)
+	var n: int = st["count"]
 	var k0 := page * PAGE
 	var k1 := mini(n, k0 + PAGE)
 	# (past its ends the bare heights run on straight out of it, so it's smoothed through a junction, not up to it)
 	var lo := k0 - PAGE_PAD
 	var hi := k1 + PAGE_PAD
-	var sp := len / float(n - 1)
-	var plan := _deck_plan(edge)
-	var bridged := not (plan["level"] as Array).is_empty()
 	var h := PackedFloat32Array()
 	h.resize(hi - lo)
 	var box := Rect2()
-	for k in range(lo, hi):
+	var final := true
+	var e_first: int = edges[0]
+	var e_last: int = edges[edges.size() - 1]
+	var first_out := _end_way(e_first, st["fwd"][0] == 0)
+	var last_out := _end_way(e_last, st["fwd"][edges.size() - 1] == 1)
+	# (where it ends at a junction it's on the junction's through road there, out to PIN m along it)
+	var pin_a := NAN
+	var pin_b := NAN
+	if pinned and lo * STEP < PIN:
+		pin_a = _pin_y(region.edge_a[e_first] if st["fwd"][0] == 1 else region.edge_b[e_first], e_first)
+	if pinned and hi * STEP > float(st["length"]) - PIN:
+		pin_b = _pin_y(region.edge_b[e_last] if st["fwd"][edges.size() - 1] == 1 else region.edge_a[e_last], e_last)
+	var total: float = st["length"]
+	for j in range(lo, hi):
 		var p: Vector2
-		if k < 0:
-			p = point_at(edge, 0.0) + (point_at(edge, 0.0) - point_at(edge, minf(2.0, len))).normalized() * (-k * sp)
-		elif k >= n:
-			p = point_at(edge, len) + (point_at(edge, len) - point_at(edge, maxf(len - 2.0, 0.0))).normalized() * ((k - n + 1) * sp)
+		var y := NAN
+		var d := j * STEP
+		if d < 0.0 or d > total:
+			var w: Array = first_out if d < 0.0 else last_out
+			p = (w[0] as Vector2) + (w[1] as Vector2) * (-d if d < 0.0 else d - total)
+			y = float(height.call(p.x, p.y))
 		else:
-			p = point_at(edge, sp * k)
-		box = Rect2(p, Vector2.ZERO) if k == lo else box.expand(p)
-		h[k - lo] = float(height.call(p.x, p.y))
-		if bridged:
-			h[k - lo] = _decked(plan, k, h[k - lo], sp)
+			var at := _strand_at(st, d)
+			var e: int = edges[int(at.x)]
+			p = point_at(e, at.y)
+			y = float(height.call(p.x, p.y))
+			var plan := _deck_plan(e)
+			if not (plan["level"] as Array).is_empty():
+				var sp := length_of(e) / float(samples_of(e) - 1)
+				y = _decked(plan, at.y / sp, y, sp)
+				final = final and _decks.has(e)
+		box = Rect2(p, Vector2.ZERO) if j == lo else box.expand(p)
+		if d < PIN and not is_nan(pin_a):
+			y = pin_a
+		elif d > total - PIN and not is_nan(pin_b):
+			y = pin_b
+		h[j - lo] = y
 	# (where the ground isn't in yet, the nearest that is: one sample with no height would spread to the whole page, and
 	# the land laid from it would have holes; it's laid again once the ground comes)
 	var last := NAN
@@ -548,29 +725,68 @@ func _fair_page(edge: int, page: int) -> PackedFloat32Array:
 			h[k] = last
 		else:
 			last = h[k]
-	var half := FAIR_STEPS / 2
+	h = _averaged(h, PRE_STEPS / 2)
 	for _pass in 3:
-		var sums := PackedFloat64Array()
-		sums.resize(h.size() + 1)
-		for k in h.size():
-			sums[k + 1] = sums[k] + h[k]
-		var out := PackedFloat32Array()
-		out.resize(h.size())
-		for k in h.size():
-			var a := maxi(0, k - half)
-			var b := mini(h.size() - 1, k + half)
-			out[k] = (sums[b + 1] - sums[a]) / float(b - a + 1)
-		h = out
+		h = _averaged(h, FAIR_STEPS / 2)
 	var res := h.slice(k0 - lo, k1 - lo)
-	if bridged:
-		for k in res.size():
-			if not is_nan(res[k]):
-				res[k] = maxf(res[k], _lifted(plan, k0 + k, sp))   # (smoothing would take the top off its climb over a road)
-	if (not ready.is_valid() or bool(ready.call(box.grow(STEP)))) and (not bridged or _decks.has(edge)):
+	for j in range(k0, k1):
+		var at := _strand_at(st, minf(j * STEP, total))
+		var e: int = edges[int(at.x)]
+		var plan := _deck_plan(e)
+		if not (plan["lifts"] as PackedVector2Array).is_empty() and not is_nan(res[j - k0]):
+			var sp := length_of(e) / float(samples_of(e) - 1)
+			res[j - k0] = maxf(res[j - k0], _lifted(plan, at.y / sp, sp))   # (smoothing would take the top off its climb over a road)
+	if final and (not ready.is_valid() or bool(ready.call(box.grow(STEP)))):
 		_lock.lock()
 		_fair[key] = res
 		_lock.unlock()
 	return res
+
+
+## The height a road ending at junction `node` (from edge `from`) is pinned to there (_fair_page): its through road's
+## smoothed height at the node (unpinned: its own ends' pins can't come back round to this one), or a roundabout's
+## ring's; NAN at a plain join or a dead end, or where `from` is the through road.
+func _pin_y(node: int, from: int) -> float:
+	var adj := region.adjacent[node]
+	if adj.size() < 3:
+		return NAN
+	var sum := 0.0
+	var count := 0
+	for ei in adj:
+		if ei == from or not (on_ring(ei) or _height_on(node, ei) >= 0):
+			continue
+		var st := _strand_of(ei)
+		var i: int = st["index"][ei]
+		var at_a := region.edge_a[ei] == node
+		var d: float = st["start"][i] + (0.0 if at_a == (st["fwd"][i] == 1) else length_of(ei))
+		var f := d / STEP
+		var j := clampi(int(f), 0, int(st["count"]) - 2)
+		sum += lerpf(_fair_page(st, j / PAGE, false)[j % PAGE], _fair_page(st, (j + 1) / PAGE, false)[(j + 1) % PAGE], clampf(f - j, 0.0, 1.0))
+		count += 1
+	return sum / float(count) if count > 0 else NAN
+
+
+## Where edge `edge`'s a end (or b, `at_b`) is and the way out of it there (unit): [Vector2, Vector2].
+func _end_way(edge: int, at_b: bool) -> Array:
+	var len := length_of(edge)
+	if at_b:
+		return [point_at(edge, len), (point_at(edge, len) - point_at(edge, maxf(len - 2.0, 0.0))).normalized()]
+	return [point_at(edge, 0.0), (point_at(edge, 0.0) - point_at(edge, minf(2.0, len))).normalized()]
+
+
+## The average of `h` over `half` samples either way at each (fewer near its ends).
+static func _averaged(h: PackedFloat32Array, half: int) -> PackedFloat32Array:
+	var sums := PackedFloat64Array()
+	sums.resize(h.size() + 1)
+	for k in h.size():
+		sums[k + 1] = sums[k] + h[k]
+	var out := PackedFloat32Array()
+	out.resize(h.size())
+	for k in h.size():
+		var a := maxi(0, k - half)
+		var b := mini(h.size() - 1, k + half)
+		out[k] = (sums[b + 1] - sums[a]) / float(b - a + 1)
+	return out
 
 
 ## Edge `edge`'s bridges: the map's (_mapped), each run on over any road it crosses (_crossings) far enough to clear that
@@ -819,18 +1035,54 @@ static func _lifted(plan: Dictionary, k: float, sp: float) -> float:
 
 ## The smoothed bare height of edge `edge`'s sample `k`.
 func _fair_at(edge: int, k: int) -> float:
-	return _fair_page(edge, k / PAGE)[k % PAGE]
+	var st := _strand_of(edge)
+	var i: int = st["index"][edge]
+	var s := length_of(edge) * float(k) / float(samples_of(edge) - 1)
+	var f := (float(st["start"][i]) + (s if st["fwd"][i] == 1 else length_of(edge) - s)) / STEP
+	var j := clampi(int(f), 0, int(st["count"]) - 2)
+	return lerpf(_fair_j(st, j), _fair_j(st, j + 1), clampf(f - j, 0.0, 1.0))
 
 
-## The height of the road at node `node`, which every road meeting there shares: the mean of their smoothed heights at
-## that end; at a junction, of its through road's only (a roundabout's ring), so the through road runs on level and
-## a side road climbing or dropping away eases onto it, not the junction onto the side road.
+## Strand `st`'s smoothed height at its sample `j`.
+func _fair_j(st: Dictionary, j: int) -> float:
+	return _fair_page(st, j / PAGE)[j % PAGE]
+
+
+## The height of the road at node `node`, which every road meeting there shares: where a strand runs through it (a
+## plain join, a junction's through road) that strand's height there; at a roundabout, its ring's; at a dead end, its
+## road's. A road that ends at a junction (a side road) eases onto it (_strand_fix).
 func node_y(node: int) -> float:
 	_lock.lock()
 	var y = _node_y.get(node)
 	_lock.unlock()
 	if y != null:
 		return y
+	var out := _node_mean(node, false)
+	if _final(region.node_pos[node], PAGE_PAD * STEP + STEP * 2.0 + EASE_MOST):
+		_lock.lock()
+		_node_y[node] = out
+		_lock.unlock()
+	return out
+
+
+## node_y from the strands' smoothed heights alone, before any is eased onto a junction: what a road ending at the
+## junction eases onto (so no height eases onto another that is itself easing).
+func _raw_node_y(node: int) -> float:
+	_lock.lock()
+	var y = _raw_y.get(node)
+	_lock.unlock()
+	if y != null:
+		return y
+	var out := _node_mean(node, true)
+	if _final(region.node_pos[node], PAGE_PAD * STEP + STEP * 2.0 + PIN):
+		_lock.lock()
+		_raw_y[node] = out
+		_lock.unlock()
+	return out
+
+
+## The mean of the heights at node `node` of the roads node_y takes it from: smoothed only (`raw`), or as ridden.
+func _node_mean(node: int, raw: bool) -> float:
 	var counts := {}
 	var adj := region.adjacent[node]
 	if adj.size() >= 3:
@@ -848,36 +1100,70 @@ func node_y(node: int) -> float:
 	for ei in adj:
 		if not counts.is_empty() and not counts.has(ei):
 			continue
-		if region.edge_a[ei] == node:
-			sum += _fair_at(ei, 0)
-			count += 1
-		if region.edge_b[ei] == node:
-			sum += _fair_at(ei, samples_of(ei) - 1)
+		var last := samples_of(ei) - 1
+		for k: int in ([0] if region.edge_a[ei] == node else []) + ([last] if region.edge_b[ei] == node else []):
+			sum += _fair_at(ei, k) if raw else _profile_at(ei, k)
 			count += 1
 	var at := region.node_pos[node]
-	var out := sum / float(count) if count > 0 else float(height.call(at.x, at.y))
-	if _final(at, PAGE_PAD * STEP + STEP * 2.0):
+	return sum / float(count) if count > 0 else float(height.call(at.x, at.y))
+
+
+## How strand `st`'s smoothed heights are eased at its ends onto the junctions there (_raw_node_y): Vector4(how much at
+## its start, over how far, how much at its end, over how far); nothing at a plain join or a dead end (or round a loop).
+## The further it has to come, the longer it takes (EASE to EASE_MOST m, no more than half the strand), so it never
+## bends sharply.
+func _strand_fix(st: Dictionary) -> Vector4:
+	var edges: PackedInt32Array = st["edges"]
+	_lock.lock()
+	var got = _fixes.get(edges[0])
+	_lock.unlock()
+	if got != null:
+		return got
+	var e0 := edges[0]
+	var e1 := edges[edges.size() - 1]
+	var n0 := region.edge_a[e0] if st["fwd"][0] == 1 else region.edge_b[e0]
+	var n1 := region.edge_b[e1] if st["fwd"][edges.size() - 1] == 1 else region.edge_a[e1]
+	var total: float = st["length"]
+	var out := Vector4.ZERO
+	var final := true
+	var loop := edges.size() > 1 and _height_on(n0, e0) == e1
+	for end: int in ([] if loop else [0, 1]):
+		var node := n0 if end == 0 else n1
+		if region.adjacent[node].size() < 3:
+			continue
+		var e := e0 if end == 0 else e1
+		var at_a := region.edge_a[e] == node
+		var d := _raw_node_y(node) - _fair_at(e, 0 if at_a else samples_of(e) - 1)
+		var reach := minf(clampf(sqrt(absf(d) * EASE_BEND), EASE, EASE_MOST), total * 0.5)
+		if end == 0:
+			out.x = d
+			out.y = reach
+		else:
+			out.z = d
+			out.w = reach
+		final = final and _raw_y.has(node) and _final(region.node_pos[node], EASE_MOST + PAGE_PAD * STEP)
+	if final:
 		_lock.lock()
-		_node_y[node] = out
+		_fixes[edges[0]] = out
 		_lock.unlock()
 	return out
 
 
-## The road's height at edge `edge`'s sample `k`: smoothed, and eased over EASE m at each end onto its node's height.
+## The road's height at edge `edge`'s sample `k`: its strand's smoothed height, eased at the strand's ends onto the
+## junctions there (_strand_fix).
 func _profile_at(edge: int, k: int) -> float:
-	var n := samples_of(edge)
-	if k <= 0:
-		return node_y(region.edge_a[edge])
-	if k >= n - 1:
-		return node_y(region.edge_b[edge])
-	var len := length_of(edge)
-	var ease := minf(EASE, len * 0.5)
-	var s := len * float(k) / float(n - 1)
+	var st := _strand_of(edge)
 	var y := _fair_at(edge, k)
-	if s < ease:
-		y += (node_y(region.edge_a[edge]) - _fair_at(edge, 0)) * (1.0 - smoothstep(0.0, ease, s))
-	if len - s < ease:
-		y += (node_y(region.edge_b[edge]) - _fair_at(edge, n - 1)) * (1.0 - smoothstep(0.0, ease, len - s))
+	var fix := _strand_fix(st)
+	if fix == Vector4.ZERO:
+		return y
+	var i: int = st["index"][edge]
+	var s := length_of(edge) * float(k) / float(samples_of(edge) - 1)
+	var d: float = st["start"][i] + (s if st["fwd"][i] == 1 else length_of(edge) - s)
+	if fix.y > 0.0:
+		y += fix.x * (1.0 - smoothstep(0.0, fix.y, d))
+	if fix.w > 0.0:
+		y += fix.z * (1.0 - smoothstep(0.0, fix.w, float(st["length"]) - d))
 	return y
 
 
@@ -1431,11 +1717,16 @@ func _flat_at(x: float, z: float, bare: float) -> Vector2:
 		var y := road_y(int(f["edge"]), float(f["s"])) - UNDER
 		if is_nan(y):
 			continue
-		var bank := clampf(absf(bare - y) * BANK_SLOPE, BANK_MIN, BANK_MAX)
+		var bank := _bank_width(absf(bare - y))
 		var t := 1.0 - smoothstep(0.0, bank, _flat_out(f, x, z))
 		if t > best.x:
 			best = Vector2(t, y)
 	return best
+
+
+## How wide a road's bank is (m past where it starts) where it makes up `rise` m of height.
+static func _bank_width(rise: float) -> float:
+	return clampf(BANK_BASE + rise * BANK_WIDEN, BANK_MIN, BANK_MAX)
 
 
 ## Whether (x, z) is within `pad` m of a flat (no tree or building stands there).
@@ -1490,7 +1781,7 @@ func ground_at(x: float, z: float, bare: float) -> float:
 		var from := FALL_PAD if bare <= y else LAND_PAD
 		var t := 1.0 - on_bridge
 		if off > from:
-			var bank := clampf(absf(bare - y) * BANK_SLOPE, BANK_MIN, BANK_MAX)
+			var bank := _bank_width(absf(bare - y))
 			t *= 1.0 - smoothstep(from, from + bank, off)
 		if t <= 0.0:
 			continue

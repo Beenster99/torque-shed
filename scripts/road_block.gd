@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 6
+const VERSION := 7
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -29,6 +29,15 @@ const GAP := 6.0
 const LINE_LIFT := 0.012
 ## A roundabout's island stands this high, its kerb this wide (m).
 const ISLAND_H := 0.15
+## A roundabout's island at least MOUND_FROM m across has a grassy mound MOUND_H m high in it, from MOUND_IN m inside its
+## kerb, planted with SHRUBS shrubs, as the planned road's roundabouts have (AdventureJunctions._island).
+const MOUND_FROM := 3.5
+const MOUND_IN := 1.6
+const MOUND_H := 0.75
+const SHRUBS := 7
+const SHRUB_COLOURS: Array[Color] = [Color(0.16, 0.34, 0.12), Color(0.3, 0.42, 0.14), Color(0.55, 0.3, 0.42)]
+## A junction's surface is drawn in this many rings out from its middle (_drape).
+const DRAPE_RINGS := 4
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
@@ -339,6 +348,7 @@ func _lay_out() -> void:
 	for j in junctions:
 		_junction_mesh(j)
 	_join_caps()
+	arrays["signals"] = _signals(kit)
 	var houses := AdventureProps.new_arrays()
 	var o := anchor()
 	if _marked:
@@ -650,7 +660,7 @@ func _junction_mesh(j: Dictionary) -> void:
 	for k in outline.size():
 		pts.append(Vector3(outline[k].x, heights[k], outline[k].y) - o)
 	var closed: bool = j["kind"] != "end"
-	_fan(g, surf, col, centre - o, pts, closed)
+	_drape(g, surf, col, j, centre - o, pts, closed)
 	# Its verges, round the kerbs between the arms (the arms' own run on from their mouths).
 	var verge_col := _verge_colour(surf)
 	var count := pts.size() if closed else pts.size() - 1
@@ -706,6 +716,46 @@ func _fan(g: Dictionary, surf: String, col: Color, c: Vector3, pts: Array, close
 	g["v"].append_array(v)
 
 
+## A junction's surface: rings out from its middle `c` to its outline `pts` (block space), each point on its through road's
+## height across from it (RoadNet.surface_y), easing to the outline's own heights (the arms' mouths) at its edge, so the
+## through road rides on through it as it does either side and a side road comes into it without a kink.
+func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, pts: Array, closed := false) -> void:
+	var o := anchor()
+	var node := int(j["node"])
+	var base := (g["v"] as PackedVector3Array).size()
+	var v := PackedVector3Array([c])
+	var rim := []   # each outline point's height less its through road's there
+	for p: Vector3 in pts:
+		rim.append(p.y - net.surface_y(node, Vector2(p.x + o.x, p.z + o.z)))
+	for r in range(1, DRAPE_RINGS + 1):
+		var f := float(r) / DRAPE_RINGS
+		for k in pts.size():
+			var q: Vector3 = c.lerp(pts[k], f)
+			q.y = net.surface_y(node, Vector2(q.x + o.x, q.z + o.z)) + float(rim[k]) * f
+			v.append(q)
+	for k in v.size():
+		g["uv"].append(Vector2(v[k].x, v[k].z) / 3.0)
+		g["c"].append(col)
+	var n := pts.size()
+	var count := n if closed else n - 1
+	var tri := func(i0: int, i1: int, i2: int) -> void:
+		if (v[i1] - v[i0]).cross(v[i2] - v[i0]).y < 0.0:
+			var t := i1
+			i1 = i2
+			i2 = t
+		g["i"].append_array([base + i0, base + i2, base + i1])
+		_face(surf, v[i0], v[i1], v[i2])
+	for k in count:
+		var k1 := (k + 1) % n
+		tri.call(0, 1 + k, 1 + k1)
+		for r in range(1, DRAPE_RINGS):
+			var a := 1 + (r - 1) * n
+			var b := 1 + r * n
+			tri.call(a + k, b + k, b + k1)
+			tri.call(a + k, b + k1, a + k1)
+	g["v"].append_array(v)
+
+
 ## A roundabout's island: a kerbed disc of grass a little above the ring.
 func _island(j: Dictionary) -> void:
 	var r := float(j["island"])
@@ -721,12 +771,69 @@ func _island(j: Dictionary) -> void:
 		var d1 := Vector3(sin(t1), 0.0, -cos(t1))
 		var top := Vector3(0.0, ISLAND_H, 0.0)
 		var low := Vector3(0.0, -0.1, 0.0)
-		_up(a, c + top, c + d0 * (r - ISLAND_KERB) + top, c + d1 * (r - ISLAND_KERB) + top, ISLAND_GRASS)
+		# Grass in from the kerb, then (on an island big enough) a mound rising gently to its middle, as the planned
+		# road's roundabouts have (the ring just inside the kerb is kept flat: the chevron boards stand on it).
+		var flat := r - MOUND_IN if r > MOUND_FROM else 0.0
+		_up(a, c + d0 * flat + top, c + d0 * (r - ISLAND_KERB) + top, c + d1 * (r - ISLAND_KERB) + top, ISLAND_GRASS)
+		_up(a, c + d0 * flat + top, c + d1 * (r - ISLAND_KERB) + top, c + d1 * flat + top, ISLAND_GRASS)
+		for ring in 3:
+			var r0 := flat * (1.0 - ring / 3.0)
+			var r1 := flat * (1.0 - (ring + 1) / 3.0)
+			var y0 := Vector3.UP * (ISLAND_H + MOUND_H * (ring / 3.0))
+			var y1 := Vector3.UP * (ISLAND_H + MOUND_H * ((ring + 1) / 3.0))
+			_up(a, c + d0 * r0 + y0, c + d1 * r0 + y0, c + d1 * r1 + y1, ISLAND_GRASS.darkened(0.06 * ring))
+			if ring < 2:
+				_up(a, c + d0 * r0 + y0, c + d1 * r1 + y1, c + d0 * r1 + y1, ISLAND_GRASS.darkened(0.06 * ring))
 		_up(a, c + d0 * (r - ISLAND_KERB) + top, c + d0 * r + top, c + d1 * r + top, KERB)
 		_up(a, c + d0 * (r - ISLAND_KERB) + top, c + d1 * r + top, c + d1 * (r - ISLAND_KERB) + top, KERB)
 		# The kerb's face, out towards the ring.
 		AdventureProps._quad(a, c + d0 * r + low, c + d1 * r + low, c + d1 * r + top, c + d0 * r + top, KERB)
 		_face("grass", c + top, c + d0 * r + top, c + d1 * r + top)
+	# Shrubs on the mound.
+	if r > MOUND_FROM:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(["island", int(j["node"])])
+		for k in SHRUBS:
+			var ang := rng.randf() * TAU
+			var at := rng.randf_range(0.3, r - MOUND_IN - 0.8)
+			var rise := ISLAND_H + MOUND_H * (1.0 - at / (r - MOUND_IN)) - 0.1
+			AdventureProps.blob(a, c + Vector3(sin(ang) * at, rise, -cos(ang) * at), Vector3(1.0, 0.8, 1.0) * rng.randf_range(0.6, 1.1),
+				SHRUB_COLOURS[k % SHRUB_COLOURS.size()], rng.randi())
+
+
+## The traffic lights at the block's crossroads in town (where the ground's built up, as the planned road's crossroads
+## have them: AdventureJunctions.plan_real): [{node, green: [the through road's green, the side roads'] (s), phase (s),
+## heads: [[Transform3D (block space, +z towards the traffic it stops), role ("main" or "side")], ...]}]: a head at each
+## road's mouth on the kerb its traffic keeps to (the place's side of the road, `kit`). The streamer stands them up
+## (AdventureJunctions.Signals, lit by the host's clock).
+func _signals(kit: Dictionary) -> Array:
+	var out := []
+	var t: RealTerrain = net.dress.get("terrain")
+	if t == null:
+		return out
+	var urban := RealPack.COVER.find("urban")
+	var left := str((kit.get("facts", {}) as Dictionary).get("drive", "right")) == "left"
+	var o := anchor()
+	for j in junctions:
+		if j["kind"] != "cross":
+			continue
+		var pos: Vector3 = j["pos"]
+		if t.cover(pos.x, pos.z) != urban:
+			continue
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(["lights", int(j["node"])])
+		var heads := []
+		for arm: Dictionary in j["arms"]:
+			var m: Vector3 = arm["mouth"]
+			var u := Vector3(m.x - pos.x, 0.0, m.z - pos.z).normalized()
+			# (the way in runs back along -u; its kerb side is right of that, or left where the place drives on the left)
+			var right_in := Vector3(u.z, 0.0, -u.x)
+			var at := m + right_in * (float(arm["width"]) * 0.5 + 0.7) * (-1.0 if left else 1.0) - o
+			heads.append([Transform3D(Basis(Vector3.UP, atan2(u.x, u.z)), at), "main" if bool(arm["main"]) else "side"])
+		out.append({"node": int(j["node"]), "heads": heads, "phase": rng.randf() * 60.0,
+			"green": [rng.randf_range(AdventureJunctions.MAIN_GREEN[0], AdventureJunctions.MAIN_GREEN[1]),
+				rng.randf_range(AdventureJunctions.SIDE_GREEN[0], AdventureJunctions.SIDE_GREEN[1])]})
+	return out
 
 
 ## Where two roads join end to end (no junction) at an angle or with different widths, a disc of road at the node
