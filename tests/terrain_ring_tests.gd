@@ -315,7 +315,7 @@ class FakeNet:
 	func roads_near(rect: Rect2) -> bool:
 		return z0 > rect.position.y - HALF and z0 < rect.end.y + HALF
 
-	func ground_at(_x: float, z: float, bare: float) -> float:
+	func ground_at(_x: float, z: float, bare: float, _memo = null) -> float:
 		return bare - depth if absf(z - z0) < HALF else bare
 
 	func locate(_x: float, z: float) -> Dictionary:

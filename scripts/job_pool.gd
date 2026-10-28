@@ -4,8 +4,9 @@ extends RefCounted
 ## the riders). Godot's WorkerThreadPool ran tasks added one at a time on a single one of its workers, so the land round
 ## a rider was laid out a block at a time behind everything else: here every worker takes the nearest job waiting.
 
-## How many workers: one core is left for the game itself.
-static var size := clampi(OS.get_processor_count() - 1, 2, 6)
+## How many workers: two cores are left, one for the game itself and one for the ride's chunks of road, or the frames
+## stutter on a four-core machine.
+static var size := clampi(OS.get_processor_count() - 2, 1, 6)
 
 static var _lock := Mutex.new()
 static var _wake := Semaphore.new()
