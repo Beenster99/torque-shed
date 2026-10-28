@@ -22,6 +22,8 @@ const RECENTRE_RATE := 2.5
 ## First person: how far you can turn your head.
 const HEAD_YAW := 1.9
 const HEAD_PITCH := 0.9
+## How much of the bike's lean the rider's head takes out of the first person view in a corner (1: dead level).
+const HEAD_LEVEL := 0.85
 ## The ride-by camera: the shortest and longest it watches before going back.
 const RIDE_BY_MIN := 3.0
 const RIDE_BY_MAX := 7.0
@@ -55,6 +57,7 @@ var _elev := 0.0          # smoothed angle above the bike
 var _by_pos := Vector3.ZERO
 var _by_left := 0.0
 var _by_return := Mode.CHASE
+var _crash := false           # the roadside view of a crash: on till the bike's back on its wheels (crash_over)
 ## Fly-by as a view of its own (picked with the view toggle): when the bike has gone past, the
 ## camera hops on to a new spot ahead instead of going back.
 var fly_by := false
@@ -76,6 +79,7 @@ func cycle_mode() -> void:
 
 
 func set_mode(new_mode: Mode) -> void:
+	_crash = false
 	if new_mode == Mode.RIDE_BY:
 		fly_by = true
 		_by_return = Mode.CHASE
@@ -147,6 +151,33 @@ func start_ride_by() -> void:
 	_by_return = mode if mode in [Mode.CHASE, Mode.HELMET] else Mode.CHASE
 	mode = Mode.RIDE_BY
 	_set_helmet_hidden(false)
+
+
+## A crash: the roadside view, to watch the rider tumble, for as long as they're down. crash_over() puts back the
+## view the rider was on.
+func crash_view() -> void:
+	if target == null or _crash:
+		return
+	var back := _by_return if mode == Mode.RIDE_BY else (mode if mode in [Mode.CHASE, Mode.HELMET] else Mode.CHASE)
+	_place_ride_by()
+	_by_return = back
+	fly_by = false
+	mode = Mode.RIDE_BY
+	_crash = true
+	_set_helmet_hidden(false)
+
+
+## Back on the bike after a crash: the view the rider had before it.
+func crash_over() -> void:
+	if not _crash:
+		return
+	set_mode(_by_return)
+	snap()
+
+
+## Whether the camera is watching a crash from the roadside.
+func watching_crash() -> bool:
+	return _crash
 
 
 ## Picks the roadside spot ahead of the bike and how long to stay there.
@@ -254,9 +285,10 @@ func _chase(delta: float) -> void:
 	_pivot = _pivot.lerp(t.origin, 1.0 - exp(-10.0 * delta))
 	var dir := Vector3(sin(_heading) * cos(_elev), sin(_elev), cos(_heading) * cos(_elev))
 	var desired := _pivot + dir * radius
-	# Looking ahead down the road from behind; at the bike itself once swung round it.
+	# Looking ahead down the road from behind; at the bike itself once swung round it. Looking back, the same the
+	# other way (the same way down at the road, so the horizon sits where it does looking ahead).
 	var swung := clampf(absf(orbit_yaw) / 0.6, 0.0, 1.0)
-	var look := t.origin + Vector3.UP * 0.9 + flat * 2.0 * (1.0 - swung) * (1.0 - _back) - flat * 4.0 * _back
+	var look := t.origin + Vector3.UP * 0.9 + flat * 2.0 * (1.0 - swung) * (1.0 - _back) - flat * 2.0 * _back
 	# Keep the camera out of hills and walls.
 	var from := t.origin + Vector3.UP * 1.2
 	var q := PhysicsRayQueryParameters3D.create(from, desired, 1)
@@ -282,9 +314,17 @@ func _helmet(delta := 0.0) -> void:
 		global_transform = target.global_transform * target.eye_transform()
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
+	# Leaning into a corner a rider holds their head nearer level than the bike: most of the lean is taken out of the
+	# view (HEAD_LEVEL), so the horizon stays nearly flat.
+	var ahead := -global_basis.z
+	var level := ahead.cross(Vector3.UP)
+	if level.length_squared() > 0.01:
+		var roll := global_basis.x.signed_angle_to(level.normalized(), ahead)
+		global_basis = Basis(ahead.normalized(), roll * HEAD_LEVEL) * global_basis
 	if _back > 0.0:
-		# The reverse view: straight back down the road from where your eyes are.
-		global_basis = global_basis * Basis(Vector3.UP, PI)
+		# The reverse view: straight back down the road from where your eyes are, turned about the world's up so the
+		# horizon sits where it does looking ahead (turned about the head's own up, a head looking down looked up).
+		global_basis = Basis(Vector3.UP, PI) * global_basis
 	elif orbiting():
 		# Turning your head inside the helmet.
 		global_basis = global_basis * Basis(Vector3.UP, orbit_yaw) * Basis(Vector3.RIGHT, -orbit_pitch)
@@ -303,6 +343,11 @@ func _ride_by(delta: float) -> void:
 	if target == null:
 		set_mode(_by_return)
 		return
+	if _crash:
+		# Watching a crash: on the rider tumbling (or the bike, once they're up), for as long as it takes.
+		var who: Node3D = target.ragdoll_body() if target.has_method("ragdoll_body") else null
+		_aim_from_roadside(who if who != null else target)
+		return
 	_by_left -= delta
 	# On the fly-by view, hop on ahead once the bike is past and pulling away (or time's up).
 	if fly_by and (_by_left <= 0.0 or _gone_past()):
@@ -311,8 +356,12 @@ func _ride_by(delta: float) -> void:
 		set_mode(_by_return)
 		snap()
 		return
+	_aim_from_roadside(target)
+
+
+func _aim_from_roadside(at: Node3D) -> void:
 	global_position = _by_pos
-	var aim := target.global_position + Vector3.UP * 0.7
+	var aim := at.global_position + Vector3.UP * 0.7
 	if global_position.distance_to(aim) > 0.3:
 		look_at(aim, Vector3.UP)
 	var d := global_position.distance_to(aim)

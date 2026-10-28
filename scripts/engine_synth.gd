@@ -42,6 +42,10 @@ const PORT_SHARE := 0.5
 const TWO_STROKE_CRACKLE := 0.3
 ## How loud a two-stroke's pipe rings at each firing (the ring-ding).
 const RING_GAIN := 6.0
+## How loud the valve train's ticks are. Kept faint: off the throttle a stock or slip-on can
+## leaves almost nothing above 2.5 kHz, so any louder and the ticks stand out on their own there,
+## a repetitive clicking at every firing.
+const VALVE_TICK := 0.02
 
 ## How each layout sounds: header length (m) and the second header group's length relative to it,
 ## how long a firing pulse lasts (crank degrees), how sharp its front is, the exhaust's colour
@@ -559,7 +563,7 @@ static func _intake(spec: Dictionary, rpm: float, load: float, events: Array, n:
 		if not two:
 			for at in [360.0 + 15.0, 540.0 + 45.0]:
 				var tt := roundi(float(e[0]) + at * deg_samples)
-				tick[posmod(tt, n)] += 0.6 * rng.randf_range(0.7, 1.2)
+				tick[posmod(tt, n)] += VALVE_TICK * rng.randf_range(0.7, 1.2)
 		# A dry clutch rattles at idle; a two-stroke's piston clatters.
 		if spec["dry_clutch"] and idle_ness > 0.0:
 			for j in 3:
