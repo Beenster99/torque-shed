@@ -206,7 +206,6 @@ static func apply(peer: int, action: Dictionary) -> String:
 			(Shed.adventure["route"] as Dictionary)["call"] = {}   # (a call left open overnight is forgotten)
 			Shed.adventure["resume"] = (save["at"] as Dictionary).duplicate()
 			Shed.adventure["resume_at"] = (save.get("where", {}) as Dictionary).duplicate(true)
-			Shed.adventure["needs_saved"] = (save["needs"] as Dictionary).duplicate(true)
 			if Daylight.current:
 				Daylight.current.set_time(float(save.get("hours", AdventureNeeds.MORNING)))
 			AdventureDiary.started(false)

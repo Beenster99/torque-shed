@@ -220,6 +220,17 @@ func commit(b: RoadBlock) -> Node3D:
 		bmi.name = "Buildings"
 		bmi.mesh = AdventureProps.to_mesh(b.arrays["buildings"])
 		node.add_child(bmi)
+	for l: Dictionary in b.arrays.get("labels", []):
+		var label := Label3D.new()
+		label.text = str(l["text"])
+		label.font_size = int(l["font"])
+		label.pixel_size = float(l["pixel"])
+		label.modulate = l["col"]
+		label.outline_size = 0
+		label.double_sided = false
+		label.transform = l["xf"]
+		label.visibility_range_end = float(l["reach"])
+		node.add_child(label)
 	for kind: String in b.trees:
 		var list: Array = b.trees[kind]
 		var multi := MultiMesh.new()

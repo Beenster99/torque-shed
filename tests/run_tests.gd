@@ -191,6 +191,7 @@ func _run_all() -> void:
 	await _t(&"_test_vehicles_lamps")
 	await _t(&"_test_vehicles_traffic")
 	await _t(&"_test_vehicles_stream")
+	await _t(&"_test_vehicles_supercar")
 	print("XP, levels, tool upgrades and skills")
 	await _t(&"_test_progress")
 	print("Bike lights, tyres and the tyre changer")
@@ -465,6 +466,7 @@ func _run_all() -> void:
 	await _t(&"_test_truck_passenger")
 	await _t(&"_test_truck_radar")
 	await _t(&"_test_foot_down")
+	await _t(&"_test_crash_fling")
 	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
 	await _t(&"_test_dirt_accrual")
 	await _t(&"_test_wash_rules")
@@ -605,10 +607,7 @@ func _run_all() -> void:
 	await _t(&"_test_adventure_surfaces")
 	await _t(&"_test_adventure_pumps")
 	await _t(&"_test_adventure_trip")
-	await _t(&"_test_adv_needs_rates")
-	await _t(&"_test_adv_needs_effects")
-	await _t(&"_test_adv_needs_eat")
-	await _t(&"_test_adv_needs_buy")
+	await _t(&"_test_adv_needs_nothing_wears")
 	await _t(&"_test_adv_needs_sit")
 	await _t(&"_test_adv_needs_sleep")
 	await _t(&"_test_adv_needs_resume")
@@ -862,6 +861,7 @@ func _run_all() -> void:
 	await _t(&"_test_region_kit_city")
 	await _t(&"_test_road_markings_style")
 	await _t(&"_test_road_markings_paint")
+	await _t(&"_test_road_signs")
 	print("Ride Anywhere v2 (T9): co-op on the road network, the crew's hashes, positions and the leave-the-route call")
 	await _t(&"_test_coop_hashes")
 	await _t(&"_test_coop_positions")
@@ -4250,6 +4250,51 @@ func _test_vehicles_traffic() -> void:
 ## The traffic as a module for any road (the adventure's): along a made-up winding road it puts
 ## vehicles both ways round the riders, keeps them in their lanes and apart, slows them for the
 ## bends, lets them go once far behind, and reaches the crew.
+## Simon's v0.26.0 round: now and then a supercar on the open road, going fast. It turns up out of
+## town only, one at a time, at well over the limit (and still in its lane round the bends); low and
+## wide on big wheels, with a wing.
+func _test_vehicles_supercar() -> void:
+	var p := VehicleModel.parts("supercar", 0)
+	var box: AABB = (p["near"] as ArrayMesh).get_aabb()
+	var saloon: AABB = (VehicleModel.parts("saloon", 0)["near"] as ArrayMesh).get_aabb()
+	check(box.end.y < 1.2 and box.end.y < saloon.end.y - 0.3 and box.size.x >= saloon.size.x, "a supercar is low and wide (%.2f m high, %.2f wide)" % [box.end.y, box.size.x])
+	check(TrafficVehicle.pick_kind(RandomNumberGenerator.new(), false) != "supercar" and int(TrafficVehicle.TRAITS["supercar"]["open"]) == 0,
+		"and it's never in the ordinary mix")
+	var stream := TrafficStream.new()
+	stream.rng.seed = 7
+	var town := [false]
+	stream.sample = func(s: float) -> Dictionary:
+		return {"pos": Vector3(0.0, 0.0, -s), "fwd": Vector3(0.0, 0.0, -1.0), "hw": 3.5, "busy": 0.9 if town[0] else 0.0}
+	add_child(stream)
+	stream.set_physics_process(false)
+	var seen := 0
+	var most := 0
+	var fastest := 0.0
+	for i in 2000:
+		var d := stream.spawn_one(0.0, 500.0)
+		if not d.is_empty() and str(d["kind"]) == "supercar":
+			seen += 1
+			fastest = maxf(fastest, float(d["pace"]))
+		most = maxi(most, stream.vehicles.filter(func(o): return str(o["kind"]) == "supercar").size())
+		if stream.vehicles.size() >= TrafficStream.MAX_VEHICLES:
+			stream.clear()
+	check(seen >= 3 and seen < 2000 * TrafficStream.SUPERCAR_CHANCE * 2.0 and most == 1,
+		"out of town one turns up now and then (%d in 2000 vehicles), never two at once" % seen)
+	check(fastest > 1.3, "going well over the limit (%.0f%% of it)" % (fastest * 100.0))
+	stream.clear()
+	town[0] = true
+	var in_town := 0
+	for i in 1000:
+		var d := stream.spawn_one(0.0, 500.0)
+		if not d.is_empty() and str(d["kind"]) == "supercar":
+			in_town += 1
+		if stream.vehicles.size() >= TrafficStream.MAX_VEHICLES:
+			stream.clear()
+	check(in_town == 0, "and never in town")
+	stream.queue_free()
+	await get_tree().process_frame
+
+
 func _test_vehicles_stream() -> void:
 	var stream := TrafficStream.new()
 	stream.rng.seed = 99
@@ -4270,7 +4315,8 @@ func _test_vehicles_stream() -> void:
 		stream.step(0.05)
 		for d in stream.vehicles:
 			both[int(d["dir"])] = true
-			top = maxf(top, float(d["v"]))
+			if str(d["kind"]) != "supercar":   # (the odd one's meant to be fast: see _test_vehicles_supercar)
+				top = maxf(top, float(d["v"]))
 			for o in stream.vehicles:
 				if o != d and int(o["dir"]) == int(d["dir"]):
 					var along := (float(o["s"]) - float(d["s"])) * int(d["dir"])
@@ -10976,15 +11022,23 @@ func _test_gear_clunks() -> void:
 		es.throttle = 1.0
 		var pops := es.pops
 		var steps := []
+		var takes := {}
 		for g in [2, 3, 4, 5, 4, 3, 2, 1, 0]:
 			es.gear = g
 			es._process(1.0 / 60.0)
 			steps.append(es.last_step)
+			if es.last_step in ["low", "high", "down"]:
+				takes[es._lever.stream] = true
+			check(es._lever.playing, "the lever's heard the moment it changes into %d" % g)
 		for i in 30:
 			es._process(1.0 / 60.0)
 		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0 and not es._oneshot_en.any(func(p): return p.playing),
 			"every change up and down the box is one of the recorded clicks or clunks, nothing made, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
 		check(steps == ["low", "low", "high", "high", "down", "down", "down", "first", "neutral"], "each change sounds its step %s" % str(steps))
+		check(takes.size() == 1, "and every change up and down the box is this bike's own take of the lever, not a different one each time (%d)" % takes.size())
+		for i in 30:
+			es._process(1.0 / 60.0)
+		check(not es._lever.playing, "each knock is short: over in a fifth of a second, not a run of clunks")
 		es.queue_free()
 	await get_tree().process_frame
 
@@ -21975,6 +22029,14 @@ func _test_foot_down() -> void:
 	check(absf(sole) < 0.06, "the boot's on the ground (its sole %.3f m off it)" % sole)
 	var side: float = (bike.global_transform.affine_inverse() * down.find_children("*", "MeshInstance3D", true, false)[-1].global_position).x
 	check(side < -0.2, "out to the left of the bike (%.2f m)" % side)
+	# With the foot down the bike stays put: a shove doesn't roll it away (Simon's v0.26.0 round).
+	var was := bike.global_position
+	check(bike.feet_holding(), "the foot's holding the bike")
+	bike.linear_velocity += -bike.global_basis.z * 1.0 + bike.global_basis.x * 0.4
+	for i in Engine.physics_ticks_per_second:
+		await get_tree().physics_frame
+	var rolled := Vector2(bike.global_position.x - was.x, bike.global_position.z - was.z).length()
+	check(rolled < 0.35 and absf(bike.speed) < 0.05, "a shove and it's held where it is (moved %.2f m, %.2f m/s)" % [rolled, bike.speed])
 	await _done(r)
 	# Riding off, then pulling up again.
 	var lifted := {"min": 1.0}
@@ -22006,6 +22068,33 @@ func _test_foot_down() -> void:
 	check(moving < 0.01 and rb.model.foot_down > 0.99, "a crew member's rider puts a foot down too as their bike stops (%.2f, then %.2f)" % [moving, rb.model.foot_down])
 	rb.queue_free()
 	await get_tree().physics_frame
+
+
+## Simon's v0.26.0 round: in a big crash the rider's flung well clear of the bike, carrying the
+## speed they were doing and thrown up off the seat; a crash at a crawl just drops them beside it.
+func _test_crash_fling() -> void:
+	var slow_v := Bike.fling_velocity(Vector3(0.0, 0.0, -4.0))
+	var fast_v := Bike.fling_velocity(Vector3(0.0, 0.0, -35.0))
+	check(fast_v.y > slow_v.y + 3.0 and -fast_v.z >= 35.0, "the faster the crash, the harder and higher they're thrown (%.1f up at 35 m/s, %.1f at 4)" % [fast_v.y, slow_v.y])
+	var thrown := {5.0: 0.0, 30.0: 0.0, "bike5": 0.0, "bike30": 0.0}
+	for target in [5.0, 30.0]:
+		var at := {}
+		var r := await ride({}, 12.0, func(b: Bike, t: float):
+			if at.is_empty():
+				b.throttle = 1.0
+				if b.speed >= target:
+					at["pos"] = b.global_position
+					at["t"] = t
+					b.crash()
+			else:
+				b.throttle = 0.0
+				if t < float(at["t"]) + 2.5 and b._ragdoll != null:
+					# Where they've got to a couple of seconds on (before they're picked up).
+					thrown[target] = b._ragdoll.global_position.distance_to(at["pos"])
+					thrown["bike%d" % target] = b.global_position.distance_to(at["pos"]))
+		await _done(r)
+	check(float(thrown[30.0]) > 35.0 and float(thrown[30.0]) > float(thrown["bike30"]) * 0.6, "come off at 30 m/s, the rider's flung %.0f m (the bike %.0f m)" % [thrown[30.0], thrown["bike30"]])
+	check(float(thrown[5.0]) < 10.0, "at a crawl they land close by (%.1f m)" % thrown[5.0])
 
 
 # ---------------------------------------------------------------------------- the adventure kit
@@ -22321,10 +22410,10 @@ func _test_kit_satnav_views() -> void:
 	var screen := Vector2(1920, 1080)
 	Settings.satnav_portrait = false
 	Settings.satnav_scale = 1.0
-	Settings.satnav_x = 0.0
+	Settings.satnav_x = 0.5
 	Settings.satnav_y = 1.0
 	var home := preload("res://scripts/main.gd").hud_rect(screen)
-	check(home == Rect2(24, 1080 - 24 - 200, 300, 200), "as it comes: 300 x 200 in the bottom left corner (%s)" % home)
+	check(home == Rect2(810, 1080 - 24 - 200, 300, 200), "as it comes: 300 x 200 in the middle at the bottom (%s)" % home)
 	Settings.satnav_portrait = true
 	Settings.satnav_scale = 2.0
 	Settings.satnav_x = 1.0
@@ -22831,20 +22920,8 @@ func _needs() -> RefCounted:
 	return load("res://tests/adventure_needs_tests.gd").new(self)
 
 
-func _test_adv_needs_rates() -> void:
-	_needs().test_rates()
-
-
-func _test_adv_needs_effects() -> void:
-	await _needs().test_effects()
-
-
-func _test_adv_needs_eat() -> void:
-	await _needs().test_eat()
-
-
-func _test_adv_needs_buy() -> void:
-	await _needs().test_buy()
+func _test_adv_needs_nothing_wears() -> void:
+	await _needs().test_nothing_wears()
 
 
 func _test_adv_needs_sit() -> void:
@@ -24014,3 +24091,7 @@ func _test_road_markings_style() -> void:
 
 func _test_road_markings_paint() -> void:
 	_road_markings().test_paint()
+
+
+func _test_road_signs() -> void:
+	_road_markings().test_signs()

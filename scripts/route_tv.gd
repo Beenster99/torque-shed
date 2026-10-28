@@ -30,10 +30,19 @@ const KEYS := ["ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ "]
 const RESULTS := 5
 ## The most past rides listed.
 const PAST := 5
+## The buttons' look: a raised plate with an edge, so they stand out from the words round them (filled with the accent
+## when they're on, the Start a green go when it can be pressed).
+const BUTTON := Color(0.15, 0.2, 0.27)
+const BUTTON_EDGE := Color(0.45, 0.58, 0.72)
+const BUTTON_ON := Color(0.95, 0.6, 0.2)
+const GO := Color(0.16, 0.55, 0.3)
 
 var view: WorldView
 var _pins: VBoxContainer
 var _plan_box: VBoxContainer
+var _plan_scroll: ScrollContainer
+var _actions: HBoxContainer
+var _credits_button: Button
 var _find_box: VBoxContainer
 var _rides_box: VBoxContainer
 var _past: VBoxContainer
@@ -119,10 +128,15 @@ func _ready() -> void:
 		b.pressed.connect(func(): ask({"tab": str(t[0])}))
 		tabs.add_child(b)
 		_tab_buttons[t[0]] = b
+	# The ride: what's planned scrolls in the space it has, the buttons to act on it stay along the bottom.
+	_plan_scroll = ScrollContainer.new()
+	_plan_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_plan_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(_plan_scroll)
 	_plan_box = VBoxContainer.new()
 	_plan_box.add_theme_constant_override("separation", 5)
-	_plan_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_child(_plan_box)
+	_plan_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_plan_scroll.add_child(_plan_box)
 	_pins = VBoxContainer.new()
 	_pins.add_theme_constant_override("separation", 3)
 	_plan_box.add_child(_pins)
@@ -136,29 +150,38 @@ func _ready() -> void:
 		b.pressed.connect(func(): Shed.request({"a": "adventure_mode", "mode": m}))
 		modes.add_child(b)
 		_mode_buttons[m] = b
-	_facts = _label("", 17, INK)
-	_facts.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_facts = _label("", 16, INK)
 	_plan_box.add_child(_facts)
-	_credits = _label("", 12, DIM)
-	_plan_box.add_child(_credits)
 	_note = _label("", 16, Color(1.0, 0.82, 0.4))
 	_plan_box.add_child(_note)
 	_crew = _label("", 16, INK)
 	_plan_box.add_child(_crew)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	_plan_box.add_child(row)
+	# Where the map's data comes from: kept out of the way behind a small button.
+	_credits_button = _button("Map data", 0.0, 13)
+	_credits_button.toggle_mode = true
+	_credits_button.custom_minimum_size = Vector2(0.0, 24.0)
+	_credits_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_credits_button.toggled.connect(func(on: bool):
+		_credits.visible = on
+		changed.emit())
+	_plan_box.add_child(_credits_button)
+	_credits = _label("", 11, DIM)
+	_credits.visible = false
+	_plan_box.add_child(_credits)
+	_actions = HBoxContainer.new()
+	_actions.add_theme_constant_override("separation", 6)
+	panel.add_child(_actions)
 	var clear := _button("Clear", 0.0, 20)
 	clear.pressed.connect(func(): Shed.request({"a": "adventure_clear"}))
-	row.add_child(clear)
+	_actions.add_child(clear)
 	_in = _button("I'm in", 0.0, 20)
 	_in.toggle_mode = true
 	_in.pressed.connect(im_in)
-	row.add_child(_in)
-	_start = _button("Start the ride", 0.0, 22)
+	_actions.add_child(_in)
+	_start = _button("Start the ride", 0.0, 22, GO)
 	_start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_start.pressed.connect(start)
-	row.add_child(_start)
+	_actions.add_child(_start)
 	# The search: what's typed, a keyboard, and what it finds.
 	_find_box = VBoxContainer.new()
 	_find_box.add_theme_constant_override("separation", 4)
@@ -229,7 +252,7 @@ func _label(text: String, size_px: int, col: Color) -> Label:
 	return l
 
 
-func _button(text: String, width: float, size_px: int) -> Button:
+func _button(text: String, width: float, size_px: int, fill := BUTTON) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.add_theme_font_size_override("font_size", size_px)
@@ -238,7 +261,30 @@ func _button(text: String, width: float, size_px: int) -> Button:
 		b.custom_minimum_size = Vector2(width, 44.0)
 	else:
 		b.custom_minimum_size = Vector2(0.0, 36.0)
+	var on := fill.lerp(BUTTON_ON, 0.85) if fill == BUTTON else fill.lightened(0.2)
+	for st in [["normal", fill, BUTTON_EDGE], ["hover", fill.lightened(0.15), BUTTON_EDGE.lightened(0.3)], ["pressed", on, BUTTON_ON],
+			["hover_pressed", on.lightened(0.1), BUTTON_ON], ["disabled", Color(0.09, 0.11, 0.14), Color(0.25, 0.3, 0.36)]]:
+		b.add_theme_stylebox_override(str(st[0]), button_box(st[1], st[2]))
+	b.add_theme_color_override("font_color", INK)
+	b.add_theme_color_override("font_hover_color", Color.WHITE)
+	b.add_theme_color_override("font_pressed_color", Color(0.08, 0.06, 0.03) if fill == BUTTON else Color.WHITE)
+	b.add_theme_color_override("font_hover_pressed_color", Color(0.08, 0.06, 0.03) if fill == BUTTON else Color.WHITE)
+	b.add_theme_color_override("font_disabled_color", Color(0.45, 0.5, 0.56))
 	return b
+
+
+## A button's plate: filled `fill`, edged `edge`, rounded.
+static func button_box(fill: Color, edge: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = fill
+	sb.border_color = edge
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(7)
+	sb.content_margin_left = 10.0
+	sb.content_margin_right = 10.0
+	sb.content_margin_top = 4.0
+	sb.content_margin_bottom = 4.0
+	return sb
 
 
 # ---------------------------------------------------------------------------- the crew's view
@@ -432,7 +478,8 @@ func refresh() -> void:
 	var tab := _tab()
 	for t in _tab_buttons:
 		(_tab_buttons[t] as Button).set_pressed_no_signal(t == tab)
-	_plan_box.visible = tab == "plan"
+	_plan_scroll.visible = tab == "plan"
+	_actions.visible = tab == "plan"
 	_find_box.visible = tab == "find"
 	_rides_box.visible = tab == "rides"
 	_refresh_plan()
@@ -498,6 +545,8 @@ func _refresh_plan() -> void:
 	_in.disabled = pins.size() < 2 or Adventure.active()
 	_in.set_pressed_no_signal(marked.has(Shed.me()))
 	_crew.visible = AdventureJourney.needs_crew() and pins.size() >= 2
+	_credits_button.visible = _credits.text != ""
+	_credits.visible = _credits_button.visible and _credits_button.button_pressed
 	_crew.text = AdventureJourney.crew_line(journey)
 	_start.text = "Start the ride" if not AdventureJourney.needs_crew() or marked.size() == Shed.crew.size() \
 		else "Start (%d of %d in)" % [marked.size(), Shed.crew.size()]

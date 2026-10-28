@@ -33,13 +33,13 @@ WEIGHT = 700
 TOLERANCE = 0.012
 
 FONT_OF = {
-    "Latn": "NotoSans[wdth,wght].ttf", "Cyrl": "NotoSans[wdth,wght].ttf", "Grek": "NotoSans[wdth,wght].ttf",
+    "Latn": "NotoSans[wdth,wght].ttf", "Num": "NotoSans[wdth,wght].ttf", "Cyrl": "NotoSans[wdth,wght].ttf", "Grek": "NotoSans[wdth,wght].ttf",
     "Arab": "NotoSansArabic[wdth,wght].ttf", "Thai": "NotoSansThai[wdth,wght].ttf",
     "Jpan": "NotoSansJP[wght].ttf", "Kore": "NotoSansKR[wght].ttf", "Hans": "NotoSansSC[wght].ttf",
     "Hant": "NotoSansSC[wght].ttf",
 }
 
-# The words, by script. Stop signs' words (data/countries.json "stop"), words painted on the road ("road_words"), and
+# The words, by script ("Num": speed limits' numbers, in Noto Sans). Stop signs' words (data/countries.json "stop"), words painted on the road ("road_words"), and
 # shop fronts' (RegionCity's fascias, by language).
 WORDS = {
     "Latn": ["STOP", "ALTO", "PARE", "DUR", "SLOW", "STOP", "KEEP CLEAR", "BUS", "SCHOOL", "XING",
@@ -58,6 +58,8 @@ WORDS = {
              "WARUNG", "TOKO", "APOTEK", "KEDAI", "KOPITIAM", "SARI-SARI", "BOTIKA", "CÀ PHÊ", "PHỞ", "TIỆM",
              "BOUTIQUE", "ALIMENTATION", "SUPERETTE", "CAFÉ DES SPORTS", "SPAZA", "BUTCHERY", "SALON",
              "HOSPEDAJE", "FERRETERÍA", "PULPERÍA", "DROGUERÍA", "SODA"],
+    # Speed limit signs' numbers (every 5 up to 130, km/h or mph) and America's and Canada's words over them.
+    "Num": [str(n) for n in range(5, 135, 5)] + ["SPEED", "LIMIT", "MAXIMUM"],
     "Cyrl": ["СТОП", "АПТЕКА", "ПРОДУКТЫ", "ХЛЕБ", "КАФЕ", "МАГАЗИН", "ПЕКАРНА", "ПРОДАВНИЦА", "МАРКЕТ", "ЗОГС",
              "ЛАВКА", "ГАСТРОНОМ", "АПТЕКА", "ХЛІБ", "ПРОДУКТИ"],
     "Grek": ["ΣΤΟΠ", "ΦΑΡΜΑΚΕΙΟ", "ΚΑΦΕΝΕΙΟ", "ΦΟΥΡΝΟΣ", "ΤΑΒΕΡΝΑ", "ΠΑΝΤΟΠΩΛΕΙΟ"],

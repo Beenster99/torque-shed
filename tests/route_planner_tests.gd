@@ -238,7 +238,7 @@ func test_journeys_kept() -> void:
 	check(row != null and row.text.begins_with("Over the tops  (31 km"), "Past rides on the TV (%s)" % (row.text if row else "nothing"))
 	if row != null:
 		row.pressed.emit()
-	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 2 and tv._plan_box.visible)
+	await _settle(func(): return (Shed.journey.get("pins", []) as Array).size() == 2 and tv._plan_scroll.visible)
 	check((Shed.journey.get("pins", []) as Array).size() == 2 and str(Shed.route_tv.get("tab", "")) == "plan" and float(Shed.route_tv.get("span", 0.0)) < 100000.0,
 		"a touch pins it for the crew and shows it on the map")
 	dash.queue_free()

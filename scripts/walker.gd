@@ -120,8 +120,6 @@ var _seat_spot := Vector3.ZERO
 ## held (a Transform3D, your feet's place), and your eye's height above it. null when you're not.
 var perch = null
 var perch_eye := SEATED_EYE
-## Walking pace is scaled by this (an adventure's hunger slows you down).
-var pace_scale := 1.0
 var _active_plan := {}
 var spray_skill := 1.0       # widens the spray: the tool's upgrade stage and Steady Hand (see Progress)
 var coverage := 0.0          # how much of the part being sprayed is covered, 0..1
@@ -743,7 +741,7 @@ func _physics_process_body(delta: float) -> void:
 		input = Vector2.ZERO
 		global_position = (perch as Transform3D).origin
 		velocity = Vector3.ZERO
-	var pace := (CROUCH_WALK if crouched else (RUN if running else WALK)) * pace_scale
+	var pace := CROUCH_WALK if crouched else (RUN if running else WALK)
 	if not spray_mode.is_empty():
 		pace = SPRAY_WALK
 	if Shed.pushing_bike(Shed.me()) != 0:
@@ -1774,14 +1772,6 @@ func _make_plan() -> Dictionary:
 				"verb": "pack the %s (%s)" % [str(info["short"]), TvChannels.money_text(int(info["price"]))]}
 		else:
 			alt_plan = {"action": {"a": "toolbox_pack", "item": item_id, "empty": true}, "time": 1.0, "verb": "empty it out"}
-		alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
-	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0 and AdventureNeeds.LUGGAGE.has(str(Shed.items[item_id]["kind"])) \
-			and AdventureNeeds.next_pack(item_id) != "":
-		# A tank bag, top box or panniers: the second button packs a lunch, then a flask of tea,
-		# for an adventure (bought from the business's account; see AdventureNeeds).
-		var what := AdventureNeeds.next_pack(item_id)
-		alt_plan = {"action": {"a": "needs_pack", "item": item_id, "what": what}, "time": 1.0,
-			"verb": "pack a %s for the road (%s)" % [AdventureNeeds.PACK_NAMES[what], TvChannels.money_text(int(AdventureNeeds.PACK_PRICE[what]))]}
 		alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and kind == "part" and int(target.get("bike", 0)) != 0:
 		# Back at the shed with a lever snapped or a fuse blown out on an adventure: fit one from
@@ -3759,7 +3749,7 @@ func _activity_text() -> String:
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
-		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture", "toolbox_pack": "Packing a toolbox", "needs_pack": "Packing a lunch for the road"}
+		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture", "toolbox_pack": "Packing a toolbox"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
