@@ -159,3 +159,86 @@ func test_paint() -> void:
 	check(missing.is_empty(), "every shop word is baked (missing: %s)" % [missing])
 	# The block draws them: its lines are the country's, and the signs stand with its buildings.
 	check(RoadBlock.VERSION >= 5, "the block's version counts the markings")
+
+
+## A main road west to east through a village (Testby, at 600, 100) with a tee at (100, 100) and a side road south to
+## Southam (at 100, 1200); the side road's limit is the map's 48 km/h.
+static func _village() -> RealRegion:
+	var rb: GDScript = load("res://tests/road_block_tests.gd")
+	var r: RealRegion = rb.graph([[100, 100], [-1500, 100], [1500, 100], [100, 1400]],
+		[[1, 0, "primary"], [0, 2, "primary"], [0, 3, "secondary"]])
+	r.edge_limit[2] = 48
+	for k in 34:
+		r.buildings.append([500.0 + k * 6.0, 130.0 + (k % 2) * 12.0, 8.0, 8.0, 0.0, 6.0, 0, 0])
+	for k in 10:
+		r.buildings.append([80.0 + k * 5.0, 1230.0, 8.0, 8.0, 0.0, 6.0, 0, 0])
+	r.places = [{"kind": "village", "name": "Testby", "x": 600.0, "z": 100.0, "pop": 0},
+		{"kind": "village", "name": "Southam", "x": 100.0, "z": 1200.0, "pop": 0}]
+	return r
+
+
+static func _texts(m: Dictionary) -> Array:
+	var out := []
+	for l: Dictionary in m["labels"]:
+		out.append(str(l["text"]))
+	return out
+
+
+## The single road's signs on the network: limits where they change, the place's name board coming in, fingerposts
+## down side roads and chevrons on a roundabout's island, in the country's way.
+func test_signs() -> void:
+	var rb: GDScript = load("res://tests/road_block_tests.gd")
+	var net := RoadNet.new(_village(), rb.flat)
+	var ex := RoadSigns.extent_of(net, 0)
+	check(int(ex["n"]) == 34 and float(ex["r"]) > 100.0 and float(ex["r"]) < 180.0,
+		"a village reaches as far as its houses run (%d buildings, %.0f m)" % [int(ex["n"]), float(ex["r"])])
+	var b := net.block(RoadBlock.key_of(100.0, 100.0))
+	var gb := RoadMarkings.paint(b, _kit("GB"))
+	var de := RoadMarkings.paint(b, _kit("DE"))
+	var texts := _texts(gb)
+	check(texts.has("Testby"), "the village's name board stands where the road comes in (%s)" % [texts])
+	check(texts.count("Testby") == 1 and _texts(de).count("Testby") == 2, "and going out too in Germany (its end board), not in Britain")
+	check(texts.has("Southam  ¾") and _texts(de).has("Southam  1"), "the fingerpost down the side road names where it goes, in miles in Britain (%s)" % [texts])
+	check(_texts(RoadMarkings.paint(b, _kit("FR"))).has("Southam  1"), "and in kilometres in France")
+	for m: Dictionary in [gb, de]:
+		check(_ok(m["signs"]), "the signs are whole, finite triangles")
+		var ok := true
+		for l: Dictionary in m["labels"]:
+			var xf: Transform3D = l["xf"]
+			ok = ok and xf.origin.is_finite() and absf(xf.basis.z.y) < 0.01 and str(l["text"]) != ""
+		check(ok, "each label stands upright, facing along the ground")
+	# Limits: 30 mph coming into Testby and the national limit going out, the side road's 30 off the main road.
+	var limits := RoadSigns.put_up(b, _kit("GB"), RoadMarkings.style_of(_kit("GB")), AdventureProps.new_arrays())
+	check(limits == gb["labels"], "it signs the same every time")
+	var ctx := {"places": RoadSigns.places_near(net, b.rect.grow(1000.0)), "table": "uk"}
+	check(RoadSigns.limit_at(net, 1, 500.0, ctx) == 48 and RoadSigns.limit_at(net, 1, 1200.0, ctx) == 96,
+		"the limit is the built-up one in the village and the open road's out of it")
+	check(RoadSigns.limit_at(net, 2, 100.0, ctx) == 48, "and the map's where it has one")
+	var with_limits := AdventureProps.new_arrays()
+	RoadSigns._limit_sign(with_limits, Vector3.ZERO, Vector3(0, 0, 1), 48, "primary", {"mph": true, "nsl": true, "rect": false, "canada": false})
+	check(_has(with_limits, RoadMarkings.RED) and (with_limits["v"] as PackedVector3Array).size() > 300, "a limit sign is a red ring with its number")
+	var nsl := AdventureProps.new_arrays()
+	RoadSigns._limit_sign(nsl, Vector3.ZERO, Vector3(0, 0, 1), 96, "primary", {"mph": true, "nsl": true, "rect": false, "canada": false})
+	check(not _has(nsl, RoadMarkings.RED), "Britain's open road has the national limit disc")
+	var us := AdventureProps.new_arrays()
+	RoadSigns._limit_sign(us, Vector3.ZERO, Vector3(0, 0, 1), 88, "primary", {"mph": true, "nsl": false, "rect": true, "canada": false})
+	check(not _has(us, RoadMarkings.RED) and _has(us, RoadMarkings.WHITE), "America's is a white rectangle")
+	for n in range(5, 135, 5):
+		check(SignWords.has(str(n)), "the limit %d is baked" % n)
+	# A roundabout's island has a chevron board facing each road in: black and white in Britain, red on white in France.
+	var rnet := RoadNet.new(rb.roundabout(), rb.flat)
+	var rbk := rnet.block(RoadBlock.key_of(100.0, 100.0))
+	var j: Dictionary = rbk.junctions[0]
+	check(j["kind"] == "roundabout", "the fixture is a roundabout")
+	var ch_gb := AdventureProps.new_arrays()
+	var ch_fr := AdventureProps.new_arrays()
+	RoadSigns._chevrons(ch_gb, rnet, j, rbk.anchor(), RoadMarkings.style_of(_kit("GB")))
+	RoadSigns._chevrons(ch_fr, rnet, j, rbk.anchor(), RoadMarkings.style_of(_kit("FR")))
+	check(_ok(ch_gb) and (ch_gb["v"] as PackedVector3Array).size() > 0 and _has(ch_gb, RoadMarkings.BLACK) and not _has(ch_gb, RoadMarkings.RED),
+		"Britain's roundabout has black and white chevrons")
+	check(_has(ch_fr, RoadMarkings.RED) and ch_fr["v"] != ch_gb["v"], "France's are red on white, pointing the other way round")
+	var island_y := float(j["pos"].y) - rbk.anchor().y + RoadBlock.ISLAND_H
+	var on := true
+	for p: Vector3 in ch_gb["v"]:
+		on = on and p.y > island_y - 0.05 and Vector2(p.x, p.z).distance_to(Vector2(j["pos"].x - rbk.anchor().x, j["pos"].z - rbk.anchor().z)) < float(j["island"]) + 0.2
+	check(on, "the chevrons stand on the island")
