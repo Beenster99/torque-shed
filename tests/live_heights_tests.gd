@@ -117,10 +117,13 @@ func test_tiles() -> void:
 	put.call(4, 5, -705.9)
 	put.call(5, 5, -484.2)
 	put.call(3, 5, -82.4)
-	var pitted := HeightTiles.decode(img.save_png_to_buffer())
+	var pitted := HeightTiles.decode(img.save_png_to_buffer(), Vector3i(-1, -1, -1), true)
 	check(pitted != null and absf(pitted.at(4, 5) - 300.0) < 0.01 and absf(pitted.at(5, 5) - 300.0) < 0.01 and absf(pitted.at(3, 5) - 300.0) < 0.01
 		and absf(pitted.at(14, 8) - (300.0 - 5 * 30.0)) < 0.01 and absf(pitted.at(12, 8) - (300.0 - 3 * 30.0)) < 0.01,
 		"a pit in the source is filled from the ground round it (%.1f m), and the ground falling away beside it is kept (%.1f m)" % [pitted.at(4, 5) if pitted else NAN, pitted.at(14, 8) if pitted else NAN])
+	# (the game's own tiles aren't looked over: no time spent on them, as a ride's land is laid)
+	var kept := HeightTiles.decode(img.save_png_to_buffer())
+	check(kept != null and kept.at(4, 5) < 0.0, "a tile read without looking for pits is left as it is (%.1f m, under the sea's floor)" % (kept.at(4, 5) if kept else NAN))
 	_restore()
 
 
