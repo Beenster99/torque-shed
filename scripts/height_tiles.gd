@@ -104,8 +104,10 @@ static func tile(key: Vector3i) -> Tile:
 		_lock.unlock()
 		return null
 	_lock.unlock()
-	var bytes := _read(key)
-	t = decode(bytes, key) if not bytes.is_empty() else null
+	var p := _path_of(key)
+	var bytes := FileAccess.get_file_as_bytes(p) if p != "" else PackedByteArray()
+	# (the game's own tiles, under `dirs`, were looked over when they were chosen: only those fetched have pits filled)
+	t = decode(bytes, key, p.begins_with(disk)) if not bytes.is_empty() else null
 	_lock.lock()
 	if t == null:
 		_missing[key] = true
@@ -140,7 +142,8 @@ static func has(key: Vector3i) -> bool:
 
 
 ## A tile from its file's bytes (webp or png): null when they are no good. `key` places it, for which cells have sea.
-static func decode(bytes: PackedByteArray, key := Vector3i(-1, -1, -1)) -> Tile:
+## With `despike`, the source's pits are filled (_despike).
+static func decode(bytes: PackedByteArray, key := Vector3i(-1, -1, -1), despike := false) -> Tile:
 	var img := Image.new()
 	var err := img.load_webp_from_buffer(bytes) if bytes.slice(8, 12).get_string_from_ascii() == "WEBP" else img.load_png_from_buffer(bytes)
 	if err != OK or img.get_width() != img.get_height() or img.get_width() < 2:
@@ -149,7 +152,8 @@ static func decode(bytes: PackedByteArray, key := Vector3i(-1, -1, -1)) -> Tile:
 	var t := Tile.new()
 	t.size = img.get_width()
 	t.rgb = img.get_data()
-	_despike(t)
+	if despike:
+		_despike(t)
 	t.sea = _sea_mask(t, key)
 	return t
 
@@ -325,11 +329,6 @@ static func _path_of(key: Vector3i) -> String:
 			if FileAccess.file_exists(p):
 				return p
 	return ""
-
-
-static func _read(key: Vector3i) -> PackedByteArray:
-	var p := _path_of(key)
-	return FileAccess.get_file_as_bytes(p) if p != "" else PackedByteArray()
 
 
 ## The tiles at `zoom` within `reach` metres of any of `points` (route-frame x, z of a frame at (lat0, lon0)).
