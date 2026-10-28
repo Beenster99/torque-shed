@@ -27,6 +27,8 @@ const TIMEOUT_MS := 30000
 const SEA_ABS := 0.4
 const SEA_MIN := 400
 const SEA_DEPTH := 35.0
+## How far under the pixels round it (m) a pixel is a pit in the source, not the ground (_despike).
+const SPIKE_M := 40.0
 ## The sea mask is smoothed by shrinking the tile to this many cells a side and back (Godot does it natively).
 const SEA_CELLS := 16
 
@@ -147,8 +149,55 @@ static func decode(bytes: PackedByteArray, key := Vector3i(-1, -1, -1)) -> Tile:
 	var t := Tile.new()
 	t.size = img.get_width()
 	t.rgb = img.get_data()
+	_despike(t)
 	t.sea = _sea_mask(t, key)
 	return t
+
+
+## Fills the tile's pits: pixels more than SPIKE_M under the middle of the eight round them, which the sources have
+## here and there (one in Rio drops 706 m below the street round it). A road or the land laid over one would dive into
+## it. Each is given that middle height. Real hollows, cuttings and depressions are wider than a pixel, so they stay.
+static func _despike(t: Tile) -> void:
+	var n := t.size
+	var deep := int(SPIKE_M * 256.0)
+	var rgb := t.rgb
+	var found := PackedInt32Array()
+	# (a first look along each row only, cheap: a pit is well under one of the pixels beside it)
+	for j in range(1, n - 1):
+		var row := j * n
+		var o := (row + 1) * 3
+		var left := rgb[o - 3] * 65536 + rgb[o - 2] * 256 + rgb[o - 1]
+		var v := rgb[o] * 65536 + rgb[o + 1] * 256 + rgb[o + 2]
+		for i in range(1, n - 1):
+			o = (row + i + 1) * 3
+			var right := rgb[o] * 65536 + rgb[o + 1] * 256 + rgb[o + 2]
+			if v < left - deep or v < right - deep:
+				found.append(row + i)
+			left = v
+			v = right
+	if found.is_empty():
+		return
+	var fixed := PackedInt32Array()
+	fixed.resize(found.size())
+	for f in found.size():
+		var p := found[f]
+		var round := PackedInt32Array()
+		for d in [-n - 1, -n, -n + 1, -1, 1, n - 1, n, n + 1]:
+			var o: int = (p + d) * 3
+			round.append(rgb[o] * 65536 + rgb[o + 1] * 256 + rgb[o + 2])
+		round.sort()
+		var mid := (round[3] + round[4]) / 2
+		var o := p * 3
+		var v := rgb[o] * 65536 + rgb[o + 1] * 256 + rgb[o + 2]
+		fixed[f] = mid if v < mid - deep else -1
+	for f in found.size():
+		if fixed[f] < 0:
+			continue
+		var o := found[f] * 3
+		rgb[o] = fixed[f] >> 16
+		rgb[o + 1] = (fixed[f] >> 8) & 255
+		rgb[o + 2] = fixed[f] & 255
+	t.rgb = rgb
 
 
 ## The tile's sea, smoothed so the floor slopes down from the shore: empty when it has none (or only a pond). Ground at
