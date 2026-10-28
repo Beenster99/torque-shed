@@ -197,6 +197,17 @@ stop word painted before a stop where the country does, Britain's give-way trian
 on poles beside them the give-way, stop (its word in the local script: SignWords, data/sign_glyphs.json) and
 roundabout signs, and a junction warning `WARN_AHEAD` m up each main road into one.
 
+The result also has `"faces"`, the speed bumps' collision triangles (joined to the tarmac's), and `"labels"`: the
+words drawn as text rather than baked, such as place names, as `[{text, xf (Transform3D from the anchor, the text
+facing its +z), font, pixel, col, reach}]`. The block keeps them as `arrays["labels"]` and the streamer stands each
+up as a Label3D. The signs the single road has come from `RoadSigns.put_up` (scripts/road_signs.gd): a speed limit
+sign wherever the limit changes (past a junction's or a join's mouth, and where a road comes into a place's houses
+and leaves them), the place's name board coming in (and in continental Europe its end board going out), fingerposts
+down side roads naming the place each goes to and how far, and chevron boards on a roundabout's island. Limits are
+the map's, or the country's by class (RoutePlanner.default_limit), built up within a place's houses
+(`RoadSigns.extent_of`: as far as its buildings run without a gap). These read `region.places`, `region.edge_limit`
+and `net.buildings_in` besides what's listed above.
+
 ## What each thread uses
 
 - **T7 satnav.** `locate` for where a rider is on the graph (edge, s, which way they face from heading); the

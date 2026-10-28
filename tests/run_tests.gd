@@ -860,6 +860,7 @@ func _run_all() -> void:
 	await _t(&"_test_region_kit_city")
 	await _t(&"_test_road_markings_style")
 	await _t(&"_test_road_markings_paint")
+	await _t(&"_test_road_signs")
 	print("Ride Anywhere v2 (T9): co-op on the road network, the crew's hashes, positions and the leave-the-route call")
 	await _t(&"_test_coop_hashes")
 	await _t(&"_test_coop_positions")
@@ -24004,3 +24005,7 @@ func _test_road_markings_style() -> void:
 
 func _test_road_markings_paint() -> void:
 	_road_markings().test_paint()
+
+
+func _test_road_signs() -> void:
+	_road_markings().test_signs()

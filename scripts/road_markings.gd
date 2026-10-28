@@ -90,6 +90,7 @@ static func style_of(kit: Dictionary) -> Dictionary:
 	if have is Dictionary:
 		return have
 	var st: Dictionary = (_styles.get(str(f.get("marks", "eu")), _styles.get("eu", {})) as Dictionary).duplicate(true)
+	st["marks"] = str(f.get("marks", "eu"))
 	st["centre_col"] = PAINT.get(str(f.get("centre", "white")), PAINT["white"])
 	st["edge_on"] = str(f.get("edge", "white")) != "none"
 	st["edge_col"] = PAINT.get(str(f.get("edge", "white")), PAINT["white"])
@@ -110,7 +111,8 @@ static func style_of(kit: Dictionary) -> Dictionary:
 
 ## Block `b`'s paint and signs in its place's style (`kit`, RegionKit.choose): {"lines": AdventureProps arrays (the
 ## paint, drawn with the block's lines), "signs": AdventureProps arrays (drawn with its buildings: signs, bollards and
-## speed bumps), "faces": the speed bumps' collision triangles (tarmac)}, laid out from the block's anchor. {} when the
+## speed bumps), "faces": the speed bumps' collision triangles (tarmac), "labels": the words drawn as text, such as
+## place names (RoadSigns.put_up)}, laid out from the block's anchor. {} when the
 ## kit is (the block then paints its plain lines).
 static func paint(b: RoadBlock, kit: Dictionary) -> Dictionary:
 	var st := style_of(kit)
@@ -135,7 +137,8 @@ static func paint(b: RoadBlock, kit: Dictionary) -> Dictionary:
 			_disc(lines, j["pos"] - o + Vector3(0.0, LIFT, 0.0), minf(1.6, float(j["radius"]) * 0.3), PAINT["white"])
 		if town and j["kind"] in ["tee", "cross", "staggered", "fork", "multi"]:
 			_bollards(signs, b.net.junction_of(int(j["node"])), o, BOLLARDS.get(str(kit.get("region", "")), BOLLARDS["western_europe"]))
-	return {"lines": lines, "signs": signs, "faces": faces}
+	var labels := RoadSigns.put_up(b, kit, st, signs)
+	return {"lines": lines, "signs": signs, "faces": faces, "labels": labels}
 
 
 # ---------------------------------------------------------------------------- a piece's paint
