@@ -81,8 +81,6 @@ var _rear_held := 0.0
 var _waved := false
 ## Held this long (s), the nod button raises the left hand in a wave instead.
 const WAVE_HOLD := 0.35
-## A press of the reverse view button shorter than this (s) is a tap: it toggles the view.
-const REAR_TAP := 0.3
 var _fade: ColorRect        # the black that fades in and out going back to the garage
 var _going_home := false
 ## The bike you've just got off, and when (ticks, ms): online the shed still has you on it
