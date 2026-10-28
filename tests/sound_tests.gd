@@ -232,3 +232,21 @@ func test_two_stroke_synth() -> void:
 		else:
 			even += orders[k]
 	check(odd > even * 1.5, "a two-stroke single's buzz is strong in odd harmonics (%.2f odd to %.2f even)" % [odd, even])
+
+
+## The valve train's ticks stay under the engine: off the throttle at idle a stock can leaves
+## little above 2.5 kHz, and the ticks used to stand out there as a repetitive clicking at every
+## firing. The top end of the engine side (its sample-to-sample change) has no spikes far above
+## the rest.
+func test_valve_ticks_quiet() -> void:
+	for spec: Dictionary in [EngineSynth.make_spec("single", 1, 400.0, {"exhaust": "stock"}),
+			EngineSynth.make_spec("parallel", 2, 700.0, {"exhaust": "slip"}), EngineSynth.make_spec("vtwin", 2, 1200.0, {"exhaust": "stock", "redline": 7000.0})]:
+		var x := EngineSynth.render_loop(spec, "in_off", EngineSynth.loop_rpm(spec, float(spec["idle"])))
+		var sum := 0.0
+		var peak := 0.0
+		for i in range(1, x.size() - 1):
+			var hp := x[i + 1] - 2.0 * x[i] + x[i - 1]
+			sum += hp * hp
+			peak = maxf(peak, absf(hp))
+		var crest := peak / sqrt(sum / (x.size() - 2))
+		check(crest < 16.0, "%s %s at idle off the throttle: no clicking in its top end (crest %.1f, the loud ticks made 19 to 29)" % [spec["layout"], spec["exhaust"], crest])

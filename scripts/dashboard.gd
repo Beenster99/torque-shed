@@ -168,6 +168,7 @@ func show_data(new_data: Dictionary) -> void:
 	data = new_data
 	if kind == "route" and _route == null:
 		_route = RouteTv.new()
+		_route.on_wall = true
 		_route.changed.connect(_redraw)
 		_viewport.add_child(_route)
 	if _route != null:

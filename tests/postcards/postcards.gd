@@ -394,10 +394,11 @@ static func measure(w: AdventureWorld, s: float) -> Dictionary:
 		"kink_deg": snappedf(rad_to_deg(kink), 0.1), "found": snappedf(float(ys.size()) / maxi(1, tries), 0.01)}
 
 
-## A thing's kind from its node's name: "MM_autumn_tree" and "Trees_autumn_tree" are both "autumn tree".
+## A thing's kind from its node's name: "MM_autumn_tree" and "Trees_autumn_tree" are both "autumn tree", and
+## "MM_kit_post_uk" and the network's "Roadside_kit_post_uk" both "post uk".
 static func _kind(node_name: String) -> String:
 	var k := node_name.rstrip("0123456789_-@").trim_prefix("@")
-	for pre in ["MM_", "Trees_", "kit_"]:
+	for pre in ["MM_", "Trees_", "Roadside_", "kit_"]:
 		k = k.trim_prefix(pre)
 	return k.to_snake_case().replace("_", " ").strip_edges()
 

@@ -496,3 +496,72 @@ func test_perf() -> void:
 	AdventureTrip.instant = false
 	Shed.stop()
 	await _frames(3)
+
+
+## The traffic keeps to the side of the road its country drives on: on the right in France, the
+## left at home. Each lane is the kerb side of its way, turning off onto the near side is the easy
+## turn and the far side waits to cross, out of a side road it turns onto its near side, a bus pulls
+## in to that kerb, and round a roundabout the exits are counted the way the traffic goes round.
+func test_drive_side() -> void:
+	check(str(RegionKit.facts("FR").get("drive", "")) == "right" and str(RegionKit.facts("GB").get("drive", "")) == "left"
+		and str(RegionKit.facts("JP").get("drive", "")) == "left", "the countries' sides: France the right, Britain and Japan the left")
+	for left in [true, false]:
+		var stream := TrafficStream.new()
+		stream.sample = func(s: float) -> Dictionary:
+			return {"pos": Vector3(0.0, 0.0, -s), "fwd": Vector3(0, 0, -1), "hw": 3.6, "busy": 0.0, "limit": 22.0, "grade": 0.0}
+		stream.keep_left = func(_s: float) -> bool: return left
+		t.add_child(stream)
+		stream.set_physics_process(false)
+		stream.focus_s = 500.0
+		stream.despawn = 5000.0
+		stream._spawn_timer = 1.0e9
+		stream._side_timer = 1.0e9
+		var name: String = "on the left" if left else "on the right"
+		var keep := -1 if left else 1
+		var up := stream.slot(stream.spawn_at("hatchback", 300.0, 1, 10.0))
+		var down := stream.slot(stream.spawn_at("hatchback", 700.0, -1, 10.0))
+		# The road's +x is the right of the way s grows (fwd -z).
+		check(signf(float(up["lat"])) == keep and signf(float(down["lat"])) == -keep and signf((up["pos"] as Vector3).x) == keep,
+			"%s: each keeps to its own kerb side (lat %.1f going up the road, %.1f coming down)" % [name, float(up["lat"]), float(down["lat"])])
+		check(stream._in_lane(stream.find(int(up["id"])), 3.6) and stream._in_lane(stream.find(int(down["id"])), 3.6),
+			"%s: and each counts as in its own lane" % name)
+		var jn := {"s": 500.0, "stop": 6.0, "lights": false, "village": true,
+			"arms": [{"side": 1, "len": 60.0, "w": 5.0}, {"side": -1, "len": 60.0, "w": 5.0}]}
+		stream.junctions = [jn]
+		stream._find_junctions()
+		var near_arm := 0 if keep == 1 else 1   # the arm on the right of the way s grows is arms[0]
+		var across := {}
+		var d := stream.find(int(up["id"]))
+		for i in 400:
+			d.erase("turn")
+			stream._decide_turn(d, 0)
+			if d.has("turn"):
+				across[int(d["turn"][1])] = bool(d["turn"][2])
+		check(across.get(near_arm) == false and across.get(1 - near_arm) == true,
+			"%s: turning off to the near side is the easy turn, to the far side it crosses the other lane" % name)
+		# Out of a roundabout's side road, round it the traffic's way.
+		var ro := jn.duplicate(true)
+		ro["ro"] = 14.0
+		ro["rc"] = 10.0
+		stream.junctions = [ro]
+		stream.arm_at = func(_jn: Dictionary, k: int, tt: float) -> Dictionary:
+			var side := float(_jn["arms"][k]["side"])
+			return {"pos": Vector3(side * (4.0 + tt), 0.0, -500.0), "fwd": Vector3(side, 0.0, 0.0)}
+		var dirs := {}
+		for i in 30:
+			stream.focus_s = 500.0
+			var out := stream.spawn_side()
+			if not out.is_empty():
+				dirs[int(jn["arms"][int(out["k"])]["side"]) * int(out["dir"])] = true
+				stream.remove_id(int(out["seed"]))
+		check(dirs.size() == 1 and dirs.has(keep),
+			"%s: coming out of a roundabout's side road it goes round the traffic's way" % name)
+		var st := {"type": "roundabout", "arms": [{"side": 1}]}
+		check(AdventureJunctions.exit_number(st, 1, left) == (1 if left else 2),
+			"%s: a roundabout with one road off on the right: the main road is the %s exit" % [name, AdventureJunctions.ordinal(1 if left else 2)])
+		# A bus pulling in indicates to its kerb.
+		var bus := stream.find(stream.spawn_at("coach", 100.0, 1, 5.0, {"bus": true}))
+		stream.bus_stops = [{"s": 130.0, "dir": 1}]
+		stream._bus(bus, 6.0, 3.0)
+		check(int(bus["ind"]) == keep, "%s: a bus pulling in indicates to the kerb (%d)" % [name, int(bus["ind"])])
+		stream.queue_free()
