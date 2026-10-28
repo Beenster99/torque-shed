@@ -68,6 +68,8 @@ func local_slot() -> int:
 ## Every packet is squashed (the shed's state is mostly the same few words over and over);
 ## host and crew must match.
 const COMPRESSION := ENetConnection.COMPRESS_ZSTD
+## How long a mate's game may go without answering before they're taken to have gone (ms).
+const TIMEOUT_MS := 15000
 
 
 func host(info: Dictionary, port := PORT) -> Error:
@@ -271,6 +273,11 @@ func send_time(hours: float, rate: float) -> void:
 
 
 func _on_peer_connected(id: int) -> void:
+	# A mate's game can stop answering for a few seconds (laying out the start of a ride on the road network): the
+	# link waits that out rather than dropping them at ENet's five.
+	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if enet and enet.get_peer(id):
+		enet.get_peer(id).set_timeout(32, TIMEOUT_MS, 30000)
 	_register.rpc_id(id, local_info)
 
 

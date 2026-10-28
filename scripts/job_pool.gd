@@ -12,7 +12,7 @@ static var _lock := Mutex.new()
 static var _wake := Semaphore.new()
 static var _threads: Array[Thread] = []
 static var _queue: Array = []     # [{id, job, rank}], waiting
-static var _running := {}         # id -> true, being run
+static var _running := {}         # id -> its rank, being run
 static var _next := 1
 static var _quit := false
 
@@ -47,7 +47,8 @@ static func done(id: int) -> bool:
 	return out
 
 
-## Waits for job `id`: one not started yet is run here and now.
+## Waits for job `id`: one not started yet is run here and now, and while it's being run by a worker this thread
+## lends a hand with the jobs queued at its rank or nearer (a preload's other blocks).
 static func wait(id: int) -> void:
 	_lock.lock()
 	for i in _queue.size():
@@ -57,9 +58,11 @@ static func wait(id: int) -> void:
 			_lock.unlock()
 			job.call()
 			return
+	var rank = _running.get(id)
 	_lock.unlock()
 	while not done(id):
-		OS.delay_usec(200)
+		if rank == null or not _run_next(float(rank)):
+			OS.delay_usec(200)
 
 
 ## Lets job `id` go: one not started yet never runs; one running is waited for.
@@ -92,16 +95,24 @@ static func _worker() -> void:
 	while true:
 		_wake.wait()
 		_lock.lock()
-		if _quit:
-			_lock.unlock()
+		var quit := _quit
+		_lock.unlock()
+		if quit:
 			return
-		if _queue.is_empty():
-			_lock.unlock()
-			continue
-		var item: Dictionary = _queue.pop_front()
-		_running[item["id"]] = true
+		_run_next(INF)
+
+
+## Runs the first job queued if it's ranked `rank` or nearer, here; whether there was one.
+static func _run_next(rank: float) -> bool:
+	_lock.lock()
+	if _queue.is_empty() or float(_queue[0]["rank"]) > rank:
 		_lock.unlock()
-		(item["job"] as Callable).call()
-		_lock.lock()
-		_running.erase(item["id"])
-		_lock.unlock()
+		return false
+	var item: Dictionary = _queue.pop_front()
+	_running[item["id"]] = item["rank"]
+	_lock.unlock()
+	(item["job"] as Callable).call()
+	_lock.lock()
+	_running.erase(item["id"])
+	_lock.unlock()
+	return true
