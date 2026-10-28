@@ -64,6 +64,10 @@ const SEND_EVERY := 0.2
 const CRASH_SPEED := 4.0
 ## Marks the lights' clock on the end of a traffic snapshot.
 const CLOCK_TAG := -55555.0
+## The side of the road the traffic keeps to comes from the country beside the road, looked at every
+## SIDE_BIN metres along it (RegionKit's facts: "drive"). Off a real road, or where the country isn't
+## known, it keeps left as at home.
+const SIDE_BIN := 400.0
 
 var world: AdventureWorld
 var stream: TrafficStream
@@ -78,12 +82,14 @@ var host := true
 var bus_chance := BUS_CHANCE
 var _busy := PackedFloat32Array()
 var _limit := PackedFloat32Array()
-var _villages: Array = []     # [s of the middle, s of its bus stop, the way its buses go]
+var _villages: Array = []     # [s of the middle, s of its bus stop, the way its buses go, its side]
 var _sites_ref: Array = []    # the route's sites the tables were made from
 var _buses_done := {}         # village s -> true once its waiting bus has been decided on
 var _send_timer := 0.0
 var _town_timer := 0.0
 var _rng := RandomNumberGenerator.new()
+var _left := PackedByteArray()   # per SIDE_BIN: 1 where they drive on the left, 0 on the right
+var _side_task := -1
 
 
 func _ready() -> void:
@@ -111,6 +117,8 @@ func _ready() -> void:
 	stream.despawn = DESPAWN
 	stream.reach = SPAWN_FAR + 50.0
 	stream.weigh_busy = true
+	stream.keep_left = keeps_left
+	_find_sides()
 	add_child(stream)
 	stream.set_physics_process(false)   # stepped from here, after the riders are found
 	_tables()
@@ -123,11 +131,57 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if current == self:
 		current = null
+	if _side_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_side_task)
+		_side_task = -1
 	if Net.adv_traffic_received.is_connected(_on_net):
 		Net.adv_traffic_received.disconnect(_on_net)
 
 
 # ---------------------------------------------------------------------------- the road
+
+## Whether the traffic drives on the left at `s` along the road (the country's side, see SIDE_BIN).
+func keeps_left(s: float) -> bool:
+	if _left.is_empty():
+		return true
+	return _left[clampi(int(s / SIDE_BIN), 0, _left.size() - 1)] == 1
+
+
+## The side of the road all along it: where the ride starts now (its country's facts are in hand
+## once the road there is built), the rest on a worker (a cell's profile may need fetching).
+func _find_sides() -> void:
+	var r := world.route
+	var n := int(ceil(r.total / SIDE_BIN)) + 1
+	var first := _side_at(r, 0.0)
+	_left.resize(n)
+	_left.fill(first)
+	if n <= 1 or r.real == null:
+		return
+	_side_task = WorkerThreadPool.add_task(func():
+		var out := PackedByteArray()
+		out.resize(n)
+		for b in n:
+			out[b] = _side_at(r, b * SIDE_BIN)
+		_got_sides.call_deferred(out), false, "Traffic sides")
+
+
+func _got_sides(left: PackedByteArray) -> void:
+	_left = left
+	if _side_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_side_task)
+		_side_task = -1
+	# The buses stop on the kerb of the lane they keep to.
+	for v in _villages:
+		v[2] = int(v[3]) * stream.keep(float(v[0]))
+	stream.bus_stops = _villages.map(func(v): return {"s": v[1], "dir": v[2]})
+
+
+## 1 if they drive on the left beside the road at `s` (or it isn't known), else 0.
+static func _side_at(r: AdventureRoute, s: float) -> int:
+	var kit := RegionKit.for_route(r, int(s / AdventureRoute.STEP))
+	var f: Dictionary = kit.get("facts", {})
+	return 0 if str(f.get("drive", "left")) == "right" else 1
+
 
 ## The road at `s` for the stream: {pos (local), fwd, hw, busy, limit, grade}.
 func sample(s: float) -> Dictionary:
@@ -211,7 +265,7 @@ func _tables() -> void:
 			# The bus stop: 20 m along from the pub on the village's side (see
 			# AdventureStops._village), served by the buses in the lane on that side.
 			var side := int(st["side"])
-			_villages.append([s, s + 20.0 * side, -side])
+			_villages.append([s, s + 20.0 * side, side * stream.keep(s), side])
 	for b in n:
 		var s := b * BIN
 		var w := r.width_at_s(s)
@@ -301,9 +355,9 @@ func _find_riders() -> void:
 			foci.append(s)
 		var hw := world.route.width_at_s(s) * 0.5
 		if absf(lat) < hw + 0.4:
-			# In the left lane they hold up the traffic going their way, in the right lane
-			# what's coming, astride the middle both.
-			blockers.append([s, 1 if lat < -0.7 else (-1 if lat > 0.7 else 0), 1.2])
+			# In a lane they hold up the traffic going its way (left of the middle the way s grows,
+			# where they drive on the left), astride the middle both.
+			blockers.append([s, int(signf(lat)) * stream.keep(s) if absf(lat) > 0.7 else 0, 1.2])
 	if not foci.is_empty():
 		stream.foci = foci
 		stream.focus_s = float(foci[0])
