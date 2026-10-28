@@ -23,14 +23,6 @@ const TOWN_BUILDINGS := 25
 const TOWN_DENSITY := ["town", "city"]
 ## The classes whose kerbs are painted in town.
 const KERBED := ["primary", "secondary", "tertiary", "unclassified", "residential"]
-## Speed bumps in town: on these classes, none nearer a junction than BUMP_CLEAR (m); a hump BUMP_LONG along and
-## BUMP_H high, or Latin America's topes, narrower and taller.
-const BUMPED := ["tertiary", "unclassified", "residential"]
-const BUMP_CLEAR := 25.0
-const BUMP_LONG := 3.7
-const BUMP_H := 0.075
-const TOPE_LONG := 1.2
-const TOPE_H := 0.1
 ## Bollards round a town junction's corners, by region: their colour and their band's.
 const BOLLARDS := {
 	"british_isles": [Color(0.08, 0.08, 0.09), Color(0.78, 0.62, 0.2)],
@@ -110,8 +102,8 @@ static func style_of(kit: Dictionary) -> Dictionary:
 
 
 ## Block `b`'s paint and signs in its place's style (`kit`, RegionKit.choose): {"lines": AdventureProps arrays (the
-## paint, drawn with the block's lines), "signs": AdventureProps arrays (drawn with its buildings: signs, bollards and
-## speed bumps), "faces": the speed bumps' collision triangles (tarmac), "labels": the words drawn as text, such as
+## paint, drawn with the block's lines), "signs": AdventureProps arrays (drawn with its buildings: signs and
+## bollards), "faces": collision triangles laid on the tarmac (none at present), "labels": the words drawn as text, such as
 ## place names (RoadSigns.put_up)}, laid out from the block's anchor. {} when the
 ## kit is (the block then paints its plain lines).
 static func paint(b: RoadBlock, kit: Dictionary) -> Dictionary:
@@ -123,15 +115,11 @@ static func paint(b: RoadBlock, kit: Dictionary) -> Dictionary:
 	var o := b.anchor()
 	var town := str(kit.get("density", "")) in TOWN_DENSITY or b.buildings.size() >= TOWN_BUILDINGS
 	var kerb: Array = RegionKit.KERB_PAINT.get(str(kit["facts"].get("kerb", "none")), []) if town else []
-	var faces := PackedVector3Array()
-	var rate := float(kit["facts"].get("bumps", 0.0)) if town else 0.0
-	var topes := str(kit.get("region", "")) == "latin_america"
+	var faces := PackedVector3Array()   # (none now: Simon took the speed bumps out, 2026-10-28)
 	for p in b.pieces:
 		if str(p["surface"]) == "tarmac":
 			var q := _prep(p, o)
 			_piece(lines, signs, b.net, p, q, st, town, kerb)
-			if rate > 0.0 and str(p["class"]) in BUMPED and not bool(p["ring"]):
-				_bumps(signs, lines, faces, b.net, p, q, rate, topes, st)
 	for j in b.junctions:
 		if j["kind"] == "mini" and bool(st.get("mini", false)):
 			_disc(lines, j["pos"] - o + Vector3(0.0, LIFT, 0.0), minf(1.6, float(j["radius"]) * 0.3), PAINT["white"])
@@ -439,58 +427,6 @@ static func _disc(a: Dictionary, c: Vector3, r: float, col: Color) -> void:
 		var t0 := TAU * k / 16.0
 		var t1 := TAU * (k + 1) / 16.0
 		RoadBlock._up(a, c, c + Vector3(sin(t0), 0.0, -cos(t0)) * r, c + Vector3(sin(t1), 0.0, -cos(t1)) * r, col)
-
-
-## Piece `p`'s speed bumps in town, `rate` to a kilometre along its edge, each where the edge's own count puts it (so
-## a bump cut by a block's seam is in both or neither), none within BUMP_CLEAR of a junction: a hump across the road
-## (Latin America's topes: short and steep, striped yellow and black) with its paint, and its collision.
-static func _bumps(signs: Dictionary, lines: Dictionary, faces: PackedVector3Array, net: RoadNet, p: Dictionary, q: Dictionary,
-		rate: float, topes: bool, st: Dictionary) -> void:
-	var at: PackedFloat32Array = q["at"]
-	var ei := int(p["edge"])
-	var len := net.length_of(ei)
-	var lo := net.mouth(ei, int(p["a"])) + BUMP_CLEAR
-	var hi := len - net.mouth(ei, int(p["b"])) - BUMP_CLEAR
-	var gap := 1000.0 / rate
-	var long := TOPE_LONG if topes else BUMP_LONG
-	var h := TOPE_H if topes else BUMP_H
-	var e := float(q["e"])
-	var road: Color = AdventureSurface.ROAD_COLOR["tarmac"]
-	var s := fposmod(float(posmod(("bump:%d" % ei).hash(), 1000)) * 0.001 * gap, gap)
-	while s < hi:
-		if s >= lo and s - long * 0.5 >= at[0] and s + long * 0.5 <= at[at.size() - 1]:
-			var rows := 6
-			var prev := []
-			for k in rows + 1:
-				var t := float(k) / rows
-				var ds := (t - 0.5) * long
-				var y := h * sin(PI * t)
-				var row := [_point(q, s + ds, -e, y), _point(q, s + ds, 0.0, y), _point(q, s + ds, e, y)]
-				if k > 0:
-					for c in 2:
-						RoadBlock._up(signs, prev[c], row[c], row[c + 1], road)
-						RoadBlock._up(signs, prev[c], row[c + 1], prev[c + 1], road)
-						faces.append_array([prev[c], row[c], row[c + 1], prev[c], row[c + 1], prev[c + 1]])
-				prev = row
-			# Its paint: stripes across a tope, the hump's white triangles in each lane (Britain's), or a bar.
-			if topes:
-				var l := -e + 0.2
-				var n := 0
-				while l < e - 0.2:
-					var col := YELLOW if n % 2 == 0 else BLACK
-					var up := Vector3(0.0, h + LIFT, 0.0)
-					RoadBlock._up(signs, _point(q, s - long * 0.3, l, 0.0) + up * 0.8, _point(q, s + long * 0.3, l, 0.0) + up * 0.8,
-						_point(q, s + long * 0.3, minf(l + 0.5, e - 0.2), 0.0) + up * 0.8, col)
-					RoadBlock._up(signs, _point(q, s - long * 0.3, l, 0.0) + up * 0.8, _point(q, s + long * 0.3, minf(l + 0.5, e - 0.2), 0.0) + up * 0.8,
-						_point(q, s - long * 0.3, minf(l + 0.5, e - 0.2), 0.0) + up * 0.8, col)
-					l += 0.5
-					n += 1
-			else:
-				for lane: float in [-0.5, 0.5]:
-					var c := lane * e
-					var up := Vector3(0.0, h + LIFT, 0.0)
-					RoadBlock._up(signs, _point(q, s - 0.6, c - 0.5, 0.0) + up, _point(q, s - 0.6, c + 0.5, 0.0) + up, _point(q, s + 0.6, c, 0.0) + up, PAINT["white"])
-		s += gap
 
 
 ## Bollards round town junction `j`'s corners (RoadNet.junction_of: its outline, where it runs along a kerb), just

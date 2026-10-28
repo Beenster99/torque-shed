@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 9
+const VERSION := 10
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -502,7 +502,7 @@ func _lay_out() -> void:
 		for k: String in ["v", "n", "c"]:
 			arrays["lines"][k].append_array(marks["lines"][k])
 			houses[k].append_array(marks["signs"][k])
-		# (the speed bumps' humps are ridden over)
+		# (anything the paint lays on the road is ridden over)
 		if not (marks["faces"] as PackedVector3Array).is_empty():
 			_faces_of("tarmac")
 			arrays["faces"]["tarmac"].append_array(marks["faces"])
