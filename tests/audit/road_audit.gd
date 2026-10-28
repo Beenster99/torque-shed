@@ -10,7 +10,14 @@ extends Node
 ## - "bridge_end": a road just off a bridge's end that isn't on the land (m up from it, or down), with heights;
 ## - "step": the roads meeting at a node at different heights (m between the highest and lowest), with heights;
 ## - "hump": a junction higher (or lower) than every road out of it, 15 m out (m), with heights;
+## - "junction_step": a junction's surface not meeting a road at its mouth (m), with heights;
+## - "edge_drop": an edge's worst drop from its verge to the land just past it (m), off bridges, with heights;
+## - "no_heights": the share of a cell's road points with no land height under them, with heights;
 ## - "bump": an edge's worst bump (m off the average over 30 m, as the postcards measure it), with heights;
+## - "ride_step", "ride_kink", "ride_bump", "ride_hole": a road, or a way through a junction or round a roundabout,
+##   ridden over the collision the game builds for it (ride_probe.gd), in the focus blocks, with heights: its worst
+##   step, change of grade, bump (a turn through a junction's bumps are the lie of its roads, so not those) and the
+##   length with no road under it; with how many of each kind of way were ridden and how many were rough;
 ## - "buildings_dropped": a cell's buildings that stand on a road or in a junction (the game leaves them out), as a
 ##   share of its buildings;
 ## - "building_cap": a cell holding as many buildings as the bake keeps (tools/region_bake.py BUILDING_MAX), so the
@@ -30,16 +37,23 @@ const BUMP_M := 0.15
 const STEP_M := 0.3
 const HUMP_M := 0.3
 const BRIDGE_END_M := 1.5
+const JUNCTION_M := 0.15
+const EDGE_M := 0.3
 ## How far out along each road a junction's hump is measured (m).
 const HUMP_OUT := 15.0
 ## How far in from a cell's edge (m) its roads are looked at.
 const EDGE_PAD := 60.0
 ## The bake's cap on a cell's buildings (tools/region_bake.py BUILDING_MAX).
 const BUILDING_MAX := 60000
+## How many blocks of a cell the heights are looked at in, and how far round them (m) the land's tiles are fetched (a
+## road's heights are faired along it from further off).
+const FOCUS := 12
+const FOCUS_REACH := 1200.0
+const RideProbe := preload("res://tests/audit/ride_probe.gd")
 ## The code the findings depend on: a change to any of it audits every cell again.
 const CODE := ["res://scripts/road_net.gd", "res://scripts/road_block.gd", "res://scripts/real_region.gd",
 	"res://scripts/real_terrain.gd", "res://scripts/height_tiles.gd",
-	"res://scripts/route_planner.gd", "res://tests/audit/road_audit.gd"]
+	"res://scripts/route_planner.gd", "res://tests/audit/road_audit.gd", "res://tests/audit/ride_probe.gd"]
 
 var out_dir := "/tmp/road-audit"
 var heights := false
@@ -177,14 +191,7 @@ func audit_cell(c: Vector2i) -> Dictionary:
 		out["why"] = "no region"
 		return out
 	var t := region.terrain
-	if heights:
-		var pts := PackedVector2Array()
-		for ei in region.edge_count():
-			pts.append_array(region.edge_line[ei])
-		var missed := HeightTiles.fetch(HeightTiles.keys_near(pts, 40.0, t.zooms[0], t.lat0, t.lon0))
-		if missed > 0:
-			out["missed_tiles"] = missed
-	var net := RoadNet.new(region, t.height if heights else func(_x: float, _z: float) -> float: return 0.0)
+	var net := RoadNet.new(region, func(_x: float, _z: float) -> float: return 0.0)
 	out["edges"] = region.edge_count()
 	out["nodes"] = region.node_count()
 	out["buildings"] = region.buildings.size()
@@ -203,12 +210,99 @@ func audit_cell(c: Vector2i) -> Dictionary:
 		f.merge(extra)
 		faults.append(f)
 	_crossings(net, add)
-	_bridges(net, t, add)
+	var every := PackedInt32Array(range(region.edge_count()))
+	_bridges(net, null, add, every)
 	if heights:
-		_nodes(net, add)
-		_bumps(net, add)
+		# The heights are looked at in FOCUS blocks of the cell (the busiest with junctions, and some at random): the
+		# land's tiles for a whole cell are too many to fetch every night.
+		var hnet := RoadNet.new(region, t.height)
+		var focus := _focus(hnet, inner, c)
+		var pts := PackedVector2Array()
+		var edges := PackedInt32Array()
+		var nodes := PackedInt32Array()
+		var seen := {}
+		for key: Vector2i in focus:
+			var o := Vector2(key) * RoadBlock.SIZE
+			for k in 5:
+				for l in 5:
+					pts.append(o + Vector2(k, l) * RoadBlock.SIZE * 0.25)
+			for ei in hnet.edges_in(key):
+				if not seen.has(ei):
+					seen[ei] = true
+					edges.append(ei)
+			nodes.append_array(hnet.nodes_in(key))
+		var missed := HeightTiles.fetch(HeightTiles.keys_near(pts, FOCUS_REACH, t.zooms[0], t.lat0, t.lon0))
+		if missed > 0:
+			out["missed_tiles"] = missed
+		out["focus"] = focus.map(func(k): return [k.x, k.y])
+		_bridges(hnet, t, add, edges)
+		_nodes(hnet, add, nodes)
+		_junctions(hnet, add, nodes)
+		_bumps(hnet, add, edges)
+		_edges(hnet, t, add, out, edges)
+		_rides(hnet, add, out, focus)
 	_buildings(net, add, out)
 	return out
+
+
+## The blocks of cell `c` (inside `inner`) whose heights are looked at: the FOCUS / 2 with the most junctions, and as
+## many more picked by the cell (the same ones every run).
+func _focus(net: RoadNet, inner: Rect2, c: Vector2i) -> Array:
+	var counts := []
+	for key: Vector2i in net._nodes_by_block:
+		var r := Rect2(Vector2(key) * RoadBlock.SIZE, Vector2(RoadBlock.SIZE, RoadBlock.SIZE))
+		if not inner.encloses(r):
+			continue
+		var j := 0
+		for n in net.nodes_in(key):
+			if net.region.adjacent[n].size() >= 3:
+				j += 1
+		if j > 0:
+			counts.append([j, key])
+	counts.sort_custom(func(a, b): return a[0] > b[0] or (a[0] == b[0] and (a[1] as Vector2i) < (b[1] as Vector2i)))
+	var out := []
+	for row in counts.slice(0, FOCUS / 2):
+		out.append(row[1])
+	var rest := counts.slice(FOCUS / 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(c)
+	while out.size() < FOCUS and not rest.is_empty():
+		out.append(rest.pop_at(rng.randi_range(0, rest.size() - 1))[1])
+	return out
+
+
+## Rides every road and every junction's ways through in `focus` blocks (ride_probe.gd), each path's worst kept as a
+## fault, and how many paths were ridden and how many were rough, by kind ("road", "tee", "roundabout"...).
+func _rides(net: RoadNet, add: Callable, out: Dictionary, focus: Array) -> void:
+	var probe = RideProbe.new(net)
+	var tally := {}
+	for key: Vector2i in focus:
+		for p: Dictionary in probe.paths_in(key):
+			var r: Dictionary = probe.ride(p["path"], float(p["y0"]))
+			var what: String = p["what"]
+			if not tally.has(what):
+				tally[what] = [0, 0]
+			tally[what][0] += 1
+			var extra := {"what": what, "edges": p["edges"]}
+			if p.has("node"):
+				extra["node"] = p["node"]
+			var rough := false
+			if float(r["holes"]) > 0.0:
+				add.call("ride_hole", float(r["holes"]), r["hole_at"], extra)
+				rough = true
+			if float(r["step"]) > RideProbe.STEP_M:
+				add.call("ride_step", float(r["step"]), r["step_at"], extra)
+				rough = true
+			var turn := bool(p.get("turn", false))
+			if float(r["kink"]) > (RideProbe.KINK_TURN if turn else RideProbe.KINK):
+				add.call("ride_kink", float(r["kink"]), r["kink_at"], extra)
+				rough = true
+			if not turn and float(r["bump"]) > RideProbe.BUMP_M:
+				add.call("ride_bump", float(r["bump"]), r["bump_at"], extra)
+				rough = true
+			if rough:
+				tally[what][1] += 1
+	out["rides"] = tally
 
 
 ## Roads crossing with no junction, bridge or tunnel.
@@ -270,9 +364,9 @@ func _in_tunnel(net: RoadNet, ei: int, s: float) -> bool:
 
 
 ## Bridges running into a dead end, and (with heights) bridges whose ends don't come down to the land.
-func _bridges(net: RoadNet, t: RealTerrain, add: Callable) -> void:
+func _bridges(net: RoadNet, t: RealTerrain, add: Callable, edges: PackedInt32Array) -> void:
 	var region := net.region
-	for ei in region.edge_count():
+	for ei in edges:
 		var b := net.bridges_of(ei)
 		if b.is_empty():
 			continue
@@ -285,7 +379,7 @@ func _bridges(net: RoadNet, t: RealTerrain, add: Callable) -> void:
 				if at == int(end[2]) and region.adjacent[int(end[1])].size() == 1:
 					add.call("bridge_dead_end", sp * float(b[k + 1] - b[k]), p, {"edges": [ei], "node": int(end[1])})
 					continue
-				if not heights:
+				if t == null:
 					continue
 				# (a little way off the deck, the road should be on the land: the land under it held up to it, as a bank)
 				var off := sp * (at + (-2 if int(end[2]) == 0 else 2))
@@ -299,9 +393,9 @@ func _bridges(net: RoadNet, t: RealTerrain, add: Callable) -> void:
 
 
 ## The roads at a node at different heights, and junctions higher or lower than all their roads.
-func _nodes(net: RoadNet, add: Callable) -> void:
+func _nodes(net: RoadNet, add: Callable, nodes: PackedInt32Array) -> void:
 	var region := net.region
-	for node in region.node_count():
+	for node in nodes:
 		var adj := region.adjacent[node]
 		if adj.size() < 2:
 			continue
@@ -330,10 +424,76 @@ func _nodes(net: RoadNet, add: Callable) -> void:
 			add.call("hump", hump, region.node_pos[node], {"node": node, "roads": adj.size(), "up": y0 > out_hi})
 
 
+## Junctions whose surface doesn't meet a road at its mouth (a step up or down onto the junction, or a slab of it
+## over the road: Simon's roundabout).
+func _junctions(net: RoadNet, add: Callable, nodes: PackedInt32Array) -> void:
+	var region := net.region
+	var seen := {}
+	for node in nodes:
+		if region.adjacent[node].size() < 3:
+			continue
+		var j := net.junction_of(node)
+		if j.is_empty() or j["kind"] == "end" or seen.has(int(j["node"])):
+			continue
+		seen[int(j["node"])] = true
+		var worst := 0.0
+		var at := Vector2.ZERO
+		var arm := -1
+		for a: Dictionary in j["arms"]:
+			var m: Vector3 = a["mouth"]
+			var y := net.surface_y(int(j["node"]), Vector2(m.x, m.z))
+			if is_nan(y + m.y):
+				continue
+			if absf(y - m.y) > worst:
+				worst = absf(y - m.y)
+				at = Vector2(m.x, m.z)
+				arm = int(a["edge"])
+		if worst > JUNCTION_M:
+			add.call("junction_step", worst, at, {"node": int(j["node"]), "edges": [arm], "kind": str(j["kind"]),
+				"roads": (j["arms"] as Array).size()})
+
+
+## Each edge's worst drop off its edge (the land just past its verge not at the road's height: a kerb-like step, or a
+## slab of road standing over the land; Simon's Rio road edges), off its bridges; and the share of the roads' points
+## with no height under them at all (the land there is a flat plate: Simon's Alps).
+func _edges(net: RoadNet, t: RealTerrain, add: Callable, out: Dictionary, edges: PackedInt32Array) -> void:
+	var points := 0
+	var none := 0
+	var where := Vector2.ZERO
+	for ei in edges:
+		var len := net.length_of(ei)
+		var half := net.width_of(ei) * 0.5 + RoadNet.VERGE * 0.5
+		var worst := 0.0
+		var at := Vector2.ZERO
+		var s := 4.0
+		while s < len - 4.0:
+			points += 1
+			var p := net.point_at(ei, s)
+			if is_nan(t.height(p.x, p.y)):
+				none += 1
+				where = p
+			elif net.bridge_at(ei, s) <= 0.0:
+				var y := net.road_y(ei, s) - RoadNet.UNDER
+				var h := net.heading_at(ei, s)
+				var right := Vector2(cos(h), sin(h))
+				for side in [-1.0, 1.0]:
+					var q: Vector2 = p + right * half * side
+					var land := net.ground_at(q.x, q.y, t.height(q.x, q.y))
+					if not is_nan(land + y) and absf(y - land) > worst:
+						worst = absf(y - land)
+						at = q
+			s += 8.0
+		if worst > EDGE_M:
+			add.call("edge_drop", worst, at, {"edges": [ei], "class": net.region.class_of(ei)})
+	out["no_heights"] = none
+	if none > 0:
+		add.call("no_heights", float(none) / float(maxi(points, 1)), where, {"points": none, "of": points})
+
+
 ## Each edge's worst bump: how far its height strays from the average over 30 m about it (as the postcards measure).
-func _bumps(net: RoadNet, add: Callable) -> void:
+func _bumps(net: RoadNet, add: Callable, edges: PackedInt32Array) -> void:
 	var half := 7
-	for ei in net.region.edge_count():
+	for ei in edges:
 		var len := net.length_of(ei)
 		if len < 2.0 * (half * 2 + 1):
 			continue
@@ -394,7 +554,11 @@ func _counts_text(found: Dictionary) -> String:
 	var parts := PackedStringArray()
 	for k: String in counts:
 		parts.append("%s %d" % [k, counts[k]])
-	return "%d edges, %s" % [int(found.get("edges", 0)), ", ".join(parts) if not parts.is_empty() else "nothing"]
+	var rides := PackedStringArray()
+	for what: String in found.get("rides", {}):
+		rides.append("%s %d/%d rough" % [what, int(found["rides"][what][1]), int(found["rides"][what][0])])
+	return "%d edges, %s%s" % [int(found.get("edges", 0)), ", ".join(parts) if not parts.is_empty() else "nothing",
+		("; rides: " + ", ".join(rides)) if not rides.is_empty() else ""]
 
 
 ## OUT/report.json (every class's faults, worst first, its top `top`; and counts) and OUT/summary.txt.
@@ -416,7 +580,7 @@ func _report(all: Array, ms: int) -> void:
 	var report := {"cells": all.size(), "heights": heights, "failed": failed, "classes": {}}
 	var lines := PackedStringArray()
 	lines.append("World road audit: %d cells%s" % [all.size(), " with heights" if heights else " (map only)"] + (", %d s" % (ms / 1000) if ms > 0 else ""))
-	for k: String in ["crossing", "tangle", "bridge_dead_end", "bridge_end", "step", "hump", "bump", "buildings_dropped", "building_cap"]:
+	for k: String in ["crossing", "tangle", "bridge_dead_end", "bridge_end", "step", "hump", "junction_step", "edge_drop", "no_heights", "bump", "ride_hole", "ride_step", "ride_kink", "ride_bump", "buildings_dropped", "building_cap"]:
 		if not by_class.has(k):
 			continue
 		var list: Array = by_class[k]
