@@ -276,6 +276,31 @@ func test_look_back_and_chord() -> void:
 		Input.action_release("look_back")
 		await _ticks(Engine.physics_ticks_per_second)
 		check(absf(behind - ahead) < 0.04, "%s: looking back, the view's as level as looking ahead (%.3f, %.3f)" % [["chase", "helmet"][0 if m == ChaseCamera.Mode.CHASE else 1], ahead, behind])
+	# Leant over in a corner, the rider holds their head nearly level: the first person view keeps the horizon flat.
+	cam.set_mode(ChaseCamera.Mode.HELMET)
+	var upright := bike.global_transform
+	bike.global_basis = Basis(-upright.basis.z.normalized(), 0.6) * upright.basis
+	cam._helmet()
+	var ahead := -cam.global_basis.z
+	var roll := absf(cam.global_basis.x.signed_angle_to(ahead.cross(Vector3.UP).normalized(), ahead))
+	bike.global_transform = upright
+	check(roll < 0.6 * (1.0 - ChaseCamera.HEAD_LEVEL) + 0.05, "leant 34 degrees, the view is tilted only %.0f degrees" % rad_to_deg(roll))
+	# A crash is watched from the roadside, on the rider thrown off, till they're back on: then the view they had.
+	for m in [ChaseCamera.Mode.HELMET, ChaseCamera.Mode.CHASE]:
+		cam.set_mode(m)
+		await _ticks(3)
+		bike.linear_velocity = -bike.global_basis.z * 20.0
+		bike.crash()
+		await _ticks(30)
+		var thrown := bike.ragdoll_body()
+		check(cam.mode == ChaseCamera.Mode.RIDE_BY and cam.watching_crash() and thrown != null
+			and (-cam.global_basis.z).dot((thrown.global_position - cam.global_position).normalized()) > 0.9,
+			"crashed in the %s view: the roadside view, on the rider tumbling" % ["chase", "helmet"][1 if m == ChaseCamera.Mode.HELMET else 0])
+		await _ticks(Engine.physics_ticks_per_second * 2)
+		check(cam.mode == ChaseCamera.Mode.RIDE_BY, "and it stays on them while they're down")
+		bike.respawn()
+		await _ticks(3)
+		check(cam.mode == m and not cam.watching_crash(), "back on the bike, the view they had before")
 	cam.set_mode(ChaseCamera.Mode.CHASE)
 	# The engine on LB and RB together.
 	bike.stop_engine()
