@@ -203,6 +203,18 @@ func test_canal() -> void:
 	check(boats.size() >= 1, "narrowboats moored along it (%d)" % boats.size())
 	check(path.all(func(xf): return absf(xf.origin.x - 250.0) > 4.0 + 4.0) and boats.all(func(xf): return absf(xf.origin.x - 250.0) > 12.0),
 		"none on the road it passes under")
+	# A lock the map has as a stretch of the canal (as it has the Bingley Five Rise): its walls, its gates, a boat.
+	r.features["lines"].append(["canal_lock", PackedVector2Array([Vector2(100, 300), Vector2(124, 300)]), null, null, 0, "Five Rise", "lock25"])
+	var lk := WaterWorks.lay_out(net, Vector2i(0, 0), rows_of(r.features, "british_isles"))
+	var walls := (lk["items"].get("block:gritstone", []) as Array).filter(func(xf): return absf(xf.origin.x - 112.0) < 1.0)
+	var leaves := (lk["items"].get("block:timber", []) as Array).filter(func(xf): return absf(xf.origin.x - 112.0) < 14.0)
+	var in_lock := 0
+	for m: String in lk["items"]:
+		if m.begins_with("boat:narrowboat"):
+			in_lock += (lk["items"][m] as Array).filter(func(xf): return absf(xf.origin.x - 112.0) < 2.0 and absf(xf.origin.z - 300.0) < 1.0).size()
+	check(walls.size() == 2 and leaves.size() >= 8, "the lock's walls and its two pairs of gates (%d, %d)" % [walls.size(), leaves.size()])
+	check(in_lock == (1 if WaterWorks.roll("lock25boat") < 0.7 else 0), "a narrowboat in it when it's busy (%d)" % in_lock)
+	r.features["lines"].pop_back()
 	var none := WaterWorks.lay_out(net, Vector2i(0, 0), rows_of(r.features, "sub_saharan_africa"))
 	check(not none["items"].keys().any(func(m): return m.begins_with("boat:")), "no narrowboats where the kit has none")
 

@@ -84,10 +84,13 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 	for pair: Array in rows.get("points", []):
 		if str(pair[0][0]) == "lock_gate":
 			gates.append(Vector2(float(pair[0][1]), float(pair[0][2])))
+	var lock_lines: Array = []   # the middles of the locks the map has as lines, so the same lock's area draws no more
 	for pair: Array in rows.get("lines", []):
+		var l: PackedVector2Array = pair[0][1]
 		if str(pair[0][0]) == "lock_gate":
-			var l: PackedVector2Array = pair[0][1]
 			gates.append((l[0] + l[l.size() - 1]) * 0.5)
+		elif str(pair[0][0]) == "canal_lock":
+			lock_lines.append((l[0] + l[l.size() - 1]) * 0.5)
 	for pair: Array in rows.get("points", []):
 		var row: Array = pair[0]
 		var k: Dictionary = pair[1]
@@ -125,6 +128,7 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 			"fish_pass": _fish_pass(b, line, k)
 			"rapids": _rapids_line(b, line, k)
 			"canal": _canal(b, line, float(width) if width != null else 0.0, k, id)
+			"canal_lock": _lock_line(b, line, k, id, gates)
 	for pair: Array in rows.get("areas", []):
 		var row: Array = pair[0]
 		var ring: PackedVector2Array = row[1]
@@ -144,7 +148,7 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 				_pier(b, ax["line"], minf(float(ax["width"]), 60.0), k, id)
 			"quay": _quay(b, closed(ring), k, id, false)
 			"dock": _quay(b, closed(ring), k, id, true)
-			"canal_lock": _lock_chamber(b, ring, k, id, gates)
+			"canal_lock": _lock_chamber(b, ring, k, id, gates, lock_lines)
 			"marina": _marina(b, ring, k, id)
 			"moat": _revetment(b, closed(ring), k)
 			"rapids": _rapids(b, centre(ring), k)
@@ -667,14 +671,42 @@ static func _streams_of(r: RealRegion) -> Dictionary:
 
 ## A lock's chamber (the map's water area of it): stone walls down its long sides, its gates at either end where
 ## the map has none of its own, and a boat in it more often than not.
-static func _lock_chamber(b: _Block, ring: PackedVector2Array, k: Dictionary, id: String, gates: Array) -> void:
+static func _lock_chamber(b: _Block, ring: PackedVector2Array, k: Dictionary, id: String, gates: Array, lines: Array) -> void:
 	var ax := axis(ring)
 	var mid: Vector2 = ax["middle"]
+	for c: Vector2 in lines:
+		if Geometry2D.is_point_in_polygon(c, ring):
+			return   # (the map has the lock as a line too: that one's drawn)
+	var own := false
+	for g: Vector2 in gates:
+		if Geometry2D.is_point_in_polygon(g, ring):
+			own = true
+	_lock_at(b, mid, ax["dir"], float(ax["length"]), clampf(float(ax["width"]), 2.0, 30.0), k, id, own)
+
+
+## A lock the map has as a stretch of its canal (a line, from its one end to the other): its chamber the kit's
+## "lock_width" wide.
+static func _lock_line(b: _Block, line: PackedVector2Array, k: Dictionary, id: String, gates: Array) -> void:
+	var a := line[0]
+	var c := line[line.size() - 1]
+	var mid := (a + c) * 0.5
+	var l := a.distance_to(c)
+	if l < 4.0:
+		return
+	var f := (c - a) / l
+	var w := float(k.get("lock_width", 5.0))
+	var own := false
+	for g: Vector2 in gates:
+		if g.distance_to(mid) < l * 0.5 + 3.0 and absf((g - mid).dot(side_of(f))) < w:
+			own = true
+	_lock_at(b, mid, f, l, w, k, id, own)
+
+
+## A lock's chamber `l` long and `w` wide round `mid`, the canal along `f`: stone walls down its sides with a pale
+## coping, its gates at either end unless the map has its own (`own`), and a boat in it more often than not.
+static func _lock_at(b: _Block, mid: Vector2, f: Vector2, l: float, w: float, k: Dictionary, id: String, own: bool) -> void:
 	if not b.mine(mid):
 		return
-	var f: Vector2 = ax["dir"]
-	var l := float(ax["length"])
-	var w := clampf(float(ax["width"]), 2.0, 30.0)
 	var y := b.bare(mid)
 	if is_nan(y) or l < 6.0:
 		return
@@ -685,10 +717,6 @@ static func _lock_chamber(b: _Block, ring: PackedVector2Array, k: Dictionary, id
 			b.put("block:" + st, piece(b.local(at, y - 3.0), f, Vector3(1.0, 4.1, l)))
 			# (the coping, pale)
 			b.put("block:limestone", piece(b.local(at, y + 1.1), f, Vector3(1.2, 0.15, l)))
-	var own := false
-	for g: Vector2 in gates:
-		if Geometry2D.is_point_in_polygon(g, ring) or g.distance_to(mid) < l * 0.5 + 6.0 and absf((g - mid).dot(side_of(f))) < w:
-			own = true
 	if not own:
 		for end: float in [-1.0, 1.0]:
 			_gate_pair(b, mid + f * end * (l * 0.5 - 0.5), f * end, w, y, k)
