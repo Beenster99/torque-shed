@@ -1314,14 +1314,14 @@ func _update_engine(delta: float) -> void:
 ## The revs the automatic box changes up at, at `load` (0 rolling along .. 1 flat out): just
 ## past the middle of the torque band cruising, nearly the red line flat out.
 func auto_up_rpm(load: float) -> float:
-	var easy := maxf(build.peak_torque_rpm * 0.55, build.idle_rpm * 3.0)
+	var easy := maxf(build.peak_torque_rpm * 0.55, build.idle_rpm * 3.5)
 	return lerpf(easy, build.redline * 0.9, pow(clampf(load, 0.0, 1.0), 1.5))
 
 
 ## The revs the automatic box won't lug below at `load`: it changes down under them. Low when
 ## cruising, up in the torque band when the rider asks for more.
 func auto_floor_rpm(load: float) -> float:
-	var lug := maxf(build.peak_torque_rpm * 0.32, build.idle_rpm * 1.8)
+	var lug := maxf(build.peak_torque_rpm * 0.4, build.idle_rpm * 2.0)
 	return lerpf(lug, build.peak_torque_rpm * 0.7, pow(clampf(load, 0.0, 1.0), 2.0))
 
 

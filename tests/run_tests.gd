@@ -15494,12 +15494,14 @@ func _test_steering_wobble() -> void:
 		check(not k["crashed"] and (f == 0.0 or (f > 3.0 and f < 13.0)) and k["at"][3] < k["at"][0] * 0.3,
 			"%s at %d km/h, hands %s: the bars shake at %.1f Hz and settle (%.2f deg after 0.1 s, %.2f after 2 s)"
 			% [str(c[0].get("frame", "stock bike")), roundi(c[1] * 3.6), "off" if c[2] else "on", f, k["at"][0], k["at"][3]])
-	# A steering damper makes it settle sooner.
+	# A steering damper makes it settle sooner. (Cruising in top gear rather than screaming in a
+	# low one, the stock bike already settles a little sooner by itself, so the damper's lead over
+	# it is a little smaller than it was.)
 	var plain := await _bar_kick({}, 30.0, true)
 	var damped := await _bar_kick({"steering_damper": "damper_linear_adj"}, 30.0, true)
 	var left_plain: float = plain["at"][1] + plain["at"][2]
 	var left_damped: float = damped["at"][1] + damped["at"][2]
-	check(left_damped < left_plain * 0.8, "a steering damper settles it quicker (%.3f deg against %.3f after 0.5 s, %.3f against %.3f after 1 s)"
+	check(left_damped < left_plain * 0.88, "a steering damper settles it quicker (%.3f deg against %.3f after 0.5 s, %.3f against %.3f after 1 s)"
 		% [damped["at"][1], plain["at"][1], damped["at"][2], plain["at"][2]])
 	# A genuinely bad setup, next to no trail: the shake grows into a tank-slapper; a damper cures it.
 	var bad := await _bar_kick(SHORT_TRAIL_BIKE, 40.0, false)
