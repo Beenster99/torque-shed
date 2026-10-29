@@ -9879,15 +9879,17 @@ func _test_upgrade_session() -> void:
 	# Rebuilding again changes nothing, and nothing piles up.
 	var count := ws.upgrades.get_child(0).get_child_count()
 	var lights := ws._shed_lights.size()
-	var nodes_now := ws.get_child_count()
-	var names_before := ws.get_children().map(func(n): return "%s:%s" % [n.name, n.get_class()])
+	# (A one-shot sound playing on the shed, a creak or a light ticking on, frees itself: not counted.)
+	var lasting := func(): return ws.get_children().filter(func(n): return not (n is AudioStreamPlayer3D))
+	var nodes_now: int = lasting.call().size()
+	var names_before: Array = lasting.call().map(func(n): return "%s:%s" % [n.name, n.get_class()])
 	ws.upgrades._sig = "?"
 	ws.upgrades.sync()
 	await get_tree().process_frame
 	check(ws.upgrades.get_child_count() == 1 and ws.upgrades.get_child(0).get_child_count() == count and ws._shed_lights.size() == lights
 		and ws._bay_screens.size() == 7, "a rebuild replaces what was there")
-	var names_after := ws.get_children().map(func(n): return "%s:%s" % [n.name, n.get_class()])
-	check(ws.get_child_count() == nodes_now, "nothing is left behind on the workshop (gone %s, new %s)" % [
+	var names_after: Array = lasting.call().map(func(n): return "%s:%s" % [n.name, n.get_class()])
+	check(lasting.call().size() == nodes_now, "nothing is left behind on the workshop (gone %s, new %s)" % [
 		str(names_before.filter(func(x): return not names_after.has(x))), str(names_after.filter(func(x): return not names_before.has(x)))])
 	# Gone again in a new shed.
 	Shed.upgrades = {}
