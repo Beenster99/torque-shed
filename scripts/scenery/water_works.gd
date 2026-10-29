@@ -547,6 +547,23 @@ static func _waterfall(b: _Block, p: Vector2, mapped, k: Dictionary, id: String)
 	var w := clampf(float(k.get("width", 4.0 + drop * 0.25)) * (0.75 + 0.5 * roll(id + "w")), 2.0, 40.0)
 	var lean := minf(run * 0.3, drop * 0.15)
 	var across := Vector3(-dir.y, 0.0, dir.x)
+	# (a fall on a river the land shows is as wide as the river: Aysgarth's steps run bank to bank)
+	var side := Vector2(across.x, across.z)
+	var reach := [0.0, 0.0]
+	for i in 2:
+		var sgn := 1.0 if i == 0 else -1.0
+		var dry := 0
+		for j in range(1, 31):
+			if is_nan(b.water(p + side * sgn * j * 2.0)):
+				dry += 1
+				if dry > 1:
+					break
+			else:
+				dry = 0
+				reach[i] = j * 2.0
+	if reach[0] + reach[1] > w:
+		w = minf(reach[0] + reach[1], 120.0)
+		p += side * (reach[0] - reach[1]) * 0.5
 	var lip := b.local(p, top + 0.15)
 	var foot := b.local(p + dir * maxf(1.0, lean), top - drop)
 	if not b.clear(p + dir * lean, 2.0):
