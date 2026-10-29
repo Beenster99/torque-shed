@@ -138,6 +138,7 @@ var _clusters := {}         # node -> PackedInt32Array: the junctions drawn as o
 ## out again and again, till the ground sharpens (forget_guesses).
 var _guess := {"fair": {}, "node_y": {}, "raw_y": {}, "fixes": {}, "profiles": {}, "planes": {}}
 var _planes := {}           # roundabout's first node -> [Vector2 its nodes' middle, Vector3 its plane about that] (_ring_y)
+var _rims := {}             # roundabout's first node -> its island's rim (island_rim)
 var _profiles := {}         # edge -> PackedFloat32Array: its road's heights as ridden (profile)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
 var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
@@ -1256,6 +1257,68 @@ func ring_y(j: Dictionary, p: Vector2) -> float:
 	return _ring_y(j["nodes"], p)
 
 
+## How many bearings round a roundabout's island its rim is found at (island_rim).
+const RIM_STEPS := 32
+
+
+## Roundabout junction `j`'s island's rim: how far from its middle the ring's inner edge is, as its deck is laid, at
+## RIM_STEPS bearings evenly round from north (clockwise), less a hand's width so its kerb stands on the ring's edge,
+## never short of it (a ring drawn a little oval, or off its middle, leaves no gap round the island, nor runs under it).
+func island_rim(j: Dictionary) -> PackedFloat32Array:
+	var key := int(j["node"])
+	_lock.lock()
+	var got = _rims.get(key)
+	_lock.unlock()
+	if got != null:
+		return got
+	var c := Vector2(j["pos"].x, j["pos"].z)
+	var ring := PackedInt32Array()
+	for n in j["nodes"]:
+		for ei in region.adjacent[n]:
+			if on_ring(ei) and not ring.has(ei):
+				ring.append(ei)
+	var least := float(j["island"])
+	var most := float(j["ring_r"]) + float(j["ring_w"])
+	var on_deck := func(p: Vector2) -> bool:
+		for ei in ring:
+			if float(_project(ei, p)[2]) <= width_of(ei) * 0.5:
+				return true
+		return false
+	var rim := PackedFloat32Array()
+	for k in RIM_STEPS:
+		var t := TAU * k / RIM_STEPS
+		var d := Vector2(sin(t), -cos(t))
+		# Out from the island as it's reckoned (inside the deck everywhere) in steps, then halved down to the edge.
+		var lo := least
+		var hi := most
+		var r := least
+		while r < most:
+			if on_deck.call(c + d * r):
+				hi = r
+				break
+			lo = r
+			r += 0.4
+		for _i in 6:
+			var mid := (lo + hi) * 0.5
+			if on_deck.call(c + d * mid):
+				hi = mid
+			else:
+				lo = mid
+		rim.append(maxf(least, hi - 0.05) if hi < most else least)
+	_lock.lock()
+	_rims[key] = rim
+	_lock.unlock()
+	return rim
+
+
+## Roundabout junction `j`'s island's rim at bearing `h` (clockwise from north): between the bearings island_rim has.
+func island_r(j: Dictionary, h: float) -> float:
+	var rim := island_rim(j)
+	var f := posmod(h, TAU) / TAU * RIM_STEPS
+	var k := int(f) % RIM_STEPS
+	return lerpf(rim[k], rim[(k + 1) % RIM_STEPS], f - floorf(f))
+
+
 ## The road's height at every sample along edge `edge` (samples_of of them, evenly from a to b). Kept once the heights
 ## it's from are final (its strand's smoothed pages under it and the eases at the strand's ends); till then, as a guess
 ## till the ground sharpens (forget_guesses).
@@ -2014,6 +2077,47 @@ func locate(x: float, z: float, hint := -1, heights := true) -> Dictionary:
 			break
 	return {"edge": best, "s": s, "lat": lat, "y": y, "width": w, "heading": heading_at(best, s), "on_road": on,
 		"node": node}
+
+
+## How far either side of a one-way road its other carriageway is looked for (m), and how near its heading has to be
+## to the opposite way (radians) to count (one_way_at).
+const OTHER_WAY_M := 45.0
+const OTHER_WAY_TURN := 0.5
+
+
+## The road at `p` (region x, z) ridden on bearing `h`: Vector2(1 where it's one way the way `h` goes, -1 one way
+## against it, 0 both ways (or no road); and where the other way's traffic is, m right of it: the nearest road
+## alongside going the other way only, a dual carriageway's or motorway's other carriageway, within OTHER_WAY_M; NAN
+## where there's none, as beside a slip road).
+func one_way_at(p: Vector2, h: float) -> Vector2:
+	var on := locate(p.x, p.y, -1, false)
+	if on.is_empty() or not bool(on["on_road"]) or int(on["node"]) >= 0:
+		return Vector2(0.0, NAN)
+	var ow := region.edge_oneway[int(on["edge"])]
+	if ow == 0:
+		return Vector2(0.0, NAN)
+	var goes := float(on["heading"]) + (0.0 if ow == 1 else PI)
+	var way := 1.0 if absf(angle_difference(goes, h)) < PI * 0.5 else -1.0
+	var other := h + (PI if way > 0.0 else 0.0)   # (the way the other carriageway's traffic goes)
+	var right := Vector2(cos(h), sin(h))
+	var mine := int(on["edge"])
+	for k in range(1, int(OTHER_WAY_M / 3.0) + 1):
+		for side: float in [1.0, -1.0]:
+			var q := p + right * side * (k * 3.0)
+			var o2 := locate(q.x, q.y, mine, false)
+			if o2.is_empty() or not bool(o2["on_road"]) or int(o2["edge"]) == mine or int(o2["node"]) >= 0:
+				continue
+			var ow2 := region.edge_oneway[int(o2["edge"])]
+			if ow2 == 0:
+				continue
+			var hd := float(o2["heading"])
+			var goes2 := hd + (0.0 if ow2 == 1 else PI)
+			if absf(angle_difference(goes2, other)) > OTHER_WAY_TURN:
+				continue
+			# Its middle: back across it from where it was found.
+			var mid := q - Vector2(cos(hd), sin(hd)) * float(o2["lat"])
+			return Vector2(way, (mid - p).dot(right))
+	return Vector2(way, NAN)
 
 
 # ---------------------------------------------------------------------------- flat ground for the stops

@@ -57,6 +57,10 @@ const BACK := Color(0.45, 0.46, 0.47)
 const SIGN_H := 2.0
 const POLE_W := 0.07
 const SIGN_OUT := 0.9
+## A sign's pole or a bollard stands at least CLEAR_OF m off any road's surface, moved out up to CLEAR_REACH m to be
+## (clear_of_road).
+const CLEAR_OF := 0.4
+const CLEAR_REACH := 5.0
 ## A sign's plate stands this far in front of its pole.
 const PLATE_OUT := 0.05
 
@@ -124,15 +128,15 @@ static func paint(b: RoadBlock, kit: Dictionary) -> Dictionary:
 		if j["kind"] == "mini" and bool(st.get("mini", false)):
 			_disc(lines, j["pos"] - o + Vector3(0.0, LIFT, 0.0), minf(1.6, float(j["radius"]) * 0.3), PAINT["white"])
 		if town and j["kind"] in ["tee", "cross", "staggered", "fork", "multi"]:
-			_bollards(signs, b.net.junction_of(int(j["node"])), o, BOLLARDS.get(str(kit.get("region", "")), BOLLARDS["western_europe"]))
+			_bollards(signs, b.net, b.net.junction_of(int(j["node"])), o, BOLLARDS.get(str(kit.get("region", "")), BOLLARDS["western_europe"]))
 	var labels := RoadSigns.put_up(b, kit, st, signs)
 	return {"lines": lines, "signs": signs, "faces": faces, "labels": labels}
 
 
 # ---------------------------------------------------------------------------- a piece's paint
 
-## A piece's points from the block's anchor, the way right at each, the distance along its edge of each, and its
-## half width.
+## A piece's points from the block's anchor, the way right at each, the distance along its edge of each, its half
+## width, and the anchor.
 static func _prep(p: Dictionary, o: Vector3) -> Dictionary:
 	var src: PackedVector3Array = p["points"]
 	var pts := PackedVector3Array()
@@ -148,7 +152,7 @@ static func _prep(p: Dictionary, o: Vector3) -> Dictionary:
 		at.append(s)
 	if p.has("at") and (p["at"] as PackedFloat32Array).size() == src.size():
 		at = p["at"]
-	return {"pts": pts, "rights": rights, "at": at, "e": float(p["width"]) * 0.5}
+	return {"pts": pts, "rights": rights, "at": at, "e": float(p["width"]) * 0.5, "o": o}
 
 
 ## The point on piece `q` (_prep) `s` along its edge and `lat` right of its centre line, on the crowned deck, `lift`
@@ -302,13 +306,13 @@ static func _piece(lines: Dictionary, signs: Dictionary, net: RoadNet, p: Dictio
 		if round:
 			_warning(signs, net, q, p, j, info, dir, st)
 		if bool(info["here"]):
-			_approach(lines, signs, q, p, info, dir, round, st)
+			_approach(lines, signs, net, q, p, info, dir, round, st)
 
 
 ## Where a side road (or a roundabout's entry) meets its junction: the give-way or stop across the lanes coming in,
 ## anything painted before it, and its sign.
-static func _approach(lines: Dictionary, signs: Dictionary, q: Dictionary, p: Dictionary, info: Dictionary, dir: float,
-		round: bool, st: Dictionary) -> void:
+static func _approach(lines: Dictionary, signs: Dictionary, net: RoadNet, q: Dictionary, p: Dictionary, info: Dictionary,
+		dir: float, round: bool, st: Dictionary) -> void:
 	var e := float(q["e"])
 	var white: Color = PAINT["white"]
 	# The lanes coming in: all of a one-lane or one-way road, else the half on the country's side.
@@ -325,6 +329,8 @@ static func _approach(lines: Dictionary, signs: Dictionary, q: Dictionary, p: Di
 	var pole_s := s_line - dir * 1.2
 	var facing := -_along(q, pole_s) * dir
 	var foot := _point(q, pole_s, pole_lat, -0.3)
+	foot = clear_of_road(net, foot, q["o"], foot - _point(q, pole_s, 0.0, -0.3))
+	var standing := foot.is_finite()
 	if stop:
 		var sl: Dictionary = st.get("stop", {})
 		var w := float(sl.get("w", 0.3))
@@ -335,12 +341,15 @@ static func _approach(lines: Dictionary, signs: Dictionary, q: Dictionary, p: Di
 			var mid_s := s_line - dir * (w + 3.0)
 			# Painted long and narrow, as road words are, reading from the driver's seat.
 			_road_word(lines, q, word, mid_s, (lat0 + lat1) * 0.5, minf(lane - 0.6, 2.6), 2.4, dir, white)
-		_stop_sign(signs, foot, facing, st)
+		if standing:
+			_stop_sign(signs, foot, facing, st)
 		return
 	var gw: Dictionary = st["roundabout"] if round else st["give_way"]
 	_give_way_line(lines, q, gw, s_line, lat0, lat1, dir, white)
 	if bool(st.get("triangle", false)) and not round:
 		_road_triangle(lines, q, s_line - dir * 12.0, (lat0 + lat1) * 0.5, dir, white)
+	if not standing:
+		return
 	var h := SIGN_H + (0.45 if round and bool(st["roundabout_sign"]) else 0.0)
 	_give_way_sign(signs, foot, facing, h, st)
 	if round and bool(st["roundabout_sign"]):
@@ -431,7 +440,7 @@ static func _disc(a: Dictionary, c: Vector3, r: float, col: Color) -> void:
 
 ## Bollards round town junction `j`'s corners (RoadNet.junction_of: its outline, where it runs along a kerb), just
 ## back from the kerb, in the region's colours.
-static func _bollards(a: Dictionary, j: Dictionary, o: Vector3, cols: Array) -> void:
+static func _bollards(a: Dictionary, net: RoadNet, j: Dictionary, o: Vector3, cols: Array) -> void:
 	if not j.has("kerb"):
 		return
 	var outline: PackedVector2Array = j["outline"]
@@ -454,7 +463,9 @@ static func _bollards(a: Dictionary, j: Dictionary, o: Vector3, cols: Array) -> 
 			var t := (float(i) + 0.5) / count * 0.6 + 0.2
 			var at := u.lerp(v, t) + out * (RoadNet.VERGE * 0.5)
 			var y := lerpf(heights[k], heights[(k + 1) % n], t)
-			var foot := Vector3(at.x, y - 0.1, at.y) - o
+			var foot := clear_of_road(net, Vector3(at.x, y - 0.1, at.y) - o, o, Vector3(out.x, 0.0, out.y))
+			if not foot.is_finite():
+				continue
 			AdventureProps.box(a, Transform3D(Basis(), foot), Vector3(BOLLARD_W, BOLLARD_H, BOLLARD_W), cols[0])
 			AdventureProps.box(a, Transform3D(Basis(), foot + Vector3(0.0, BOLLARD_H - 0.22, 0.0)), Vector3(BOLLARD_W + 0.01, 0.1, BOLLARD_W + 0.01), cols[1], false)
 
@@ -478,7 +489,10 @@ static func _warning(signs: Dictionary, net: RoadNet, q: Dictionary, p: Dictiona
 		return
 	var e := float(q["e"])
 	var side := dir * (-1.0 if bool(st["left"]) else 1.0)
-	var foot := _point(q, s, side * (e + SIGN_OUT), -0.3)
+	var foot := clear_of_road(net, _point(q, s, side * (e + SIGN_OUT), -0.3), q["o"],
+		_point(q, s, side, -0.3) - _point(q, s, 0.0, -0.3))
+	if not foot.is_finite():
+		return
 	var facing := -_along(q, s) * dir
 	var symbol := "cross"
 	match str(j["kind"]):
@@ -492,6 +506,30 @@ static func _warning(signs: Dictionary, net: RoadNet, q: Dictionary, p: Dictiona
 ## A pole from `foot` up to `top` m.
 static func _pole(a: Dictionary, foot: Vector3, top: float) -> void:
 	AdventureProps.box(a, Transform3D(Basis(), foot), Vector3(POLE_W, top, POLE_W), POLE, false)
+
+
+## A sign's or bollard's foot (block space, the block's anchor `o`) clear of every road and junction's surface: where
+## it is, if nothing's within CLEAR_OF of it, else moved on `away` (level, out from the road it's beside) till it is
+## (a junction's kerb curving out, a roundabout's mouth widening, another road alongside), or Vector3.INF if it can't
+## be within CLEAR_REACH (then it isn't put up).
+static func clear_of_road(net: RoadNet, foot: Vector3, o: Vector3, away: Vector3) -> Vector3:
+	away.y = 0.0
+	away = away.normalized() if away.length_squared() > 0.0 else Vector3.RIGHT
+	var side := Vector3(-away.z, 0.0, away.x)
+	var moved := 0.0
+	while moved <= CLEAR_REACH:
+		var p := foot + away * moved + o
+		var clear := true
+		# (where it stands, and CLEAR_OF back towards the road it's beside and either side)
+		for d: Vector3 in [Vector3.ZERO, -away * CLEAR_OF, side * CLEAR_OF, -side * CLEAR_OF]:
+			var on := net.locate(p.x + d.x, p.z + d.z, -1, false)
+			if not on.is_empty() and bool(on["on_road"]):
+				clear = false
+				break
+		if clear:
+			return foot + away * moved
+		moved += 0.5
+	return Vector3.INF
 
 
 ## A flat shape (`pts`, x right and y up as the driver sees it, m) on a sign at `c` facing `facing`, `depth` in front of

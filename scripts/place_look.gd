@@ -29,7 +29,7 @@ const KIT_NAMES := {"temperate": "Temperate broadleaf", "boreal": "Boreal forest
 const KIT := {
 	"temperate": {"grass": Color(0.27, 0.45, 0.17), "dry": Color(0.56, 0.52, 0.3), "patch": Color(0.36, 0.5, 0.2),
 		"forest": Color(0.1, 0.23, 0.1), "shrub": Color(0.32, 0.4, 0.2), "rock": Color(0.46, 0.45, 0.42),
-		"plants": {"tree": 150, "oak": 80, "pine": 35, "bush": 70, "rock": 24, "sheep": 10},
+		"plants": {"tree": 150, "oak": 80, "birch": 40, "pine": 35, "bush": 70, "rock": 24, "sheep": 10},
 		"broad": "oak", "needle": "pine", "turns": true},
 	"boreal": {"grass": Color(0.3, 0.4, 0.2), "dry": Color(0.5, 0.48, 0.3), "patch": Color(0.38, 0.42, 0.26),
 		"forest": Color(0.07, 0.17, 0.09), "shrub": Color(0.26, 0.32, 0.18), "rock": Color(0.44, 0.44, 0.43),

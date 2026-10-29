@@ -117,6 +117,11 @@ var bus_stops: Array = []
 ## Optional s -> whether the road drives on the left there (Britain, Ireland, Japan, India...);
 ## else it does everywhere, as the town's roads.
 var keep_left: Callable
+## Optional s -> Vector2(the way a one-way road goes there: 1 the way s grows, -1 against it, 0 both ways; and where
+## the other way's traffic is instead, m right of the centre line: the other carriageway of a dual carriageway or
+## motorway, NAN where there's none to see, as on a slip road). Where it's one way, the traffic going the other
+## way keeps to the other carriageway, or isn't there at all.
+var one_way: Callable
 ## Whether this machine runs it (the host, or a solo game); a client only moves them on between unpacks.
 var host := true
 ## The junctions along it, in order of s: [{s (the middle), stop (m before the middle where traffic
@@ -175,6 +180,17 @@ func keep(s: float) -> int:
 	return 1 if keep_left.is_valid() and not bool(keep_left.call(s)) else -1
 
 
+## The road's one way at `s` (one_way): Vector2(its way, the other carriageway's offset), Vector2(0, NAN) both ways.
+func ways(s: float) -> Vector2:
+	return one_way.call(s) if one_way.is_valid() else Vector2(0.0, NAN)
+
+
+## Whether going `dir` at `s` is against a one-way road with no other carriageway for it to be on.
+func wrong_way(s: float, dir: int) -> bool:
+	var w := ways(s)
+	return w.x != 0.0 and int(w.x) != dir and is_nan(w.y)
+
+
 ## How far `s` is from the nearest focus.
 func from_focus(s: float) -> float:
 	var best := INF
@@ -227,6 +243,12 @@ func step(delta: float) -> void:
 				var err := float(d["target"]) - float(d["s"])
 				d["s"] = float(d["s"]) + err * (1.0 - exp(-4.0 * delta))
 				d["target"] = float(d["target"]) + int(d["dir"]) * float(d["v"]) * delta
+	if host:
+		# (one come to where its road is one way against it, with no other carriageway: it's gone before it's drawn)
+		for i in range(vehicles.size() - 1, -1, -1):
+			var d: Dictionary = vehicles[i]
+			if not d.get("scripted", false) and not d.has("arm") and wrong_way(float(d["s"]), int(d["dir"])):
+				_remove(i)
 	_draw(delta)
 
 
@@ -260,7 +282,9 @@ func spawn_one(near := spawn_near, far := spawn_far) -> Dictionary:
 	if s < s_min or s > s_max or from_focus(s) < near - 0.01:
 		return {}
 	var dir := 1 if rng.randf() < 0.5 else -1
-	if not clear_at(s, dir, 30.0):
+	if wrong_way(s, dir) or wrong_way(lerpf(s, f, 0.5), dir):
+		dir = -dir   # (none coming the wrong way down a slip road)
+	if wrong_way(s, dir) or not clear_at(s, dir, 30.0):
 		return {}
 	var at: Dictionary = sample.call(s)
 	var busy := float(at.get("busy", 0.0))
@@ -835,6 +859,10 @@ func _place(d: Dictionary, at := {}) -> Array:
 	if is_nan(lat):
 		var kerb := maxf(hw - half_w - 0.1, lane)
 		lat = keep(s) * dir * lerpf(lane, kerb, float(d.get("kerb_f", 0.0)))
+		# (the other way along a dual carriageway: in its lane on the other carriageway)
+		var w := ways(s)
+		if w.x != 0.0 and int(w.x) != dir and not is_nan(w.y):
+			lat += w.y
 	var heading := fwd * dir
 	for j in _near_j:
 		var jn: Dictionary = junctions[j]
