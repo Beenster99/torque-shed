@@ -137,6 +137,17 @@ func test_strands() -> void:
 		var p := fork.point_at(2, s)
 		across = maxf(across, absf(fork.road_y(2, s) - fork._across_y(Vector2i(0, 1), p)) / maxf(fork._project(1, p)[2] - 3.0, 1.0))
 	check(across < 0.15, "a side road leaving at a slant keeps near the through road's height while beside it (%.2f m a metre between them at most)" % across)
+	# The same where the junction is drawn as one with another just along the road (Simon's step on Route 273 in
+	# Kamikawa: the side road came away at its own height, a slab of it over the through road beside it).
+	var fork2 := RoadNet.new(graph([[100, 100], [-300, 100], [500, 100], [400, 200], [115, 100], [115, -300]],
+		[[1, 0, "primary"], [0, 4, "primary"], [4, 2, "primary"], [0, 3, "residential"], [4, 5, "residential"]]), hillside)
+	var across2 := 0.0
+	for d in range(10, 30, 2):
+		var s := float(d)
+		var p := fork2.point_at(3, s)
+		across2 = maxf(across2, absf(fork2.road_y(3, s) - fork2._across(fork2._main_edges(0), p).x) / maxf(minf(fork2._project(1, p)[2], fork2._project(2, p)[2]) - 3.0, 1.0))
+	check(fork2._cluster(0).size() > 1 and across2 < 0.15,
+		"and so it does where the junction's drawn as one with the next along (%.2f m a metre at most)" % across2)
 	# The junction's surface follows the through road across it.
 	var mid := Vector2(100.0, 103.0)
 	check(absf(net.surface_y(0, mid) - net.road_y(1, net.length_of(1))) < 0.05 and
@@ -288,6 +299,16 @@ func test_locate() -> void:
 	var mid := net.locate(101.0, 102.0)
 	check(int(mid.get("node", -1)) == 0 and bool(mid["on_road"]), "in the middle of the tee, at its junction")
 	check(net.locate(250.0, 102.0, 2) == on, "a hint doesn't change the answer")
+	# One way: a dual carriageway's two carriageways 16 m apart, and a slip road on its own.
+	var dual := RoadNet.new(graph([[-300, 100], [300, 100], [300, 116], [-300, 116], [-300, 400], [300, 400], [-300, 600], [300, 600]],
+		[[0, 1, "primary", 1], [2, 3, "primary", 1], [4, 5, "tertiary", 1], [6, 7, "tertiary"]]), flat)
+	var east := dual.one_way_at(Vector2(0, 100), PI * 0.5)
+	var west := dual.one_way_at(Vector2(0, 100), PI * 1.5)
+	check(east.x == 1.0 and absf(east.y - 16.0) < 0.5 and west.x == -1.0 and absf(west.y + 16.0) < 0.5,
+		"a dual carriageway is one way, its other carriageway 16 m across (%s, %s)" % [east, west])
+	var slip := dual.one_way_at(Vector2(0, 400), PI * 0.5)
+	check(slip.x == 1.0 and is_nan(slip.y), "a slip road is one way with no other carriageway beside it (%s)" % slip)
+	check(dual.one_way_at(Vector2(0, 600), PI * 0.5).x == 0.0, "and an ordinary road both ways")
 	var rn := RoadNet.new(roundabout(), flat)
 	var ring := rn.locate(100.0 + 16.0, 100.0)
 	check(int(ring.get("node", -1)) == 0 and rn.on_ring(int(ring["edge"])), "on the ring, at the roundabout")
@@ -544,6 +565,37 @@ func test_cell() -> void:
 	check(trees > 50, "the land round the roads has its trees (%d in three blocks)" % trees)
 	check(on_road == 0, "none on a road or its verge (%d)" % on_road)
 	check(tree_ms < 2000.0, "and a block still lays out in good time (%.0f ms)" % tree_ms)
+	# A wood is of several kinds, as the place's look mixes them (here, a temperate one's), not one broadleaf and one
+	# conifer.
+	var mixed := RoadNet.new(r, flat)
+	mixed.dress = {"terrain": r.terrain, "look": {"broad": "oak", "needle": "pine", "plants": PlaceLook.KIT["temperate"]["plants"]}}
+	var kinds_seen := {}
+	for dx in range(-1, 2):
+		for kind: String in mixed.block(busiest + Vector2i(dx, 1)).trees:
+			if kind in RoadBlock.BROADLEAVES or kind in RoadBlock.CONIFERS:
+				kinds_seen[kind] = true
+	check(kinds_seen.size() >= 4, "a wood is mixed from the place's kinds of tree (%s)" % str(kinds_seen.keys()))
+	# Its town streets built up along their fronts where the map leaves gaps (RoadBlock._infill): none of the buildings
+	# on a road, nor standing in another.
+	var built := 0
+	var in_road := 0
+	var crowded := 0
+	for dx in range(-1, 2):
+		var b := net.block(busiest + Vector2i(dx, 1))
+		built += b.buildings.size()
+		for i in b.buildings.size():
+			var row: Array = b.buildings[i]
+			for c: Vector2 in RoadBlock._corners(row):
+				var hit := net.locate(c.x, c.y, -1, false)
+				if not hit.is_empty() and bool(hit["on_road"]):
+					in_road += 1
+			for k in range(i + 1, b.buildings.size()):
+				var other: Array = b.buildings[k]
+				var apart := Vector2(float(row[0]) - float(other[0]), float(row[1]) - float(other[1])).length()
+				if apart < (minf(float(row[2]), float(row[3])) + minf(float(other[2]), float(other[3]))) * 0.25:
+					crowded += 1
+	print("  road net: %d buildings in three blocks" % built)
+	check(in_road == 0 and crowded == 0, "no building's corner on a road (%d), none standing in another (%d)" % [in_road, crowded])
 
 
 ## The block's meshes: the deck and junctions facing up, indexed within bounds, with collision; lines on tarmac; a
@@ -580,6 +632,64 @@ func test_meshes() -> void:
 	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
 	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
 	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
+	# Across each of the tee's mouths the junction's surface meets the road's crowned deck all the way across: no lip
+	# the crown's height in the middle.
+	var tnet := RoadNet.new(tee(), flat)
+	var tb3 := tnet.block(RoadBlock.key_of(100.0, 100.0))
+	var o3 := Vector2(tb3.anchor().x, tb3.anchor().z)
+	var lip := 0.0
+	for arm: Dictionary in tnet.junction_of(0)["arms"]:
+		var ei := int(arm["edge"])
+		var len := tnet.length_of(ei)
+		var m := tnet.mouth(ei, 0)
+		var from_a := tee().edge_a[ei] == 0
+		for f: float in [-0.6, 0.0, 0.6]:
+			var hs := []
+			for d: float in [-0.05, 0.05]:
+				var sm := m + d if from_a else len - m - d
+				var h := tnet.heading_at(ei, sm)
+				var q := tnet.point_at(ei, sm) + Vector2(cos(h), sin(h)) * f * float(arm["width"]) * 0.5
+				var got := _heights_at(tb3, q - o3)
+				hs.append(got[got.size() - 1] if not got.is_empty() else NAN)
+			lip = maxf(lip, absf(float(hs[1]) - float(hs[0])))
+	check(lip < 0.008, "a road meets its junction's surface with no lip across its mouth (%.3f m at most)" % lip)
+	# On a hill, its island tips with the ring and its kerb runs round the ring's own inner edge: tarmac just outside it
+	# all the way round, the island's grass just inside it at the kerb's height above the ring, no gap and no step.
+	var tipped := RoadNet.new(roundabout(), func(x: float, z: float) -> float: return 10.0 + x * 0.06 - z * 0.03)
+	var tr := tipped.junction_of(0)
+	var tb2 := tipped.block(RoadBlock.key_of(100.0, 100.0))
+	var o2 := tb2.anchor()
+	var c2 := Vector2(tr["pos"].x, tr["pos"].z)
+	var worst_gap := 0.0
+	var worst_kerb := 0.0
+	for k in 32:
+		var h := TAU * (k + 0.5) / 32.0
+		var d := Vector2(sin(h), -cos(h))
+		var rr := tipped.island_r(tr, h)
+		var road_hs := _heights_at(tb2, c2 + d * (rr + 0.3) - Vector2(o2.x, o2.z))
+		if road_hs.is_empty():
+			worst_gap = maxf(worst_gap, 1.0)
+		var inside := c2 + d * (rr - 0.4)
+		var top := _down(tb2, Vector3(inside.x, 1000.0, inside.y) - o2) + o2.y
+		worst_kerb = maxf(worst_kerb, absf(top - tipped.ring_y(tr, inside) - RoadBlock.ISLAND_H))
+	check(worst_gap == 0.0 and worst_kerb < 0.02,
+		"a roundabout's island sits on its ring's inner edge, tipped with it (no gap: %s; kerb height off by %.3f m)" % [worst_gap == 0.0, worst_kerb])
+	# Three junctions drawn as one, with a road looping round from one to another (its mouths inside their outline,
+	# which folds back seen from its middle), on rolling land: one surface over each spot, never two a step apart.
+	var rolling := func(x: float, z: float) -> float: return 10.0 + x * 0.08 + 2.0 * sin(z / 12.0) + 1.5 * sin(x / 9.0)
+	var three := RoadNet.new(graph([[100, 100], [120, 100], [110, 118], [-200, 100], [400, 100], [110, 400]],
+		[[3, 0, "tertiary"], [0, 1, "tertiary"], [1, 4, "tertiary"], [0, 2, "residential"], [1, 2, "residential"],
+		[2, 5, "residential"], [0, 1, "residential", 0, [110, 70]]]), rolling)
+	var tj := three.junction_of(0)
+	check(tj["kind"] == "multi" and (tj["nodes"] as PackedInt32Array).size() == 3, "the three drawn as one (%s)" % tj["kind"])
+	var tb := three.block(RoadBlock.key_of(110.0, 100.0))
+	var spread := 0.0
+	for x in range(60, 161, 3):
+		for z in range(50, 151, 3):
+			var hs := _heights_at(tb, Vector2(x, z) - Vector2(tb.anchor().x, tb.anchor().z))
+			if hs.size() > 1:
+				spread = maxf(spread, hs[hs.size() - 1] - hs[0])
+	check(spread < 0.03, "its surface lies as one sheet (two faces at most %.3f m apart over a spot)" % spread)
 
 
 ## The map's bridges: one over a valley runs level from end to end with the land left as it is under it, a parapet each
@@ -639,6 +749,18 @@ func test_bridges() -> void:
 
 
 ## The height of the first collision triangle of block `b` straight under local `p` (NAN if none).
+## Every height of block `b`'s road deck (tarmac) over (x, z) `p` (block space), lowest first.
+static func _heights_at(b: RoadBlock, p: Vector2) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var f: PackedVector3Array = b.arrays["faces"].get("tarmac", PackedVector3Array())
+	for k in range(0, f.size(), 3):
+		var hit = Geometry3D.ray_intersects_triangle(Vector3(p.x, 1000.0, p.y), Vector3.DOWN, f[k], f[k + 1], f[k + 2])
+		if hit != null:
+			out.append(float(hit.y))
+	out.sort()
+	return out
+
+
 static func _down(b: RoadBlock, p: Vector3) -> float:
 	var best := NAN
 	for surf in b.arrays["faces"]:

@@ -23069,6 +23069,10 @@ func _test_adv_traffic_perf() -> void:
 func _test_adv_traffic_drive_side() -> void:
 	_adv_traffic().test_drive_side()
 
+
+func _test_adv_traffic_one_way() -> void:
+	_adv_traffic().test_one_way()
+
 # ---------------------------------------------------------------------------- adventure themes (tests/adventure_themes_tests.gd)
 
 func _adv_themes() -> RefCounted:

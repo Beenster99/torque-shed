@@ -565,3 +565,40 @@ func test_drive_side() -> void:
 		stream._bus(bus, 6.0, 3.0)
 		check(int(bus["ind"]) == keep, "%s: a bus pulling in indicates to the kerb (%d)" % [name, int(bus["ind"])])
 		stream.queue_free()
+
+
+## Slip roads and dual carriageways are one way: on them nothing comes towards you in your lanes. The other way's
+## traffic keeps to the other carriageway where there is one, and down a slip road there's none.
+func test_one_way() -> void:
+	var stream := TrafficStream.new()
+	stream.sample = func(s: float) -> Dictionary:
+		return {"pos": Vector3(0.0, 0.0, -s), "fwd": Vector3(0, 0, -1), "hw": 4.0, "busy": 1.0, "limit": 22.0, "grade": 0.0}
+	stream.keep_left = func(_s: float) -> bool: return true
+	# A dual carriageway (its other carriageway 14 m to the right) but for a slip road from 400 to 700 m.
+	stream.one_way = func(s: float) -> Vector2: return Vector2(1.0, NAN) if s > 400.0 and s < 700.0 else Vector2(1.0, 14.0)
+	t.add_child(stream)
+	stream.set_physics_process(false)
+	stream.focus_s = 550.0
+	stream._side_timer = 1.0e9
+	var wrong := 0
+	var mine := 0
+	var across := 0
+	for i in 2400:
+		stream.step(0.05)
+		for d in stream.vehicles:
+			if d.has("arm"):
+				continue
+			var sd := float(d["s"])
+			var x := (stream._place(d)[0] as Vector3).x
+			if int(d["dir"]) == -1:
+				if sd > 400.0 and sd < 700.0:
+					wrong += 1
+				elif x > 7.0:
+					across += 1
+				else:
+					wrong += 1
+			else:
+				mine += 1
+	check(wrong == 0 and mine > 0 and across > 0,
+		"none comes towards you on your carriageway or a slip road (%d), the other way keeps across on the other (%d)" % [wrong, across])
+	stream.queue_free()

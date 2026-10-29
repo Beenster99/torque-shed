@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 15
+const VERSION := 19
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -49,6 +49,10 @@ const SHRUBS := 7
 const SHRUB_COLOURS: Array[Color] = [Color(0.16, 0.34, 0.12), Color(0.3, 0.42, 0.14), Color(0.55, 0.3, 0.42)]
 ## A junction's surface is drawn in this many rings out from its middle (_drape).
 const DRAPE_RINGS := 4
+## Where its outline folds back seen from its middle, it's drawn as one sheet instead (_sheet), its points this far (m)
+## apart, eased onto its outline over this many passes.
+const SHEET_STEP := 4.0
+const SHEET_PASSES := 60
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
@@ -121,6 +125,7 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 		var out := row.duplicate()
 		out.append(b._building_y(row))
 		b.buildings.append(out)
+	b._infill()
 	b._plant()
 	b._lay_out()
 	b.ms = (Time.get_ticks_usec() - t0) / 1000.0
@@ -220,6 +225,100 @@ func _building_y(row: Array) -> float:
 	return y
 
 
+## A town street's infill buildings (_infill): INFILL_W m along the street, INFILL_D deep, INFILL_BACK back from its
+## verge (and CLEAR), INFILL_GAP apart, at most INFILL_MOST to a block, none along an INFILL_SKIP road.
+const INFILL_W := [7.0, 15.0]
+const INFILL_D := [9.0, 16.0]
+const INFILL_BACK := [0.5, 2.5]
+const INFILL_GAP := [0.4, 2.0]
+const INFILL_MOST := 700
+const INFILL_SKIP := ["motorway", "trunk", "track"]
+
+
+## Town streets are built up along their fronts: the map's buildings are only some of a city's (the bake keeps the
+## nearest the roads up to its cap, and many a street's houses aren't mapped at all), so where the ground's urban
+## (the cover map) and a street has a gap in its front, a building's put in it, set back off the verge, square to the
+## street, the size of a town's, as tall as the place's density has them, never on a road, a junction, a flat or
+## another building. Only on a dressed net (net.dress).
+func _infill() -> void:
+	if net.dress.is_empty():
+		return
+	var t: RealTerrain = net.dress["terrain"]
+	var urban := RealPack.COVER.find("urban")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([net.region.hash, "infill", key])
+	var dense := str(kit_of().get("density", "")) == "city"
+	var block_id := RealPack.BUILDING_KINDS.find("block")
+	var house_id := RealPack.BUILDING_KINDS.find("house")
+	var shop_id := RealPack.BUILDING_KINDS.find("shop")
+	# The buildings already standing, filed by 16 m square, for the overlap test.
+	var filed := {}
+	var file := func(row: Array) -> void:
+		var r := Vector2(float(row[2]), float(row[3])).length() * 0.5
+		var c := Vector2i(floori(float(row[0]) / 16.0), floori(float(row[1]) / 16.0))
+		if not filed.has(c):
+			filed[c] = []
+		(filed[c] as Array).append(Vector3(float(row[0]), float(row[1]), r))
+	for row: Array in buildings:
+		file.call(row)
+	var free := func(x: float, z: float, r: float) -> bool:
+		var c := Vector2i(floori(x / 16.0), floori(z / 16.0))
+		for i in range(-3, 4):
+			for j in range(-3, 4):
+				for o: Vector3 in filed.get(c + Vector2i(i, j), []):
+					if Vector2(o.x - x, o.y - z).length() < (o.z + r) * 0.82:
+						return false
+		return true
+	var added := 0
+	for p in pieces:
+		if str(p["surface"]) != "tarmac" or bool(p["ring"]) or str(p["class"]) in INFILL_SKIP:
+			continue
+		var ei := int(p["edge"])
+		var len := net.length_of(ei)
+		var lo := maxf(float(p["s0"]), net.mouth(ei, int(p["a"])) + 6.0)
+		var hi := minf(float(p["s1"]), len - net.mouth(ei, int(p["b"])) - 6.0)
+		var e := float(p["width"]) * 0.5
+		for side: float in [-1.0, 1.0]:
+			var s := lo + rng.randf_range(0.0, 4.0)
+			while s < hi and added < INFILL_MOST:
+				var w := rng.randf_range(INFILL_W[0], INFILL_W[1])
+				var d := rng.randf_range(INFILL_D[0], INFILL_D[1])
+				var mid := s + w * 0.5
+				if mid > hi:
+					break
+				var at := net.point_at(ei, mid)
+				var h := net.heading_at(ei, mid)
+				var right := Vector2(cos(h), sin(h)) * side
+				var back := e + RoadNet.VERGE + CLEAR + rng.randf_range(INFILL_BACK[0], INFILL_BACK[1]) + d * 0.5
+				var c := at + right * back
+				var r := Vector2(w, d).length() * 0.5
+				var front := at + right * (e + RoadNet.VERGE + 2.0)
+				if t.cover(front.x, front.y) != urban or t.cover(c.x, c.y) == RealPack.WATER or not free.call(c.x, c.y, r):
+					s += 3.0
+					continue
+				# Square to the street: its width along it (RoadBlock._corners: width along (cos yaw, -sin yaw)).
+				var row := [c.x, c.y, w, d, PI * 0.5 - h, 0.0, house_id]
+				var low := rng.randf() < 0.55
+				if dense:
+					row[5] = rng.randf_range(9.0, 15.0) if low else rng.randf_range(15.0, 32.0)
+				else:
+					row[5] = rng.randf_range(5.5, 8.5) if low else rng.randf_range(8.5, 14.0)
+				row[6] = house_id if (low and not dense) else (shop_id if rng.randf() < 0.3 else block_id)
+				var kept := _clear_of_roads(row)
+				if kept.is_empty() or kept != row or net.in_flat(c.x, c.y, maxf(w, d) * 0.5):
+					s += 3.0
+					continue
+				var bare := float(net.height.call(c.x, c.y))
+				if is_nan(bare):
+					s += 3.0
+					continue
+				row.append(_building_y(row))
+				buildings.append(row)
+				file.call(row)
+				added += 1
+				s += w + rng.randf_range(INFILL_GAP[0], INFILL_GAP[1])
+
+
 ## Plants the block's trees (trees) from the net's dress: where the canopy map has woods, as many as its share of the
 ## ground under trees and their crowns' size say, as tall as it has them (as AdventureChunk does along the planned road);
 ## where there's no canopy map, by what covers the ground. None on a road or its verge, by a building, or in water.
@@ -238,6 +337,10 @@ func _plant() -> void:
 		if kind in AdventureChunk.BUSHES:
 			bush = kind
 			break
+	# The place's mix of broadleaves and of conifers (its look's plants, its own canopy kinds first), so a wood is of
+	# several kinds, one or two of them to the fore in each patch of it.
+	var broads := _mix(look, broad, BROADLEAVES)
+	var needles := _mix(look, needle, CONIFERS)
 	var o := anchor()
 	var step := AdventureChunk.CANOPY_STEP
 	var north := absf(t.lat0) > float(AdventureChunk.NEEDLE_ODDS["north_lat"])
@@ -273,18 +376,60 @@ func _plant() -> void:
 			var wide := float(crown[0]) * tallest + float(crown[1])
 			var many := minf(float(AdventureChunk.CANOPY_MOST), share * step * step / (wide * wide))
 			var n := int(many + rng.randf())
+			var patch := absi(hash([floori(cx / MIX_PATCH), floori(cz / MIX_PATCH), "mix"]))
 			for k in n:
-				var kind := needle if (conifer if leaf != 3 else rng.randf() < 0.5) else (broad if share < 0.5 or rng.randf() < 0.4 else "tree")
-				if kind == "tree" and broad in ["jungle_tree", "acacia"]:
-					kind = broad
+				var cone := conifer if leaf != 3 else rng.randf() < 0.5
+				var kind := _pick(needles if cone else broads, patch, rng)
 				if kind in ["tree", "oak"] and autumn > 0.0 and rng.randf() < autumn:
 					kind = "autumn_tree"
 				var tall := maxf(3.0, tallest * rng.randf_range(0.65, 1.0))
 				var size: Array = AdventureChunk.TREE_SIZE.get(kind, [6.6, 5.2])
-				var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1])
+				var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1]) * rng.randf_range(0.8, 1.25)
 				var x := cx + rng.randf_range(-0.5, 0.5) * step
 				var z := cz + rng.randf_range(-0.5, 0.5) * step
 				_stand(t, kind, x, z, 6.0, o, rng, Vector3(across, tall / float(size[0]), across))
+
+
+## The trees a wood is mixed from: broadleaves, and conifers (each a kind AdventureChunk.TREE_SIZE has).
+const BROADLEAVES := ["tree", "oak", "birch", "olive", "acacia", "jungle_tree", "palm"]
+const CONIFERS := ["pine", "cedar", "cypress", "snow_pine"]
+## A wood's mix is one or two kinds to the fore over each patch this big (m), MIX_LEAD of its trees of those.
+const MIX_PATCH := 96.0
+const MIX_LEAD := 0.65
+
+
+## The mix of `kinds` (BROADLEAVES or CONIFERS) a place's `look` has among its plants, by their weights, with its
+## canopy kind `main` the biggest share: [[kind, weight], ...], the heaviest first.
+static func _mix(look: Dictionary, main: String, kinds: Array) -> Array:
+	var plants: Dictionary = look.get("plants", {})
+	var out := []
+	var most := 0.0
+	for kind: String in plants:
+		if kind in kinds and kind != main and float(plants[kind]) > 0.0:
+			out.append([kind, float(plants[kind])])
+			most = maxf(most, float(plants[kind]))
+	out.append([main, maxf(most * 1.3, 1.0)])
+	out.sort_custom(func(a, b): return float(a[1]) > float(b[1]))
+	return out
+
+
+## A tree of mix `mix` (_mix) in patch `patch` (a hash): its lead kinds (the patch's pick of one or two) for MIX_LEAD of
+## them, the rest from the whole mix by weight.
+static func _pick(mix: Array, patch: int, rng: RandomNumberGenerator) -> String:
+	var total := 0.0
+	for m: Array in mix:
+		total += float(m[1])
+	var roll := rng.randf() * total
+	if rng.randf() < MIX_LEAD:
+		# (the patch's lead: picked by weight from the patch's own hash, so it's the same for every tree in it)
+		roll = float(patch % 10007) / 10007.0 * total
+		if rng.randf() < 0.3:
+			roll = float((patch / 10007) % 10007) / 10007.0 * total
+	for m: Array in mix:
+		roll -= float(m[1])
+		if roll <= 0.0:
+			return str(m[0])
+	return str(mix[mix.size() - 1][0])
 
 
 ## Stands one `kind` at region-frame (x, z) on the land (RoadNet.ground_at), at least `clear` m past any road's verge,
@@ -625,6 +770,10 @@ static func _grid_tri(g: Dictionary, v: PackedVector3Array, i0: int, i1: int, i2
 	g["i"].append_array([i0, i2, i1])
 
 
+## A deck's normals are smoothed over this (m): see _finish_grid.
+const SHADE_M := 1.5
+
+
 ## Grid `g`'s normals, from its faces.
 static func _finish_grid(g: Dictionary) -> void:
 	var v: PackedVector3Array = g["v"]
@@ -636,8 +785,22 @@ static func _finish_grid(g: Dictionary) -> void:
 		nrm[idx[k]] += n
 		nrm[idx[k + 1]] += n
 		nrm[idx[k + 2]] += n
+	# Shaded as one surface: each vertex's normal is the deck's round it over SHADE_M (its own faces' and those of
+	# whatever lies alongside, a junction's against its arms'), so where a road's deck meets a junction's, or a thin
+	# sliver of a face lies between them, there's no line of light or shade across the road.
+	var cells := {}
+	for k in v.size():
+		var c := Vector2i(floori(v[k].x / SHADE_M), floori(v[k].z / SHADE_M))
+		cells[c] = (cells.get(c, Vector3.ZERO) as Vector3) + nrm[k]
 	for k in nrm.size():
-		nrm[k] = nrm[k].normalized() if nrm[k].length_squared() > 0.0 else Vector3.UP
+		var f := Vector2(v[k].x / SHADE_M - 0.5, v[k].z / SHADE_M - 0.5)
+		var c := Vector2i(floori(f.x), floori(f.y))
+		var t := f - Vector2(c)
+		var n := Vector3.ZERO
+		for q: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+			var w := (t.x if q.x == 1 else 1.0 - t.x) * (t.y if q.y == 1 else 1.0 - t.y)
+			n += (cells.get(c + q, Vector3.ZERO) as Vector3).normalized() * w
+		nrm[k] = n.normalized() if n.length_squared() > 0.0 else Vector3.UP
 	g["n"] = nrm
 
 
@@ -880,7 +1043,7 @@ func _junction_mesh(j: Dictionary) -> void:
 	for k in outline.size():
 		pts.append(Vector3(outline[k].x, heights[k], outline[k].y) - o)
 	var closed: bool = j["kind"] != "end"
-	_drape(g, surf, col, j, centre - o, pts, closed)
+	_drape(g, surf, col, j, centre - o, _crowned(pts, kerb, closed), closed)
 	# Its verges, round the kerbs between the arms (the arms' own run on from their mouths).
 	var verge_col := _verge_colour(surf)
 	var count := pts.size() if closed else pts.size() - 1
@@ -1056,6 +1219,8 @@ func _fan(g: Dictionary, surf: String, col: Color, c: Vector3, pts: Array, close
 ## height across from it (RoadNet.surface_y), easing to the outline's own heights (the arms' mouths) at its edge, so the
 ## through road rides on through it as it does either side and a side road comes into it without a kink.
 func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, pts: Array, closed := false) -> void:
+	if closed and _folds(c, pts) and _sheet(g, surf, col, j, pts):
+		return
 	var o := anchor()
 	var node := int(j["node"])
 	var base := (g["v"] as PackedVector3Array).size()
@@ -1092,48 +1257,249 @@ func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, 
 	g["v"].append_array(v)
 
 
-## A roundabout's island: a kerbed disc of grass a little above the ring.
+## Outline `pts` with points put in across each road's mouth (its sides that aren't kerbs, `kerb`), crowned as the road
+## is there, so the junction's surface meets each road's deck along the whole of its mouth, not only at its edges (a
+## lip the crown's height across the middle of every mouth, else).
+static func _crowned(pts: Array, kerb: PackedByteArray, closed: bool) -> Array:
+	var out := []
+	var n := pts.size()
+	for k in n:
+		out.append(pts[k])
+		if (not closed and k == n - 1) or k >= kerb.size() or kerb[k] == 1:
+			continue
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[(k + 1) % n]
+		for q in range(1, ACROSS - 1):
+			var t := float(q) / float(ACROSS - 1)
+			var f := t * 2.0 - 1.0
+			out.append(a.lerp(b, t) + Vector3(0.0, RoadNet.CROWN * (1.0 - f * f), 0.0))
+	return out
+
+
+## Whether outline `pts` goes back on itself anywhere, seen from `c` (its rings out from there would lie over one another:
+## junctions drawn as one with a road's mouths inside them, or two roads leaving side by side).
+static func _folds(c: Vector3, pts: Array) -> bool:
+	var turn := 0.0
+	for k in pts.size():
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[(k + 1) % pts.size()]
+		var d := wrapf(atan2(b.z - c.z, b.x - c.x) - atan2(a.z - c.z, a.x - c.x), -PI, PI)
+		if d * turn < 0.0:
+			return true
+		if d != 0.0:
+			turn = signf(d)
+	return false
+
+
+## A junction's surface as one sheet, for one whose outline `pts` (block space) folds (_folds): over the outline and the
+## roads between its nodes (a junction drawn as one: its kerbs can cut in across them), points round its edge (the
+## outline's own, and every SHEET_STEP along its longer sides) and over the inside a grid SHEET_STEP apart, joined in
+## triangles (Delaunay, those inside kept), each on its through road's height (RoadNet.surface_y) eased onto the
+## outline's heights as smoothly as can be (each other point's easing the mean of its neighbours', the outline's
+## fixed: a membrane stretched to its rim), so no two faces lie over one another. False where there's no such sheet.
+func _sheet(g: Dictionary, surf: String, col: Color, j: Dictionary, pts: Array) -> bool:
+	var o := anchor()
+	var node := int(j["node"])
+	var n := pts.size()
+	var poly := PackedVector2Array()
+	for p: Vector3 in pts:
+		poly.append(Vector2(p.x, p.z))
+	if Geometry2D.triangulate_polygon(poly).is_empty():
+		return false
+	# (the roads between its nodes, as wide as they are)
+	var nodes: PackedInt32Array = j["nodes"]
+	var r := net.region
+	var area := poly
+	for m in nodes:
+		for ei in r.adjacent[m]:
+			if r.edge_a[ei] != m or not nodes.has(r.edge_b[ei]) or net.mouth(ei, m) < net.length_of(ei):
+				continue
+			var line := PackedVector2Array()
+			var len := net.length_of(ei)
+			var s := 0.0
+			while s < len + SHEET_STEP:
+				line.append(net.point_at(ei, minf(s, len)) - Vector2(o.x, o.z))
+				s += SHEET_STEP
+			for road: PackedVector2Array in Geometry2D.offset_polyline(line, net.width_of(ei) * 0.5):
+				var merged := Geometry2D.merge_polygons(area, road)
+				var best := PackedVector2Array()
+				for q: PackedVector2Array in merged:
+					if not Geometry2D.is_polygon_clockwise(q) == Geometry2D.is_polygon_clockwise(area) or q.size() <= best.size():
+						continue
+					best = q
+				if best.size() >= 3:
+					area = best
+	var fixed := {}   # the outline's own points: Vector2i (cm) -> its height less its through road's there
+	var y_of := func(q: Vector2) -> float: return net.surface_y(node, q + Vector2(o.x, o.z))
+	var key := func(q: Vector2) -> Vector2i: return Vector2i(roundi(q.x * 100.0), roundi(q.y * 100.0))
+	for k in n:
+		fixed[key.call(poly[k])] = (pts[k] as Vector3).y - float(y_of.call(poly[k]))
+	var at := PackedVector2Array()
+	var ease := PackedFloat32Array()   # each point's height less its through road's there
+	var held := PackedByteArray()      # 1 where it's the outline's
+	var m := area.size()
+	for k in m:
+		var a := area[k]
+		var b := area[(k + 1) % m]
+		var cuts := maxi(1, ceili(a.distance_to(b) / SHEET_STEP))
+		var ea = fixed.get(key.call(a))
+		var eb = fixed.get(key.call(b))
+		for q in cuts:
+			var p := a.lerp(b, float(q) / cuts)
+			if not at.is_empty() and (at[at.size() - 1].distance_squared_to(p) < 0.01 or (k == m - 1 and at[0].distance_squared_to(p) < 0.01)):
+				continue   # (two points of the outline at one spot)
+			at.append(p)
+			# (along a side of the outline's own, its heights between its points; elsewhere eased with the rest)
+			var both: bool = ea != null and eb != null and (q == 0 or poly.find(b) == (poly.find(a) + 1) % n or poly.find(a) == (poly.find(b) + 1) % n)
+			if q == 0 and ea != null:
+				ease.append(float(ea))
+				held.append(1)
+			elif both:
+				var ya := float(ea) + float(y_of.call(a))
+				var yb := float(eb) + float(y_of.call(b))
+				ease.append(lerpf(ya, yb, float(q) / cuts) - float(y_of.call(p)))
+				held.append(1)
+			else:
+				ease.append(0.0)
+				held.append(0)
+	var lo := area[0]
+	var hi := area[0]
+	for q in area:
+		lo = lo.min(q)
+		hi = hi.max(q)
+	var x := lo.x + SHEET_STEP * 0.5
+	while x < hi.x:
+		var z := lo.y + SHEET_STEP * 0.5
+		while z < hi.y:
+			var q := Vector2(x, z)
+			if Geometry2D.is_point_in_polygon(q, area):
+				var clear := INF
+				for k in m:
+					clear = minf(clear, Geometry2D.get_closest_point_to_segment(q, area[k], area[(k + 1) % m]).distance_to(q))
+				if clear > SHEET_STEP * 0.4:
+					at.append(q)
+					ease.append(0.0)
+					held.append(0)
+			z += SHEET_STEP
+		x += SHEET_STEP
+	var tris := Geometry2D.triangulate_delaunay(at)
+	var kept := PackedInt32Array()
+	var next := []   # each point's neighbours
+	next.resize(at.size())
+	for k in at.size():
+		next[k] = {}
+	for t in tris.size() / 3:
+		var ia := tris[t * 3]
+		var ib := tris[t * 3 + 1]
+		var ic := tris[t * 3 + 2]
+		if not Geometry2D.is_point_in_polygon((at[ia] + at[ib] + at[ic]) / 3.0, area):
+			continue
+		kept.append_array([ia, ib, ic])
+		for e: Array in [[ia, ib], [ib, ic], [ic, ia]]:
+			next[e[0]][e[1]] = true
+			next[e[1]][e[0]] = true
+	if kept.is_empty():
+		return false
+	# (the rest eased as the mean of its neighbours, over and over: the outline's own stay)
+	for _pass in SHEET_PASSES:
+		for k in at.size():
+			if held[k] == 1 or (next[k] as Dictionary).is_empty():
+				continue
+			var sum := 0.0
+			for w: int in next[k]:
+				sum += ease[w]
+			ease[k] = sum / (next[k] as Dictionary).size()
+	var base := (g["v"] as PackedVector3Array).size()
+	var v := PackedVector3Array()
+	for k in at.size():
+		v.append(Vector3(at[k].x, float(y_of.call(at[k])) + ease[k], at[k].y))
+		g["uv"].append(at[k] / 3.0)
+		g["c"].append(col)
+	for t in kept.size() / 3:
+		var i0 := kept[t * 3]
+		var i1 := kept[t * 3 + 1]
+		var i2 := kept[t * 3 + 2]
+		if (v[i1] - v[i0]).cross(v[i2] - v[i0]).y < 0.0:
+			var sw := i1
+			i1 = i2
+			i2 = sw
+		g["i"].append_array([base + i0, base + i2, base + i1])
+		_face(surf, v[i0], v[i1], v[i2])
+	g["v"].append_array(v)
+	return true
+
+
+## A roundabout's island: a kerbed disc of grass a little above the ring, its kerb round the ring's own inner edge
+## (RoadNet.island_rim) and tilted with its deck, so it neither leaves a gap nor stands on the road.
 func _island(j: Dictionary) -> void:
 	var r := float(j["island"])
 	if r <= 0.5:
 		return
 	var a: Dictionary = arrays["island"]
-	var c: Vector3 = j["pos"] - anchor()
-	var n := 24
+	var o := anchor()
+	var full := net.junction_of(int(j["node"]))
+	var c: Vector3 = j["pos"] - o
+	var rim := net.island_rim(full)
+	var n := rim.size()
+	# The deck's height under (block space) x, z.
+	var deck := func(x: float, z: float) -> float:
+		return net.ring_y(full, Vector2(x + o.x, z + o.z)) - o.y
+	var at := func(d: Vector3, dist: float, up: float) -> Vector3:
+		var p := c + d * dist
+		return Vector3(p.x, deck.call(p.x, p.z) + up, p.z)
+	var mid := Vector3(c.x, deck.call(c.x, c.z), c.z)
 	for k in n:
 		var t0 := TAU * k / n
 		var t1 := TAU * (k + 1) / n
 		var d0 := Vector3(sin(t0), 0.0, -cos(t0))
 		var d1 := Vector3(sin(t1), 0.0, -cos(t1))
-		var top := Vector3(0.0, ISLAND_H, 0.0)
-		var low := Vector3(0.0, -0.1, 0.0)
+		var r0 := rim[k]
+		var r1 := rim[(k + 1) % n]
 		# Grass in from the kerb, then (on an island big enough) a mound rising gently to its middle, as the planned
 		# road's roundabouts have (the ring just inside the kerb is kept flat: the chevron boards stand on it).
-		var flat := r - MOUND_IN if r > MOUND_FROM else 0.0
-		_up(a, c + d0 * flat + top, c + d0 * (r - ISLAND_KERB) + top, c + d1 * (r - ISLAND_KERB) + top, ISLAND_GRASS)
-		_up(a, c + d0 * flat + top, c + d1 * (r - ISLAND_KERB) + top, c + d1 * flat + top, ISLAND_GRASS)
+		var f0 := r0 - MOUND_IN if r > MOUND_FROM else 0.0
+		var f1 := r1 - MOUND_IN if r > MOUND_FROM else 0.0
+		var k0: Vector3 = at.call(d0, r0 - ISLAND_KERB, ISLAND_H)
+		var k1: Vector3 = at.call(d1, r1 - ISLAND_KERB, ISLAND_H)
+		var g0: Vector3 = at.call(d0, f0, ISLAND_H)
+		var g1: Vector3 = at.call(d1, f1, ISLAND_H)
+		_up(a, g0, k0, k1, ISLAND_GRASS)
+		_up(a, g0, k1, g1, ISLAND_GRASS)
+		_face("grass", g0, k0, k1)
+		_face("grass", g0, k1, g1)
 		for ring in 3:
-			var r0 := flat * (1.0 - ring / 3.0)
-			var r1 := flat * (1.0 - (ring + 1) / 3.0)
-			var y0 := Vector3.UP * (ISLAND_H + MOUND_H * (ring / 3.0))
-			var y1 := Vector3.UP * (ISLAND_H + MOUND_H * ((ring + 1) / 3.0))
-			_up(a, c + d0 * r0 + y0, c + d1 * r0 + y0, c + d1 * r1 + y1, ISLAND_GRASS.darkened(0.06 * ring))
+			var s0 := 1.0 - ring / 3.0
+			var s1 := 1.0 - (ring + 1) / 3.0
+			var u0 := ISLAND_H + MOUND_H * (ring / 3.0)
+			var u1 := ISLAND_H + MOUND_H * ((ring + 1) / 3.0)
+			var p00: Vector3 = at.call(d0, f0 * s0, u0)
+			var p10: Vector3 = at.call(d1, f1 * s0, u0)
+			var p11: Vector3 = at.call(d1, f1 * s1, u1)
+			var p01: Vector3 = at.call(d0, f0 * s1, u1)
+			_up(a, p00, p10, p11, ISLAND_GRASS.darkened(0.06 * ring))
+			_face("grass", p00, p10, p11)
 			if ring < 2:
-				_up(a, c + d0 * r0 + y0, c + d1 * r1 + y1, c + d0 * r1 + y1, ISLAND_GRASS.darkened(0.06 * ring))
-		_up(a, c + d0 * (r - ISLAND_KERB) + top, c + d0 * r + top, c + d1 * r + top, KERB)
-		_up(a, c + d0 * (r - ISLAND_KERB) + top, c + d1 * r + top, c + d1 * (r - ISLAND_KERB) + top, KERB)
-		# The kerb's face, out towards the ring.
-		AdventureProps._quad(a, c + d0 * r + low, c + d1 * r + low, c + d1 * r + top, c + d0 * r + top, KERB)
-		_face("grass", c + top, c + d0 * r + top, c + d1 * r + top)
+				_up(a, p00, p11, p01, ISLAND_GRASS.darkened(0.06 * ring))
+				_face("grass", p00, p11, p01)
+		var e0: Vector3 = at.call(d0, r0, ISLAND_H)
+		var e1: Vector3 = at.call(d1, r1, ISLAND_H)
+		_up(a, k0, e0, e1, KERB)
+		_up(a, k0, e1, k1, KERB)
+		_face("grass", k0, e0, e1)
+		_face("grass", k0, e1, k1)
+		# The kerb's face, down past the ring's deck.
+		var l0: Vector3 = at.call(d0, r0, -0.1)
+		var l1: Vector3 = at.call(d1, r1, -0.1)
+		AdventureProps._quad(a, l0, l1, e1, e0, KERB)
 	# Shrubs on the mound.
 	if r > MOUND_FROM:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash(["island", int(j["node"])])
 		for k in SHRUBS:
 			var ang := rng.randf() * TAU
-			var at := rng.randf_range(0.3, r - MOUND_IN - 0.8)
-			var rise := ISLAND_H + MOUND_H * (1.0 - at / (r - MOUND_IN)) - 0.1
-			AdventureProps.blob(a, c + Vector3(sin(ang) * at, rise, -cos(ang) * at), Vector3(1.0, 0.8, 1.0) * rng.randf_range(0.6, 1.1),
+			var out := rng.randf_range(0.3, r - MOUND_IN - 0.8)
+			var rise := ISLAND_H + MOUND_H * (1.0 - out / (r - MOUND_IN)) - 0.1
+			AdventureProps.blob(a, at.call(Vector3(sin(ang), 0.0, -cos(ang)), out, rise), Vector3(1.0, 0.8, 1.0) * rng.randf_range(0.6, 1.1),
 				SHRUB_COLOURS[k % SHRUB_COLOURS.size()], rng.randi())
 
 
