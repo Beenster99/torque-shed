@@ -225,8 +225,9 @@ static func _limits_at_ends(signs: Dictionary, net: RoadNet, p: Dictionary, q: D
 		if differs:
 			var side := dir * (-1.0 if bool(st["left"]) else 1.0)
 			var e := float(q["e"])
-			_limit_sign(signs, RoadMarkings._point(q, s, side * (e + RoadMarkings.SIGN_OUT), -0.3),
-				-RoadMarkings._along(q, s) * dir, here, str(r.class_of(ei)), ctx)
+			var foot := _clear(net, q, s, side * (e + RoadMarkings.SIGN_OUT))
+			if foot.is_finite():
+				_limit_sign(signs, foot, -RoadMarkings._along(q, s) * dir, here, str(r.class_of(ei)), ctx)
 
 
 ## Where piece `p` crosses into a place's houses (and out): the limit sign each way where it changes, the name board
@@ -262,16 +263,27 @@ static func _places_crossed(signs: Dictionary, labels: Array, net: RoadNet, p: D
 				var coming_in := dir == din
 				var side := dir * (-1.0 if bool(st["left"]) else 1.0)
 				var facing := -RoadMarkings._along(q, sc) * dir
-				if inside != outside:
-					_limit_sign(signs, RoadMarkings._point(q, sc, side * (e + RoadMarkings.SIGN_OUT), -0.3), facing,
-						inside if coming_in else outside, str(p["class"]), ctx)
+				var at_limit := _clear(net, q, sc, side * (e + RoadMarkings.SIGN_OUT))
+				if inside != outside and at_limit.is_finite():
+					_limit_sign(signs, at_limit, facing, inside if coming_in else outside, str(p["class"]), ctx)
 				if coming_in or bool(ctx["end_board"]):
 					var bs := sc + din * BOARD_IN
-					var foot := RoadMarkings._point(q, bs, side * (e + RoadMarkings.SIGN_OUT + 0.5), -0.3)
+					# (its posts either side of its middle, across the road: its near one SIGN_OUT + 0.5 off the edge)
+					var foot := _clear(net, q, bs, side * (e + RoadMarkings.SIGN_OUT + 0.5 + _board_w(str(pl["name"])) * 0.38))
+					if not foot.is_finite():
+						continue
 					_name_board(signs, labels, foot, -RoadMarkings._along(q, bs) * dir, str(pl["name"]), not coming_in, ctx)
 
 
 # ---------------------------------------------------------------------------- the signs
+
+## Where a sign beside piece `q` at `s`, `lat` across it, stands clear of the road (RoadMarkings.clear_of_road), moved
+## out from the piece. Vector3.INF where it can't.
+static func _clear(net: RoadNet, q: Dictionary, s: float, lat: float) -> Vector3:
+	var foot := RoadMarkings._point(q, s, lat, -0.3)
+	return RoadMarkings.clear_of_road(net, foot, q["o"], foot - RoadMarkings._point(q, s, 0.0, -0.3))
+
+
 
 ## A speed limit sign for `kmh` on a pole at `foot` facing `facing`: the red ring with the limit in black (km/h, or
 ## mph where the country uses them), Britain's national limit disc where it's the open road's, or America's and
@@ -311,11 +323,16 @@ static func _rect(w: float, h: float) -> Array:
 	return [Vector2(-w * 0.5, -h * 0.5), Vector2(w * 0.5, -h * 0.5), Vector2(w * 0.5, h * 0.5), Vector2(-w * 0.5, h * 0.5)]
 
 
+
+## How wide a place's name board for `name` is (m).
+static func _board_w(name: String) -> float:
+	return clampf(0.5 + name.length() * 0.2, 1.2, 4.0)
+
 ## A place's name board on two posts at `foot` facing `facing`, in the country's colours (going out, its end board:
 ## the name struck through in red), the name a label.
 static func _name_board(a: Dictionary, labels: Array, foot: Vector3, facing: Vector3, name: String, end: bool, ctx: Dictionary) -> void:
 	var cols: Array = ctx["board"]
-	var w := clampf(0.5 + name.length() * 0.2, 1.2, 4.0)
+	var w := _board_w(name)
 	var h := 0.62
 	var y := 1.5
 	var across := Vector3.UP.cross(facing).normalized()
@@ -354,7 +371,10 @@ static func _fingerposts(a: Dictionary, labels: Array, net: RoadNet, j: Dictiona
 		var right := Vector3(cos(h), 0.0, sin(h))
 		var p := net.point_at(ei, s)
 		var side := -1.0 if bool(st["left"]) else 1.0
-		var foot := Vector3(p.x, net.road_y(ei, s) - 0.3, p.y) + right * side * (float(arm["width"]) * 0.5 + 1.6) - o
+		var foot := RoadMarkings.clear_of_road(net, Vector3(p.x, net.road_y(ei, s) - 0.3, p.y) + right * side * (float(arm["width"]) * 0.5 + 1.6) - o,
+			o, right * side)
+		if not foot.is_finite():
+			continue
 		var far := float(to["d"]) * ROAD_FACTOR / (1609.344 if bool(ctx["miles"]) else 1000.0)
 		var text := "%s  %d" % [to["name"], roundi(far)]
 		if far < 0.875:

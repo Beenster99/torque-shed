@@ -202,6 +202,14 @@ func test_signs() -> void:
 			var xf: Transform3D = l["xf"]
 			ok = ok and xf.origin.is_finite() and absf(xf.basis.z.y) < 0.01 and str(l["text"]) != ""
 		check(ok, "each label stands upright, facing along the ground")
+		# Every pole's and bollard's foot is off the road: none stands on the carriageway or a junction's surface.
+		var o := b.anchor()
+		var in_road := 0
+		for v: Vector3 in m["signs"]["v"]:
+			var on := net.locate(v.x + o.x, v.z + o.z, -1, false)
+			if v.y + o.y < rb.flat.call(v.x + o.x, v.z + o.z) + 0.3 and not on.is_empty() and bool(on["on_road"]):
+				in_road += 1
+		check(in_road == 0, "no sign's post stands in the road (%d points of them on it)" % in_road)
 	# Limits: 30 mph coming into Testby and the national limit going out, the side road's 30 off the main road.
 	var limits := RoadSigns.put_up(b, _kit("GB"), RoadMarkings.style_of(_kit("GB")), AdventureProps.new_arrays())
 	check(limits == gb["labels"], "it signs the same every time")
@@ -235,5 +243,6 @@ func test_signs() -> void:
 	var island_y := float(j["pos"].y) - rbk.anchor().y + RoadBlock.ISLAND_H
 	var on := true
 	for p: Vector3 in ch_gb["v"]:
-		on = on and p.y > island_y - 0.05 and Vector2(p.x, p.z).distance_to(Vector2(j["pos"].x - rbk.anchor().x, j["pos"].z - rbk.anchor().z)) < float(j["island"]) + 0.2
+		var off := Vector2(p.x, p.z) - Vector2(j["pos"].x - rbk.anchor().x, j["pos"].z - rbk.anchor().z)
+		on = on and p.y > island_y - 0.05 and off.length() < rnet.island_r(rnet.junction_of(int(j["node"])), RoadNet._bearing(off)) + 0.2
 	check(on, "the chevrons stand on the island")
