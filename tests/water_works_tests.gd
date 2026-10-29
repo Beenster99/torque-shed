@@ -82,7 +82,8 @@ static func rows_of(features: Dictionary, region := "") -> Dictionary:
 func test_lay_out() -> void:
 	var r := Roads.tee()
 	r.features = {"points": [
-		["waterfall", 302.0, 260.0, 12.0, null, null, "", "fall"],     # on the valley's east side
+		["waterfall", 302.0, 260.0, 8.0, null, null, "", "fall"],      # on the valley's east side
+		["waterfall", 330.0, 262.0, 40.0, null, null, "", "deep"],     # mapped deeper than the land goes
 		["geyser", 200.0, 450.0, null, null, null, "", "gey"],
 		["blowhole", 432.0, 350.0, null, null, null, "", "blow"],
 		["waterfall", 250.0, 100.0, null, null, null, "", "onroad"],   # on the main road: left out
@@ -122,11 +123,14 @@ func test_lay_out() -> void:
 	for xf: Transform3D in walls:
 		top = maxf(top, xf.origin.y + xf.basis.y.length())
 	check(not walls.is_empty() and top > 26.0 and top < 29.5, "the short dam a wall 18 m up off the floor (%.1f)" % top)
-	# The fall: a sheet from its lip down 12 m.
+	# The fall: a sheet from its lip down 8 m; one mapped deeper than the land stops at the ground.
 	var sheets: Array = items.get("sheet", [])
 	var fall := sheets.filter(func(xf): return Vector2(xf.origin.x, xf.origin.z).distance_to(Vector2(302, 260)) < 2.0)
-	check(not fall.is_empty() and absf((fall[0] as Transform3D).basis.y.length() - 12.0) < 1.5,
-		"the waterfall falls its mapped 12 m (%s)" % str(fall))
+	check(not fall.is_empty() and absf((fall[0] as Transform3D).basis.y.length() - 8.0) < 1.5,
+		"the waterfall falls its mapped 8 m (%s)" % str(fall))
+	var deep := sheets.filter(func(xf): return Vector2(xf.origin.x, xf.origin.z).distance_to(Vector2(330, 262)) < 2.0)
+	var deep_drop := (deep[0] as Transform3D).basis.y.length() if not deep.is_empty() else 0.0
+	check(deep_drop > 4.0 and deep_drop < 20.0, "one mapped 40 m over land 13 m deep ends at the ground (%.1f m)" % deep_drop)
 	check(sheets.all(func(xf): return Vector2(xf.origin.x, xf.origin.z).distance_to(Vector2(250, 100)) > 10.0),
 		"the one the map puts on the road isn't there")
 	# The harbour: the breakwater out of the sea, a light at its end, the pier on legs with lamps, boats.

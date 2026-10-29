@@ -52,10 +52,10 @@ const ERUPT := 0.18
 
 ## The stones and finishes the pieces come in (vertex colours).
 const STONES := {
-	"concrete": Color(0.64, 0.63, 0.6), "gritstone": Color(0.4, 0.38, 0.34), "sandstone": Color(0.6, 0.54, 0.44),
+	"concrete": Color(0.55, 0.54, 0.52), "gritstone": Color(0.33, 0.31, 0.28), "sandstone": Color(0.47, 0.42, 0.35),
 	"limestone": Color(0.78, 0.75, 0.68), "granite": Color(0.52, 0.5, 0.5), "basalt": Color(0.24, 0.24, 0.25),
 	"laterite": Color(0.62, 0.42, 0.3), "brick": Color(0.52, 0.27, 0.2), "render": Color(0.88, 0.86, 0.8),
-	"timber": Color(0.3, 0.22, 0.15), "rock": Color(0.44, 0.43, 0.41), "grass": Color(0.32, 0.43, 0.2),
+	"timber": Color(0.3, 0.22, 0.15), "rock": Color(0.44, 0.43, 0.41), "grass": Color(0.36, 0.5, 0.19),
 	"gravel": Color(0.54, 0.5, 0.43), "sinter": Color(0.85, 0.8, 0.7), "black": Color(0.07, 0.07, 0.08),
 	"white": Color(0.92, 0.92, 0.9), "steel": Color(0.32, 0.34, 0.36)}
 ## The narrowboats' and painted boats' colours, picked by each one's seed.
@@ -530,9 +530,10 @@ static func _waterfall(b: _Block, p: Vector2, mapped, k: Dictionary, id: String)
 	var best := INF
 	var dir := Vector2(0, 1)
 	var run := 6.0
+	var far := clampf(float(mapped) if mapped != null else 0.0, 30.0, 120.0)
 	for i in 12:
 		var d := Vector2.from_angle(TAU * i / 12.0)
-		for r: float in [5.0, 10.0, 18.0, 30.0]:
+		for r: float in [5.0, 10.0, 18.0, 30.0, far * 0.6, far]:
 			var g := b.bare(p + d * r)
 			if not is_nan(g) and g < best:
 				best = g
@@ -540,7 +541,9 @@ static func _waterfall(b: _Block, p: Vector2, mapped, k: Dictionary, id: String)
 				run = r
 	var drop := clampf(top - best if best < INF else 0.0, FALL_LEAST, FALL_MOST)
 	if mapped != null and float(mapped) > 0.0:
-		drop = clampf(float(mapped), 1.0, 1000.0)
+		# (as high as the map says, but never down below the land: where the ground is too coarse to hold the gorge,
+		# the fall ends where the ground does rather than standing in it like a board)
+		drop = clampf(minf(float(mapped), top - best + 1.0 if best < INF else float(mapped)), 1.0, 1000.0)
 	var w := clampf(float(k.get("width", 4.0 + drop * 0.25)) * (0.75 + 0.5 * roll(id + "w")), 2.0, 40.0)
 	var lean := minf(run * 0.3, drop * 0.15)
 	var across := Vector3(-dir.y, 0.0, dir.x)
@@ -875,8 +878,9 @@ static func _harbour_light(b: _Block, line: PackedVector2Array, id: String, rise
 		if is_nan(b.water(other)) or b.bare(end) < b.bare(other):
 			var y := maxf(b.bare(end), wl) + rise
 			var colour := "red" if roll(id + "light") < 0.5 else "green"
-			b.put("light_tower:" + colour, piece(b.local(end, y), Vector2(0, 1), Vector3.ONE))
-			b.put("beacon:" + colour, piece(b.local(end, y), Vector2(0, 1), Vector3.ONE))
+			var size := Vector3.ONE * clampf(length(line) / 150.0, 1.0, 2.5)   # a long pier's light is a lighthouse
+			b.put("light_tower:" + colour, piece(b.local(end, y), Vector2(0, 1), size))
+			b.put("beacon:" + colour, piece(b.local(end, y), Vector2(0, 1), size))
 			b.dress["lamps"] = true
 
 
