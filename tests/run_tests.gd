@@ -126,6 +126,7 @@ func _run_all() -> void:
 	await _t(&"_test_acceleration")
 	await _t(&"_test_performance")
 	await _t(&"_test_style_performance")
+	await _t(&"_test_fuel_real_world")
 	await _t(&"_test_style_launch")
 	await _t(&"_test_turning")
 	await _t(&"_test_braking")
@@ -1111,21 +1112,21 @@ func _test_performance() -> void:
 
 ## Each style's stock bike (the one Contracts.style_build makes, which project bikes and contracts
 ## start from) against the spread of real bikes of that style: power, top speed, UK mpg at a steady
-## 90 km/h and wet weight. See docs/bike_style_performance.md for where the figures come from.
+## 90 km/h (what the makers quote, better than the real-world average) and wet weight. See docs/bike_style_performance.md for where the figures come from.
 const STYLE_REAL := {
-	"classic": {"hp": [20, 80], "mph": [75, 120], "mpg": [50, 95], "kg": [180, 240]},
-	"cafe": {"hp": [45, 115], "mph": [105, 140], "mpg": [42, 65], "kg": [180, 225]},
-	"bobber": {"hp": [70, 110], "mph": [100, 125], "mpg": [40, 58], "kg": [220, 300]},
-	"chopper": {"hp": [80, 110], "mph": [100, 120], "mpg": [36, 50], "kg": [230, 320]},
-	"cruiser": {"hp": [50, 110], "mph": [100, 125], "mpg": [40, 60], "kg": [220, 320]},
-	"scrambler": {"hp": [60, 110], "mph": [105, 130], "mpg": [45, 60], "kg": [185, 230]},
-	"adventure": {"hp": [95, 150], "mph": [115, 140], "mpg": [44, 60], "kg": [215, 270]},
-	"roader": {"hp": [65, 170], "mph": [120, 160], "mpg": [45, 60], "kg": [205, 260]},
-	"tourer": {"hp": [120, 165], "mph": [120, 155], "mpg": [40, 55], "kg": [270, 390]},
-	"sport": {"hp": [75, 130], "mph": [135, 160], "mpg": [45, 65], "kg": [185, 210]},
-	"race": {"hp": [195, 230], "mph": [175, 200], "mpg": [35, 45], "kg": [190, 215]},
-	"naked": {"hp": [75, 130], "mph": [130, 150], "mpg": [45, 65], "kg": [180, 215]},
-	"supermoto": {"hp": [40, 80], "mph": [90, 115], "mpg": [50, 70], "kg": [140, 165]},
+	"classic": {"hp": [20, 80], "mph": [75, 120], "mpg": [60, 95], "kg": [180, 240]},
+	"cafe": {"hp": [45, 115], "mph": [105, 140], "mpg": [55, 75], "kg": [180, 225]},
+	"bobber": {"hp": [70, 110], "mph": [100, 125], "mpg": [50, 68], "kg": [220, 300]},
+	"chopper": {"hp": [80, 110], "mph": [100, 120], "mpg": [46, 62], "kg": [230, 320]},
+	"cruiser": {"hp": [50, 110], "mph": [100, 125], "mpg": [46, 65], "kg": [220, 320]},
+	"scrambler": {"hp": [60, 110], "mph": [105, 130], "mpg": [55, 72], "kg": [185, 230]},
+	"adventure": {"hp": [95, 150], "mph": [115, 140], "mpg": [52, 70], "kg": [215, 270]},
+	"roader": {"hp": [65, 170], "mph": [120, 160], "mpg": [55, 72], "kg": [205, 260]},
+	"tourer": {"hp": [120, 165], "mph": [120, 155], "mpg": [45, 62], "kg": [270, 390]},
+	"sport": {"hp": [75, 130], "mph": [135, 160], "mpg": [58, 85], "kg": [185, 210]},
+	"race": {"hp": [195, 230], "mph": [175, 200], "mpg": [45, 62], "kg": [190, 215]},
+	"naked": {"hp": [75, 130], "mph": [130, 150], "mpg": [52, 70], "kg": [180, 215]},
+	"supermoto": {"hp": [40, 80], "mph": [90, 115], "mpg": [60, 80], "kg": [140, 165]},
 	"mx": {"hp": [45, 75], "mph": [75, 95], "mpg": [0, 999], "kg": [100, 135]},
 }
 
@@ -1150,6 +1151,57 @@ func _test_style_performance() -> void:
 		"a race bike is faster than a sports bike, then a naked bike, then a cruiser")
 	check(top.call("mx") < top.call("supermoto"), "an MX bike's short gearing runs out before a supermoto's")
 	check(thirst.call("race") < thirst.call("classic"), "a superbike drinks more than a classic twin")
+
+
+## UK mpg ridden at a steady 70 mph on the automatic box, against what owners of real bikes of
+## the style get on the motorway (a little under their all-round average).
+const STYLE_MOTORWAY_MPG := {"naked": [35, 55], "cruiser": [33, 50], "race": [32, 48]}
+
+
+## Fuel as it's really burnt: holding 70 mph the stock bikes do what real ones do; the automatic box
+## cruises in top gear low in the revs; an injected engine burns nothing on the overrun while
+## carburettors still sip; and flat out the engine runs rich.
+func _test_fuel_real_world() -> void:
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	for style in STYLE_MOTORWAY_MPG:
+		var parts := Contracts.style_build(style)
+		var st := {"i": 0.1, "f0": -1.0, "x0": Vector3.ZERO}
+		var r := await ride(parts, 30.0, func(bk, t):
+			var err: float = 31.3 - bk.speed
+			st["i"] = clampf(st["i"] + err * 0.08 * dt, 0.0, 1.0)
+			bk.throttle = clampf(st["i"] + err * 0.12, 0.0, 1.0)
+			if t > 20.0 and st["f0"] < 0.0:
+				st["f0"] = bk.fuel_litres
+				st["x0"] = bk.global_position)
+		var bike: Bike = r["bike"]
+		var mpg: float = (bike.global_position - st["x0"]).length() / 1000.0 / (st["f0"] - bike.fuel_litres) \
+			/ Units.KM_PER_MILE * Units.LITRES_PER_GALLON
+		var band: Array = STYLE_MOTORWAY_MPG[style]
+		var nm := PartsDB.style_name(style)
+		check(mpg >= band[0] and mpg <= band[1], "%s: %.0f mpg at a steady 70 (real ones %d-%d)" % [nm, mpg, band[0], band[1]])
+		check(bike.gear == bike.build.gear_count() and bike.rpm < bike.build.redline * 0.6,
+			"%s: cruises at 70 in top gear (gear %d at %.0f rpm)" % [nm, bike.gear, bike.rpm])
+		await _done(r)
+	# Rolling off from speed in gear: fuel injection cuts the petrol, carburettors don't quite.
+	var used := {}
+	for fuel in ["throttle_bodies", "single_carb"]:
+		var r := await ride({"fuel": fuel}, 14.0, func(bk, t): bk.throttle = 1.0 if t < 8.0 else 0.0)
+		var bike: Bike = r["bike"]
+		var before := bike.fuel_litres
+		for i in 120:
+			await get_tree().physics_frame
+		check(bike.gear > 0 and bike.speed > 5.0, "%s: still rolling in gear on the overrun" % fuel)
+		used[fuel] = before - bike.fuel_litres
+		await _done(r)
+	check(is_zero_approx(used["throttle_bodies"]) and used["single_carb"] > 0.0,
+		"on the overrun injection burns nothing, carbs a little (%.4f L vs %.4f L)" % [used["throttle_bodies"], used["single_carb"]])
+	var b := BikeBuild.new()
+	var rpm := b.peak_torque_rpm
+	var full := b.engine_power_kw(rpm)
+	check(b.fuel_rate(full, rpm) / full > b.fuel_rate(full * 0.7, rpm) / (full * 0.7),
+		"flat out the engine runs rich: more petrol for each kW than at part throttle")
+	check(b.overrun_rate(rpm) == 0.0 if b.injected else b.overrun_rate(rpm) < b.fuel_rate(0.0, rpm),
+		"the overrun burns less than holding the revs with the throttle cracked")
 
 
 ## Flat-out launches on the stock bikes, ridden, against magazine 0-60 mph times: a superbike
@@ -24093,3 +24145,5 @@ func _test_road_markings_paint() -> void:
 
 func _test_road_signs() -> void:
 	_road_markings().test_signs()
+
+

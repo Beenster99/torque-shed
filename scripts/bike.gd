@@ -158,6 +158,7 @@ var rear_brake := 0.0
 var lean_input := 0.0      # -1 lean left .. 1 lean right
 var body_shift := 0.0      # -1 weight back (wheelies) .. 1 weight forward
 var auto_shift := true
+var _shift_load := 0.0     # the throttle the automatic box goes by (see auto_up_rpm)
 ## Riding realism: 0 is the full sim (nothing holds the front, a slide that grips again can
 ## throw you off), 0.5 and up the rider protects the front tyre and smooths the throttle, 1 also
 ## balances the bike for you. Kept as "assist" for the settings file and tests.
@@ -1214,6 +1215,9 @@ func _update_engine(delta: float) -> void:
 	if mode_rate > 0.0 and throttle > _throttle_eff:
 		rate = minf(rate, mode_rate)
 	_throttle_eff = move_toward(_throttle_eff, _cruise_throttle(delta), rate * delta)
+	# What the automatic box reads as how hard the rider is asking: the throttle over the last
+	# second or so, but a sudden handful straight away (a kickdown).
+	_shift_load = _throttle_eff if _throttle_eff > _shift_load + 0.35 else lerpf(_shift_load, _throttle_eff, 1.0 - exp(-1.5 * delta))
 	var v_ground := maxf(absf(speed), 1.0)
 	var spin_ratio: float = (rear["omega"] * float(rear.get("r_eff", build.rear_radius)) - v_ground) / v_ground
 	var tc_target := 1.0
@@ -1273,7 +1277,9 @@ func _update_engine(delta: float) -> void:
 			rpm = wheel_rpm if engaged else move_toward(rpm, 0.0, 3000.0 * delta)
 	else:
 		engine_kw = made * rpm * TAU / 60.0 / 1000.0
-		var burnt := build.fuel_rate(engine_kw, rpm) / 3600.0 * delta
+		# Throttle shut in gear above tickover, the back wheel turning the engine: the overrun.
+		var overrun := engaged and not neutral and not shifting and _throttle_eff < 0.02 and rpm > idle_rpm * 1.3
+		var burnt := (build.overrun_rate(rpm) if overrun else build.fuel_rate(engine_kw, rpm)) / 3600.0 * delta
 		fuel_litres -= burnt
 		fuel_used += burnt
 		if fuel_litres <= 0.0:
@@ -1289,14 +1295,34 @@ func _update_engine(delta: float) -> void:
 		if engine_on and throttle > 0.05:
 			_select(gear_for_speed())
 	elif auto_shift and not shifting and _since_shift > 0.6:
-		# Shift on road speed, not engine revs, so wheelspin doesn't confuse the gearbox.
+		# Shift on road speed, not engine revs, so wheelspin doesn't confuse the gearbox. Like a
+		# real automatic box it shifts on how hard the rider is asking: gently, it changes up
+		# early and lets the engine lug along in a tall gear (as a rider saving petrol would);
+		# flat out it holds each gear nearly to the red line, and opening up kicks it down.
 		var road_rpm := absf(speed) / build.rear_radius * ratio * 60.0 / TAU
-		if road_rpm > build.redline * 0.9 and gear < build.gear_count():
+		var up_at := auto_up_rpm(_shift_load)
+		var floor_rpm := auto_floor_rpm(_shift_load)
+		if gear < build.gear_count() and road_rpm > up_at \
+				and road_rpm * build.overall_ratio(gear + 1) / ratio > floor_rpm * 1.1:
 			_select(gear + 1)
 		elif gear > 1:
 			var lower_rpm := road_rpm * build.overall_ratio(gear - 1) / ratio
-			if road_rpm < build.peak_torque_rpm * 0.5 and lower_rpm < build.redline * 0.8:
+			if road_rpm < floor_rpm and lower_rpm < minf(build.redline * 0.8, up_at):
 				_select(gear - 1)
+
+
+## The revs the automatic box changes up at, at `load` (0 rolling along .. 1 flat out): just
+## past the middle of the torque band cruising, nearly the red line flat out.
+func auto_up_rpm(load: float) -> float:
+	var easy := maxf(build.peak_torque_rpm * 0.55, build.idle_rpm * 3.0)
+	return lerpf(easy, build.redline * 0.9, pow(clampf(load, 0.0, 1.0), 1.5))
+
+
+## The revs the automatic box won't lug below at `load`: it changes down under them. Low when
+## cruising, up in the torque band when the rider asks for more.
+func auto_floor_rpm(load: float) -> float:
+	var lug := maxf(build.peak_torque_rpm * 0.32, build.idle_rpm * 1.8)
+	return lerpf(lug, build.peak_torque_rpm * 0.7, pow(clampf(load, 0.0, 1.0), 2.0))
 
 
 ## The revs the engine idles at now: higher on the choke while it's cold.

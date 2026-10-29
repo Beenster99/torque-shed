@@ -41,7 +41,15 @@ mpg is UK (imperial), and UK mpg ÷ 1.201 = US mpg.
   - Packed dirt: 0.03-0.05
   - Soft soil or sand: 0.06-0.15
 - **Transmission loss.** Rear-wheel power is about 88-92% of crank power on chain drive and 85-88% on shaft or belt.
-- **Fuel.** Real-world fuel use runs 10-20% worse than claimed.
+- **Fuel.** Real-world fuel use runs 10-20% worse than claimed. A steady 56 mph does 10-40% better than the
+  all-round average, a steady 70 mph about 15-25% worse than 56. Ridden in the game (October 2026 fuel round), the
+  stock bikes do about the real-world average on a mixed run (away to 50 mph, hold it, roll off) and a little under
+  it at a steady 70 on the automatic box: cruiser 38 mpg, naked 40, race bike 39, tourer 35, classic 49.
+- **How the game burns it.** Petrol goes as the work done plus the engine turning itself over: friction (0.9 bar
+  plus 0.13 bar per 1,000 rpm, more for big valves and more cylinders) and pumping (0.75 bar with the throttle
+  shut, nothing wide open), at 0.30 L per kWh, 15% richer flat out. Fuel injection cuts the petrol on the
+  overrun; carburettors burn about tickover's worth. The automatic box changes up early when cruising, so the
+  engine runs low in its revs, and holds each gear to near the red line flat out.
 - **Gearing.** On road bikes, top speed is limited by drag. MX bikes, with 5 close ratios and about 3.6:1 final
   drive, run out of revs first, at about 85 mph.
 
@@ -62,7 +70,8 @@ These are the stock bikes from `Contracts.style_build`, as tuned in October 2026
 adding the 1500 and 1800 cc V-twins.
 - **Ride 0-60:** a real full-throttle run on flat tarmac, with auto-shift and rider assist at 0.5.
 - **Top mph:** the build's estimate.
-- **mpg:** a steady 90 km/h in top gear, in UK gallons. The real figures are real-world averages.
+- **mpg:** a steady 90 km/h in top gear, in UK gallons (the bike's own book figure in the game). The real figures
+  in brackets are real-world averages, which a steady 56 mph should beat by 10-40%.
 
 `_test_style_performance` and `_test_style_launch` in `tests/run_tests.gd` keep them there, and the
 `_test_realism_*` tests (`tests/bike_realism_tests.gd`) keep every style's ridden 0-60, stop and full-lean turn in
@@ -70,20 +79,20 @@ the bands below.
 
 | Style | hp (real) | Top mph (real) | Ride 0-60 s (real) | UK mpg (real) | Wet kg (real) |
 |---|---|---|---|---|---|
-| Classic | 54 (47) | 102 (110) | 5.1 (5.5) | 60 (60) | 211 (224) |
-| Cafe racer | 98 (105) | 128 (130) | 3.8 (3.7) | 52 (50) | 197 (214) |
-| Bobber | 98 (94) | 115 (115) | 4.3 (4.0) | 49 (48) | 263 (255) |
-| Chopper | 101 (100) | 118 (115) | 4.4 (4.0) | 47 (43) | 282 (308) |
-| Cruiser | 101 (87) | 120 (112) | 4.4 (4.2) | 48 (48) | 309 (290) |
-| Scrambler | 77 (80) | 111 (118) | 4.6 (3.9) | 52 (52) | 208 (222) |
-| Adventure | 101 (106) | 121 (130) | 4.2 (3.4) | 48 (51) | 251 (226; GS Adventure 269) |
-| Tall roader | 114 (117) | 137 (140) | 3.2 (3.3) | 52 (52) | 213 (219) |
-| Tourer | 153 (136) | 147 (135) | 3.7 (3.4) | 41 (47) | 277 (343) |
-| Sports bike | 119 (95) | 156 (145) | 3.3 (3.3) | 62 (50) | 197 (200) |
-| Race bike | 222 (206) | 186 (186) | 3.0 (2.9) | 43 (40) | 206 (199) |
-| Naked | 124 (117) | 137 (145) | 3.2 (3.1) | 47 (52) | 201 (190) |
-| Supermoto | 71 (74) | 109 (110) | 3.7 (3.5) | 54 (58) | 149 (158) |
-| MX bike | 71 (63 crank) | 85 (85) | 5.5 on tarmac | 44 | 130 (109) |
+| Classic | 54 (47) | 102 (110) | 5.1 (5.5) | 74 (60) | 211 (224) |
+| Cafe racer | 98 (105) | 128 (130) | 3.8 (3.7) | 67 (50) | 197 (214) |
+| Bobber | 98 (94) | 115 (115) | 4.3 (4.0) | 60 (48) | 263 (255) |
+| Chopper | 101 (100) | 118 (115) | 4.4 (4.0) | 56 (43) | 282 (308) |
+| Cruiser | 101 (87) | 120 (112) | 4.4 (4.2) | 58 (48) | 309 (290) |
+| Scrambler | 77 (80) | 111 (118) | 4.6 (3.9) | 65 (52) | 208 (222) |
+| Adventure | 101 (106) | 121 (130) | 4.2 (3.4) | 60 (51) | 251 (226; GS Adventure 269) |
+| Tall roader | 114 (117) | 137 (140) | 3.2 (3.3) | 66 (52) | 213 (219) |
+| Tourer | 153 (136) | 147 (135) | 3.7 (3.4) | 52 (47) | 277 (343) |
+| Sports bike | 119 (95) | 156 (145) | 3.3 (3.3) | 79 (50) | 197 (200) |
+| Race bike | 222 (206) | 186 (186) | 3.0 (2.9) | 57 (40) | 206 (199) |
+| Naked | 124 (117) | 137 (145) | 3.2 (3.1) | 60 (52) | 201 (190) |
+| Supermoto | 71 (74) | 109 (110) | 3.7 (3.5) | 72 (58) | 149 (158) |
+| MX bike | 71 (63 crank) | 85 (85) | 5.5 on tarmac | 62 | 130 (109) |
 
 **Tyre grip on dry tarmac:**
 
