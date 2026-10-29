@@ -866,6 +866,13 @@ func _run_all() -> void:
 	await _t(&"_test_scenery_filing")
 	await _t(&"_test_scenery_postcards_sheet")
 	await _t(&"_test_scenery_ride")
+	print("Ride Anywhere v2, phase D: water and coast (dams, falls, locks, harbours)")
+	await _t(&"_test_water_kits")
+	await _t(&"_test_water_lay_out")
+	await _t(&"_test_water_dam_under_road")
+	await _t(&"_test_water_canal")
+	await _t(&"_test_water_blocks_meet")
+	await _t(&"_test_water_regions")
 	print("Ride Anywhere v2, phase D round 1: the skyline (turbines, pylons and wires, towers, lifts)")
 	await _t(&"_test_skyline_models")
 	await _t(&"_test_skyline_lines")
@@ -22787,6 +22794,34 @@ func _test_scenery_postcards_sheet() -> void:
 
 func _test_scenery_ride() -> void:
 	await _scenery().test_ride()
+
+
+func _water() -> RefCounted:
+	return load("res://tests/water_works_tests.gd").new(self)
+
+
+func _test_water_kits() -> void:
+	_water().test_kits()
+
+
+func _test_water_lay_out() -> void:
+	_water().test_lay_out()
+
+
+func _test_water_dam_under_road() -> void:
+	_water().test_dam_under_road()
+
+
+func _test_water_canal() -> void:
+	_water().test_canal()
+
+
+func _test_water_blocks_meet() -> void:
+	_water().test_blocks_meet()
+
+
+func _test_water_regions() -> void:
+	_water().test_regions()
 
 
 func _skyline() -> RefCounted:
