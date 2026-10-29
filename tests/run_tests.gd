@@ -814,6 +814,7 @@ func _run_all() -> void:
 	await _t(&"_test_smooth_real")
 	print("Simon's v0.22.0 round: deleting a wall-mounted diary, and a more dipped dipped beam")
 	await _t(&"_test_diary_delete_take_down")
+	await _t(&"_test_diary_remove_all")
 	await _t(&"_test_beam_dipped")
 	await _t(&"_test_beam_ride")
 	await _t(&"_test_smooth_surface")
@@ -11446,7 +11447,7 @@ func _scrolls_to_end(col: Control) -> bool:
 ## Simon's recorded sounds: every file there and loading, loops looping, takes picked without
 ## repeats, the made sounds kept as stand-ins, horns as parts that play their recordings (held,
 ## once or repeating), the gear lever on shifts, the phone ringing for a new customer, and the
-## birds singing now and then rather than all the time.
+## shed's ambience without birds.
 func _test_recorded_sounds() -> void:
 	var missing := []
 	var loops_ok := true
@@ -11574,25 +11575,19 @@ func _test_recorded_sounds() -> void:
 	check(Sfx.phone_calls == calls + 2, "a new customer rings the sales office phone")
 	Contracts.customers().erase(990001)
 	Contracts.customers().erase(990002)
-	# Birds: short bursts with long gaps, fewer at midday.
-	var sung := {}
-	for hour in [8.0, 13.0]:
-		amb._rng.seed = 5
-		amb.birds_singing = false
-		amb.bird_timer = 0.0
-		var on := 0.0
-		var bursts := 0
-		var t := 0.0
-		while t < 3600.0:
-			var was := amb.birds_singing
-			on += amb._bird_burst(0.5, hour) * 0.5
-			if amb.birds_singing and not was:
-				bursts += 1
-			t += 0.5
-		sung[hour] = [on / 3600.0, bursts]
-	check(float(sung[8.0][0]) < 0.3 and int(sung[8.0][1]) >= 20, "birds sing now and then in the morning: %d bursts, %.0f%% of the time" % [sung[8.0][1], float(sung[8.0][0]) * 100.0])
-	check(float(sung[13.0][0]) < float(sung[8.0][0]) * 0.5, "and much less at midday (%.0f%%)" % (float(sung[13.0][0]) * 100.0))
-	check(SfxAmbience.BIRD_DB <= -14.0, "and quieter than before")
+	# No birds round the shed (Simon, 2026-10-29): none of the ambience's players carries birdsong.
+	var yard := Node3D.new()
+	add_child(yard)
+	var outside := SfxAmbience.new()
+	add_child(outside)
+	outside.set_process(false)
+	outside.setup(yard)
+	var birdsong := Sfx.stream("birds")
+	var heard := outside.get_children().filter(func(p): return p is AudioStreamPlayer)
+	var sings := heard.any(func(p): return p.stream != null and (p.stream == birdsong or p.stream.resource_path.get_file().begins_with("birds")))
+	check(birdsong != null and heard.size() >= 4 and not sings, "no birds sing round the shed (%d players)" % heard.size())
+	outside.free()
+	yard.free()
 	amb.queue_free()
 	host.queue_free()
 	Shed.stop()
@@ -23937,6 +23932,10 @@ func _test_smooth_ride() -> void:
 
 func _test_diary_delete_take_down() -> void:
 	load("res://tests/diary_delete_tests.gd").new(self).test_take_down()
+
+
+func _test_diary_remove_all() -> void:
+	load("res://tests/diary_delete_tests.gd").new(self).test_remove_all()
 
 
 func _test_beam_dipped() -> void:

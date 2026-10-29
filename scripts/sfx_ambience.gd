@@ -6,9 +6,9 @@ extends Node
 ## switched on, the air compressor in the back corner cycling on and off (sooner while the
 ## spray gun or the sandblaster is drawing air), the roof creaking now and then, the sales
 ## office's sliding doors and its phone ringing as a customer calls ahead, and outside the
-## wind, distant traffic, birds by day (now and then, in short bursts, quietest at midday),
-## crickets at night and, near the High Street, the town's bustle (people talking and walking
-## by, pigeons; quieter at night), all heard muffled from indoors.
+## wind, distant traffic, crickets at night and, near the High Street, the town's bustle (people
+## talking and walking by; quieter at night), all heard muffled from indoors. No birds: Simon
+## asked for the shed without them (2026-10-29).
 
 ## The compressor's spot: the shed's back left corner, low down.
 const COMPRESSOR_POS := Workshop.CENTER + Vector3(-Workshop.HALF.x + 0.6, 0.5, -Workshop.HALF.y + 0.6)
@@ -17,11 +17,6 @@ const COMP_REST := Vector2(50.0, 120.0)
 const COMP_RUN := Vector2(10.0, 20.0)
 ## How much faster the tank empties (so the compressor comes on sooner) while air tools run.
 const AIR_DRAIN := 8.0
-## Birdsong comes in bursts this many seconds long, with gaps this long between them (longer
-## round midday, when birds are quietest), at this level (dB).
-const BIRD_BURST := Vector2(4.0, 10.0)
-const BIRD_GAP := Vector2(25.0, 70.0)
-const BIRD_DB := -16.0
 ## The town's bustle: full within the first distance (m) of the High Street, gone past the second.
 const TOWN_NEAR := 25.0
 const TOWN_FAR := 150.0
@@ -32,7 +27,6 @@ var workshop: Node3D
 var _tone: AudioStreamPlayer
 var _hum: AudioStreamPlayer
 var _wind: AudioStreamPlayer
-var _birds: AudioStreamPlayer
 var _crickets: AudioStreamPlayer
 var _town: AudioStreamPlayer
 var _comp: AudioStreamPlayer3D
@@ -44,9 +38,6 @@ var _creak_timer := 20.0
 var _lit := {}
 var _door_amount := -1.0
 var _door_dir := 0
-## Birds: singing a burst now or not, and how long until that changes.
-var birds_singing := false
-var bird_timer := 0.0
 ## Customers already known about, so only a new one rings the phone.
 var _customers_seen := {}
 var _customers_primed := false
@@ -56,11 +47,9 @@ var _customer_check := 0.0
 func setup(shed: Node3D) -> void:
 	workshop = shed
 	_rng.randomize()
-	bird_timer = _rng.randf_range(5.0, 25.0)
 	_tone = _player("tone_shed", "SFX")
 	_hum = _player("hum_fluoro", "SFX")
 	_wind = _player("amb_out", "AmbOut")
-	_birds = _player("birds", "AmbOut")
 	_crickets = _player("crickets", "AmbOut")
 	_town = _player("amb_town", "AmbOut")
 	_comp = Sfx.make_loop_player(shed)
@@ -74,7 +63,7 @@ func setup(shed: Node3D) -> void:
 func _exit_tree() -> void:
 	if is_instance_valid(_comp) and _comp.playing:
 		_comp.stop()
-	for p in [_tone, _hum, _wind, _birds, _crickets, _town]:
+	for p in [_tone, _hum, _wind, _crickets, _town]:
 		if is_instance_valid(p):
 			p.stop()
 
@@ -110,11 +99,10 @@ func _process_body(delta: float) -> void:
 	_set_stream(_hum, "hum_led" if led else "hum_fluoro")
 	_fade(_hum, 1.0 if indoors and lit(room) else 0.0, delta, -10.0 if not led else -14.0)
 	_watch_lights(room)
-	# Outside: wind and traffic always; birds by day, crickets at night, both hushed by rain.
+	# Outside: wind and traffic always, crickets at night, hushed by rain.
 	var dark := Daylight.darkness()
 	var rain := Weather.current.rain if Weather.current else 0.0
 	_fade(_wind, home, delta, -8.0)
-	_fade(_birds, home * (1.0 - dark) * (1.0 - rain * 0.85) * _bird_burst(delta), delta, BIRD_DB)
 	_fade(_crickets, home * dark * (1.0 - rain * 0.7), delta, -14.0)
 	_fade(_town, home * town_level(Sfx.listener_pos, dark, rain), delta, TOWN_DB)
 	_muffle_outdoors(indoors, room, delta)
@@ -129,21 +117,6 @@ func _process_body(delta: float) -> void:
 static func town_level(at: Vector3, dark: float, rain: float) -> float:
 	var near := 1.0 - smoothstep(TOWN_NEAR, TOWN_FAR, TownPeople._street_distance(at))
 	return near * lerpf(1.0, 0.3, dark) * (1.0 - rain * 0.5)
-
-
-## How much the birds are singing now (0..1): an occasional burst, then a long quiet gap that
-## stretches round midday, when they sing less and more softly than at dawn and dusk.
-func _bird_burst(delta: float, hour := -1.0) -> float:
-	var h := Daylight.time_of_day() if hour < 0.0 else hour
-	var midday := clampf(1.0 - absf(h - 13.0) / 4.0, 0.0, 1.0)
-	bird_timer -= delta
-	if bird_timer <= 0.0:
-		birds_singing = not birds_singing
-		if birds_singing:
-			bird_timer = _rng.randf_range(BIRD_BURST.x, BIRD_BURST.y) * (1.0 - 0.3 * midday)
-		else:
-			bird_timer = _rng.randf_range(BIRD_GAP.x, BIRD_GAP.y) * (1.0 + 1.0 * midday)
-	return (1.0 - 0.4 * midday) if birds_singing else 0.0
 
 
 ## A new customer rings the sales office phone as they set off to come in (one already there
