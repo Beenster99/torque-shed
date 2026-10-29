@@ -88,6 +88,7 @@ func test_kits() -> void:
 	check(bad.is_empty(), "every row names a round, a model whose script there is and only real regional kits (%s)" % str(bad))
 	var post := SceneryStreamer.model_mesh("standin:post_D1")
 	check(post is ArrayMesh and post.get_aabb().size.y > 2.0, "the stand-in's script makes its post")
+	check("standin:1" in SceneryStreamer.script_versions().split(","), "each model script's version goes in the builder hash (%s)" % SceneryStreamer.script_versions())
 	# A library of stand-ins only places nothing on an ordinary ride; one real model and it does.
 	var was := standins()
 	check(not SceneryStreamer.models_beyond_standin(), "stand-ins only: an ordinary ride places nothing")

@@ -3,6 +3,8 @@ extends RefCounted
 ## yet, coloured by the round that will, drawn only while SceneryStreamer.show_standins is on (Esc > Debug's scenery
 ## markers). A line or area is marked at its first point in the block. Its models are "post_" and the round ("post_D1").
 
+## Part of the builder hash (SceneryStreamer.script_versions): bump it when lay_out changes what a block holds.
+const VERSION := 1
 ## Each round's stand-in colour.
 const ROUND_COLOURS := {"D1": Color(0.95, 0.3, 0.2), "D2": Color(0.35, 0.35, 0.4), "D3": Color(0.2, 0.55, 0.95),
 	"D4": Color(0.95, 0.95, 0.95), "D5": Color(0.4, 0.8, 0.25), "D6": Color(0.75, 0.55, 0.25),

@@ -201,6 +201,21 @@ static func load_scripts() -> void:
 		script_of(m)
 
 
+## Each model script's own VERSION (0 for one without), "SCRIPT:VERSION,..." in name order: part of the builder hash
+## (AdventureCrew.builds), so a round bumps its script's VERSION when its lay_out changes what a block holds.
+static func script_versions() -> String:
+	var names := {}
+	for m in models():
+		names[m.get_slice(":", 0)] = true
+	var out := PackedStringArray()
+	for n: String in names.keys():
+		var s := script_of(n + ":")
+		var v = s.get_script_constant_map().get("VERSION", 0) if s != null else -1
+		out.append("%s:%s" % [n, str(v)])
+	out.sort()
+	return ",".join(out)
+
+
 ## The script of model "SCRIPT:MODEL" (loaded the first time), or null when there's no such script.
 static func script_of(model: String) -> Script:
 	var name := model.get_slice(":", 0)

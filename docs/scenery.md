@@ -105,6 +105,8 @@ static func dress(node: Node3D, data) -> void            # optional, main thread
     junction.
   - `SceneryStreamer.in_block(key, p) -> bool`: whether region point `p` is in block `key`.
   - `SceneryStreamer.kit(kind, region_id)`, `SceneryStreamer.kind_reach(kind)`.
+- A canal's locks are `canal_lock`: its lines tagged `lock=yes` (named from `lock_name`) and the water polygons
+  tagged `water=lock` (Overture has no lock class: they're in the rows' OpenStreetMap tags, `TAGGED` in the baker).
 - Rail pieces meet end to end: where a line is cut at a cell's edge or a flag change, the pieces either side share
   that point exactly (the same 1e-5 degrees, so the same region-frame point), as do Overture segments that meet.
 - Round 0's script is `standin` (`"standin:post"`): a post at each point (and a line's or area's first point in the
@@ -127,8 +129,8 @@ Region ids are the regional kits' thirteen (`RegionKit.regions()`), chosen per p
 1. Add `scripts/scenery/<round>.gd` with `lay_out`, `mesh` and, if it wants, `dress` (above). Never edit
    `scenery_streamer.gd`; ask D0 for a change to it.
 2. Set its kinds' rows in the kit library to its models (`"<script>:<model>"`), with any region rows.
-3. Bump `SceneryStreamer.VERSION` when a script's `lay_out` changes what a block holds (the kit library's MD5 is in the
-   builder hash already; the scripts aren't).
+3. Give the script a `const VERSION := 1` and bump it when its `lay_out` changes what a block holds: each model
+   script's VERSION is in the builder hash (`SceneryStreamer.script_versions`), as is the kit library's MD5.
 4. Only when the map has a class not in `CLASSES`: add the row and its kit row, and run **Map the features** once.
 5. Keep the budget: a block under 2 ms on a worker once its roads' heights are known, and one draw call a model a
    block.
