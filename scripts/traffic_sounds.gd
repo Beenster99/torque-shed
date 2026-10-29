@@ -152,6 +152,7 @@ static func make_loop(which: String) -> AudioStreamWAV:
 	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	wav.loop_begin = 0
 	wav.loop_end = n
+	EngineSynth.pad_loop(wav)   # no click each time round when pitched down
 	return wav
 
 

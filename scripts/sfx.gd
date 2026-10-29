@@ -813,6 +813,7 @@ func _wav(sound: String, v: int) -> AudioStreamWAV:
 		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		wav.loop_begin = 0
 		wav.loop_end = bytes.size() / 2
+		EngineSynth.pad_loop(wav)   # no click each time round when pitched down
 	return wav
 
 

@@ -13,7 +13,10 @@ extends Node3D
 
 signal backfired(strength: float)
 
-const SLOTS := 3              # players per layer: two buckets crossfading and one spare
+const SLOTS := 4              # players per layer: two buckets crossfading, and two fading out or spare
+## A loop's player eases to its new loudness over about this long (s), coming in from silence
+## and going out to it: never started or stopped mid-wave, which clicks (Simon heard them).
+const GAIN_EASE := 0.02
 ## How loud each side is from where you're listening: in the helmet you hear the airbox, on
 ## the chase camera the pipe, and other people's bikes are mostly pipe.
 const VIEW_MIX := {"rider": [0.75, 1.3], "chase": [1.0, 0.7], "remote": [1.0, 0.55], "room": [1.0, 0.85]}
@@ -76,6 +79,8 @@ var lever_sounds := 0
 
 var _players := {}            # layer -> Array of AudioStreamPlayer3D
 var _assigned := {}           # layer -> {bucket: player}
+var _fading := {}             # layer -> players no longer wanted, easing out before they stop
+var _gain := {}               # player -> its loudness now (linear), easing to what's wanted
 var _oneshot_ex: Array = []
 var _oneshot_en: Array = []
 var _next_ex := 0
@@ -134,6 +139,7 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 				list.append(_make_player(exhaust_at if layer.begins_with("ex") else engine_at, 12.0 if layer.begins_with("ex") else 8.0))
 			_players[layer] = list
 			_assigned[layer] = {}
+			_fading[layer] = []
 		for i in 4:
 			_oneshot_ex.append(_make_player(exhaust_at, 14.0))
 		for i in 2:
@@ -154,6 +160,10 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 		for b in _assigned[layer]:
 			_assigned[layer][b].stop()
 		_assigned[layer] = {}
+		for p in _fading[layer]:
+			p.stop()
+		_fading[layer] = []
+	_gain = {}
 
 
 func _make_player(parent: Node3D, unit: float) -> AudioStreamPlayer3D:
@@ -241,16 +251,27 @@ func _process_body(delta: float) -> void:
 		var loud: float = 0.75 + 0.35 * float(spec["loud"]) if str(w[0]).begins_with("ex") else 1.0
 		wanted[w[0]][w[1]] = [g * loud, float(w[3])]
 	for layer in EngineSynth.LAYERS:
-		_drive_layer(layer, wanted[layer])
+		_drive_layer(layer, wanted[layer], delta)
 
 
-## Points this layer's players at the buckets wanted, at their volume and pitch; frees the rest.
-func _drive_layer(layer: String, want: Dictionary) -> void:
+## Points this layer's players at the buckets wanted, at their volume and pitch; the rest fade
+## out and stop. Every player eases to its loudness (GAIN_EASE), so none starts or stops with a click.
+func _drive_layer(layer: String, want: Dictionary, delta: float) -> void:
 	var have: Dictionary = _assigned[layer]
+	var fading: Array = _fading[layer]
+	var ease := 1.0 - exp(-delta / GAIN_EASE)
 	for b in have.keys():
 		if not want.has(b):
-			have[b].stop()
+			fading.append(have[b])
 			have.erase(b)
+	for p: AudioStreamPlayer3D in fading.duplicate():
+		var g: float = float(_gain.get(p, 0.0)) * (1.0 - ease)
+		_gain[p] = g
+		if g < 0.0005:
+			p.stop()
+			fading.erase(p)
+		else:
+			p.volume_db = linear_to_db(g) + volume_db
 	for b in want:
 		var gain: float = want[b][0]
 		var pitch: float = want[b][1]
@@ -258,21 +279,40 @@ func _drive_layer(layer: String, want: Dictionary) -> void:
 		if p == null:
 			if gain < 0.002:
 				continue
-			for cand: AudioStreamPlayer3D in _players[layer]:
-				if not have.values().has(cand):
-					p = cand
-					break
-			if p == null:
-				continue
 			var stream: AudioStream = bank.streams[layer][b]
 			if stream == null:
 				continue
+			p = _free_player(layer)
+			if p == null:
+				continue
 			p.stream = stream
 			have[b] = p
+			_gain[p] = 0.0
 			# Start each loop somewhere different so layers don't line up and phase.
 			p.play(_rng.randf() * stream.get_length())
-		p.volume_db = linear_to_db(maxf(gain, 0.00001)) + volume_db
+		var g: float = float(_gain.get(p, 0.0))
+		g += (gain - g) * ease
+		_gain[p] = g
+		p.volume_db = linear_to_db(maxf(g, 0.00001)) + volume_db
 		p.pitch_scale = clampf(pitch, 0.05, 4.0)
+
+
+## A player of this layer's that isn't in use: an idle one, else the quietest one fading out
+## (stopped now; it's nearly silent).
+func _free_player(layer: String) -> AudioStreamPlayer3D:
+	var have: Dictionary = _assigned[layer]
+	var fading: Array = _fading[layer]
+	for cand: AudioStreamPlayer3D in _players[layer]:
+		if not have.values().has(cand) and not fading.has(cand):
+			return cand
+	var quiet: AudioStreamPlayer3D = null
+	for p: AudioStreamPlayer3D in fading:
+		if quiet == null or float(_gain.get(p, 0.0)) < float(_gain.get(quiet, 0.0)):
+			quiet = p
+	if quiet:
+		quiet.stop()
+		fading.erase(quiet)
+	return quiet
 
 
 ## Gear changes, pops, the starter: the things that happen rather than hum.
