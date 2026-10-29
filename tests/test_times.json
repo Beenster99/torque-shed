@@ -631,5 +631,10 @@
 	"_test_net_world": 9000,
 	"_test_net_flats": 300,
 	"_test_net_sites": 12000,
-	"_test_net_saves": 30
+	"_test_net_saves": 30,
+	"_test_scenery_features": 1500,
+	"_test_scenery_kits": 50,
+	"_test_scenery_lay_out": 300,
+	"_test_scenery_filing": 50,
+	"_test_scenery_ride": 9000
 }

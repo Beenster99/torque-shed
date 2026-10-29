@@ -859,6 +859,12 @@ func _run_all() -> void:
 	await _t(&"_test_road_meshes")
 	await _t(&"_test_road_bridges")
 	await _t(&"_test_road_ride")
+	print("Ride Anywhere v2, phase D: the scenery pipeline (features, the kit library, the scenery streamer)")
+	await _t(&"_test_scenery_features")
+	await _t(&"_test_scenery_kits")
+	await _t(&"_test_scenery_lay_out")
+	await _t(&"_test_scenery_filing")
+	await _t(&"_test_scenery_ride")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22747,6 +22753,30 @@ func _test_road_bridges() -> void:
 
 func _test_road_ride() -> void:
 	await _roads().test_ride()
+
+
+func _scenery() -> RefCounted:
+	return load("res://tests/scenery_tests.gd").new(self)
+
+
+func _test_scenery_features() -> void:
+	_scenery().test_features()
+
+
+func _test_scenery_kits() -> void:
+	_scenery().test_kits()
+
+
+func _test_scenery_lay_out() -> void:
+	_scenery().test_lay_out()
+
+
+func _test_scenery_filing() -> void:
+	_scenery().test_filing()
+
+
+func _test_scenery_ride() -> void:
+	await _scenery().test_ride()
 
 
 func _coop() -> RefCounted:

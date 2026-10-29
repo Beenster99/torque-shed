@@ -31,8 +31,12 @@ static func installed(id: String) -> bool:
 	return FileAccess.file_exists(USER_DIR.path_join(id).path_join("region.json"))
 
 
-## The hash of a region folder, as tools/region_bake.py region_hash makes it: SHA-256 over every file but region.json,
+## The hash of a region folder, as tools/region_bake.py region_hash makes it: SHA-256 over every file but region.json
+## and features.json (its scenery: hashed on its own, RealRegion.features_hash, so the roads never change with it),
 ## folders and files in name order, the first 16 hex digits.
+const UNHASHED := ["region.json", "features.json"]
+
+
 static func hash_of_dir(path: String) -> String:
 	var dirs: Array[String] = []
 	_walk(path, "", dirs)
@@ -46,7 +50,7 @@ static func hash_of_dir(path: String) -> String:
 		var files := Array(d.get_files())
 		files.sort()
 		for fn in files:
-			if fn == "region.json":
+			if fn in UNHASHED:
 				continue
 			var full := (path.path_join(rel) if rel != "" else path).path_join(fn)
 			ctx.update(FileAccess.get_file_as_bytes(full))

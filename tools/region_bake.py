@@ -194,7 +194,7 @@ def region_hash(out):
     h = hashlib.sha256()
     for root, _, files in sorted(os.walk(out)):
         for fn in sorted(files):
-            if fn == "region.json":
+            if fn in ("region.json", "features.json"):   # (its scenery is hashed on its own: feature_bake.py)
                 continue
             with open(os.path.join(root, fn), "rb") as f:
                 h.update(f.read())

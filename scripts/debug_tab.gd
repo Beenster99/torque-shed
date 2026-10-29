@@ -157,6 +157,13 @@ func _ready() -> void:
 	net_toggle.button_pressed = AdventureWorld.network
 	net_toggle.toggled.connect(func(on): AdventureWorld.network = on)
 	box.add_child(net_toggle)
+	# Phase D's scenery pipeline (SceneryStreamer): a marker post at every mapped thing no round has modelled yet.
+	var standin_toggle := CheckButton.new()
+	standin_toggle.name = "SceneryStandinsToggle"
+	standin_toggle.text = "Scenery markers: a post at every mapped thing round me not yet modelled, coloured by the round that will model it"
+	standin_toggle.button_pressed = SceneryStreamer.show_standins
+	standin_toggle.toggled.connect(func(on): SceneryStreamer.show_standins = on)
+	box.add_child(standin_toggle)
 	_adv_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
 	_adv_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_adv_note)
