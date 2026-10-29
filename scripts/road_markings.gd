@@ -520,7 +520,8 @@ static func clear_of_road(net: RoadNet, foot: Vector3, o: Vector3, away: Vector3
 	while moved <= CLEAR_REACH:
 		var p := foot + away * moved + o
 		var clear := true
-		for d: Vector3 in [Vector3.ZERO, away * CLEAR_OF, -away * CLEAR_OF, side * CLEAR_OF, -side * CLEAR_OF]:
+		# (where it stands, and CLEAR_OF back towards the road it's beside and either side)
+		for d: Vector3 in [Vector3.ZERO, -away * CLEAR_OF, side * CLEAR_OF, -side * CLEAR_OF]:
 			var on := net.locate(p.x + d.x, p.z + d.z, -1, false)
 			if not on.is_empty() and bool(on["on_road"]):
 				clear = false
