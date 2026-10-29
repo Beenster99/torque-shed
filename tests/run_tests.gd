@@ -304,6 +304,7 @@ func _run_all() -> void:
 	await _t(&"_test_engine_bank")
 	await _t(&"_test_engine_events")
 	await _t(&"_test_engine_users")
+	await _t(&"_test_engine_loop_clicks")
 	await _t(&"_test_engine_samples")
 	await _t(&"_test_gear_clunks")
 	await _t(&"_test_starter_variety")
@@ -814,6 +815,7 @@ func _run_all() -> void:
 	await _t(&"_test_smooth_real")
 	print("Simon's v0.22.0 round: deleting a wall-mounted diary, and a more dipped dipped beam")
 	await _t(&"_test_diary_delete_take_down")
+	await _t(&"_test_diary_remove_all")
 	await _t(&"_test_beam_dipped")
 	await _t(&"_test_beam_ride")
 	await _t(&"_test_smooth_surface")
@@ -9878,15 +9880,17 @@ func _test_upgrade_session() -> void:
 	# Rebuilding again changes nothing, and nothing piles up.
 	var count := ws.upgrades.get_child(0).get_child_count()
 	var lights := ws._shed_lights.size()
-	var nodes_now := ws.get_child_count()
-	var names_before := ws.get_children().map(func(n): return "%s:%s" % [n.name, n.get_class()])
+	# (A one-shot sound playing on the shed, a creak or a light ticking on, frees itself: not counted.)
+	var lasting := func(): return ws.get_children().filter(func(n): return not (n is AudioStreamPlayer3D))
+	var nodes_now: int = lasting.call().size()
+	var names_before: Array = lasting.call().map(func(n): return "%s:%s" % [n.name, n.get_class()])
 	ws.upgrades._sig = "?"
 	ws.upgrades.sync()
 	await get_tree().process_frame
 	check(ws.upgrades.get_child_count() == 1 and ws.upgrades.get_child(0).get_child_count() == count and ws._shed_lights.size() == lights
 		and ws._bay_screens.size() == 7, "a rebuild replaces what was there")
-	var names_after := ws.get_children().map(func(n): return "%s:%s" % [n.name, n.get_class()])
-	check(ws.get_child_count() == nodes_now, "nothing is left behind on the workshop (gone %s, new %s)" % [
+	var names_after: Array = lasting.call().map(func(n): return "%s:%s" % [n.name, n.get_class()])
+	check(lasting.call().size() == nodes_now, "nothing is left behind on the workshop (gone %s, new %s)" % [
 		str(names_before.filter(func(x): return not names_after.has(x))), str(names_after.filter(func(x): return not names_before.has(x)))])
 	# Gone again in a new shed.
 	Shed.upgrades = {}
@@ -10950,6 +10954,75 @@ func _test_engine_users() -> void:
 	await get_tree().process_frame
 
 
+## Simon heard the engines clicking: a loop played a touch slower than it was made (the revs just
+## under a loop's rpm) clicked every time it came round, Godot's resampler reading past its end
+## into silence; and a loop's player was started and stopped mid-wave as the revs moved between
+## loops. Every loop now carries its own start on past its end, players ease in and out, and a
+## made two-stroke's loop is warmed up long enough to come round seamlessly.
+func _test_engine_loop_clicks() -> void:
+	var spec := EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0})
+	var x := EngineSynth.render_loop(spec, "ex_on", 3000.0)
+	var w := EngineSynth.to_stream(EngineSynth.to_bytes(x), true)
+	var pad_ok := w.loop_end == x.size() and w.data.size() == (x.size() + EngineSynth.LOOP_PAD) * 2
+	for i in EngineSynth.LOOP_PAD:
+		pad_ok = pad_ok and w.data.decode_s16((x.size() + i) * 2) == w.data.decode_s16(i * 2)
+	check(pad_ok, "a made engine loop carries its first %d samples on past its end" % EngineSynth.LOOP_PAD)
+	check(EngineSynth.to_stream(EngineSynth.to_bytes(x), false).data.size() == x.size() * 2, "a one-shot isn't padded")
+	var rec := "res://audio/engines/2stroke_1/ex_on_5760.wav"
+	var r1 := EngineBank._load_wav(rec, true)
+	var r2 := EngineBank._load_wav(rec, true)
+	var frames := r1.data.size() / 2 - EngineSynth.LOOP_PAD
+	check(r1.loop_end == frames and r2.loop_end == frames and r2.data.size() == r1.data.size() and frames > 1000,
+		"so does a recorded loop, padded once however often it's loaded (%d, %d of %d)" % [r1.loop_end, r2.loop_end, frames])
+	var amb: AudioStreamWAV = Sfx.stream("amb_out")
+	check(amb.data.size() == (amb.loop_end + EngineSynth.LOOP_PAD) * 2, "and the shed's looped sounds")
+	# A made two-stroke comes round seamlessly: one more loop's warm-up changes nothing.
+	var two := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	var rpm := EngineSynth.bucket_rpms(two)[-2]
+	var info := EngineSynth.loop_info(two, rpm)
+	var a := EngineSynth.render_loop(two, "ex_on", rpm, 3)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(EngineSynth.signature(two)) + 3 * 7919
+	var b := EngineSynth._exhaust(two, info["rpm"], 1.0, EngineSynth._cycle_events(two, info, true, rng), info["n"],
+		EngineSynth.WARMUP_TWO_STROKE + int(info["n"]), rng)
+	var jump := 0.0
+	var e := 0.0
+	for i in a.size():
+		jump = maxf(jump, absf(a[i] - b[i]))
+		e += a[i] * a[i]
+	jump /= sqrt(e / a.size())
+	check(jump < 0.01, "a made two-stroke's loop comes round without a jump (%.4f of its level)" % jump)
+	# The revs leaping from one loop to another: the old ones fade out, the new ones fade in.
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(spec)
+	es.bank.bake_now()
+	es.running = true
+	es.throttle = 1.0
+	es.rpm = 3000.0
+	for i in 60:
+		es._process(1.0 / 60.0)
+	var before: Array = es._assigned["ex_on"].values()
+	es.rpm = 7000.0
+	es._process(1.0 / 60.0)
+	var after: Array = es._assigned["ex_on"].values()
+	var easing := before.all(func(p): return p.playing and not after.has(p))
+	var coming: AudioStreamPlayer3D = after[0] if not after.is_empty() else null
+	var want := linear_to_db(0.0001)
+	if coming:
+		for wgt in es.bank.mix_weights(7000.0, es._load):
+			if wgt[0] == "ex_on" and es._assigned["ex_on"].get(wgt[1]) == coming:
+				want = linear_to_db(float(wgt[2]) * es._level)
+	check(before.size() > 0 and easing, "a loop the revs have left behind fades out rather than stopping dead")
+	check(coming != null and coming.volume_db < want - 3.0, "and the new one comes in from quiet (%.1f dB, heading for about %.1f)" %
+		[coming.volume_db if coming else 0.0, want])
+	for i in 30:
+		es._process(1.0 / 60.0)
+	check(before.all(func(p): return not p.playing or after.has(p)) and (es._fading["ex_on"] as Array).is_empty(), "and stops once it's silent")
+	es.queue_free()
+	await get_tree().process_frame
+
+
 func _test_engine_samples() -> void:
 	# Recorded sounds dropped into user://engine_samples/<layout>_<exhaust> replace the synthesised ones.
 	var dir := "user://engine_samples/boxer_straight"
@@ -11446,7 +11519,7 @@ func _scrolls_to_end(col: Control) -> bool:
 ## Simon's recorded sounds: every file there and loading, loops looping, takes picked without
 ## repeats, the made sounds kept as stand-ins, horns as parts that play their recordings (held,
 ## once or repeating), the gear lever on shifts, the phone ringing for a new customer, and the
-## birds singing now and then rather than all the time.
+## shed's ambience without birds.
 func _test_recorded_sounds() -> void:
 	var missing := []
 	var loops_ok := true
@@ -11574,25 +11647,19 @@ func _test_recorded_sounds() -> void:
 	check(Sfx.phone_calls == calls + 2, "a new customer rings the sales office phone")
 	Contracts.customers().erase(990001)
 	Contracts.customers().erase(990002)
-	# Birds: short bursts with long gaps, fewer at midday.
-	var sung := {}
-	for hour in [8.0, 13.0]:
-		amb._rng.seed = 5
-		amb.birds_singing = false
-		amb.bird_timer = 0.0
-		var on := 0.0
-		var bursts := 0
-		var t := 0.0
-		while t < 3600.0:
-			var was := amb.birds_singing
-			on += amb._bird_burst(0.5, hour) * 0.5
-			if amb.birds_singing and not was:
-				bursts += 1
-			t += 0.5
-		sung[hour] = [on / 3600.0, bursts]
-	check(float(sung[8.0][0]) < 0.3 and int(sung[8.0][1]) >= 20, "birds sing now and then in the morning: %d bursts, %.0f%% of the time" % [sung[8.0][1], float(sung[8.0][0]) * 100.0])
-	check(float(sung[13.0][0]) < float(sung[8.0][0]) * 0.5, "and much less at midday (%.0f%%)" % (float(sung[13.0][0]) * 100.0))
-	check(SfxAmbience.BIRD_DB <= -14.0, "and quieter than before")
+	# No birds round the shed (Simon, 2026-10-29): none of the ambience's players carries birdsong.
+	var yard := Node3D.new()
+	add_child(yard)
+	var outside := SfxAmbience.new()
+	add_child(outside)
+	outside.set_process(false)
+	outside.setup(yard)
+	var birdsong := Sfx.stream("birds")
+	var heard := outside.get_children().filter(func(p): return p is AudioStreamPlayer)
+	var sings := heard.any(func(p): return p.stream != null and (p.stream == birdsong or p.stream.resource_path.get_file().begins_with("birds")))
+	check(birdsong != null and heard.size() >= 4 and not sings, "no birds sing round the shed (%d players)" % heard.size())
+	outside.free()
+	yard.free()
 	amb.queue_free()
 	host.queue_free()
 	Shed.stop()
@@ -23941,6 +24008,10 @@ func _test_smooth_ride() -> void:
 
 func _test_diary_delete_take_down() -> void:
 	load("res://tests/diary_delete_tests.gd").new(self).test_take_down()
+
+
+func _test_diary_remove_all() -> void:
+	load("res://tests/diary_delete_tests.gd").new(self).test_remove_all()
 
 
 func _test_beam_dipped() -> void:

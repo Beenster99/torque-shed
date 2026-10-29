@@ -5,8 +5,9 @@ extends ScrollContainer
 ## a million pounds or pay tonight's bills now (host), and start any kind of contract there and then for testing (host):
 ## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
 ## the recovery jobs with the truck granted if the garage hasn't got it. Puncture a tyre, or fix
-## a bike up (now, or by itself whenever it needs it, to keep a long test ride going). The
-## performance profiler and its recording (see PerfOverlay). Every reset asks first.
+## a bike up (now, or by itself whenever it needs it, to keep a long test ride going). Remove
+## all the Adventure Diaries. The performance profiler and its recording (see PerfOverlay). Every
+## reset asks first.
 
 ## How often (seconds) the automatic fix looks the bike you're riding over.
 const AUTO_FIX_EVERY := 3.0
@@ -30,6 +31,7 @@ var auto_fix := false
 var _auto_fix_toggle: CheckButton
 var _auto_fix_t := 0.0
 var _fix_note: Label
+var _diary_note: Label
 var _perf_toggle: CheckButton
 var _perf_note: Label
 var _adv_seed: SpinBox
@@ -141,6 +143,14 @@ func _ready() -> void:
 	box.add_child(_row([_button("Fix my bike now", fix_bike), _auto_fix_toggle]))
 	_fix_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
 	box.add_child(_fix_note)
+
+	# Adventure Diaries (see AdventureDiary): every one on this machine gone, off the bookshelf and any wall.
+	box.add_child(UITheme.label("Adventure Diaries", 15, UITheme.ACCENT))
+	box.add_child(_row([_button("Remove all diaries", func(): _ask("Remove all diaries?",
+		"Every Adventure Diary on this computer is deleted, photos and all, and any adventure photos come off the shed's walls.",
+		"Remove all", remove_all_diaries))]))
+	_diary_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
+	box.add_child(_diary_note)
 
 	# Staff (see Staff): a full payroll at once, whatever the level, and everyone off sick or back.
 	box.add_child(UITheme.label("Staff (host)", 15, UITheme.ACCENT))
@@ -334,6 +344,16 @@ func puncture(side: String, kind: String) -> void:
 		return
 	Shed.request({"a": "puncture", "bike": bike, "side": side, "kind": kind, "debug": true})
 	_tyre_note.text = "Punctured the %s tyre on %s (%s)." % [side, str(Shed.bikes[bike]["name"]), kind]
+
+
+## Deletes every Adventure Diary on this machine (and its albums), and the host takes any
+## adventure photos off the shed's walls. How many diaries went.
+func remove_all_diaries() -> int:
+	var n := AdventureDest.delete_all_here()
+	if Shed.is_authority():
+		Shed.request({"a": "diary_photos_down"})
+	_diary_note.text = "Removed %d %s." % [n, "diary" if n == 1 else "diaries"]
+	return n
 
 
 ## Fixes up the bike you're riding, or the nearest one (see Shed.debug_fix_bike).

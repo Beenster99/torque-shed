@@ -52,8 +52,7 @@ func test_take_down() -> void:
 	AdventureDiary.root = ROOT
 	_wipe(ROOT)
 	AdventureDest.album_path = ""
-	# The album in memory starts empty: earlier tests' rides leave their photos in it under
-	# "Tester", and those would go up again on the hang_album check below.
+	# The album in memory starts empty: earlier tests' rides leave their photos in it under "Tester".
 	var mem_was: Dictionary = AdventureDest._album_mem
 	AdventureDest._album_mem = {}
 	Shed.start_new("Tester", 5)
@@ -103,10 +102,50 @@ func test_take_down() -> void:
 	check(AdventureDiary.load_diary("d1").is_empty() and not DirAccess.dir_exists_absolute(AdventureDiary.folder("d1")),
 		"its diary's deleted, photos and all")
 	check(told.any(func(s): return str(s).contains("deleted its Adventure Diary")), "you're told (%s)" % str(told))
-	check(AdventureDest.album_of("Tester").all(func(p): return str(p["key"]) != "del-1") and AdventureDest.hang_album("Tester") == 0,
-		"the album's forgotten it, so it isn't hung again")
+	check(AdventureDest.album_of("Tester").all(func(p): return str(p["key"]) != "del-1"), "the album's forgotten it")
 	check(Shed.furniture.has(f2) and not AdventureDiary.load_diary("d2").is_empty() and AdventureDiary.list().size() == 1,
 		"the other ride's photo and diary are as they were")
+	Shed.stop()
+	_wipe(ROOT)
+	AdventureDiary.root = root_was
+	AdventureDest.album_path = album_was
+	AdventureDest._album_mem = mem_was
+
+
+## Esc > Debug's Remove all diaries (Simon, 2026-10-29): every diary on this machine deleted,
+## photos and all, the albums emptied, any photos off the shed's walls, and the bookshelf empty.
+func test_remove_all() -> void:
+	var root_was := AdventureDiary.root
+	var album_was := AdventureDest.album_path
+	var mem_was: Dictionary = AdventureDest._album_mem
+	AdventureDiary.root = ROOT
+	_wipe(ROOT)
+	AdventureDest.album_path = ""
+	AdventureDest._album_mem = {}
+	Shed.start_new("Tester", 5)
+	var p1 := _photo("all-1", "Hawes", ["Tester"])
+	var p2 := _photo("all-2", "Malham", ["Tester"])
+	for p in [p1, p2]:
+		AdventureDest.album_add("Tester", p)
+		AdventureDest.hang(p)   # as an older save had them
+	_diary("a1", p1)
+	_diary("a2", p2)
+	var shelf := DiaryShelf.new()
+	t.add_child(shelf)
+	check(AdventureDiary.list().size() == 2 and shelf.diaries.size() == 2 and not AdventureDest.photo_on_wall("all-1").is_empty(),
+		"two diaries on the shelf, their photos on an older save's wall")
+	var tab := DebugTab.new()
+	t.add_child(tab)
+	var n := tab.remove_all_diaries()
+	shelf._process(0.0)
+	check(n == 2 and AdventureDiary.list().is_empty() and not DirAccess.dir_exists_absolute(AdventureDiary.folder("a1")),
+		"Remove all diaries deletes every one, photos and all (%d)" % n)
+	check(shelf.diaries.is_empty(), "and the bookshelf's empty")
+	check(AdventureDest.photo_on_wall("all-1").is_empty() and AdventureDest.photo_on_wall("all-2").is_empty(), "nothing's left on the walls")
+	check(AdventureDest.album_of("Tester").is_empty(), "and the album's empty")
+	check(tab._diary_note.text == "Removed 2 diaries.", "it says so (%s)" % tab._diary_note.text)
+	tab.free()
+	shelf.free()
 	Shed.stop()
 	_wipe(ROOT)
 	AdventureDiary.root = root_was

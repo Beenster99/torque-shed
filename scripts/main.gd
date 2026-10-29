@@ -369,7 +369,7 @@ func _start_session() -> void:
 	menu.new_shed = false
 	menu.new_name = ""
 	if Shed.is_authority() and not Progress._in_tests():
-		AdventureDest.hang_album(Settings.player_name)   # your adventure photos go up in your own shed too
+		Shed.request({"a": "diary_photos_down"})   # diaries stand on the bookshelf, not on the walls: an older save's come down
 	walker = Walker.new()
 	world.add_child(walker)
 	walker.place(Workshop.walker_spawn(Net.local_slot()))

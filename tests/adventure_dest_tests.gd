@@ -74,8 +74,8 @@ func test_build() -> void:
 	await _frames(2)
 
 
-## Arriving: the photo (the crew's names), XP for everyone by the length, the photo hung on the
-## shed wall, and nothing ends till the host rides everyone home.
+## Arriving: the photo (the crew's names), XP for everyone by the length, nothing hung on the
+## shed wall (the diary's on the bookshelf), and nothing ends till the host rides everyone home.
 func test_arrive() -> void:
 	var real_path := Progress.path
 	Progress.path = "user://profile_dest_test.json"
@@ -97,32 +97,15 @@ func test_arrive() -> void:
 		and str(photo["theme"]) == "hills", "arriving takes the crew's photo there (%s)" % str(photo))
 	var gained := int(Progress.profile["xp"]) - xp0
 	check(gained >= floori(3.0 * km) - 5, "and everyone gets XP for the ride (%d for %.0f km)" % [gained, km])
-	var hung := AdventureDest.photo_on_wall(str(photo.get("key", "")))
-	check(not hung.is_empty() and Equipment.is_wall(str(hung["model"])) and str(hung["kind"]) == "trinket",
-		"the photo hangs in the shed, a wall trinket")
-	var wall_z := Workshop.CENTER.z + Workshop.HALF.y
-	check(not hung.is_empty() and absf((hung["xf"] as Transform3D).origin.z - wall_z) < 0.1, "on the shed's front wall")
-	check(Shed.furniture_name(hung).contains(dest), "it says where (%s)" % Shed.furniture_name(hung))
+	var on_wall := Shed.furniture.values().filter(func(f): return str(f["model"]) == AdventureDest.PHOTO_MODEL).size()
+	check(AdventureDest.photo_on_wall(str(photo.get("key", ""))).is_empty() and on_wall == photos0,
+		"the photo doesn't go up on the shed wall: the diary's on the bookshelf")
 	check(Adventure.active() and Adventure.menu_text()[0].begins_with("Ride home"), "the adventure stays on till the host rides everyone home")
 	# A second arrival can't double anything.
 	Shed.request({"a": "adventure_arrive"})
 	check(int(Progress.profile["xp"]) - xp0 == gained, "arriving again gives nothing more")
 	Shed.request({"a": "adventure_end"})
 	check(not Adventure.active(), "Ride home ends it")
-	# Ten more: each in its own spot, none on top of another.
-	for k in 10:
-		var p := AdventureDest.make_photo({"seed": k, "dest": "Hawes", "theme": "hills", "km": 100.0}, ["A"])
-		p["key"] = "test-%d" % k
-		AdventureDest.hang(p)
-	var spots := []
-	var overlap := false
-	for f in Shed.furniture.values():
-		if str(f["model"]) == AdventureDest.PHOTO_MODEL:
-			for o in spots:
-				if (o as Vector3).distance_to((f["xf"] as Transform3D).origin) < 0.6:
-					overlap = true
-			spots.append((f["xf"] as Transform3D).origin)
-	check(spots.size() == photos0 + 11 and not overlap, "photo after photo goes up, none on top of another (%d)" % spots.size())
 	# The photo's view: the frame, the picture of the crew and the plate.
 	var view := Node3D.new()
 	AdventureDest.build_photo(view, photo)
@@ -135,7 +118,7 @@ func test_arrive() -> void:
 
 
 ## The pictures and the album: each theme's land painted its own, the crew in front; an album
-## per player, kept once, and your photos go up in your own shed.
+## per player, kept once; an older save's photos come off the walls.
 func test_photo() -> void:
 	var seen := {}
 	for theme in AdventureTheme.IDS:
@@ -169,17 +152,18 @@ func test_photo() -> void:
 	check(AdventureDest.album_of("Ann").size() == 1 and str(AdventureDest.album_of("Ann")[0]["key"]) == "k2", "the album's kept in a file")
 	DirAccess.remove_absolute(AdventureDest.album_path)
 	AdventureDest.album_path = ""
-	# Your own shed: what's in your album goes up on its walls, once.
+	# An older save with photos hung on its walls: they come down (Simon: the diaries go on the
+	# bookshelf, not the walls), and the rest of the shed's furniture stays.
 	Shed.start_new("Ann", 5)
-	var n := AdventureDest.hang_album("Ann")
-	check(n == 2 and not AdventureDest.photo_on_wall("k1").is_empty() and not AdventureDest.photo_on_wall("k2").is_empty(),
-		"your album's photos go up in your own shed")
-	check(AdventureDest.hang_album("Ann") == 0, "and not twice")
-	check(Adventure.check(Shed.me(), {"a": "adventure_photo", "photo": {"key": "", "dest": "x"}}) != "", "a bad photo isn't hung")
-	# Saved and loaded with the shed.
+	var others := Shed.furniture.size()
+	for p in [p1, p2]:
+		AdventureDest.hang(p)
 	var snap: Dictionary = bytes_to_var(var_to_bytes(Shed._snapshot()))
 	Shed.load_state(snap, "Ann")
-	check(not AdventureDest.photo_on_wall("k1").is_empty() and str(AdventureDest.photo_on_wall("k1")["photo"]["dest"]) == "Tonosho",
-		"the photos are kept with the shed")
+	check(not AdventureDest.photo_on_wall("k1").is_empty() and Shed.furniture.size() == others + 2, "an older save has photos on its walls")
+	Shed.request({"a": "diary_photos_down"})
+	check(AdventureDest.photo_on_wall("k1").is_empty() and AdventureDest.photo_on_wall("k2").is_empty() and Shed.furniture.size() == others,
+		"loading it takes them down, and nothing else")
+	check(AdventureDest.album_of("Ann").size() == 2, "the album still has them")
 	check(not Trinkets.all().has(AdventureDest.PHOTO_MODEL), "the adventure photo isn't for sale in the Shop")
 	Shed.stop()
