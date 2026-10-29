@@ -580,6 +580,22 @@ func test_meshes() -> void:
 	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
 	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
 	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
+	# Three junctions drawn as one, with a road looping round from one to another (its mouths inside their outline,
+	# which folds back seen from its middle), on rolling land: one surface over each spot, never two a step apart.
+	var rolling := func(x: float, z: float) -> float: return 10.0 + x * 0.08 + 2.0 * sin(z / 12.0) + 1.5 * sin(x / 9.0)
+	var three := RoadNet.new(graph([[100, 100], [120, 100], [110, 118], [-200, 100], [400, 100], [110, 400]],
+		[[3, 0, "tertiary"], [0, 1, "tertiary"], [1, 4, "tertiary"], [0, 2, "residential"], [1, 2, "residential"],
+		[2, 5, "residential"], [0, 1, "residential", 0, [110, 70]]]), rolling)
+	var tj := three.junction_of(0)
+	check(tj["kind"] == "multi" and (tj["nodes"] as PackedInt32Array).size() == 3, "the three drawn as one (%s)" % tj["kind"])
+	var tb := three.block(RoadBlock.key_of(110.0, 100.0))
+	var spread := 0.0
+	for x in range(60, 161, 3):
+		for z in range(50, 151, 3):
+			var hs := _heights_at(tb, Vector2(x, z) - Vector2(tb.anchor().x, tb.anchor().z))
+			if hs.size() > 1:
+				spread = maxf(spread, hs[hs.size() - 1] - hs[0])
+	check(spread < 0.03, "its surface lies as one sheet (two faces at most %.3f m apart over a spot)" % spread)
 
 
 ## The map's bridges: one over a valley runs level from end to end with the land left as it is under it, a parapet each
@@ -639,6 +655,18 @@ func test_bridges() -> void:
 
 
 ## The height of the first collision triangle of block `b` straight under local `p` (NAN if none).
+## Every height of block `b`'s road deck (tarmac) over (x, z) `p` (block space), lowest first.
+static func _heights_at(b: RoadBlock, p: Vector2) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var f: PackedVector3Array = b.arrays["faces"].get("tarmac", PackedVector3Array())
+	for k in range(0, f.size(), 3):
+		var hit = Geometry3D.ray_intersects_triangle(Vector3(p.x, 1000.0, p.y), Vector3.DOWN, f[k], f[k + 1], f[k + 2])
+		if hit != null:
+			out.append(float(hit.y))
+	out.sort()
+	return out
+
+
 static func _down(b: RoadBlock, p: Vector3) -> float:
 	var best := NAN
 	for surf in b.arrays["faces"]:
