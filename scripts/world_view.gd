@@ -354,6 +354,22 @@ func shown_note() -> String:
 	return note
 
 
+## The box the map's note `said` is drawn in along its foot (without its bar): as wide as it needs up to the map's
+## width less a margin, wrapped onto more lines past that, so it always fits.
+func note_box(said: String) -> Rect2:
+	var font := ThemeDB.fallback_font
+	var fs := _note_size()
+	var most := maxf(size.x - 60.0, 80.0)
+	var w := minf(font.get_string_size(said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 2.0, most)
+	var tall := font.get_multiline_string_size(said, HORIZONTAL_ALIGNMENT_LEFT, w, fs).y
+	return Rect2(Vector2((size.x - w) * 0.5 - 10.0, size.y - tall - 22.0), Vector2(w + 20.0, tall + 14.0))
+
+
+## The note's font size (px): a little larger on the full screen map.
+func _note_size() -> int:
+	return 14 if big else 11
+
+
 ## How far along what the map is waiting for is, for the bar along its foot: 0 to 1, or -1 when it can't say (the bar
 ## then sweeps to and fro, so it's plain nothing has stuck); NAN when it isn't waiting.
 func shown_progress() -> float:
@@ -707,15 +723,15 @@ func _draw() -> void:
 	var said := shown_note()
 	if said != "":
 		var font := ThemeDB.fallback_font
-		var fs := 18 if big else 14
-		var w := font.get_string_size(said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var box := Rect2(Vector2((size.x - w) * 0.5 - 10.0, size.y - fs - 22.0), Vector2(w + 20.0, fs + 14.0))
+		var fs := _note_size()
+		var box := note_box(said)
+		var w := box.size.x - 20.0
 		var frac := shown_progress()
 		if not is_nan(frac):
 			# (waiting: a bar along the box's foot, filling as it goes, or sweeping to and fro when it can't say how far)
 			box = Rect2(box.position - Vector2(0.0, BAR_H + 4.0), box.size + Vector2(0.0, BAR_H + 4.0))
 		draw_rect(box, NOTE)
-		draw_string(font, box.position + Vector2(10.0, fs + 3.0), said, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+		draw_multiline_string(font, box.position + Vector2(10.0, fs + 3.0), said, HORIZONTAL_ALIGNMENT_LEFT, w, fs, -1, Color.WHITE)
 		if not is_nan(frac):
 			var bar := Rect2(box.position + Vector2(10.0, box.size.y - BAR_H - 8.0), Vector2(box.size.x - 20.0, BAR_H))
 			draw_rect(bar, BAR_BACK)
