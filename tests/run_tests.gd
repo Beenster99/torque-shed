@@ -864,6 +864,7 @@ func _run_all() -> void:
 	await _t(&"_test_scenery_kits")
 	await _t(&"_test_scenery_lay_out")
 	await _t(&"_test_scenery_filing")
+	await _t(&"_test_scenery_postcards_sheet")
 	await _t(&"_test_scenery_ride")
 	print("Ride Anywhere v2, phase D: railways (lines, stations, level crossings, viaducts and their trains)")
 	await _t(&"_test_rail_runs")
@@ -873,6 +874,18 @@ func _run_all() -> void:
 	await _t(&"_test_rail_regions")
 	await _t(&"_test_rail_viaduct")
 	await _t(&"_test_rail_ride")
+	print("Ride Anywhere v2, phase D: water and coast (dams, falls, locks, harbours)")
+	await _t(&"_test_water_kits")
+	await _t(&"_test_water_lay_out")
+	await _t(&"_test_water_dam_under_road")
+	await _t(&"_test_water_canal")
+	await _t(&"_test_water_blocks_meet")
+	await _t(&"_test_water_regions")
+	print("Ride Anywhere v2, phase D round 1: the skyline (turbines, pylons and wires, towers, lifts)")
+	await _t(&"_test_skyline_models")
+	await _t(&"_test_skyline_lines")
+	await _t(&"_test_skyline_block")
+	await _t(&"_test_skyline_regions")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -10260,6 +10273,7 @@ func _test_graphics_settings() -> void:
 	Settings.set_graphics("gfx_fps_cap", 144)
 	Settings.set_graphics("gfx_gi", "ssil")
 	Settings.set_graphics("gfx_fps_counter", true)
+	Settings.set_graphics("gfx_bloom", 1.4)
 	var saved := {}
 	for k in Settings.GFX_KEYS:
 		saved[k] = Settings.get(k)
@@ -10324,6 +10338,14 @@ func _test_graphics_settings() -> void:
 		"ticking an option in the tab makes the preset Custom")
 	tab._rt.button_pressed = true
 	check(Settings.gfx_gi == "sdfgi", "the ray-traced lighting switch turns SDFGI on")
+	# The Bloom strength slider: a personal setting like brightness, greyed out with glow off.
+	Settings.apply_preset("high")
+	var bloom: HSlider = tab._controls["gfx_bloom"]["control"]
+	bloom.value = 0.6
+	check(is_equal_approx(Settings.gfx_bloom, 0.6) and Settings.gfx_preset == "high", "the bloom slider sets bloom and keeps the preset")
+	check((tab._controls["gfx_bloom"]["text"] as Label).text == "60%", "it shows the strength as a percentage")
+	(tab._controls["gfx_glow"]["control"] as CheckBox).button_pressed = false
+	check(not bloom.editable, "with glow off the bloom slider is greyed out")
 	tab.queue_free()
 	# Put everything back.
 	Settings.graphics_changed.disconnect(count)
@@ -10364,6 +10386,13 @@ func _test_lighting_profile() -> void:
 	check(not p["sdfgi"] and not p["ssil"] and not p["volumetric_fog"] and not p["fog_volumes"] and not bool(p["clouds"]["volumetric"]),
 		"everything off: no GI, no volumetric fog, the flat cloud layer")
 	check(not bool(p["shadow"]["omni"]) and int(p["shadow"]["atlas"]) <= 2048, "low shadows: small maps, round lamps don't cast them")
+	# Bloom strength: as tuned by default, clamped to 0..200%, and 0% turns the glow off.
+	check(is_equal_approx(float(Lighting.profile(best, true)["bloom"]), 1.0), "bloom is as tuned when the setting isn't there")
+	var bright := best.duplicate()
+	bright["gfx_bloom"] = 5.0
+	check(is_equal_approx(float(Lighting.profile(bright, true)["bloom"]), 2.0), "bloom stops at 200%")
+	bright["gfx_bloom"] = 0.0
+	check(not Lighting.profile(bright, true)["glow"], "bloom at 0% is glow off")
 	# The compatibility renderer: none of the Forward+ extras, the flat clouds at "low".
 	p = Lighting.profile(best, false)
 	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
@@ -10536,6 +10565,16 @@ func _test_lighting_session() -> void:
 		var sun: DirectionalLight3D = lt.sun
 		check(is_equal_approx(sun.directional_shadow_max_distance, float(Lighting.SHADOWS[c["gfx_shadows"]]["distance"])),
 			"the sun's shadows reach as far as the setting says")
+	# The Bloom slider scales the time of day's glow, live.
+	for b in [0.5, 1.5]:
+		Lighting.overrides = {"gfx_glow": true, "gfx_bloom": b}
+		lt.apply()
+		var day: Daylight = main.world.daylight
+		check(env.glow_enabled and is_equal_approx(env.glow_intensity, day.glow_intensity * b)
+			and is_equal_approx(env.glow_bloom, day.glow_bloom * b), "bloom at %d%% scales the glow" % roundi(b * 100.0))
+	Lighting.overrides = {"gfx_glow": true, "gfx_bloom": 0.0}
+	lt.apply()
+	check(not env.glow_enabled, "bloom at 0% turns the glow off")
 	# The polling notices a change without any signal.
 	Lighting.overrides = combos[0]
 	await get_tree().create_timer(0.6).timeout
@@ -22757,6 +22796,10 @@ func _test_scenery_filing() -> void:
 	_scenery().test_filing()
 
 
+func _test_scenery_postcards_sheet() -> void:
+	_scenery().test_postcards_sheet()
+
+
 func _test_scenery_ride() -> void:
 	await _scenery().test_ride()
 
@@ -22791,6 +22834,52 @@ func _test_rail_viaduct() -> void:
 
 func _test_rail_ride() -> void:
 	await _rail().test_ride()
+func _water() -> RefCounted:
+	return load("res://tests/water_works_tests.gd").new(self)
+
+
+func _test_water_kits() -> void:
+	_water().test_kits()
+
+
+func _test_water_lay_out() -> void:
+	_water().test_lay_out()
+
+
+func _test_water_dam_under_road() -> void:
+	_water().test_dam_under_road()
+
+
+func _test_water_canal() -> void:
+	_water().test_canal()
+
+
+func _test_water_blocks_meet() -> void:
+	_water().test_blocks_meet()
+
+
+func _test_water_regions() -> void:
+	_water().test_regions()
+
+
+func _skyline() -> RefCounted:
+	return load("res://tests/skyline_tests.gd").new(self)
+
+
+func _test_skyline_models() -> void:
+	_skyline().test_models()
+
+
+func _test_skyline_lines() -> void:
+	_skyline().test_lines()
+
+
+func _test_skyline_block() -> void:
+	await _skyline().test_block()
+
+
+func _test_skyline_regions() -> void:
+	_skyline().test_regions()
 
 
 func _coop() -> RefCounted:

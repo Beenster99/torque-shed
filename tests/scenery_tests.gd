@@ -250,3 +250,17 @@ func test_ride() -> void:
 			% [float(b["ms"]), float(w.scenery.stats["build_ms_max"])])
 	SceneryStreamer.show_standins = was_shown
 	w.queue_free()
+
+
+## The postcards' features sheet counts what the map gives round a spot, by round and kind, and maps it.
+func test_postcards_sheet() -> void:
+	var F = load("res://tests/postcards/features.gd")
+	var r := RealRegion.new()
+	r.features = {"points": [["wind_turbine", 100.0, 0.0, null, null, null, "", "a"], ["wind_turbine", 5000.0, 0.0, null, null, null, "", "b"]],
+		"lines": [["railway", PackedVector2Array([Vector2(-3000, 10), Vector2(3000, 10)]), null, null, 0, "", "c"]], "areas": []}
+	var f: Dictionary = F.count(r, Vector2.ZERO)
+	check(int(f["total"]) == 2 and int(f["rounds"].get("D1", 0)) == 1 and int(f["rounds"].get("D2", 0)) == 1 and int(f["kinds"]["wind_turbine"]) == 1,
+		"the turbine and the railway through the square, not the turbine 5 km off (%s)" % str(f))
+	var img: Image = F.map(r, Vector2.ZERO)
+	check(img.get_width() == F.MAP_PX and img.get_pixel(F.MAP_PX / 2 + 15, F.MAP_PX / 2) != F.LAND, "and draws them on its map")
+

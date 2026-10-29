@@ -9,15 +9,17 @@
   "aerialway_pylon": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:lift_pylon",
+    "reach": 4000,
+    "h": 15
    }
   },
   "aerialway_station": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:lift_station",
+    "reach": 4000,
+    "h": 9
    }
   },
   "airfield": {
@@ -65,8 +67,24 @@
   "aqueduct": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:aqueduct",
+    "reach": 4000,
+    "stone": "sandstone",
+    "span": 14.0
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "north_america": {
+     "stone": "concrete"
+    },
+    "east_asia": {
+     "stone": "concrete"
+    }
    }
   },
   "artwork": {
@@ -79,8 +97,21 @@
   "bell_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:campanile",
+    "reach": 4000,
+    "h": 27
+   },
+   "regions": {
+    "east_asia": {
+     "model": "skyline:bell_pavilion",
+     "h": 7,
+     "reach": 1500
+    },
+    "south_east_asia": {
+     "model": "skyline:bell_pavilion",
+     "h": 7,
+     "reach": 1500
+    }
    }
   },
   "bench": {
@@ -93,16 +124,20 @@
   "blowhole": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:blowhole",
+    "reach": 2000,
+    "jet": 12.0
+   },
+   "regions": {}
   },
   "boardwalk": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:boardwalk",
+    "reach": 1000,
+    "width": 1.8
+   },
+   "regions": {}
   },
   "bollard": {
    "round": "D9",
@@ -121,8 +156,41 @@
   "breakwater": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:harbour_wall",
+    "reach": 4000,
+    "build": "mound",
+    "armour": "rock",
+    "stone": "granite"
+   },
+   "regions": {
+    "british_isles": {
+     "build": "wall",
+     "stone": "sandstone"
+    },
+    "western_europe": {
+     "stone": "granite"
+    },
+    "nordic": {
+     "armour": "granite"
+    },
+    "mediterranean": {
+     "armour": "limestone",
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "armour": "sandstone",
+     "stone": "sandstone"
+    },
+    "east_asia": {
+     "build": "tetrapods"
+    },
+    "south_asia": {
+     "build": "tetrapods"
+    },
+    "australia_nz": {
+     "armour": "basalt",
+     "stone": "sandstone"
+    }
    }
   },
   "bus_stop": {
@@ -135,8 +203,21 @@
   "cable_car": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_pylon",
+    "end": "lift_station",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.04,
+    "clear": 10,
+    "wire": 0.03,
+    "wire_colour": "#2a2b2d",
+    "span": 600,
+    "cabin": "cable_car",
+    "support_h": 30
    }
   },
   "caldera_rim": {
@@ -149,15 +230,51 @@
   "canal": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:canal",
+    "reach": 1500,
+    "boat": "",
+    "moor_every": 0
+   },
+   "regions": {
+    "british_isles": {
+     "boat": "narrowboat",
+     "moor_every": 220
+    },
+    "western_europe": {
+     "boat": "barge",
+     "moor_every": 650
+    },
+    "eastern_europe": {
+     "boat": "barge",
+     "moor_every": 900
+    }
    }
   },
   "canal_lock": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:canal_lock",
+    "reach": 1500,
+    "stone": "concrete",
+    "lock_boat": "motor",
+    "busy": 0.6
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone",
+     "lock_boat": "narrowboat",
+     "busy": 0.7
+    },
+    "western_europe": {
+     "stone": "brick",
+     "lock_boat": "barge"
+    },
+    "eastern_europe": {
+     "lock_boat": "barge"
+    },
+    "north_america": {
+     "stone": "granite"
+    }
    }
   },
   "catenary_mast": {
@@ -191,8 +308,21 @@
   "chair_lift": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_pylon",
+    "end": "lift_terminal",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.02,
+    "clear": 6,
+    "wire": 0.03,
+    "wire_colour": "#2a2b2d",
+    "span": 120,
+    "cabin": "chair",
+    "support_h": 12
    }
   },
   "charging_station": {
@@ -219,22 +349,34 @@
   "communication_line": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "skyline:wire",
+    "reach": 800,
+    "support": "pole_tel",
+    "end": "pole_tel",
+    "snap": [],
+    "span": 50,
+    "sag": 0.015,
+    "clear": 5.5,
+    "wire": 0.015
    }
   },
   "communication_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:mast",
+    "reach": 8000,
+    "h": 88,
+    "tall_from": 140,
+    "tall": "tv_tower",
+    "tall_h": 200
    }
   },
   "cooling_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:cooling",
+    "reach": 12000,
+    "h": 100
    }
   },
   "country_border": {
@@ -254,8 +396,22 @@
   "dam": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:dam",
+    "reach": 6000,
+    "stone": "concrete",
+    "face": "rock"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "concrete"
+    },
+    "nordic": {
+     "face": "granite"
+    },
+    "north_africa_middle_east": {
+     "stone": "concrete",
+     "face": "sandstone"
+    }
    }
   },
   "danger_area": {
@@ -268,22 +424,140 @@
   "defensive_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:round_tower",
+    "reach": 3000,
+    "h": 15
    }
   },
   "dock": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:dock",
+    "reach": 2500,
+    "stone": "concrete",
+    "boats": [
+     "motor",
+     "fishing",
+     "yacht"
+    ],
+    "busy": 0.5
+   },
+   "regions": {
+    "british_isles": {
+     "boats": [
+      "fishing",
+      "fishing",
+      "motor",
+      "yacht"
+     ],
+     "stone": "sandstone"
+    },
+    "western_europe": {
+     "boats": [
+      "fishing",
+      "motor",
+      "yacht"
+     ],
+     "stone": "granite"
+    },
+    "nordic": {
+     "boats": [
+      "fishing",
+      "motor"
+     ],
+     "stone": "granite"
+    },
+    "eastern_europe": {
+     "boats": [
+      "motor",
+      "fishing"
+     ]
+    },
+    "mediterranean": {
+     "boats": [
+      "fishing",
+      "motor",
+      "yacht"
+     ],
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "boats": [
+      "fishing",
+      "fishing",
+      "motor"
+     ],
+     "stone": "sandstone"
+    },
+    "sub_saharan_africa": {
+     "boats": [
+      "pirogue",
+      "pirogue",
+      "fishing"
+     ],
+     "stone": "concrete"
+    },
+    "north_america": {
+     "boats": [
+      "motor",
+      "fishing",
+      "yacht"
+     ]
+    },
+    "latin_america": {
+     "boats": [
+      "fishing",
+      "motor"
+     ]
+    },
+    "south_asia": {
+     "boats": [
+      "fishing",
+      "pirogue"
+     ]
+    },
+    "east_asia": {
+     "boats": [
+      "fishing",
+      "fishing",
+      "motor"
+     ],
+     "stone": "concrete"
+    },
+    "south_east_asia": {
+     "boats": [
+      "longtail",
+      "fishing"
+     ]
+    },
+    "australia_nz": {
+     "boats": [
+      "yacht",
+      "motor",
+      "fishing"
+     ],
+     "stone": "sandstone"
+    }
    }
   },
   "drag_lift": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_pylon",
+    "end": "lift_terminal",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.02,
+    "clear": 3,
+    "wire": 0.03,
+    "wire_colour": "#2a2b2d",
+    "span": 80,
+    "cabin": "tbar",
+    "support_h": 8
    }
   },
   "dune": {
@@ -317,9 +591,10 @@
   "fish_pass": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:fish_pass",
+    "reach": 1000
+   },
+   "regions": {}
   },
   "fountain": {
    "round": "D6",
@@ -346,8 +621,13 @@
   "gasometer": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:gasometer",
+    "reach": 4000,
+    "r": 25.0,
+    "h": 35.0,
+    "point_r": 25.0,
+    "h_of_r": 1.2,
+    "h_plus": 5.0
    }
   },
   "gate": {
@@ -360,16 +640,20 @@
   "generator": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:kiosk",
+    "reach": 600
    }
   },
   "geyser": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:geyser",
+    "reach": 4000,
+    "stone": "sinter",
+    "jet": 25.0,
+    "pool": 3.0
+   },
+   "regions": {}
   },
   "glacier": {
    "round": "D4",
@@ -416,15 +700,41 @@
   "gondola": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_pylon",
+    "end": "lift_station",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.02,
+    "clear": 6,
+    "wire": 0.03,
+    "wire_colour": "#2a2b2d",
+    "span": 250,
+    "cabin": "gondola",
+    "support_h": 18
    }
   },
   "goods_lift": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_pylon",
+    "end": "lift_terminal",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.02,
+    "clear": 6,
+    "wire": 0.03,
+    "wire_colour": "#2a2b2d",
+    "span": 150,
+    "cabin": "bucket",
+    "support_h": 10
    }
   },
   "grave_yard": {
@@ -444,8 +754,20 @@
   "groyne": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:groyne",
+    "reach": 1200,
+    "stone": "rock"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "timber"
+    },
+    "western_europe": {
+     "stone": "timber"
+    },
+    "australia_nz": {
+     "stone": "timber"
+    }
    }
   },
   "hedge": {
@@ -465,8 +787,15 @@
   "hot_spring": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:hot_spring",
+    "reach": 2000,
+    "stone": "sinter",
+    "pool": 3.0
+   },
+   "regions": {
+    "east_asia": {
+     "stone": "granite"
+    }
    }
   },
   "information": {
@@ -515,22 +844,65 @@
   "lighting_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "skyline:floodlight",
+    "reach": 1500,
+    "h": 26
    }
   },
   "lock_gate": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:lock_gate",
+    "reach": 1500,
+    "lock_width": 5.0
+   },
+   "regions": {
+    "british_isles": {
+     "lock_width": 4.3
+    }
    }
   },
   "marina": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:marina",
+    "reach": 2500,
+    "deck": "timber",
+    "boats": [
+     "yacht",
+     "yacht",
+     "motor"
+    ],
+    "busy": 0.7
+   },
+   "regions": {
+    "sub_saharan_africa": {
+     "boats": [
+      "motor",
+      "yacht",
+      "pirogue"
+     ]
+    },
+    "south_east_asia": {
+     "boats": [
+      "motor",
+      "yacht",
+      "longtail"
+     ]
+    },
+    "east_asia": {
+     "boats": [
+      "motor",
+      "motor",
+      "yacht"
+     ]
+    },
+    "south_asia": {
+     "boats": [
+      "motor",
+      "fishing"
+     ]
+    }
    }
   },
   "milestone": {
@@ -550,36 +922,115 @@
   "minaret": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:minaret",
+    "reach": 4000,
+    "h": 34
+   },
+   "regions": {
+    "north_africa_middle_east": {
+     "model": "skyline:minaret_square",
+     "h": 29
+    },
+    "south_asia": {
+     "model": "skyline:minaret_dome",
+     "h": 30
+    }
    }
   },
   "minor_line": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "skyline:wire",
+    "reach": 1500,
+    "support": "pole",
+    "end": "pole",
+    "snap": [
+     "power_pole"
+    ],
+    "span": 70,
+    "sag": 0.015,
+    "clear": 6,
+    "wire": 0.02
+   },
+   "regions": {
+    "east_asia": {
+     "support": "pole_concrete",
+     "end": "pole_concrete",
+     "span": 40
+    }
    }
   },
   "mixed_lift": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_pylon",
+    "end": "lift_station",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.02,
+    "clear": 6,
+    "wire": 0.03,
+    "wire_colour": "#2a2b2d",
+    "span": 250,
+    "cabin": "gondola",
+    "support_h": 18
    }
   },
   "moat": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:moat",
+    "reach": 1500,
+    "stone": "gritstone"
+   },
+   "regions": {
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "east_asia": {
+     "stone": "granite"
+    },
+    "north_africa_middle_east": {
+     "stone": "sandstone"
+    }
    }
   },
   "mobile_phone_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:monopole",
+    "reach": 3000,
+    "h": 25
+   },
+   "regions": {
+    "south_asia": {
+     "model": "skyline:mast",
+     "h": 88,
+     "scale": 0.4,
+     "scale_min": 0.3
+    },
+    "sub_saharan_africa": {
+     "model": "skyline:mast",
+     "h": 88,
+     "scale": 0.4,
+     "scale_min": 0.3
+    },
+    "latin_america": {
+     "model": "skyline:mast",
+     "h": 88,
+     "scale": 0.4,
+     "scale_min": 0.3
+    },
+    "south_east_asia": {
+     "model": "skyline:mast",
+     "h": 88,
+     "scale": 0.4,
+     "scale_min": 0.3
+    }
    }
   },
   "monorail": {
@@ -616,15 +1067,19 @@
   "nordic_piste": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:piste",
+    "reach": 1000,
+    "marker": "piste_pole",
+    "every": 50,
+    "half_width": 3
    }
   },
   "observation_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:lookout",
+    "reach": 4000,
+    "h": 28
    }
   },
   "orchard": {
@@ -651,15 +1106,58 @@
   "pier": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:pier",
+    "reach": 3000,
+    "deck": "timber",
+    "legs": "concrete",
+    "rail": "steel",
+    "stone": "concrete"
+   },
+   "regions": {
+    "british_isles": {
+     "legs": "steel",
+     "rail": "white",
+     "stone": "sandstone"
+    },
+    "western_europe": {
+     "legs": "steel",
+     "rail": "white",
+     "stone": "granite"
+    },
+    "nordic": {
+     "legs": "timber",
+     "stone": "granite"
+    },
+    "north_america": {
+     "legs": "timber",
+     "rail": "timber"
+    },
+    "australia_nz": {
+     "legs": "timber",
+     "rail": "timber",
+     "stone": "sandstone"
+    },
+    "south_east_asia": {
+     "legs": "timber",
+     "rail": "timber"
+    },
+    "sub_saharan_africa": {
+     "legs": "timber",
+     "rail": "timber"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    }
    }
   },
   "piste": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:piste",
+    "reach": 1500,
+    "marker": "piste_pole",
+    "every": 40,
+    "half_width": 12
    }
   },
   "plant_nursery": {
@@ -679,43 +1177,148 @@
   "power_cable": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:none",
+    "reach": 0
    }
   },
   "power_line": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 6000,
+    "support": "pylon",
+    "end": "pylon",
+    "snap": [
+     "power_tower",
+     "power_portal"
+    ],
+    "span": 330,
+    "sag": 0.03,
+    "clear": 12,
+    "wire": 0.035
+   },
+   "regions": {
+    "north_america": {
+     "support": "pylon_wide",
+     "end": "pylon_wide"
+    },
+    "latin_america": {
+     "support": "pylon_wide",
+     "end": "pylon_wide"
+    },
+    "australia_nz": {
+     "support": "pylon_wide",
+     "end": "pylon_wide"
+    },
+    "sub_saharan_africa": {
+     "support": "pylon_wide",
+     "end": "pylon_wide"
+    },
+    "south_asia": {
+     "support": "pylon_wide",
+     "end": "pylon_wide"
+    },
+    "nordic": {
+     "support": "pylon_wide",
+     "end": "pylon_wide"
+    },
+    "western_europe": {
+     "support": "pylon_danube",
+     "end": "pylon_danube"
+    },
+    "eastern_europe": {
+     "support": "pylon_danube",
+     "end": "pylon_danube"
+    },
+    "mediterranean": {
+     "support": "pylon_danube",
+     "end": "pylon_danube"
+    },
+    "east_asia": {
+     "support": "pylon_tall",
+     "end": "pylon_tall",
+     "span": 280
+    }
    }
   },
   "power_plant": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:fence",
+    "reach": 2000,
+    "fence": true
    }
   },
   "power_pole": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "skyline:pole",
+    "reach": 1500,
+    "h": 10
+   },
+   "regions": {
+    "east_asia": {
+     "model": "skyline:pole_concrete",
+     "h": 12
+    }
    }
   },
   "power_portal": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:portal",
+    "reach": 2000,
+    "h": 16
    }
   },
   "power_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:pylon",
+    "reach": 6000,
+    "h": 46
+   },
+   "regions": {
+    "north_america": {
+     "model": "skyline:pylon_wide",
+     "h": 30
+    },
+    "latin_america": {
+     "model": "skyline:pylon_wide",
+     "h": 30
+    },
+    "australia_nz": {
+     "model": "skyline:pylon_wide",
+     "h": 30
+    },
+    "sub_saharan_africa": {
+     "model": "skyline:pylon_wide",
+     "h": 30
+    },
+    "south_asia": {
+     "model": "skyline:pylon_wide",
+     "h": 30
+    },
+    "nordic": {
+     "model": "skyline:pylon_wide",
+     "h": 30
+    },
+    "western_europe": {
+     "model": "skyline:pylon_danube",
+     "h": 40
+    },
+    "eastern_europe": {
+     "model": "skyline:pylon_danube",
+     "h": 40
+    },
+    "mediterranean": {
+     "model": "skyline:pylon_danube",
+     "h": 40
+    },
+    "east_asia": {
+     "model": "skyline:pylon_tall",
+     "h": 62
+    }
    }
   },
   "quarry": {
@@ -728,8 +1331,112 @@
   "quay": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:quay",
+    "reach": 2500,
+    "stone": "concrete",
+    "boats": [
+     "motor",
+     "fishing",
+     "yacht"
+    ],
+    "busy": 0.55
+   },
+   "regions": {
+    "british_isles": {
+     "boats": [
+      "fishing",
+      "fishing",
+      "motor",
+      "yacht"
+     ],
+     "stone": "sandstone"
+    },
+    "western_europe": {
+     "boats": [
+      "fishing",
+      "motor",
+      "yacht"
+     ],
+     "stone": "granite"
+    },
+    "nordic": {
+     "boats": [
+      "fishing",
+      "motor"
+     ],
+     "stone": "granite"
+    },
+    "eastern_europe": {
+     "boats": [
+      "motor",
+      "fishing"
+     ]
+    },
+    "mediterranean": {
+     "boats": [
+      "fishing",
+      "motor",
+      "yacht"
+     ],
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "boats": [
+      "fishing",
+      "fishing",
+      "motor"
+     ],
+     "stone": "sandstone"
+    },
+    "sub_saharan_africa": {
+     "boats": [
+      "pirogue",
+      "pirogue",
+      "fishing"
+     ],
+     "stone": "concrete"
+    },
+    "north_america": {
+     "boats": [
+      "motor",
+      "fishing",
+      "yacht"
+     ]
+    },
+    "latin_america": {
+     "boats": [
+      "fishing",
+      "motor"
+     ]
+    },
+    "south_asia": {
+     "boats": [
+      "fishing",
+      "pirogue"
+     ]
+    },
+    "east_asia": {
+     "boats": [
+      "fishing",
+      "fishing",
+      "motor"
+     ],
+     "stone": "concrete"
+    },
+    "south_east_asia": {
+     "boats": [
+      "longtail",
+      "fishing"
+     ]
+    },
+    "australia_nz": {
+     "boats": [
+      "yacht",
+      "motor",
+      "fishing"
+     ],
+     "stone": "sandstone"
+    }
    }
   },
   "race_track": {
@@ -742,8 +1449,9 @@
   "radar_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:radar",
+    "reach": 6000,
+    "h": 32
    }
   },
   "railway": {
@@ -928,9 +1636,10 @@
   "rapids": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:rapids",
+    "reach": 1200
+   },
+   "regions": {}
   },
   "reef": {
    "round": "D4",
@@ -949,9 +1658,10 @@
   "reservoir": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:reservoir",
+    "reach": 3000
+   },
+   "regions": {}
   },
   "retaining_wall": {
    "round": "D5",
@@ -1019,15 +1729,33 @@
   "silo": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:silo",
+    "reach": 3000,
+    "r": 3.5,
+    "h": 20.4,
+    "point_r": 3.5,
+    "h_of_r": 3.0,
+    "h_plus": 7.0
+   },
+   "regions": {
+    "north_america": {
+     "model": "skyline:silo_blue",
+     "big": "elevator",
+     "big_from": 9.0,
+     "big_r": 9.0
+    },
+    "australia_nz": {
+     "big": "elevator",
+     "big_from": 9.0,
+     "big_r": 9.0
+    }
    }
   },
   "solar": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:solar_row",
+    "reach": 2500
    }
   },
   "stile": {
@@ -1040,8 +1768,13 @@
   "storage_tank": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "skyline:tank",
+    "reach": 1500,
+    "r": 1.0,
+    "h": 1.08,
+    "point_r": 7.0,
+    "h_of_r": 0.7,
+    "h_plus": 3.0
    }
   },
   "street_lamp": {
@@ -1054,8 +1787,9 @@
   "substation": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:yard",
+    "reach": 2000,
+    "fence": true
    }
   },
   "subway": {
@@ -1147,43 +1881,103 @@
   "watchtower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:watchtower",
+    "reach": 2000,
+    "h": 10
    }
   },
   "water_tower": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:water_tower",
+    "reach": 4000,
+    "h": 31
+   },
+   "regions": {
+    "north_america": {
+     "model": "skyline:water_sphere",
+     "h": 36
+    },
+    "western_europe": {
+     "model": "skyline:water_chalice",
+     "h": 33
+    },
+    "nordic": {
+     "model": "skyline:water_chalice",
+     "h": 33
+    },
+    "eastern_europe": {
+     "model": "skyline:water_chalice",
+     "h": 33
+    },
+    "british_isles": {
+     "model": "skyline:water_square",
+     "h": 24
+    }
    }
   },
   "waterfall": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
-   }
+    "model": "water_works:waterfall",
+    "reach": 3000
+   },
+   "regions": {}
   },
   "weir": {
    "round": "D3",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "water_works:weir",
+    "reach": 1500,
+    "stone": "concrete"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone"
+    },
+    "western_europe": {
+     "stone": "limestone"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    }
    }
   },
   "wind_turbine": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:turbine",
+    "reach": 12000,
+    "hub": 90,
+    "hub_sea": 110,
+    "sea": true
+   },
+   "regions": {
+    "british_isles": {
+     "hub": 70
+    },
+    "western_europe": {
+     "hub": 110
+    },
+    "nordic": {
+     "hub": 105
+    },
+    "east_asia": {
+     "hub": 70
+    },
+    "south_asia": {
+     "hub": 85
+    },
+    "latin_america": {
+     "hub": 95
+    }
    }
   },
   "winter_sports": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:none",
+    "reach": 0
    }
   },
   "works": {
@@ -1196,8 +1990,19 @@
   "zip_line": {
    "round": "D1",
    "default": {
-    "model": "standin:post",
-    "reach": 4000
+    "model": "skyline:wire",
+    "reach": 5000,
+    "support": "lift_terminal",
+    "end": "lift_terminal",
+    "snap": [
+     "aerialway_pylon",
+     "aerialway_station"
+    ],
+    "sag": 0.03,
+    "clear": 3,
+    "wire": 0.02,
+    "wire_colour": "#2a2b2d",
+    "span": 2000
    }
   },
   "zoo": {
