@@ -124,6 +124,14 @@ Region ids are the regional kits' thirteen (`RegionKit.regions()`), chosen per p
 (`RegionKit.at_frame`). A round thread owns its kinds' rows. Fields the streamer reads: `model`, `reach` (m), `sea`
 (true: may stand offshore); anything else is the model's own.
 
+## The postcards' features sheet
+
+The postcards (tests/postcards) carry each place's features (`world/feature/`, `bake.py --features`). On the road
+network each place also draws `features-sheet.png` (`tests/postcards/features.gd`): the map of the 3 km square round
+its road view, every feature in its round's colour, beside the road from above with the scenery drawn (stand-ins
+included), and how many things there are by round and kind. It is in the Postcards workflow's "postcards" artifact
+beside the contact sheet, so a round's pull request shows what it places in eight places on five continents.
+
 ## What a round thread does
 
 1. Add `scripts/scenery/<round>.gd` with `lay_out`, `mesh` and, if it wants, `dress` (above). Never edit

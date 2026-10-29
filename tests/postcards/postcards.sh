@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # The postcards (postcards.gd): the eight places, four views each, and their contact sheet with frame times and memory.
+# On the road network each place's scenery from the map goes on a features sheet too (features.gd, docs/scenery.md).
 #   tests/postcards/postcards.sh                     # all eight, into /tmp/postcards (about six minutes)
 #   tests/postcards/postcards.sh --only=dales        # one place, under a minute, to check a change of your own
 #   tests/postcards/postcards.sh --only=dales --quick   # just the pictures, no frame times

@@ -19,6 +19,7 @@ extends Node
 ## the two and how it closes (postcards.sh --both draws every place both ways).
 
 const Sheet := preload("res://tests/postcards/sheet.gd")
+const Features := preload("res://tests/postcards/features.gd")
 const WORLD := "res://tests/postcards/world"
 const PLACES := "res://tests/postcards/places.json"
 ## Frames timed at each view once it has settled, and the frames it waits for the land before giving up on it.
@@ -106,6 +107,10 @@ func _ready() -> void:
 		var sheet: Image = await Sheet.make(self, spec, stats, out_dir)
 		sheet.save_png(out_dir.path_join("contact-sheet.png"))
 		sheet.save_jpg(out_dir.path_join("contact-sheet.jpg"), 0.88)
+		var scenery: Image = await Features.sheet(self, stats, out_dir)
+		if scenery != null:
+			scenery.save_png(out_dir.path_join("features-sheet.png"))
+			scenery.save_jpg(out_dir.path_join("features-sheet.jpg"), 0.88)
 	print("postcards: done in %.1f s, %s" % [float(stats.get("seconds", 0.0)), ProjectSettings.globalize_path(out_dir)])
 	get_tree().quit(0 if stats["places"].all(func(p): return p.get("error", "") == "") else 1)
 
@@ -172,7 +177,8 @@ static func merged(spec: Dictionary, dirs: Array, into: String) -> Dictionary:
 		for p: Dictionary in v.get("places", []):
 			by_id["%s %s" % [p["id"], p.get("mode", "single")]] = p
 		for name in DirAccess.get_files_at(d):
-			if name.ends_with(".png") and not name.begins_with("contact-sheet") and d != into:
+			var sheet := name.begins_with("contact-sheet") or name.begins_with("features-sheet")
+			if name.ends_with(".png") and not sheet and d != into:
 				DirAccess.copy_absolute(d.path_join(name), into.path_join(name))
 	for p: Dictionary in spec["places"]:
 		for mode in ["single", "network"]:
@@ -279,6 +285,8 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 		var v := {} if quick else await _timed()
 		v["settled"] = settled
 		got["views"][view] = v
+	if network and not fetch:
+		got["features"] = await _features(w, place, s, cam)
 	got["load_s"] = snappedf(got["load_s"], 0.1)
 	got["static_mb"] = snappedf(Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0, 0.1)
 	got["video_mb"] = snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1)
@@ -286,6 +294,34 @@ func _place(place: Dictionary, spec: Dictionary, cam: Camera3D) -> Dictionary:
 	w.queue_free()
 	await _frames(2)
 	return got
+
+
+## What the map gives round the road view at `s` along `w`'s road (Features.count), its map, and the road from above
+## with the scenery drawn, stand-ins too (the features sheet's: postcards' --network ride only).
+func _features(w: AdventureWorld, place: Dictionary, s: float, cam: Camera3D) -> Dictionary:
+	var spot := w.transform_at(s, 0.0).origin
+	var centre := Vector2(spot.x + w.origin.x, spot.z + w.origin.z)
+	var f := Features.count(w.roads_region, centre)
+	Features.map(w.roads_region, centre).save_png(out_dir.path_join(picture(place["id"], true, "features")))
+	var was := SceneryStreamer.show_standins
+	SceneryStreamer.show_standins = true
+	# (low enough over the road to make out a 3 m post beside it)
+	var eye := w.transform_at(maxf(0.0, s - 60.0), 0.0).origin + Vector3.UP * 14.0
+	cam.global_transform = Transform3D(Basis.looking_at(w.transform_at(s + 120.0, 0.0).origin - eye, Vector3.UP), eye)
+	w.follow(cam.global_position)
+	f["settled"] = await Features.settle(w, self)
+	await _frames(3)
+	var drawn := 0
+	if w.scenery != null:
+		for b: Node3D in w.scenery.blocks.values():
+			for mmi in b.get_children():
+				if mmi is MultiMeshInstance3D:
+					drawn += (mmi as MultiMeshInstance3D).multimesh.instance_count
+		f["blocks"] = w.scenery.blocks.size()
+	f["drawn"] = drawn
+	get_viewport().get_texture().get_image().save_png(out_dir.path_join(picture(place["id"], true, "scenery")))
+	SceneryStreamer.show_standins = was
+	return f
 
 
 ## The file name of place `id`'s picture from `view`, on the road network or not.
