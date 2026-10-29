@@ -138,6 +138,7 @@ var _clusters := {}         # node -> PackedInt32Array: the junctions drawn as o
 ## out again and again, till the ground sharpens (forget_guesses).
 var _guess := {"fair": {}, "node_y": {}, "raw_y": {}, "fixes": {}, "profiles": {}, "planes": {}}
 var _planes := {}           # roundabout's first node -> [Vector2 its nodes' middle, Vector3 its plane about that] (_ring_y)
+var _rims := {}             # roundabout's first node -> its island's rim (island_rim)
 var _profiles := {}         # edge -> PackedFloat32Array: its road's heights as ridden (profile)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
 var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
@@ -1254,6 +1255,68 @@ func _ring_y(ring: PackedInt32Array, p: Vector2) -> float:
 ## The height of roundabout junction `j`'s carriageway (junction_of) at `p` (_ring_y).
 func ring_y(j: Dictionary, p: Vector2) -> float:
 	return _ring_y(j["nodes"], p)
+
+
+## How many bearings round a roundabout's island its rim is found at (island_rim).
+const RIM_STEPS := 32
+
+
+## Roundabout junction `j`'s island's rim: how far from its middle the ring's inner edge is, as its deck is laid, at
+## RIM_STEPS bearings evenly round from north (clockwise), less a hand's width so its kerb stands on the ring's edge,
+## never short of it (a ring drawn a little oval, or off its middle, leaves no gap round the island, nor runs under it).
+func island_rim(j: Dictionary) -> PackedFloat32Array:
+	var key := int(j["node"])
+	_lock.lock()
+	var got = _rims.get(key)
+	_lock.unlock()
+	if got != null:
+		return got
+	var c := Vector2(j["pos"].x, j["pos"].z)
+	var ring := PackedInt32Array()
+	for n in j["nodes"]:
+		for ei in region.adjacent[n]:
+			if on_ring(ei) and not ring.has(ei):
+				ring.append(ei)
+	var least := float(j["island"])
+	var most := float(j["ring_r"]) + float(j["ring_w"])
+	var on_deck := func(p: Vector2) -> bool:
+		for ei in ring:
+			if float(_project(ei, p)[2]) <= width_of(ei) * 0.5:
+				return true
+		return false
+	var rim := PackedFloat32Array()
+	for k in RIM_STEPS:
+		var t := TAU * k / RIM_STEPS
+		var d := Vector2(sin(t), -cos(t))
+		# Out from the island as it's reckoned (inside the deck everywhere) in steps, then halved down to the edge.
+		var lo := least
+		var hi := most
+		var r := least
+		while r < most:
+			if on_deck.call(c + d * r):
+				hi = r
+				break
+			lo = r
+			r += 0.4
+		for _i in 6:
+			var mid := (lo + hi) * 0.5
+			if on_deck.call(c + d * mid):
+				hi = mid
+			else:
+				lo = mid
+		rim.append(maxf(least, hi - 0.05) if hi < most else least)
+	_lock.lock()
+	_rims[key] = rim
+	_lock.unlock()
+	return rim
+
+
+## Roundabout junction `j`'s island's rim at bearing `h` (clockwise from north): between the bearings island_rim has.
+func island_r(j: Dictionary, h: float) -> float:
+	var rim := island_rim(j)
+	var f := posmod(h, TAU) / TAU * RIM_STEPS
+	var k := int(f) % RIM_STEPS
+	return lerpf(rim[k], rim[(k + 1) % RIM_STEPS], f - floorf(f))
 
 
 ## The road's height at every sample along edge `edge` (samples_of of them, evenly from a to b). Kept once the heights

@@ -580,6 +580,27 @@ func test_meshes() -> void:
 	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
 	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
 	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
+	# On a hill, its island tips with the ring and its kerb runs round the ring's own inner edge: tarmac just outside it
+	# all the way round, the island's grass just inside it at the kerb's height above the ring, no gap and no step.
+	var tipped := RoadNet.new(roundabout(), func(x: float, z: float) -> float: return 10.0 + x * 0.06 - z * 0.03)
+	var tr := tipped.junction_of(0)
+	var tb2 := tipped.block(RoadBlock.key_of(100.0, 100.0))
+	var o2 := tb2.anchor()
+	var c2 := Vector2(tr["pos"].x, tr["pos"].z)
+	var worst_gap := 0.0
+	var worst_kerb := 0.0
+	for k in 32:
+		var h := TAU * (k + 0.5) / 32.0
+		var d := Vector2(sin(h), -cos(h))
+		var rr := tipped.island_r(tr, h)
+		var road_hs := _heights_at(tb2, c2 + d * (rr + 0.3) - Vector2(o2.x, o2.z))
+		if road_hs.is_empty():
+			worst_gap = maxf(worst_gap, 1.0)
+		var inside := c2 + d * (rr - 0.4)
+		var top := _down(tb2, Vector3(inside.x, 1000.0, inside.y) - o2) + o2.y
+		worst_kerb = maxf(worst_kerb, absf(top - tipped.ring_y(tr, inside) - RoadBlock.ISLAND_H))
+	check(worst_gap == 0.0 and worst_kerb < 0.02,
+		"a roundabout's island sits on its ring's inner edge, tipped with it (no gap: %s; kerb height off by %.3f m)" % [worst_gap == 0.0, worst_kerb])
 	# Three junctions drawn as one, with a road looping round from one to another (its mouths inside their outline,
 	# which folds back seen from its middle), on rolling land: one surface over each spot, never two a step apart.
 	var rolling := func(x: float, z: float) -> float: return 10.0 + x * 0.08 + 2.0 * sin(z / 12.0) + 1.5 * sin(x / 9.0)

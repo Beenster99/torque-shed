@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 16
+const VERSION := 17
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -1251,48 +1251,77 @@ func _sheet(g: Dictionary, surf: String, col: Color, j: Dictionary, pts: Array) 
 	return true
 
 
-## A roundabout's island: a kerbed disc of grass a little above the ring.
+## A roundabout's island: a kerbed disc of grass a little above the ring, its kerb round the ring's own inner edge
+## (RoadNet.island_rim) and tilted with its deck, so it neither leaves a gap nor stands on the road.
 func _island(j: Dictionary) -> void:
 	var r := float(j["island"])
 	if r <= 0.5:
 		return
 	var a: Dictionary = arrays["island"]
-	var c: Vector3 = j["pos"] - anchor()
-	var n := 24
+	var o := anchor()
+	var full := net.junction_of(int(j["node"]))
+	var c: Vector3 = j["pos"] - o
+	var rim := net.island_rim(full)
+	var n := rim.size()
+	# The deck's height under (block space) x, z.
+	var deck := func(x: float, z: float) -> float:
+		return net.ring_y(full, Vector2(x + o.x, z + o.z)) - o.y
+	var at := func(d: Vector3, dist: float, up: float) -> Vector3:
+		var p := c + d * dist
+		return Vector3(p.x, deck.call(p.x, p.z) + up, p.z)
+	var mid := Vector3(c.x, deck.call(c.x, c.z), c.z)
 	for k in n:
 		var t0 := TAU * k / n
 		var t1 := TAU * (k + 1) / n
 		var d0 := Vector3(sin(t0), 0.0, -cos(t0))
 		var d1 := Vector3(sin(t1), 0.0, -cos(t1))
-		var top := Vector3(0.0, ISLAND_H, 0.0)
-		var low := Vector3(0.0, -0.1, 0.0)
+		var r0 := rim[k]
+		var r1 := rim[(k + 1) % n]
 		# Grass in from the kerb, then (on an island big enough) a mound rising gently to its middle, as the planned
 		# road's roundabouts have (the ring just inside the kerb is kept flat: the chevron boards stand on it).
-		var flat := r - MOUND_IN if r > MOUND_FROM else 0.0
-		_up(a, c + d0 * flat + top, c + d0 * (r - ISLAND_KERB) + top, c + d1 * (r - ISLAND_KERB) + top, ISLAND_GRASS)
-		_up(a, c + d0 * flat + top, c + d1 * (r - ISLAND_KERB) + top, c + d1 * flat + top, ISLAND_GRASS)
+		var f0 := r0 - MOUND_IN if r > MOUND_FROM else 0.0
+		var f1 := r1 - MOUND_IN if r > MOUND_FROM else 0.0
+		var k0: Vector3 = at.call(d0, r0 - ISLAND_KERB, ISLAND_H)
+		var k1: Vector3 = at.call(d1, r1 - ISLAND_KERB, ISLAND_H)
+		var g0: Vector3 = at.call(d0, f0, ISLAND_H)
+		var g1: Vector3 = at.call(d1, f1, ISLAND_H)
+		_up(a, g0, k0, k1, ISLAND_GRASS)
+		_up(a, g0, k1, g1, ISLAND_GRASS)
+		_face("grass", g0, k0, k1)
+		_face("grass", g0, k1, g1)
 		for ring in 3:
-			var r0 := flat * (1.0 - ring / 3.0)
-			var r1 := flat * (1.0 - (ring + 1) / 3.0)
-			var y0 := Vector3.UP * (ISLAND_H + MOUND_H * (ring / 3.0))
-			var y1 := Vector3.UP * (ISLAND_H + MOUND_H * ((ring + 1) / 3.0))
-			_up(a, c + d0 * r0 + y0, c + d1 * r0 + y0, c + d1 * r1 + y1, ISLAND_GRASS.darkened(0.06 * ring))
+			var s0 := 1.0 - ring / 3.0
+			var s1 := 1.0 - (ring + 1) / 3.0
+			var u0 := ISLAND_H + MOUND_H * (ring / 3.0)
+			var u1 := ISLAND_H + MOUND_H * ((ring + 1) / 3.0)
+			var p00: Vector3 = at.call(d0, f0 * s0, u0)
+			var p10: Vector3 = at.call(d1, f1 * s0, u0)
+			var p11: Vector3 = at.call(d1, f1 * s1, u1)
+			var p01: Vector3 = at.call(d0, f0 * s1, u1)
+			_up(a, p00, p10, p11, ISLAND_GRASS.darkened(0.06 * ring))
+			_face("grass", p00, p10, p11)
 			if ring < 2:
-				_up(a, c + d0 * r0 + y0, c + d1 * r1 + y1, c + d0 * r1 + y1, ISLAND_GRASS.darkened(0.06 * ring))
-		_up(a, c + d0 * (r - ISLAND_KERB) + top, c + d0 * r + top, c + d1 * r + top, KERB)
-		_up(a, c + d0 * (r - ISLAND_KERB) + top, c + d1 * r + top, c + d1 * (r - ISLAND_KERB) + top, KERB)
-		# The kerb's face, out towards the ring.
-		AdventureProps._quad(a, c + d0 * r + low, c + d1 * r + low, c + d1 * r + top, c + d0 * r + top, KERB)
-		_face("grass", c + top, c + d0 * r + top, c + d1 * r + top)
+				_up(a, p00, p11, p01, ISLAND_GRASS.darkened(0.06 * ring))
+				_face("grass", p00, p11, p01)
+		var e0: Vector3 = at.call(d0, r0, ISLAND_H)
+		var e1: Vector3 = at.call(d1, r1, ISLAND_H)
+		_up(a, k0, e0, e1, KERB)
+		_up(a, k0, e1, k1, KERB)
+		_face("grass", k0, e0, e1)
+		_face("grass", k0, e1, k1)
+		# The kerb's face, down past the ring's deck.
+		var l0: Vector3 = at.call(d0, r0, -0.1)
+		var l1: Vector3 = at.call(d1, r1, -0.1)
+		AdventureProps._quad(a, l0, l1, e1, e0, KERB)
 	# Shrubs on the mound.
 	if r > MOUND_FROM:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash(["island", int(j["node"])])
 		for k in SHRUBS:
 			var ang := rng.randf() * TAU
-			var at := rng.randf_range(0.3, r - MOUND_IN - 0.8)
-			var rise := ISLAND_H + MOUND_H * (1.0 - at / (r - MOUND_IN)) - 0.1
-			AdventureProps.blob(a, c + Vector3(sin(ang) * at, rise, -cos(ang) * at), Vector3(1.0, 0.8, 1.0) * rng.randf_range(0.6, 1.1),
+			var out := rng.randf_range(0.3, r - MOUND_IN - 0.8)
+			var rise := ISLAND_H + MOUND_H * (1.0 - out / (r - MOUND_IN)) - 0.1
+			AdventureProps.blob(a, at.call(Vector3(sin(ang), 0.0, -cos(ang)), out, rise), Vector3(1.0, 0.8, 1.0) * rng.randf_range(0.6, 1.1),
 				SHRUB_COLOURS[k % SHRUB_COLOURS.size()], rng.randi())
 
 

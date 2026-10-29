@@ -437,7 +437,10 @@ static func _chevrons(a: Dictionary, net: RoadNet, j: Dictionary, o: Vector3, st
 			continue
 		var h := float(arm["heading"])
 		var out := Vector3(sin(h), 0.0, -cos(h))
-		var foot: Vector3 = j["pos"] - o + out * (island - CHEVRON_IN) + Vector3(0.0, RoadBlock.ISLAND_H, 0.0)
+		# (on the island's rim as it's laid, tilted with the ring: RoadBlock._island)
+		var full := net.junction_of(int(j["node"]))
+		var foot: Vector3 = j["pos"] - o + out * (net.island_r(full, h) - CHEVRON_IN)
+		foot.y = net.ring_y(full, Vector2(foot.x + o.x, foot.z + o.z)) - o.y + RoadBlock.ISLAND_H
 		var across := Vector3.UP.cross(out).normalized()
 		var w := minf(2.4, island * 0.9)
 		for sx: float in [-w * 0.4, w * 0.4]:
