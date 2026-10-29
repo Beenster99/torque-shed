@@ -72,8 +72,8 @@ func test_features() -> void:
 ## The kit library: a row for a kind, a region's laid over its default.
 func test_kits() -> void:
 	var k := SceneryStreamer.kit("wind_turbine")
-	check(k.get("model") == "standin:post" and k.get("round") == "D1" and float(k.get("reach", 0)) > 1000.0,
-		"a turbine is round 1's, a stand-in for now, seen from afar (%s)" % k)
+	check(":" in str(k.get("model", "")) and k.get("round") == "D1" and float(k.get("reach", 0)) > 1000.0,
+		"a turbine is round 1's, seen from afar (%s)" % k)
 	check(SceneryStreamer.kit("no_such_thing").is_empty(), "a kind the library hasn't got has no row")
 	var kinds: Dictionary = SceneryStreamer.kits()["kinds"]
 	var bad := []
@@ -88,9 +88,12 @@ func test_kits() -> void:
 	check(bad.is_empty(), "every row names a round, a model whose script there is and only real regional kits (%s)" % str(bad))
 	var post := SceneryStreamer.model_mesh("standin:post_D1")
 	check(post is ArrayMesh and post.get_aabb().size.y > 2.0, "the stand-in's script makes its post")
-	check(not SceneryStreamer.models_beyond_standin(), "round 0 has stand-ins only, so an ordinary ride places nothing")
-	# A region's row over the default (made up here: the library's own has none yet).
-	var was := SceneryStreamer.kits()
+	# A library of stand-ins only places nothing on an ordinary ride; one real model and it does.
+	var was := standins()
+	check(not SceneryStreamer.models_beyond_standin(), "stand-ins only: an ordinary ride places nothing")
+	SceneryStreamer._kits["kinds"]["wind_turbine"]["default"]["model"] = "skyline:turbine"
+	check(SceneryStreamer.models_beyond_standin(), "a round's own model: an ordinary ride places it")
+	# A region's row over the default (made up here).
 	SceneryStreamer._kits = {"kinds": {"x": {"round": "D1", "default": {"model": "standin:post", "reach": 100},
 		"regions": {"nordic": {"reach": 900, "colour": "red"}}}}}
 	var n := SceneryStreamer.kit("x", "nordic")
@@ -99,8 +102,22 @@ func test_kits() -> void:
 	SceneryStreamer._kits = was
 
 
+## Swaps in the kit library with every model a stand-in (so these tests stay the same as the rounds model kinds), and
+## returns the one it replaced, to put back.
+static func standins() -> Dictionary:
+	var was := SceneryStreamer.kits()
+	var fake: Dictionary = was.duplicate(true)
+	for row: Dictionary in (fake.get("kinds", {}) as Dictionary).values():
+		(row["default"] as Dictionary)["model"] = "standin:post"
+		for r: Dictionary in (row.get("regions", {}) as Dictionary).values():
+			r.erase("model")
+	SceneryStreamer._kits = fake
+	return was
+
+
 ## A block's stand-ins: on the land, off the carriageway, none in a junction, none at all unless asked for.
 func test_lay_out() -> void:
+	var kits_was := standins()
 	var r := Roads.tee()
 	r.features = {"points": [
 		["wind_turbine", 300.0, 300.0, 90.0, null, null, "", "a"],    # out in a field
@@ -143,6 +160,7 @@ func test_lay_out() -> void:
 	check(b["items"].keys().all(func(m): return str(m).begins_with("standin:post_")), "drawn by the stand-in's script (%s)" % str(b["items"].keys()))
 	s.world.free()
 	s.free()
+	SceneryStreamer._kits = kits_was
 
 
 ## Lines and areas are filed in every block their box touches; a block holding a kind seen from afar is laid out that
@@ -158,7 +176,9 @@ func test_filing() -> void:
 		"an area round a block corner in each block it touches")
 	check(SceneryStreamer.in_block(Vector2i(0, 1), Vector2(100, 600)) and not SceneryStreamer.in_block(Vector2i(0, 0), Vector2(100, 600)),
 		"a model asks which block a line's point is in")
+	var kits_was := standins()
 	var far := SceneryStreamer.far_blocks(f, filed)
+	SceneryStreamer._kits = kits_was
 	check(far.has(RoadBlock.key_of(3000.0, 100.0)) and float(far[RoadBlock.key_of(3000.0, 100.0)]) > SceneryStreamer.REACH
 		and not far.has(Vector2i(0, 2)), "the turbine's block is wanted from afar, the railway's only near (%s)" % str(far))
 	var r := Roads.tee()
