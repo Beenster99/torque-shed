@@ -4,8 +4,8 @@ extends ScrollContainer
 ## everyone's XP (the host tells every player's game), empty the garage's account or give it
 ## a million pounds or pay tonight's bills now (host), and start any kind of contract there and then for testing (host):
 ## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
-## the recovery jobs with the truck granted if the garage hasn't got it. The performance
-## profiler and its recording (see PerfOverlay). Every reset asks first.
+## the recovery jobs with the truck granted if the garage hasn't got it. Remove all the Adventure
+## Diaries. The performance profiler and its recording (see PerfOverlay). Every reset asks first.
 
 var _info: Label
 var _all_xp: Button
@@ -16,6 +16,7 @@ var _tier: OptionButton
 var _host_only: Array[Control] = []    # the contract buttons, for the host only
 var _confirm: ConfirmationDialog
 var _pending := Callable()
+var _diary_note: Label
 var _perf_toggle: CheckButton
 var _perf_note: Label
 var _adv_seed: SpinBox
@@ -108,6 +109,14 @@ func _ready() -> void:
 	var truck := _button("Grant the recovery truck", func(): Shed.request({"a": "recovery_grant"}))
 	box.add_child(_row([truck]))
 	_host_only.append(truck)
+
+	# Adventure Diaries (see AdventureDiary): every one on this machine gone, off the bookshelf and any wall.
+	box.add_child(UITheme.label("Adventure Diaries", 15, UITheme.ACCENT))
+	box.add_child(_row([_button("Remove all diaries", func(): _ask("Remove all diaries?",
+		"Every Adventure Diary on this computer is deleted, photos and all, and any adventure photos come off the shed's walls.",
+		"Remove all", remove_all_diaries))]))
+	_diary_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
+	box.add_child(_diary_note)
 
 	# Staff (see Staff): a full payroll at once, whatever the level, and everyone off sick or back.
 	box.add_child(UITheme.label("Staff (host)", 15, UITheme.ACCENT))
@@ -282,6 +291,15 @@ func send_recovery(kind: String) -> void:
 ## Host: a barn find or crash rescue taken on there and then, the truck granted if need be.
 func start_recovery(kind: String) -> void:
 	Shed.request({"a": "recovery_start", "kind": kind})
+
+## Deletes every Adventure Diary on this machine (and its albums), and the host takes any
+## adventure photos off the shed's walls. How many diaries went.
+func remove_all_diaries() -> int:
+	var n := AdventureDest.delete_all_here()
+	if Shed.is_authority():
+		Shed.request({"a": "diary_photos_down"})
+	_diary_note.text = "Removed %d %s." % [n, "diary" if n == 1 else "diaries"]
+	return n
 
 
 ## Presses the button named `node_name` (the contract buttons: "start_mot", "send_barn"...; for tests).

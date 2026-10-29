@@ -388,13 +388,13 @@ func test_trip() -> void:
 		main.bike.throttle = 0.3
 		await t.get_tree().physics_frame
 	check(int(Shed.adventure.get("arrived", 0)) == Shed.me(), "reaching the destination tells the host")
-	# There: parked together past the finish for the moment, the photo up on the shed wall, and it's the
+	# There: parked together past the finish for the moment, the crew's photo taken (for the diary, not the wall), and it's the
 	# host who rides everyone home (nothing ends by itself).
 	var at_dest: float = trip.world.distance_of(main.bike.global_position, "own")
 	check(trip.moment_done and absf(at_dest - AdventureDest.dest_s(trip.world)) < 20.0,
 		"everyone's brought to the destination (%.0f m along, it's at %.0f)" % [at_dest, AdventureDest.dest_s(trip.world)])
 	var photo: Dictionary = Shed.adventure.get("photo", {})
-	check(not photo.is_empty() and not AdventureDest.photo_on_wall(str(photo.get("key", ""))).is_empty(), "and the crew's photo hangs in the shed")
+	check(not photo.is_empty() and AdventureDest.photo_on_wall(str(photo.get("key", ""))).is_empty(), "and the crew's photo is taken, kept in the diary rather than hung on the shed wall")
 	for i in 30:
 		await t.get_tree().physics_frame
 	check(Adventure.active() and trip.on_trip(), "the adventure stays on at the destination")

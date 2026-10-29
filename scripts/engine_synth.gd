@@ -29,6 +29,7 @@ extends RefCounted
 const RATE := 32000
 const LOOP_SECONDS := 0.4     # each loop is at least this long, a whole number of engine cycles
 const WARMUP := 2400          # samples run through the pipes before a loop starts, so it loops seamlessly
+const WARMUP_TWO_STROKE := 9600   # a two-stroke's expansion chamber rings on far longer
 const BUCKET_STEP := 1.2      # each bucket this much faster than the last
 const SOUND_SPEED_HOT := 520.0   # m/s in the exhaust gas
 const SOUND_SPEED_AIR := 343.0
@@ -253,9 +254,10 @@ static func render_loop(spec: Dictionary, layer: String, rpm: float, seed := 1) 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(signature(spec)) + seed * 7919 + (0 if on else 31) + (0 if layer.begins_with("ex") else 101)
 	var events := _cycle_events(spec, info, on, rng)
+	var warm := WARMUP_TWO_STROKE if is_two_stroke(spec) else WARMUP
 	if layer.begins_with("ex"):
-		return _exhaust(spec, info["rpm"], 1.0 if on else 0.0, events, info["n"], WARMUP, rng)
-	return _intake(spec, info["rpm"], 1.0 if on else 0.0, events, info["n"], WARMUP, rng)
+		return _exhaust(spec, info["rpm"], 1.0 if on else 0.0, events, info["n"], warm, rng)
+	return _intake(spec, info["rpm"], 1.0 if on else 0.0, events, info["n"], warm, rng)
 
 
 ## Every firing in the loop: [sample time, amplitude, header group, cylinder]. Combustion varies
@@ -1120,7 +1122,32 @@ static func to_stream(data: PackedByteArray, loop: bool) -> AudioStreamWAV:
 		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		wav.loop_begin = 0
 		wav.loop_end = data.size() / 2
+		pad_loop(wav)
 	return wav
+
+
+## Samples of a loop's own start copied on past its end (see pad_loop).
+const LOOP_PAD := 16
+
+
+## Simon heard the engines click: played a touch slower than recorded (pitch_scale under 1, as
+## the revs sit just below a loop's rpm), Godot's resampler reads a few samples past a loop's
+## end before it wraps, and found silence there, a click every time round (2 or 3 a second).
+## So the loop's first LOOP_PAD samples are copied on after its end, where they'd come anyway;
+## loop_end stays where it was. For an uncompressed (8 or 16-bit) looping wav.
+static func pad_loop(wav: AudioStreamWAV) -> void:
+	if wav == null or wav.loop_mode == AudioStreamWAV.LOOP_DISABLED or wav.format > AudioStreamWAV.FORMAT_16_BITS:
+		return
+	var frame := (2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if wav.stereo else 1)
+	var begin := wav.loop_begin * frame
+	var end := wav.loop_end * frame
+	var data := wav.data
+	if end <= begin or end > data.size():
+		return
+	var pad := data.slice(begin, mini(begin + LOOP_PAD * frame, end))
+	data = data.slice(0, end)
+	data.append_array(pad)
+	wav.data = data
 
 
 ## Writes a buffer to a .wav file (for listening to renders outside the game).

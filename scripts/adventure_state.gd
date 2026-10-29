@@ -21,8 +21,7 @@ extends RefCounted
 ## any shed TV tuned to the Route planner channel, see RouteTv) and adventure_end (the host: "Ride home"
 ## once everyone's at the destination), adventure_join {bike: the one you'd like, or home: one of
 ## their own from their collection, or foot: true to walk} (each player, on loading it, from AdventureBikePicker) and adventure_arrive (the first there: everyone's brought to the destination, gets
-## XP, and the photo goes up on the shed wall); adventure_photo {photo} (the host: a photo from
-## their own album hung in this shed, see AdventureDest.hang_album);
+## XP, and the photo goes in the diary on the bookshelf, not on the shed wall);
 ## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
 ## see AdventureNeeds), everyone back where they slept.
 ## adventure_highlight (see
@@ -130,11 +129,6 @@ static func check(peer: int, action: Dictionary) -> String:
 					return "%s on a different version of the game: everyone needs the same one to ride the road network together." % (
 						" and ".join(odd) + (" is" if odd.size() == 1 else " are"))
 			return AdventureJourney.start_check(action)
-		"adventure_photo":
-			if not _is_host(peer):
-				return "Only the host hangs photos."
-			if AdventureDest.sanitize_photo(action.get("photo")).is_empty():
-				return "That photo's no good."
 		"adventure_resume":
 			if not _is_host(peer):
 				return "Only the host can carry on an adventure."
@@ -246,9 +240,6 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure_save = {}   # there: nothing left to carry on
 			AdventureDiary.arrived(peer)
 			return "*" + _arrive(who)
-		"adventure_photo":
-			AdventureDest.hang(action["photo"])
-			return ""
 		"adventure_highlight":
 			return AdventureDiary.apply(peer, action)
 		"adventure_builds":
@@ -294,15 +285,15 @@ static func _settle_route(route: Dictionary) -> String:
 	return "*" + said if said != "" else ""
 
 
-## Everyone's at the destination: the crew's photo (hung on the shed wall) and XP for each of them
-## (more for a longer ride). What to tell them.
+## Everyone's at the destination: the crew's photo (kept with the diary, which stands on the shed's
+## bookshelf: Simon didn't want them on the walls) and XP for each of them (more for a longer ride).
+## What to tell them.
 static func _arrive(who: String) -> String:
 	var ids := Shed.crew.keys()
 	ids.sort()
 	var names := ids.map(func(p): return str(Shed.crew[p].get("name", "Rider")))
 	var photo := AdventureDest.make_photo(Shed.adventure, names)
 	Shed.adventure["photo"] = photo
-	AdventureDest.hang(photo)
 	var km := float(Shed.adventure.get("km", 0.0))
 	for p in ids:
 		Progress.award(int(p), "adventure_done", km / 100.0, "adventure:%d" % int(Shed.adventure["id"]))

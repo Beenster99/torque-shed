@@ -2550,6 +2550,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return retrieve_check(action)
 	if a == "diary_delete":
 		return AdventureDest.delete_check(peer, action)
+	if a == "diary_photos_down":
+		return "" if peer == 1 or not Net.is_online() else "Only the host can take the photos down."
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	if ShedPump.holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack", "dyno_hose"]:
@@ -3437,6 +3439,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_tell(peer, said, true)
 		_mark_dirty()
 		changed.emit()
+		return
+	if a == "diary_photos_down":
+		if AdventureDest.take_all_down() > 0:
+			_mark_dirty()
+			changed.emit()
 		return
 	if a == "retrieve_bike":
 		# The whole crew hears that it's back.

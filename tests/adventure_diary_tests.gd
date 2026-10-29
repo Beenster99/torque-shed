@@ -543,8 +543,7 @@ func test_diary_files() -> void:
 
 
 ## A whole ride: to the destination, the arrival's photo in the moment, the diary put together
-## there; Ride home puts it together again and opens it at the shed; the route planner and the photo on
-## the wall open it again.
+## there; Ride home puts it together again and opens it at the shed; the route planner opens it again.
 func test_diary_ride() -> void:
 	var main: Node = await _ride_out(8.0, 4101)
 	var trip: AdventureTrip = main.trip
@@ -566,7 +565,7 @@ func test_diary_ride() -> void:
 	check(kinds.has("start") and kinds.has("arrive"), "the highlights from setting off to arriving: %s" % str(kinds))
 	check(not (d.get("route", {}) as Dictionary).is_empty() and float(d["stats"].get("distance", 0.0)) > 0.0, "the route strip and the trip's stats")
 	var wall := str((d.get("photo", {}) as Dictionary).get("key", ""))
-	check(wall != "" and wall == str(Shed.adventure.get("photo", {}).get("key", "")), "it knows the photo hung on the shed wall")
+	check(wall != "" and wall == str(Shed.adventure.get("photo", {}).get("key", "")), "it keeps the arrival's photo")
 	# Ride home: back at the shed, the book's open at it.
 	Adventure.menu_action()
 	var home := await _until(func(): return not trip.on_trip() and trip.diary_open(), 15.0)
@@ -581,16 +580,7 @@ func test_diary_ride() -> void:
 	await _until(func(): return main._fade.color.a < 0.01, 5.0)
 	check(held and main._fade.color.a < 0.01 and not trip._busy and not trip.on_trip(),
 		"a screen stuck black going home lifts after %.0f s" % AdventureTrip.STUCK_BLACK)
-	# From the photo on the shed wall.
-	var fid := 0
-	for f in Shed.furniture:
-		if str(Shed.furniture[f].get("model", "")) == AdventureDest.PHOTO_MODEL and str(Shed.furniture[f].get("photo", {}).get("key", "")) == wall:
-			fid = int(f)
-	check(fid != 0, "the photo's on the wall")
-	if fid != 0:
-		main.walker._read_diary(fid)
-		check(trip.diary_open() and trip.diary.diary.get("id", "") == id, "and reading it opens the diary")
-		trip.close_diary()
+	check(AdventureDest.photo_on_wall(wall).is_empty(), "and nothing goes up on the shed wall: the diary's on the bookshelf")
 	# A shed TV's planner opens the same planner full screen; the full-screen one has no such button.
 	var wall_tv := RouteTv.new()
 	wall_tv.on_wall = true

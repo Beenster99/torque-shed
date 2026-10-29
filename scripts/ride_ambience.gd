@@ -6,6 +6,8 @@ extends Node
 ## the rain, and the church bells, temple bell or call to prayer at their hours. How built up it is comes from the
 ## buildings near you on a real road (a village you ride through has its market and bells, the moor beyond has none),
 ## else from the profile. The season is this month's, so a ride in October sounds like October there.
+## The birds sing only now and then (Simon: "bird song is too persistent, it should only happen
+## occasionally"): a short burst, then a long quiet, longer still round midday.
 
 ## How often (s) it looks at the buildings round you, and how far (m) it looks.
 const LOOK_EVERY := 1.0
@@ -14,6 +16,10 @@ const PROFILES := "res://scripts/place_profile.gd"
 const LOOK_REACH := 300.0
 ## Buildings within LOOK_REACH for each density, sparsest first: fewer than the first is "rural", and so on up to "city".
 const BUILT := [[6, "village"], [24, "town"], [70, "city"]]
+## Birdsong comes in bursts this many seconds long, with this long a quiet between (s; up to
+## twice as long round midday).
+const BIRD_BURST := Vector2(4.0, 9.0)
+const BIRD_GAP := Vector2(45.0, 120.0)
 
 ## The adventure this ambience belongs to.
 var world: AdventureWorld
@@ -25,6 +31,9 @@ var density := ""
 ## Each bed's player, made the first time it plays.
 var players := {}
 var _rng := RandomNumberGenerator.new()
+## Birds: singing a burst now or not, and how long until that changes.
+var birds_singing := false
+var bird_timer := 0.0
 var _look := 0.0
 var _hour := -1.0
 var _month := 1
@@ -63,6 +72,7 @@ func _take_profile(baked: Dictionary) -> void:
 
 func setup(place: Dictionary, month := 0) -> void:
 	_rng.randomize()
+	bird_timer = _rng.randf_range(10.0, 40.0)
 	profile = place
 	_month = month if month > 0 else int(Time.get_date_dict_from_system()["month"])
 	density = str(place.get("density", "rural"))
@@ -107,6 +117,10 @@ func _process_body(delta: float) -> void:
 	var hour := Daylight.time_of_day()
 	var rain := Weather.current.rain if Weather.current else 0.0
 	var levels := PlaceSound.mix(chosen, Daylight.darkness(), hour, rain)
+	var song := bird_burst(delta, hour)
+	for id in levels:
+		if str(id).begins_with("birds"):
+			levels[id] = float(levels[id]) * song
 	for id in players:
 		if not levels.has(id):
 			levels[id] = 0.0
@@ -119,6 +133,20 @@ func _process_body(delta: float) -> void:
 			for d in PlaceSound.due(chosen, _hour, to):
 				ring(str(d[0]), int(d[2]))
 	_hour = hour
+
+
+## How much the birds are singing now (0..1): an occasional burst, then a long quiet that
+## stretches round midday.
+func bird_burst(delta: float, hour: float) -> float:
+	var midday := clampf(1.0 - absf(hour - 13.0) / 4.0, 0.0, 1.0)
+	bird_timer -= delta
+	if bird_timer <= 0.0:
+		birds_singing = not birds_singing
+		if birds_singing:
+			bird_timer = _rng.randf_range(BIRD_BURST.x, BIRD_BURST.y)
+		else:
+			bird_timer = _rng.randf_range(BIRD_GAP.x, BIRD_GAP.y) * (1.0 + midday)
+	return 1.0 if birds_singing else 0.0
 
 
 ## Chooses the sounds again when how built up it is here has changed.

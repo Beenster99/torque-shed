@@ -5,10 +5,12 @@ extends RefCounted
 ## the crew are parked together just past the finish banner, looking on along the road.
 ##
 ## Reaching the finish (see Adventure, adventure_arrive) brings the whole crew there together: a
-## short moment (camera pull-back, title card, group photo, see AdventureTrip), XP for everyone,
-## and a framed photo of the crew there hung on the shed wall (a trinket, PHOTO_MODEL, carrying
-## the photo's record as furniture field "photo"). Each player's own game also keeps the photo in
-## its album (album_path, by player name), so it's hung in their own shed too when they play it.
+## short moment (camera pull-back, title card, group photo, see AdventureTrip) and XP for everyone.
+## The photo goes in the ride's Adventure Diary, which stands on the shed's bookshelf (DiaryShelf).
+## It used to hang framed on the shed wall too (a trinket, PHOTO_MODEL, carrying the photo's record
+## as furniture field "photo"); Simon wanted the diaries on the bookshelf only, so none are hung now
+## and any from an older save are taken down when the shed loads (take_all_down). Each player's own
+## game still keeps the photo in its album (album_path, by player name).
 ##
 ## A photo's record: {key (the same on everyone's game), dest (the place's name), theme (the look
 ## of the land, see AdventureTheme: the picture is painted from it), title, names [the crew], km,
@@ -368,13 +370,28 @@ static func album_add(player: String, photo: Dictionary) -> void:
 		f.close()
 
 
-## Playing your own shed (solo or hosting): the photos in your album that aren't on its walls yet
-## go up (each through the host, adventure_photo).
-static func hang_album(player: String) -> int:
+## Host: takes every adventure photo off the shed's walls (diary_photos_down). How many came down.
+static func take_all_down() -> int:
+	var gone := Shed.furniture.keys().filter(func(id): return str(Shed.furniture[id].get("model", "")) == PHOTO_MODEL)
+	for id in gone:
+		Shed.furniture.erase(id)
+	return gone.size()
+
+
+## Empties every album on this machine.
+static func album_clear() -> void:
+	_album_mem = {}
+	if album_path != "":
+		DirAccess.remove_absolute(album_path)
+
+
+## Deletes every Adventure Diary on this machine and empties its albums (the Debug menu's Remove
+## all diaries). How many diaries went.
+static func delete_all_here() -> int:
+	album_clear()
 	var n := 0
-	for p in album_of(player):
-		if photo_on_wall(str(p["key"])).is_empty():
-			Shed.request({"a": "adventure_photo", "photo": p})
+	for d in AdventureDiary.list():
+		if AdventureDiary.delete(str(d["id"])):
 			n += 1
 	return n
 

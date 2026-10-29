@@ -173,6 +173,8 @@ func test_ride() -> void:
 	var amb := RideAmbience.new()
 	t.add_child(amb)
 	amb.setup(profile("atlas"), 7)
+	amb.birds_singing = true   # (mid-burst, to hear them)
+	amb.bird_timer = 60.0
 	for i in 40:
 		amb._process_body(0.25)
 	var wind: AudioStreamPlayer = amb.players.get("wind")
@@ -180,6 +182,30 @@ func test_ride() -> void:
 	var recorded := ResourceLoader.exists(PlaceSound.DIR + "birds_arid.ogg")
 	check(not recorded or (amb.players.has("birds_arid") and amb.players["birds_arid"].playing), "and its birds sing")
 	check(not amb.players.has("church_bells") and amb.chosen["events"].has("call_to_prayer"), "the call to prayer, not church bells, is due")
+	# The birds only now and then (Simon: "bird song is too persistent"): short bursts, long quiets.
+	var sung := {}
+	for hour in [7.0, 13.0]:
+		amb._rng.seed = 5
+		amb.birds_singing = false
+		amb.bird_timer = 0.0
+		var on := 0.0
+		var bursts := 0
+		var t2 := 0.0
+		while t2 < 3600.0:
+			var was := amb.birds_singing
+			on += amb.bird_burst(0.5, hour) * 0.5
+			if amb.birds_singing and not was:
+				bursts += 1
+			t2 += 0.5
+		sung[hour] = [on / 3600.0, bursts]
+	check(float(sung[7.0][0]) < 0.12 and int(sung[7.0][1]) >= 20, "the birds sing now and then: %d bursts an hour in the morning, %.0f%% of the time" % [sung[7.0][1], float(sung[7.0][0]) * 100.0])
+	check(float(sung[13.0][0]) < float(sung[7.0][0]) * 0.75, "and less at midday (%.0f%%)" % (float(sung[13.0][0]) * 100.0))
+	amb.birds_singing = false
+	amb.bird_timer = 60.0
+	for i in 40:
+		amb._process_body(0.25)
+	var quiet := not amb.players.has("birds_arid") or float(amb.players["birds_arid"].get_meta("level", 0.0)) < 0.01
+	check(quiet, "between bursts they fall quiet")
 	amb._rechoose("city")
 	check(float(amb.chosen["layers"]["market_maghreb"]["day"]) > 0.8 and float(amb.chosen["layers"]["traffic"]["day"]) > 0.5, "riding into town: the souk and the horns")
 	amb.queue_free()
