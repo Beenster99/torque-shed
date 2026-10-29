@@ -187,6 +187,26 @@ func test_dam_under_road() -> void:
 	check(under > 5 and over.is_empty(), "the dam under the road (%d pieces), none up through it (%s)" % [under, str(over.slice(0, 4))])
 
 
+## A canal in Britain: its towpath along one bank, narrowboats moored along it, none on the road it passes under.
+func test_canal() -> void:
+	var r := Roads.graph([[250, -100], [250, 600]], [[0, 1, "secondary"]])
+	r.features = {"points": [], "areas": [], "lines": [
+		["canal", PackedVector2Array([Vector2(0, 300), Vector2(500, 300)]), null, 9.0, 0, "", "leeds_liverpool"]]}
+	var net := RoadNet.new(r, Roads.flat)
+	var b := WaterWorks.lay_out(net, Vector2i(0, 0), rows_of(r.features, "british_isles"))
+	var path: Array = b["items"].get("block:gravel", [])
+	var boats := []
+	for m: String in b["items"]:
+		if m.begins_with("boat:narrowboat"):
+			boats.append_array(b["items"][m])
+	check(path.size() > 30, "a towpath along it (%d pieces)" % path.size())
+	check(boats.size() >= 1, "narrowboats moored along it (%d)" % boats.size())
+	check(path.all(func(xf): return absf(xf.origin.x - 250.0) > 4.0 + 4.0) and boats.all(func(xf): return absf(xf.origin.x - 250.0) > 12.0),
+		"none on the road it passes under")
+	var none := WaterWorks.lay_out(net, Vector2i(0, 0), rows_of(r.features, "sub_saharan_africa"))
+	check(not none["items"].keys().any(func(m): return m.begins_with("boat:")), "no narrowboats where the kit has none")
+
+
 ## Two blocks a line runs over: each lays out its own pieces of it, none twice.
 func test_blocks_meet() -> void:
 	var r := Roads.graph([[-100, -900], [-50, -900]], [[0, 1, "track"]])
@@ -230,6 +250,7 @@ func test_regions() -> void:
 		var worst := 0.0
 		var worst_key := Vector2i.ZERO
 		var pieces := 0
+		var over := 0
 		# (each block twice: the first time round a place waits on its roads' heights, as the road blocks do)
 		for key: Vector2i in by_block:
 			WaterWorks.lay_out(net, key, by_block[key])
@@ -237,12 +258,14 @@ func test_regions() -> void:
 			var t0 := Time.get_ticks_usec()
 			var b := WaterWorks.lay_out(net, key, by_block[key])
 			var ms := (Time.get_ticks_usec() - t0) / 1000.0
+			if ms > 2.0:
+				over += 1
 			if ms > worst:
 				worst = ms
 				worst_key = key
 			for m: String in b["items"]:
 				pieces += (b["items"][m] as Array).size()
-		print("  %s: %d blocks of water, %d pieces, the slowest %.2f ms (%s: %s)" % [id, by_block.size(), pieces, worst, worst_key,
+		print("  %s: %d blocks of water, %d pieces, %d over 2 ms, the slowest %.2f ms (%s: %s)" % [id, by_block.size(), pieces, over, worst, worst_key,
 			str((by_block[worst_key] as Dictionary).values().map(func(v): return (v as Array).size()))])
 		if OS.get_environment("WATER_PROFILE") != "":
 			var slow := {}
@@ -256,6 +279,21 @@ func test_regions() -> void:
 						var ms := (Time.get_ticks_usec() - t0) / 1000.0
 						var kind := "%s %s" % [part, pair[0][0]]
 						slow[kind] = maxf(float(slow.get(kind, 0.0)), ms)
+			var bb := WaterWorks._Block.new(net, worst_key)
+			var c0 := (Vector2(worst_key) + Vector2(0.5, 0.5)) * RoadBlock.SIZE
+			var tg := Time.get_ticks_usec()
+			bb.gap(c0)
+			print("  the block's first look at a road: %.2f ms" % [(Time.get_ticks_usec() - tg) / 1000.0])
+			for what in ["bare", "ground", "clear", "near"]:
+				var t2 := Time.get_ticks_usec()
+				for q in 1000:
+					var pq := c0 + Vector2(q % 37, q / 37) * 7.0
+					match what:
+						"bare": bb.bare(pq)
+						"ground": bb.ground(pq)
+						"clear": bb.clear(pq)
+						"near": net._near(pq.x, pq.y)
+				print("  1000 %s: %.2f ms" % [what, (Time.get_ticks_usec() - t2) / 1000.0])
 			var t1 := Time.get_ticks_usec()
 			WaterWorks.lay_out(net, worst_key, {"points": [], "lines": [], "areas": []})
 			print("  slowest by kind: %s; an empty block %.3f ms" % [str(slow), (Time.get_ticks_usec() - t1) / 1000.0])

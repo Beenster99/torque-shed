@@ -869,6 +869,7 @@ func _run_all() -> void:
 	await _t(&"_test_water_kits")
 	await _t(&"_test_water_lay_out")
 	await _t(&"_test_water_dam_under_road")
+	await _t(&"_test_water_canal")
 	await _t(&"_test_water_blocks_meet")
 	await _t(&"_test_water_regions")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
@@ -22799,6 +22800,10 @@ func _test_water_lay_out() -> void:
 
 func _test_water_dam_under_road() -> void:
 	_water().test_dam_under_road()
+
+
+func _test_water_canal() -> void:
+	_water().test_canal()
 
 
 func _test_water_blocks_meet() -> void:

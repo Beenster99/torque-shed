@@ -2,7 +2,7 @@ class_name WaterWorks
 extends RefCounted
 ## Water and coast (Ride Anywhere v2, phase D round 1, D3: interfaces/scenery.md): dam walls across their valleys,
 ## waterfalls with their plume, weirs, canal locks with their gates and balance beams and a boat in the chamber,
-## narrowboats moored along the canals with a towpath, aqueducts, harbour walls and breakwaters, piers on their legs,
+## narrowboats moored along the canals by their towpath, aqueducts, harbour walls and breakwaters, piers on their legs,
 ## quays with bollards and boats along them, marinas of pontoons and yachts, fish passes, boardwalks, moats, hot springs
 ## and geysers steaming, blowholes spouting when the weather's up.
 ##
@@ -124,6 +124,7 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 			"boardwalk": _boardwalk(b, line, float(width) if width != null else 0.0, k)
 			"fish_pass": _fish_pass(b, line, k)
 			"rapids": _rapids_line(b, line, k)
+			"canal": _canal(b, line, float(width) if width != null else 0.0, k, id)
 	for pair: Array in rows.get("areas", []):
 		var row: Array = pair[0]
 		var ring: PackedVector2Array = row[1]
@@ -150,7 +151,6 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 			"hot_spring": _spring(b, centre(ring), k, false, id)
 			"geyser": _spring(b, centre(ring), k, true, id)
 			"waterfall": _waterfall(b, centre(ring), row[2], k, id)
-	_canals(b, rows)
 	return {"items": b.items, "dress": b.dress}
 
 
@@ -205,10 +205,50 @@ class _Block:
 	func bare(p: Vector2) -> float:
 		return float(n.height.call(p.x, p.y))
 
-	## The land as drawn at `p`, the roads' banks cut in (RoadNet.ground_at).
+	## The land as drawn at `p`, the roads' banks cut in (RoadNet.ground_at, only where a road's bank can reach).
 	func ground(p: Vector2) -> float:
 		var h := bare(p)
-		return n.ground_at(p.x, p.y, h, memo) if not is_nan(h) else h
+		if is_nan(h) or gap(p) >= FAR:
+			return h
+		return n.ground_at(p.x, p.y, h, memo)
+
+	## How far `p` is past the verge of the nearest road (m: negative on one; FAR where none is filed near it), from
+	## the roads' own lines and the net's own filing of them (RoadNet._near_at): a cheap first look before locate. A
+	## junction counts as a disc round its node, as wide as its widest road and the bell of its corners.
+	func gap(p: Vector2) -> float:
+		var near: Array = n._near_at(p.x, p.y)
+		var cands: PackedInt32Array = near[0]
+		var best := FAR
+		for c in cands.size():
+			var e := cands[c]
+			var line := n.line_of(e)
+			var half := n.width_of(e) * 0.5 + RoadNet.VERGE
+			var segs: PackedInt32Array = near[1][c]
+			for q in segs.size():
+				var k := segs[q]
+				var d := Geometry2D.get_closest_point_to_segment(p, line[k - 1], line[k]).distance_to(p) - half
+				if d < best:
+					best = d
+			for nd: int in [n.region.edge_a[e], n.region.edge_b[e]]:
+				if n.region.adjacent[nd].size() >= 3:
+					best = minf(best, n.region.node_pos[nd].distance_to(p) - _mouth(nd))
+		return best
+
+	## Past where the net files a road near (m), as far as gap can tell.
+	const FAR := 48.0
+	var _mouths := {}
+
+	## How far round junction `nd` its mouth reaches (m).
+	func _mouth(nd: int) -> float:
+		var have = _mouths.get(nd)
+		if have != null:
+			return have
+		var widest := 0.0
+		for e in n.region.adjacent[nd]:
+			widest = maxf(widest, n.width_of(e))
+		var r := widest * 0.5 + RoadNet.VERGE + RoadNet.FILLET + 6.0
+		_mouths[nd] = r
+		return r
 
 	## The water's surface at `p`: a lake's or river's (the land cover's water, whose heights are its surface), the
 	## sea's under the shore, NAN on dry land.
@@ -223,7 +263,7 @@ class _Block:
 	## The road at `p` if it's within `pad` (m) past the verge of one: locate's (with its "y" when `heights`), {} where
 	## none is.
 	func road(p: Vector2, pad := WaterWorks.CLEAR, heights := false) -> Dictionary:
-		if n._near(p.x, p.y).is_empty():
+		if gap(p) > pad + 4.0 or n._near(p.x, p.y).is_empty():
 			return {}
 		var on := n.locate(p.x, p.y, -1, false)
 		if on.is_empty() or int(on["node"]) < 0 and absf(float(on["lat"])) >= float(on["width"]) * 0.5 + RoadNet.VERGE + pad:
@@ -391,7 +431,7 @@ static func _dam(b: _Block, line: PackedVector2Array, mapped, thick: float, k: D
 		return
 	var embank := str(k.get("type", "")) == "embankment" or (str(k.get("type", "")) != "wall" and l > high * EMBANK_RATIO and high > EMBANK_FROM)
 	var wall_stone := stone(k, "stone", "concrete")
-	var crest_w := maxf(thick, maxf(4.0, high * 0.1)) if not embank else maxf(thick * 0.25, 8.0)
+	var crest_w := clampf(maxf(thick, maxf(4.0, high * 0.1)), 4.0, 30.0) if not embank else clampf(thick * 0.25, 8.0, 20.0)
 	# Downstream: the lower land a little way off its middle.
 	var mid := _along(line, l * 0.5)
 	var f0 := (_along(line, minf(l, l * 0.5 + 2.0)) - _along(line, maxf(0.0, l * 0.5 - 2.0))).normalized()
@@ -409,7 +449,8 @@ static func _dam(b: _Block, line: PackedVector2Array, mapped, thick: float, k: D
 			continue
 		foot = minf(foot, crest) - 2.0
 		var top := crest
-		var on := b.road(m, crest_w * 0.5, true)
+		var lonely := b.gap(m) > crest_w + CLEAR + 4.0   # (no road near: no more to ask of the roads here)
+		var on := {} if lonely else b.road(m, crest_w * 0.5, true)
 		if not on.is_empty() and not is_nan(float(on["y"])):
 			top = minf(top, float(on["y"]) - 0.6)
 		if top - foot < 0.5:
@@ -433,7 +474,7 @@ static func _dam(b: _Block, line: PackedVector2Array, mapped, thick: float, k: D
 				# (parapets either side of the crest)
 				for side: float in [-1.0, 1.0]:
 					var pp := m + side_of(f) * side * (crest_w * 0.5 - 0.3)
-					if b.clear(pp):
+					if lonely or b.clear(pp):
 						b.put("block:" + wall_stone, piece(b.local(pp, top), f, Vector3(0.5, 1.1, seg + 0.05)))
 			var along := _distance_to(line, m)
 			if absf(along - spill_at) < 6.0 and on.is_empty() and h > 4.0:
@@ -708,60 +749,45 @@ static func _gate_pair(b: _Block, p: Vector2, f: Vector2, w: float, y: float, k:
 		b.put("block:timber", piece(b.local((hinge + tip) * 0.5 - f * 0.3, y + 1.2), along, Vector3(0.5, 0.08, leaf)))
 
 
-## The canals of the block (the region's streams of the canal kind): a towpath along one bank and, where the kit has
-## them, boats moored along it now and then.
-static func _canals(b: _Block, rows: Dictionary) -> void:
-	var r := b.n.region
-	var mine: PackedInt32Array = _streams_of(r).get(b.key, PackedInt32Array())
-	if not Array(mine).any(func(i): return int(r.streams[i][0]) == 2):
-		return
-	# (the canals take the "canal" kind's own row, by the region of the block's middle)
-	var mid := b.corner + Vector2.ONE * RoadBlock.SIZE * 0.5
-	var k := SceneryStreamer.kit("canal", str(RegionKit.at_frame(r.frame_lat, r.frame_lon, mid.x, mid.y).get("region", "")))
-	if k.is_empty() or str(k.get("model", "")).get_slice(":", 0) != "water_works":
-		return
+## A canal (the map's line of it, `w` wide): a towpath along one bank and, where the kit has them (its "boat" and
+## "moor_every" m), boats moored along it now and then, clear of the roads and their bridges.
+static func _canal(b: _Block, line: PackedVector2Array, w: float, k: Dictionary, id: String) -> void:
 	var boat := str(k.get("boat", ""))
 	var every := float(k.get("moor_every", 0.0))
-	for i in mine:
-		if int(r.streams[i][0]) != 2:
+	var tag := id if id != "" and id != "<null>" else "%d,%d" % [int(line[0].x), int(line[0].y)]
+	var side := 1.0 if roll(tag + "towpath") < 0.5 else -1.0
+	var half := clampf(w * 0.5 if w > 0.0 else float(RealPack.STREAM_HALF[2]), 2.0, 20.0)
+	var next_boat := every * (0.3 + roll(tag + "first")) if every > 0.0 else INF
+	var run := 0.0
+	for j in line.size() - 1:
+		var a := line[j]
+		var c := line[j + 1]
+		var l := a.distance_to(c)
+		if l < 0.1:
 			continue
-		var pts: PackedVector2Array = r.streams[i][1]
-		if pts.size() < 2:
-			continue
-		var tag := "%d,%d" % [int(pts[0].x), int(pts[0].y)]
-		var side := 1.0 if roll(tag + "towpath") < 0.5 else -1.0
-		var half := float(RealPack.STREAM_HALF[2])
-		var run := 0.0
-		var next_boat := every * (0.3 + roll(tag + "first")) if every > 0.0 else INF
-		for j in pts.size() - 1:
-			var a := pts[j]
-			var c := pts[j + 1]
-			var l := a.distance_to(c)
-			if l < 0.1:
+		var f := (c - a) / l
+		var count := maxi(1, int(ceil(l / 12.0)))
+		var y1 := NAN
+		for q in count:
+			var s0 := a.lerp(c, float(q) / count)
+			var s1 := a.lerp(c, float(q + 1) / count)
+			var m := (s0 + s1) * 0.5
+			var here := run + l * (q + 0.5) / count
+			if here >= next_boat:
+				next_boat += every * (0.5 + roll(tag + str(int(here))))
+				var at := m + side_of(f) * side * (half - 1.4)
+				var wy := b.bare(m)
+				if boat != "" and b.mine(m) and not is_nan(wy) and b.clear(at, 12.0):
+					_boat(b, boat, at, f * (1.0 if roll(tag + str(int(here)) + "way") < 0.5 else -1.0), wy - 0.75, tag + str(int(here)))
+			if not b.mine(m):
 				continue
-			var f := (c - a) / l
-			var count := maxi(1, int(ceil(l / 6.0)))
-			for q in count:
-				var s0 := a.lerp(c, float(q) / count)
-				var s1 := a.lerp(c, float(q + 1) / count)
-				var m := (s0 + s1) * 0.5
-				var here := run + l * (q + 0.5) / count
-				if not b.mine(m):
-					continue
-				var t0 := s0 + side_of(f) * side * (half + 1.6)
-				var t1 := s1 + side_of(f) * side * (half + 1.6)
-				if b.clear((t0 + t1) * 0.5, 4.0):
-					var y0 := b.ground(t0)
-					var y1 := b.ground(t1)
-					if not is_nan(y0) and not is_nan(y1):
-						b.put("block:gravel", slope(b.local(t0, y0 - 0.12), b.local(t1, y1 - 0.12), 2.2, 0.2))
-				if here >= next_boat and boat != "":
-					next_boat += every * (0.5 + roll(tag + str(int(here))))
-					var at := m + side_of(f) * side * (half - 1.4)
-					var wy := b.bare(m)
-					if not is_nan(wy) and b.clear(at, 12.0):
-						_boat(b, boat, at, f * (1.0 if roll(tag + str(int(here)) + "way") < 0.5 else -1.0), wy - 0.75, tag + str(int(here)))
-			run += l
+			var t0 := s0 + side_of(f) * side * (half + 1.6)
+			var t1 := s1 + side_of(f) * side * (half + 1.6)
+			var y0 := y1 if not is_nan(y1) else b.ground(t0)
+			y1 = b.ground(t1)
+			if not is_nan(y0) and not is_nan(y1) and b.clear((t0 + t1) * 0.5, 4.0):
+				b.put("block:gravel", slope(b.local(t0, y0 - 0.12), b.local(t1, y1 - 0.12), 2.2, 0.2))
+		run += l
 
 
 # ---------------------------------------------------------------------------- harbours and the shore
