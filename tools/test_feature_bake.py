@@ -144,6 +144,18 @@ class FeatureTests(unittest.TestCase):
                          (RAIL, row("subway", line, subtype="rail"))])
         self.assertEqual(sorted(self.kinds(got, "lines")), ["canal", "subway"])
 
+    def test_a_canal_lock_is_in_its_tags(self):
+        line = wkb_line([(W + 0.01, S + 0.1), (W + 0.011, S + 0.1)])
+        ring = [(W + 0.01, S + 0.1), (W + 0.011, S + 0.1), (W + 0.011, S + 0.1001), (W + 0.01, S + 0.1)]
+        water = ("base", "water", "class")
+        tags = [("lock", "yes"), ("lock_name", "Bingley Five Rise Top Lock")]
+        got = self.bake([(water, row("canal", line, source_tags=tags, names={"primary": "Leeds and Liverpool Canal"})),
+                         (water, row("canal", line)), (water, row("water", wkb_polygon(ring), source_tags=[("water", "lock")])),
+                         (water, row("water", wkb_polygon(ring)))])
+        self.assertEqual(self.kinds(got, "lines"), ["canal", "canal_lock"])
+        self.assertEqual(got["names"][got["lines"][1][4]], "Bingley Five Rise Top Lock")
+        self.assertEqual(self.kinds(got, "areas"), ["canal_lock"])
+
     def test_a_road_segment_is_never_a_feature(self):
         line = wkb_line([(W + 0.01, S + 0.1), (W + 0.21, S + 0.1)])
         self.assertEqual(self.bake([(RAIL, row("unknown", line, subtype="road"))])["lines"], [])

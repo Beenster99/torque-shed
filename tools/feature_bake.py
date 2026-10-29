@@ -159,19 +159,32 @@ CLASSES = {
         "country": ("country_border", False), "region": ("region_border", False),
     },
 }
+# Kinds Overture carries only in a row's OpenStreetMap tags: {source key: {class: [(tag, value, kind), ...]}}, the
+# first that matches (a class here and not in CLASSES is fetched only for these). Its name is the tag NAME_TAGS says
+# where the row's own is the waterway's.
+TAGGED = {
+    ("base", "water", "class"): {
+        # D3: a canal's locks are its lines tagged lock=yes, and the water in them polygons tagged water=lock.
+        "canal": [("lock", "yes", "canal_lock")], "water": [("water", "lock", "canal_lock")],
+    },
+}
+NAME_TAGS = {"canal_lock": ("lock_name", "lock:name:flight")}
 # Overture's subtype for the segments kept (rail and water: never a road), and for a water segment its kind whatever
 # its class.
 SEGMENT_SUBTYPES = ("rail", "water")
 # The kinds a generator becomes, by what drives it (kind_of).
 GENERATORS = {"wind": "wind_turbine", "solar": "solar", "photovoltaic": "solar"}
 # The kinds in the order every file names them.
-KINDS = sorted({k for table in CLASSES.values() for k, _ in table.values()} | set(GENERATORS.values()))
+KINDS = sorted({k for table in CLASSES.values() for k, _ in table.values()} | set(GENERATORS.values())
+               | {t[2] for table in TAGGED.values() for rules in table.values() for t in rules})
 
 
 def classes_hash():
     """The hash of what is kept: a cell baked with another is baked again."""
     rows = {"%s/%s/%s" % key: {c: list(v) for c, v in sorted(table.items())} for key, table in sorted(CLASSES.items())}
-    text = json.dumps({"format": FORMAT, "classes": rows, "subtypes": SEGMENT_SUBTYPES, "generators": GENERATORS,
+    tagged = {"%s/%s/%s" % key: {c: [list(t) for t in v] for c, v in sorted(table.items())}
+              for key, table in sorted(TAGGED.items())}
+    text = json.dumps({"format": FORMAT, "classes": rows, "tagged": tagged, "name_tags": NAME_TAGS, "subtypes": SEGMENT_SUBTYPES, "generators": GENERATORS,
                        "tolerance": TOLERANCE, "near": NEAR_M},
                       sort_keys=True)
     return hashlib.sha1(text.encode()).hexdigest()[:12]
@@ -406,7 +419,13 @@ def kind_of(key, row):
             return None, False
         if row.get("subtype") == "water":
             return table["ferry"]
-    got = table.get(str(row.get(key[2])))
+    cls = str(row.get(key[2]))
+    if cls in TAGGED.get(key, {}):
+        tags = dict(row.get("source_tags") or [])
+        for tag, value, kind in TAGGED[key][cls]:
+            if tags.get(tag) == value:
+                return kind, False
+    got = table.get(cls)
     if got is None:
         return None, False
     kind, near = got
@@ -453,7 +472,7 @@ def fetch(box, release, bucket=None, filesystem=None, log=print):
         if kind == "segment":
             f = f & pc.field("subtype").isin(list(SEGMENT_SUBTYPES))
         else:
-            f = f & pc.field(column).isin(list(CLASSES[key]))
+            f = f & pc.field(column).isin(sorted(set(CLASSES[key]) | set(TAGGED.get(key, {}))))
         cols = [c for c in COLUMNS if c in d.schema.names]
         rows = d.to_table(columns=cols, filter=f).to_pylist()
         log("features: %s/%s %d rows" % (theme, kind, len(rows)))
@@ -539,6 +558,10 @@ def cell_features(rows, grid, row, col, release=""):
         if elevation is None:
             elevation = number(tags.get("ele"))
         nm = english_or_primary(r.get("names"))
+        for tag in NAME_TAGS.get(kind, ()):
+            if tags.get(tag):
+                nm = str(tags[tag])
+                break
         oid = None if only_near else short_id(r.get("id", ""))
         k = kind_ids[kind]
         for lon, lat in pts:
