@@ -1363,10 +1363,10 @@ static func _gasometer(b: _Build) -> void:
 
 static func _cooling(b: _Build) -> void:
 	# (a hyperboloid 100 m tall: scaled to the mapped height or its area)
-	b.lathe(Vector3.ZERO, [[0.0, 40.0], [20.0, 34.0], [45.0, 28.5], [75.0, 26.0], [90.0, 27.0], [100.0, 28.5]], 24, CONCRETE, false)
-	b.lathe(Vector3.ZERO, [[99.0, 27.8], [6.0, 39.0]], 24, CONCRETE.darkened(0.3), false)
-	b.lamp(Vector3(28.6, 100.5, 0), 1.2, BLINK, RED)
-	b.lamp(Vector3(-28.6, 100.5, 0), 1.2, BLINK, RED)
+	b.lathe(Vector3.ZERO, [[0.0, 42.0], [12.0, 35.5], [30.0, 29.0], [55.0, 24.5], [75.0, 23.0], [90.0, 24.0], [100.0, 26.0]], 24, CONCRETE, false)
+	b.lathe(Vector3.ZERO, [[99.0, 25.3], [6.0, 40.5]], 24, CONCRETE.darkened(0.3), false)
+	b.lamp(Vector3(26.2, 100.5, 0), 1.2, BLINK, RED)
+	b.lamp(Vector3(-26.2, 100.5, 0), 1.2, BLINK, RED)
 
 
 static func _transformer(b: _Build) -> void:
@@ -1396,12 +1396,12 @@ static func _steam_mesh() -> Mesh:
 		var x := Vector3(cos(a), 0, sin(a))
 		var rows := 6
 		for r in rows:
-			var y0 := 96.0 + 26.0 * r
-			var y1 := y0 + 26.0
-			var w0 := 26.0 + 9.0 * r
-			var w1 := w0 + 9.0
-			var drift0 := Vector3(6.0 * r * r * 0.3, 0, 3.0 * r)
-			var drift1 := Vector3(6.0 * (r + 1) * (r + 1) * 0.3, 0, 3.0 * (r + 1))
+			var y0 := 96.0 + 22.0 * r
+			var y1 := y0 + 22.0
+			var w0 := 24.0 + 7.0 * r
+			var w1 := w0 + 7.0
+			var drift0 := Vector3(1.2 * r * r, 0, 0.6 * r * r)
+			var drift1 := Vector3(1.2 * (r + 1) * (r + 1), 0, 0.6 * (r + 1) * (r + 1))
 			var v0 := float(r) / rows
 			var v1 := float(r + 1) / rows
 			var quad := [[drift0 - x * w0 + Vector3(0, y0, 0), Vector2(0, v0)], [drift1 - x * w1 + Vector3(0, y1, 0), Vector2(0, v1)],
@@ -1450,19 +1450,23 @@ varying float glow;
 void vertex() {
 	glow = 0.0;
 	float flag = UV2.x;
-	if (flag > 0.5 && flag < 1.5) {
-		// A rotor's part: turned about the hub (0, UV2.y, UV.x) round z.
-		vec3 c = vec3(0.0, UV2.y, UV.x);
-		vec3 p = VERTEX - c;
-		float s = sin(spin);
-		float k = cos(spin);
-		VERTEX = c + vec3(p.x * k - p.y * s, p.x * s + p.y * k, p.z);
-		NORMAL = vec3(NORMAL.x * k - NORMAL.y * s, NORMAL.x * s + NORMAL.y * k, NORMAL.z);
+	// (the lamps and wires below place themselves; everything else as usual: POSITION is written either way)
+	if (flag < 1.5) {
+		if (flag > 0.5) {
+			// A rotor's part: turned about the hub (0, UV2.y, UV.x) round z.
+			vec3 c = vec3(0.0, UV2.y, UV.x);
+			vec3 p = VERTEX - c;
+			float s = sin(spin);
+			float k = cos(spin);
+			VERTEX = c + vec3(p.x * k - p.y * s, p.x * s + p.y * k, p.z);
+			NORMAL = vec3(NORMAL.x * k - NORMAL.y * s, NORMAL.x * s + NORMAL.y * k, NORMAL.z);
+		}
+		POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
 	} else if (flag > 1.5 && flag < 3.5) {
 		// A lamp: a square to the camera, kept a few pixels across however far, lit only at night.
 		float on = flag < 2.5 ? night * blink : night;
 		vec4 c = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
-		float size = max(UV2.y, -c.z * 0.002) * step(0.01, on);
+		float size = max(UV2.y, -c.z * 0.003) * step(0.01, on);
 		c.xy += UV * size;
 		POSITION = PROJECTION_MATRIX * c;
 		glow = on;
@@ -1492,7 +1496,7 @@ void fragment() {
 
 const STEAM_SHADER := """
 shader_type spatial;
-render_mode cull_disabled, depth_draw_never, shadows_disabled;
+render_mode cull_disabled, depth_draw_never, shadows_disabled, unshaded;
 
 uniform float night = 0.0;
 
@@ -1509,7 +1513,7 @@ void fragment() {
 	float n = noise(vec2(uv.x * 4.0, uv.y * 3.0 - TIME * 0.12)) * 0.6 + noise(vec2(uv.x * 9.0, uv.y * 7.0 - TIME * 0.2)) * 0.4;
 	float edge = sin(uv.x * 3.14159);
 	float fade = (1.0 - uv.y) * smoothstep(0.0, 0.08, uv.y);
-	ALBEDO = mix(vec3(0.92), vec3(0.08, 0.09, 0.11), night);
+	ALBEDO = mix(vec3(0.93, 0.94, 0.95), vec3(0.05, 0.055, 0.07), night);
 	ALPHA = clamp(edge * edge * fade * (n * 1.4 - 0.2), 0.0, 1.0) * 0.8;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
