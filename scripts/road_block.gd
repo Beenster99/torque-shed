@@ -125,6 +125,7 @@ static func build(n: RoadNet, k: Vector2i) -> RoadBlock:
 		var out := row.duplicate()
 		out.append(b._building_y(row))
 		b.buildings.append(out)
+	b._infill()
 	b._plant()
 	b._lay_out()
 	b.ms = (Time.get_ticks_usec() - t0) / 1000.0
@@ -222,6 +223,100 @@ func _building_y(row: Array) -> float:
 			var pz := bz - (cx * w) * sin(yaw) + (cz * d) * cos(yaw)
 			y = minf(y, net.ground_at(px, pz, float(net.height.call(px, pz))))
 	return y
+
+
+## A town street's infill buildings (_infill): INFILL_W m along the street, INFILL_D deep, INFILL_BACK back from its
+## verge (and CLEAR), INFILL_GAP apart, at most INFILL_MOST to a block, none along an INFILL_SKIP road.
+const INFILL_W := [7.0, 15.0]
+const INFILL_D := [9.0, 16.0]
+const INFILL_BACK := [0.5, 2.5]
+const INFILL_GAP := [0.4, 2.0]
+const INFILL_MOST := 700
+const INFILL_SKIP := ["motorway", "trunk", "track"]
+
+
+## Town streets are built up along their fronts: the map's buildings are only some of a city's (the bake keeps the
+## nearest the roads up to its cap, and many a street's houses aren't mapped at all), so where the ground's urban
+## (the cover map) and a street has a gap in its front, a building's put in it, set back off the verge, square to the
+## street, the size of a town's, as tall as the place's density has them, never on a road, a junction, a flat or
+## another building. Only on a dressed net (net.dress).
+func _infill() -> void:
+	if net.dress.is_empty():
+		return
+	var t: RealTerrain = net.dress["terrain"]
+	var urban := RealPack.COVER.find("urban")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([net.region.hash, "infill", key])
+	var dense := str(kit_of().get("density", "")) == "city"
+	var block_id := RealPack.BUILDING_KINDS.find("block")
+	var house_id := RealPack.BUILDING_KINDS.find("house")
+	var shop_id := RealPack.BUILDING_KINDS.find("shop")
+	# The buildings already standing, filed by 16 m square, for the overlap test.
+	var filed := {}
+	var file := func(row: Array) -> void:
+		var r := Vector2(float(row[2]), float(row[3])).length() * 0.5
+		var c := Vector2i(floori(float(row[0]) / 16.0), floori(float(row[1]) / 16.0))
+		if not filed.has(c):
+			filed[c] = []
+		(filed[c] as Array).append(Vector3(float(row[0]), float(row[1]), r))
+	for row: Array in buildings:
+		file.call(row)
+	var free := func(x: float, z: float, r: float) -> bool:
+		var c := Vector2i(floori(x / 16.0), floori(z / 16.0))
+		for i in range(-3, 4):
+			for j in range(-3, 4):
+				for o: Vector3 in filed.get(c + Vector2i(i, j), []):
+					if Vector2(o.x - x, o.y - z).length() < (o.z + r) * 0.82:
+						return false
+		return true
+	var added := 0
+	for p in pieces:
+		if str(p["surface"]) != "tarmac" or bool(p["ring"]) or str(p["class"]) in INFILL_SKIP:
+			continue
+		var ei := int(p["edge"])
+		var len := net.length_of(ei)
+		var lo := maxf(float(p["s0"]), net.mouth(ei, int(p["a"])) + 6.0)
+		var hi := minf(float(p["s1"]), len - net.mouth(ei, int(p["b"])) - 6.0)
+		var e := float(p["width"]) * 0.5
+		for side: float in [-1.0, 1.0]:
+			var s := lo + rng.randf_range(0.0, 4.0)
+			while s < hi and added < INFILL_MOST:
+				var w := rng.randf_range(INFILL_W[0], INFILL_W[1])
+				var d := rng.randf_range(INFILL_D[0], INFILL_D[1])
+				var mid := s + w * 0.5
+				if mid > hi:
+					break
+				var at := net.point_at(ei, mid)
+				var h := net.heading_at(ei, mid)
+				var right := Vector2(cos(h), sin(h)) * side
+				var back := e + RoadNet.VERGE + CLEAR + rng.randf_range(INFILL_BACK[0], INFILL_BACK[1]) + d * 0.5
+				var c := at + right * back
+				var r := Vector2(w, d).length() * 0.5
+				var front := at + right * (e + RoadNet.VERGE + 2.0)
+				if t.cover(front.x, front.y) != urban or t.cover(c.x, c.y) == RealPack.WATER or not free.call(c.x, c.y, r):
+					s += 3.0
+					continue
+				# Square to the street: its width along it (RoadBlock._corners: width along (cos yaw, -sin yaw)).
+				var row := [c.x, c.y, w, d, PI * 0.5 - h, 0.0, house_id]
+				var low := rng.randf() < 0.55
+				if dense:
+					row[5] = rng.randf_range(9.0, 15.0) if low else rng.randf_range(15.0, 32.0)
+				else:
+					row[5] = rng.randf_range(5.5, 8.5) if low else rng.randf_range(8.5, 14.0)
+				row[6] = house_id if (low and not dense) else (shop_id if rng.randf() < 0.3 else block_id)
+				var kept := _clear_of_roads(row)
+				if kept.is_empty() or kept != row or net.in_flat(c.x, c.y, maxf(w, d) * 0.5):
+					s += 3.0
+					continue
+				var bare := float(net.height.call(c.x, c.y))
+				if is_nan(bare):
+					s += 3.0
+					continue
+				row.append(_building_y(row))
+				buildings.append(row)
+				file.call(row)
+				added += 1
+				s += w + rng.randf_range(INFILL_GAP[0], INFILL_GAP[1])
 
 
 ## Plants the block's trees (trees) from the net's dress: where the canopy map has woods, as many as its share of the

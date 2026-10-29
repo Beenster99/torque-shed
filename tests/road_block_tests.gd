@@ -554,6 +554,27 @@ func test_cell() -> void:
 	check(trees > 50, "the land round the roads has its trees (%d in three blocks)" % trees)
 	check(on_road == 0, "none on a road or its verge (%d)" % on_road)
 	check(tree_ms < 2000.0, "and a block still lays out in good time (%.0f ms)" % tree_ms)
+	# Its town streets built up along their fronts where the map leaves gaps (RoadBlock._infill): none of the buildings
+	# on a road, nor standing in another.
+	var built := 0
+	var in_road := 0
+	var crowded := 0
+	for dx in range(-1, 2):
+		var b := net.block(busiest + Vector2i(dx, 1))
+		built += b.buildings.size()
+		for i in b.buildings.size():
+			var row: Array = b.buildings[i]
+			for c: Vector2 in RoadBlock._corners(row):
+				var hit := net.locate(c.x, c.y, -1, false)
+				if not hit.is_empty() and bool(hit["on_road"]):
+					in_road += 1
+			for k in range(i + 1, b.buildings.size()):
+				var other: Array = b.buildings[k]
+				var apart := Vector2(float(row[0]) - float(other[0]), float(row[1]) - float(other[1])).length()
+				if apart < (minf(float(row[2]), float(row[3])) + minf(float(other[2]), float(other[3]))) * 0.25:
+					crowded += 1
+	print("  road net: %d buildings in three blocks" % built)
+	check(in_road == 0 and crowded == 0, "no building's corner on a road (%d), none standing in another (%d)" % [in_road, crowded])
 
 
 ## The block's meshes: the deck and junctions facing up, indexed within bounds, with collision; lines on tarmac; a
