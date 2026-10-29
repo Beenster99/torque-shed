@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""The postcards' own copy of the world: the one cell each place (places.json) is in, with its streams, trees and sketch
-(coast, bridges and tunnels), kept in tests/postcards/world/ in the layout CellStore keeps the world's store in, so the
-rig (postcards.gd) reads it offline and the postcards only change when the game does.
+"""The postcards' own copy of the world: the one cell each place (places.json) is in, with its streams, trees, sketch
+(coast, bridges and tunnels) and features (the scenery from the map: tools/feature_bake.py), kept in
+tests/postcards/world/ in the layout CellStore keeps the world's store in, so the rig (postcards.gd) reads it offline
+and the postcards only change when the game does.
 
-    python3 tests/postcards/bake.py [--cache DIR] [--only dales,atlas]
+    python3 tests/postcards/bake.py [--cache DIR] [--only dales,atlas] [--features]
 
 A cell the world's store (Beenster99/torque-shed-world) has is copied from there; one it hasn't is baked here with the
 game's own tools, as the store's bake workflow does (tools/region_bake.py --cell, coast_bake, span_bake, sketch_bake,
@@ -80,6 +81,19 @@ def copy_from_store(cell, store, entries):
         write_json(os.path.join(entries, "c%s.sketch" % cell), s)
 
 
+def features_of(cell, store, release):
+    """Cell "ROW_COL"'s features into world/feature/: the store's when it has them, else baked here."""
+    path = os.path.join(WORLD, "feature", "c%s.json" % cell)
+    if cell in store.get("features", {}):
+        put(path, json.loads(get(STORE + "feature/c%s.json" % cell)))
+        return
+    row, col = (int(v) for v in cell.split("_"))
+    lat, lon = middle(row, col)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    subprocess.run([sys.executable, os.path.join(GAME, "tools", "feature_bake.py"), str(lat), str(lon), "--out", path]
+                   + (["--release", release] if release else []), check=True)
+
+
 def bake_here(cell, release, cache, entries):
     """Cell "ROW_COL" baked with the game's tools, as the store's bake workflow does."""
     row, col = (int(v) for v in cell.split("_"))
@@ -112,12 +126,13 @@ def write_json(path, v):
 
 def write_index(release):
     """world/index.json naming every cell here and the hash of its streams, trees and sketch block, as CellStore reads."""
-    index = {"format": 1, "release": release, "cells": {}, "sketches": {}, "streams": {}, "trees": {}, "profiles": {}}
+    index = {"format": 1, "release": release, "cells": {}, "sketches": {}, "streams": {}, "trees": {}, "profiles": {},
+             "features": {}}
     for d in sorted(glob.glob(os.path.join(WORLD, "c*_*"))):
         if os.path.exists(os.path.join(d, "region.json")):
             with open(os.path.join(d, "region.json")) as f:
                 index["cells"][os.path.basename(d)[1:]] = {"hash": json.load(f).get("hash", "")}
-    for key, folder in (("streams", "stream"), ("trees", "tree"), ("profiles", "profile")):
+    for key, folder in (("streams", "stream"), ("trees", "tree"), ("profiles", "profile"), ("features", "feature")):
         for p in sorted(glob.glob(os.path.join(WORLD, folder, "c*.json"))):
             with open(p) as f:
                 index[key][os.path.basename(p)[1:-5]] = text_hash(f.read())
@@ -167,6 +182,7 @@ def main(argv=None):
     ap.add_argument("--cache", default=SHARED_CACHE if os.path.isdir(os.path.dirname(SHARED_CACHE))
                     else os.path.expanduser("~/.cache/torque-shed-bake"))
     ap.add_argument("--only", default="", help="place ids, comma-separated")
+    ap.add_argument("--features", action="store_true", help="only (re)make the places' features, leaving the rest")
     args = ap.parse_args(argv)
     with open(os.path.join(HERE, "places.json")) as f:
         places = json.load(f)["places"]
@@ -178,6 +194,9 @@ def main(argv=None):
             if only and p["id"] not in only:
                 continue
             cell = "%d_%d" % cell_of(*p["from"])
+            features_of(cell, store, release)
+            if args.features:
+                continue
             if os.path.exists(os.path.join(WORLD, "c" + cell, "region.json")):
                 print("%s: c%s already here" % (p["id"], cell))
                 if cell in store.get("profiles", {}):
