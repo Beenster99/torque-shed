@@ -621,6 +621,27 @@ func test_meshes() -> void:
 	check(not is_nan(road) and absf(road - (10.0 + RoadNet.CROWN * 0.92)) < 0.05, "and the road beside it (%.3f)" % road)
 	var rb := RoadNet.new(roundabout(), flat).block(Vector2i(0, 0))
 	check((rb.arrays["island"]["v"] as PackedVector3Array).size() > 0, "a roundabout has its island")
+	# Across each of the tee's mouths the junction's surface meets the road's crowned deck all the way across: no lip
+	# the crown's height in the middle.
+	var tnet := RoadNet.new(tee(), flat)
+	var tb3 := tnet.block(RoadBlock.key_of(100.0, 100.0))
+	var o3 := Vector2(tb3.anchor().x, tb3.anchor().z)
+	var lip := 0.0
+	for arm: Dictionary in tnet.junction_of(0)["arms"]:
+		var ei := int(arm["edge"])
+		var len := tnet.length_of(ei)
+		var m := tnet.mouth(ei, 0)
+		var from_a := tee().edge_a[ei] == 0
+		for f: float in [-0.6, 0.0, 0.6]:
+			var hs := []
+			for d: float in [-0.05, 0.05]:
+				var sm := m + d if from_a else len - m - d
+				var h := tnet.heading_at(ei, sm)
+				var q := tnet.point_at(ei, sm) + Vector2(cos(h), sin(h)) * f * float(arm["width"]) * 0.5
+				var got := _heights_at(tb3, q - o3)
+				hs.append(got[got.size() - 1] if not got.is_empty() else NAN)
+			lip = maxf(lip, absf(float(hs[1]) - float(hs[0])))
+	check(lip < 0.008, "a road meets its junction's surface with no lip across its mouth (%.3f m at most)" % lip)
 	# On a hill, its island tips with the ring and its kerb runs round the ring's own inner edge: tarmac just outside it
 	# all the way round, the island's grass just inside it at the kerb's height above the ring, no gap and no step.
 	var tipped := RoadNet.new(roundabout(), func(x: float, z: float) -> float: return 10.0 + x * 0.06 - z * 0.03)

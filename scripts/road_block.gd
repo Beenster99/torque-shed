@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 17
+const VERSION := 18
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -770,6 +770,10 @@ static func _grid_tri(g: Dictionary, v: PackedVector3Array, i0: int, i1: int, i2
 	g["i"].append_array([i0, i2, i1])
 
 
+## A deck's normals are smoothed over this (m): see _finish_grid.
+const SHADE_M := 1.5
+
+
 ## Grid `g`'s normals, from its faces.
 static func _finish_grid(g: Dictionary) -> void:
 	var v: PackedVector3Array = g["v"]
@@ -781,8 +785,22 @@ static func _finish_grid(g: Dictionary) -> void:
 		nrm[idx[k]] += n
 		nrm[idx[k + 1]] += n
 		nrm[idx[k + 2]] += n
+	# Shaded as one surface: each vertex's normal is the deck's round it over SHADE_M (its own faces' and those of
+	# whatever lies alongside, a junction's against its arms'), so where a road's deck meets a junction's, or a thin
+	# sliver of a face lies between them, there's no line of light or shade across the road.
+	var cells := {}
+	for k in v.size():
+		var c := Vector2i(floori(v[k].x / SHADE_M), floori(v[k].z / SHADE_M))
+		cells[c] = (cells.get(c, Vector3.ZERO) as Vector3) + nrm[k]
 	for k in nrm.size():
-		nrm[k] = nrm[k].normalized() if nrm[k].length_squared() > 0.0 else Vector3.UP
+		var f := Vector2(v[k].x / SHADE_M - 0.5, v[k].z / SHADE_M - 0.5)
+		var c := Vector2i(floori(f.x), floori(f.y))
+		var t := f - Vector2(c)
+		var n := Vector3.ZERO
+		for q: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+			var w := (t.x if q.x == 1 else 1.0 - t.x) * (t.y if q.y == 1 else 1.0 - t.y)
+			n += (cells.get(c + q, Vector3.ZERO) as Vector3).normalized() * w
+		nrm[k] = n.normalized() if n.length_squared() > 0.0 else Vector3.UP
 	g["n"] = nrm
 
 
@@ -1025,7 +1043,7 @@ func _junction_mesh(j: Dictionary) -> void:
 	for k in outline.size():
 		pts.append(Vector3(outline[k].x, heights[k], outline[k].y) - o)
 	var closed: bool = j["kind"] != "end"
-	_drape(g, surf, col, j, centre - o, pts, closed)
+	_drape(g, surf, col, j, centre - o, _crowned(pts, kerb, closed), closed)
 	# Its verges, round the kerbs between the arms (the arms' own run on from their mouths).
 	var verge_col := _verge_colour(surf)
 	var count := pts.size() if closed else pts.size() - 1
@@ -1237,6 +1255,25 @@ func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, 
 			tri.call(a + k, b + k, b + k1)
 			tri.call(a + k, b + k1, a + k1)
 	g["v"].append_array(v)
+
+
+## Outline `pts` with points put in across each road's mouth (its sides that aren't kerbs, `kerb`), crowned as the road
+## is there, so the junction's surface meets each road's deck along the whole of its mouth, not only at its edges (a
+## lip the crown's height across the middle of every mouth, else).
+static func _crowned(pts: Array, kerb: PackedByteArray, closed: bool) -> Array:
+	var out := []
+	var n := pts.size()
+	for k in n:
+		out.append(pts[k])
+		if (not closed and k == n - 1) or k >= kerb.size() or kerb[k] == 1:
+			continue
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[(k + 1) % n]
+		for q in range(1, ACROSS - 1):
+			var t := float(q) / float(ACROSS - 1)
+			var f := t * 2.0 - 1.0
+			out.append(a.lerp(b, t) + Vector3(0.0, RoadNet.CROWN * (1.0 - f * f), 0.0))
+	return out
 
 
 ## Whether outline `pts` goes back on itself anywhere, seen from `c` (its rings out from there would lie over one another:
