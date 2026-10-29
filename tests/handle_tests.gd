@@ -16,17 +16,17 @@ func check(cond: bool, what: String) -> void:
 ## Seconds from a full steer input to the bike leaning `deg` degrees, riding `build` steadily at
 ## `v` m/s at Riding realism `assist`, or -1 if it never gets there (or can't reach the speed).
 func lean_time(build: Dictionary, v: float, deg := 30.0, assist := 0.5) -> float:
-	var st := {"steady": 0.0, "go": -1.0, "time": -1.0}
+	var st := {"steady": 0.0, "go": -1.0, "time": -1.0, "trim": 0.0}
 	var r: Dictionary = await t.ride(build, 45.0, func(b: Bike, now: float) -> void:
 		b.assist = assist
 		if st["go"] < 0.0:
-			t._hold_speed(b, v)
+			_hold(b, v, st)
 			b.lean_input = 0.0
 			st["steady"] = st["steady"] + 1.0 / Engine.physics_ticks_per_second if absf(b.speed - v) < 0.6 and absf(b.lean_angle) < deg_to_rad(1.0) else 0.0
 			if st["steady"] > 1.5:
 				st["go"] = now
 			return
-		t._hold_speed(b, v)
+		_hold(b, v, st)
 		# Full input until it gets there, then straight back up (a full input held at speed asks
 		# for more lean than the measure needs).
 		b.lean_input = 1.0 if st["time"] < 0.0 else 0.0
@@ -37,6 +37,15 @@ func lean_time(build: Dictionary, v: float, deg := 30.0, assist := 0.5) -> float
 	var out: float = st["time"]
 	await t._done(r)
 	return out
+
+
+## Holds `v` m/s like the runner's _hold_speed, plus a slow trim on the throttle that takes out the
+## speed it would otherwise settle short by (in a tall gear the same throttle pulls less).
+func _hold(b: Bike, v: float, st: Dictionary) -> void:
+	st["trim"] = clampf(float(st["trim"]) + (v - b.speed) * 0.1 / Engine.physics_ticks_per_second, -0.3, 0.5)
+	t._hold_speed(b, v)
+	if b.front_brake <= 0.0:
+		b.throttle = clampf(b.throttle + float(st["trim"]), 0.0, 1.0)
 
 
 ## Rides `build` steadily at `v` m/s, then holds the steer input at `input` for `seconds`:

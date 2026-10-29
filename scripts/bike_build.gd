@@ -16,13 +16,21 @@ const RIDER_MASS := 75.0
 const FIXED_MASS := 36.0
 const FUEL_DENSITY := 0.74    # kg per litre
 const OIL_DENSITY := 0.87
-## Litres of petrol per kWh the cylinders make. Some of that goes in the engine's own friction and
-## pumping, a mean pressure in bar that climbs with revs (and with a head's "thirst": big valves and
-## long cam overlap waste fuel at part throttle), so a revvy, hot-cammed engine cruising high up the
-## rev range drinks more than a lazy one doing the same work.
-const FUEL_PER_KWH := 0.32
-const FRICTION_BAR := 1.7
-const FRICTION_BAR_PER_KRPM := 0.3
+## Litres of petrol per kWh the cylinders make (about 37% of the petrol's energy, what a
+## modern engine manages at part throttle). On top of the work at the back wheel the engine
+## spends some turning itself over: friction, a mean pressure in bar that climbs with revs (and
+## with a head's "thirst": big valves and long cam overlap waste fuel), and pumping, sucking
+## its air past a nearly shut throttle, which goes as the throttle opens. So a revvy engine
+## cruising high up the rev range drinks more than a lazy one in a tall gear doing the same work.
+const FUEL_PER_KWH := 0.30
+const FRICTION_BAR := 0.9
+const FRICTION_BAR_PER_KRPM := 0.13
+const PUMPING_BAR := 0.75
+## Each cylinder past two adds its own pistons, rings and bearings to turn over (a single has the
+## least to drag round, an inline four the most).
+const FRICTION_PER_CYLINDER := 0.08
+## Flat out the engine runs rich to keep it cool and make the most power: this much more petrol.
+const FULL_THROTTLE_RICH := 0.15
 ## A two-stroke loses some of its fresh charge out of the exhaust.
 const TWO_STROKE_THIRST := 1.35
 ## How fast torque falls away past its peak: power then peaks about a quarter above peak torque.
@@ -178,7 +186,8 @@ var oil_type := "semi_10w40"
 var oil_protection := 0.88     # how well the oil looks after the engine, 0..1
 var brake_fluid := {"front": 1.0, "rear": 1.0}   # how full each side's master cylinder is, 0..1
 var economy_mult := 1.0        # how far each litre goes: fuel grade, tune and condition
-var friction_mult := 1.0       # the head's thirst at part throttle (see friction_kw)
+var friction_mult := 1.0       # the head's thirst and the cylinders' drag (see friction_kw)
+var injected := false          # fuel injection (cuts the petrol on the overrun), not carburettors
 
 # Suspension
 var front_travel := 0.13
@@ -917,7 +926,8 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	stock_redline = float(block["redline"]) + float(head["redline_add"]) + float(ecu.get("rev_add", 0.0))
 	redline = stock_redline + tune_value("limiter")
 	idle_rpm = block["idle_rpm"]
-	friction_mult = float(head.get("thirst", 1.0))
+	friction_mult = float(head.get("thirst", 1.0)) * (1.0 + FRICTION_PER_CYLINDER * (int(block.get("cylinders", 2)) - 2))
+	injected = bool(fuel.get("injected", false))
 
 	torque_mult = float(head["torque_mult"]) * lerpf(0.75, 1.0, health["head"]) * float(ecu.get("power", 1.0))
 	# The fuel system has to keep up with the engine, or it runs lean and gutless. A big, slow-revving
@@ -1078,15 +1088,31 @@ func top_speed_estimate() -> float:
 
 ## Litres an hour the engine burns making `kw` at the crank while turning `rpm`.
 func fuel_rate(kw: float, rpm: float) -> float:
-	var litres := (maxf(kw, 0.0) + friction_kw(rpm)) * FUEL_PER_KWH * (TWO_STROKE_THIRST if layout == "2stroke" else 1.0)
+	var load := engine_load(kw, rpm)
+	var litres := (maxf(kw, 0.0) + friction_kw(rpm, load)) * FUEL_PER_KWH * (TWO_STROKE_THIRST if layout == "2stroke" else 1.0)
+	litres *= 1.0 + FULL_THROTTLE_RICH * clampf((load - 0.8) / 0.2, 0.0, 1.0)
 	return litres / maxf(economy_mult, 0.3)
 
 
-## kW the engine spends turning itself over at `rpm`: friction and pumping, a mean pressure on the
-## pistons over one power stroke every two turns.
-func friction_kw(rpm: float) -> float:
+## Litres an hour on the overrun, the throttle shut and the engine turned by the back wheel at
+## `rpm`: fuel injection cuts the petrol off altogether; carburettors still let the idle jets
+## feed it, about what it burns ticking over.
+func overrun_rate(rpm: float) -> float:
+	if injected:
+		return 0.0
+	return fuel_rate(0.0, minf(rpm, idle_rpm * 1.5))
+
+
+## How far open the throttle is to make `kw` at `rpm` (0 shut .. 1 wide open).
+func engine_load(kw: float, rpm: float) -> float:
+	return clampf(maxf(kw, 0.0) / maxf(engine_power_kw(maxf(rpm, idle_rpm)), 0.1), 0.0, 1.0)
+
+
+## kW the engine spends turning itself over at `rpm` with the throttle `load` open: friction and
+## pumping, a mean pressure on the pistons over one power stroke every two turns.
+func friction_kw(rpm: float, load := 0.0) -> float:
 	var rpm_on := maxf(rpm, idle_rpm)
-	var bar := (FRICTION_BAR + FRICTION_BAR_PER_KRPM * rpm_on / 1000.0) * friction_mult
+	var bar := (FRICTION_BAR + FRICTION_BAR_PER_KRPM * rpm_on / 1000.0) * friction_mult + PUMPING_BAR * (1.0 - clampf(load, 0.0, 1.0))
 	return bar * 100000.0 * displacement / 1000000.0 * rpm_on / 120.0 / 1000.0
 
 
