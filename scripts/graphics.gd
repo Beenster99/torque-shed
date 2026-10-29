@@ -58,7 +58,7 @@ const CHOICES := {
 ## [min, max] of the number settings.
 const RANGES := {
 	"gfx_fov": [60.0, 110.0], "gfx_brightness": [0.5, 1.5], "gfx_render_scale": [0.5, 2.0],
-	"gfx_sharpness": [0.0, 1.0], "gfx_draw_distance": [0.5, 2.0], "gfx_monitor": [-1, 15],
+	"gfx_sharpness": [0.0, 1.0], "gfx_draw_distance": [0.5, 2.0], "gfx_monitor": [-1, 15], "gfx_bloom": [0.0, 2.0],
 }
 
 ## What each preset sets. Changing any of these keys by hand makes the preset "custom".

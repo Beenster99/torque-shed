@@ -10246,6 +10246,7 @@ func _test_graphics_settings() -> void:
 	Settings.set_graphics("gfx_fps_cap", 144)
 	Settings.set_graphics("gfx_gi", "ssil")
 	Settings.set_graphics("gfx_fps_counter", true)
+	Settings.set_graphics("gfx_bloom", 1.4)
 	var saved := {}
 	for k in Settings.GFX_KEYS:
 		saved[k] = Settings.get(k)
@@ -10310,6 +10311,14 @@ func _test_graphics_settings() -> void:
 		"ticking an option in the tab makes the preset Custom")
 	tab._rt.button_pressed = true
 	check(Settings.gfx_gi == "sdfgi", "the ray-traced lighting switch turns SDFGI on")
+	# The Bloom strength slider: a personal setting like brightness, greyed out with glow off.
+	Settings.apply_preset("high")
+	var bloom: HSlider = tab._controls["gfx_bloom"]["control"]
+	bloom.value = 0.6
+	check(is_equal_approx(Settings.gfx_bloom, 0.6) and Settings.gfx_preset == "high", "the bloom slider sets bloom and keeps the preset")
+	check((tab._controls["gfx_bloom"]["text"] as Label).text == "60%", "it shows the strength as a percentage")
+	(tab._controls["gfx_glow"]["control"] as CheckBox).button_pressed = false
+	check(not bloom.editable, "with glow off the bloom slider is greyed out")
 	tab.queue_free()
 	# Put everything back.
 	Settings.graphics_changed.disconnect(count)
@@ -10350,6 +10359,13 @@ func _test_lighting_profile() -> void:
 	check(not p["sdfgi"] and not p["ssil"] and not p["volumetric_fog"] and not p["fog_volumes"] and not bool(p["clouds"]["volumetric"]),
 		"everything off: no GI, no volumetric fog, the flat cloud layer")
 	check(not bool(p["shadow"]["omni"]) and int(p["shadow"]["atlas"]) <= 2048, "low shadows: small maps, round lamps don't cast them")
+	# Bloom strength: as tuned by default, clamped to 0..200%, and 0% turns the glow off.
+	check(is_equal_approx(float(Lighting.profile(best, true)["bloom"]), 1.0), "bloom is as tuned when the setting isn't there")
+	var bright := best.duplicate()
+	bright["gfx_bloom"] = 5.0
+	check(is_equal_approx(float(Lighting.profile(bright, true)["bloom"]), 2.0), "bloom stops at 200%")
+	bright["gfx_bloom"] = 0.0
+	check(not Lighting.profile(bright, true)["glow"], "bloom at 0% is glow off")
 	# The compatibility renderer: none of the Forward+ extras, the flat clouds at "low".
 	p = Lighting.profile(best, false)
 	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
@@ -10522,6 +10538,16 @@ func _test_lighting_session() -> void:
 		var sun: DirectionalLight3D = lt.sun
 		check(is_equal_approx(sun.directional_shadow_max_distance, float(Lighting.SHADOWS[c["gfx_shadows"]]["distance"])),
 			"the sun's shadows reach as far as the setting says")
+	# The Bloom slider scales the time of day's glow, live.
+	for b in [0.5, 1.5]:
+		Lighting.overrides = {"gfx_glow": true, "gfx_bloom": b}
+		lt.apply()
+		var day: Daylight = main.world.daylight
+		check(env.glow_enabled and is_equal_approx(env.glow_intensity, day.glow_intensity * b)
+			and is_equal_approx(env.glow_bloom, day.glow_bloom * b), "bloom at %d%% scales the glow" % roundi(b * 100.0))
+	Lighting.overrides = {"gfx_glow": true, "gfx_bloom": 0.0}
+	lt.apply()
+	check(not env.glow_enabled, "bloom at 0% turns the glow off")
 	# The polling notices a change without any signal.
 	Lighting.overrides = combos[0]
 	await get_tree().create_timer(0.6).timeout
