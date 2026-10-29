@@ -39,7 +39,7 @@ const HEADROOM := 6.0
 const AQUEDUCT_MOST := 2000.0
 ## A pier this wide or more (m) is a solid stone one (a harbour pier), narrower one stands on legs.
 const SOLID_PIER := 8.0
-## A waterfall's drop where the map gives none and the land shows little (m), and the most it shows.
+## A waterfall's drop where the map gives none: at least this (m), and at most what the land shows up to this.
 const FALL_LEAST := 2.0
 const FALL_MOST := 60.0
 ## The sea's level in the region frame (m: heights are above sea level).
@@ -522,7 +522,7 @@ static func _distance_to(line: PackedVector2Array, p: Vector2) -> float:
 ## A waterfall at `p`: a white sheet over the lip, down the way the land falls most steeply, as far as the map's
 ## height says (or the land shows), with foam and a plume of spray at its foot.
 static func _waterfall(b: _Block, p: Vector2, mapped, k: Dictionary, id: String) -> void:
-	if not b.clear(p, 4.0):
+	if not b.mine(p) or not b.clear(p, 4.0):
 		return
 	var top := b.ground(p)
 	if is_nan(top):
@@ -538,10 +538,9 @@ static func _waterfall(b: _Block, p: Vector2, mapped, k: Dictionary, id: String)
 				best = g
 				dir = d
 				run = r
-	var drop := top - best if best < INF else 0.0
+	var drop := clampf(top - best if best < INF else 0.0, FALL_LEAST, FALL_MOST)
 	if mapped != null and float(mapped) > 0.0:
-		drop = float(mapped)
-	drop = clampf(drop if drop > FALL_LEAST else FALL_LEAST, FALL_LEAST, FALL_MOST)
+		drop = clampf(float(mapped), 1.0, 1000.0)
 	var w := clampf(float(k.get("width", 4.0 + drop * 0.25)) * (0.75 + 0.5 * roll(id + "w")), 2.0, 40.0)
 	var lean := minf(run * 0.3, drop * 0.15)
 	var across := Vector3(-dir.y, 0.0, dir.x)
@@ -557,12 +556,12 @@ static func _waterfall(b: _Block, p: Vector2, mapped, k: Dictionary, id: String)
 	var pool_y := b.ground(pool)
 	pool_y = maxf(top - drop, pool_y if not is_nan(pool_y) else top - drop)
 	b.put("foam", piece(b.local(pool, pool_y + 0.3), dir, Vector3(w * 1.6, 1.0, w * 1.3 + 2.0)))
-	b.put("steam", piece(b.local(pool, pool_y), dir, Vector3(w * 1.2 + 2.0, clampf(drop * 0.6, 3.0, 30.0), w * 1.0 + 2.0)))
+	b.put("steam", piece(b.local(pool, pool_y), dir, Vector3(w * 1.2 + 2.0, clampf(drop * 0.6, 3.0, 120.0), w * 1.0 + 2.0)))
 
 
 ## White water where the map has rapids: a patch of foam on the stream.
 static func _rapids(b: _Block, p: Vector2, k: Dictionary) -> void:
-	if not b.clear(p, 2.0):
+	if not b.mine(p) or not b.clear(p, 2.0):
 		return
 	var y := b.bare(p)
 	if is_nan(y):
@@ -1136,7 +1135,7 @@ static func _marker(b: _Block, p: Vector2, kind: String, k: Dictionary) -> void:
 ## A hot spring (its pool's rim and the steam off it, always) or a geyser (a mound of sinter, steam, and its jet now
 ## and then: dress).
 static func _spring(b: _Block, p: Vector2, k: Dictionary, geyser: bool, id: String) -> void:
-	if not b.clear(p, 4.0):
+	if not b.mine(p) or not b.clear(p, 4.0):
 		return
 	var y := b.ground(p)
 	if is_nan(y):
@@ -1152,7 +1151,7 @@ static func _spring(b: _Block, p: Vector2, k: Dictionary, geyser: bool, id: Stri
 
 ## A blowhole on the rocks: the sea spouts up through it when the weather's up (dress).
 static func _blowhole(b: _Block, p: Vector2, k: Dictionary, id: String) -> void:
-	if not b.clear(p, 4.0):
+	if not b.mine(p) or not b.clear(p, 4.0):
 		return
 	var y := b.ground(p)
 	if is_nan(y):
