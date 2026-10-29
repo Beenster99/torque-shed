@@ -554,6 +554,16 @@ func test_cell() -> void:
 	check(trees > 50, "the land round the roads has its trees (%d in three blocks)" % trees)
 	check(on_road == 0, "none on a road or its verge (%d)" % on_road)
 	check(tree_ms < 2000.0, "and a block still lays out in good time (%.0f ms)" % tree_ms)
+	# A wood is of several kinds, as the place's look mixes them (here, a temperate one's), not one broadleaf and one
+	# conifer.
+	var mixed := RoadNet.new(r, flat)
+	mixed.dress = {"terrain": r.terrain, "look": {"broad": "oak", "needle": "pine", "plants": PlaceLook.KIT["temperate"]["plants"]}}
+	var kinds_seen := {}
+	for dx in range(-1, 2):
+		for kind: String in mixed.block(busiest + Vector2i(dx, 1)).trees:
+			if kind in RoadBlock.BROADLEAVES or kind in RoadBlock.CONIFERS:
+				kinds_seen[kind] = true
+	check(kinds_seen.size() >= 4, "a wood is mixed from the place's kinds of tree (%s)" % str(kinds_seen.keys()))
 	# Its town streets built up along their fronts where the map leaves gaps (RoadBlock._infill): none of the buildings
 	# on a road, nor standing in another.
 	var built := 0

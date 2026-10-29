@@ -337,6 +337,10 @@ func _plant() -> void:
 		if kind in AdventureChunk.BUSHES:
 			bush = kind
 			break
+	# The place's mix of broadleaves and of conifers (its look's plants, its own canopy kinds first), so a wood is of
+	# several kinds, one or two of them to the fore in each patch of it.
+	var broads := _mix(look, broad, BROADLEAVES)
+	var needles := _mix(look, needle, CONIFERS)
 	var o := anchor()
 	var step := AdventureChunk.CANOPY_STEP
 	var north := absf(t.lat0) > float(AdventureChunk.NEEDLE_ODDS["north_lat"])
@@ -372,18 +376,60 @@ func _plant() -> void:
 			var wide := float(crown[0]) * tallest + float(crown[1])
 			var many := minf(float(AdventureChunk.CANOPY_MOST), share * step * step / (wide * wide))
 			var n := int(many + rng.randf())
+			var patch := absi(hash([floori(cx / MIX_PATCH), floori(cz / MIX_PATCH), "mix"]))
 			for k in n:
-				var kind := needle if (conifer if leaf != 3 else rng.randf() < 0.5) else (broad if share < 0.5 or rng.randf() < 0.4 else "tree")
-				if kind == "tree" and broad in ["jungle_tree", "acacia"]:
-					kind = broad
+				var cone := conifer if leaf != 3 else rng.randf() < 0.5
+				var kind := _pick(needles if cone else broads, patch, rng)
 				if kind in ["tree", "oak"] and autumn > 0.0 and rng.randf() < autumn:
 					kind = "autumn_tree"
 				var tall := maxf(3.0, tallest * rng.randf_range(0.65, 1.0))
 				var size: Array = AdventureChunk.TREE_SIZE.get(kind, [6.6, 5.2])
-				var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1])
+				var across := (float(crown[0]) * tall + float(crown[1])) / float(size[1]) * rng.randf_range(0.8, 1.25)
 				var x := cx + rng.randf_range(-0.5, 0.5) * step
 				var z := cz + rng.randf_range(-0.5, 0.5) * step
 				_stand(t, kind, x, z, 6.0, o, rng, Vector3(across, tall / float(size[0]), across))
+
+
+## The trees a wood is mixed from: broadleaves, and conifers (each a kind AdventureChunk.TREE_SIZE has).
+const BROADLEAVES := ["tree", "oak", "birch", "olive", "acacia", "jungle_tree", "palm"]
+const CONIFERS := ["pine", "cedar", "cypress", "snow_pine"]
+## A wood's mix is one or two kinds to the fore over each patch this big (m), MIX_LEAD of its trees of those.
+const MIX_PATCH := 96.0
+const MIX_LEAD := 0.65
+
+
+## The mix of `kinds` (BROADLEAVES or CONIFERS) a place's `look` has among its plants, by their weights, with its
+## canopy kind `main` the biggest share: [[kind, weight], ...], the heaviest first.
+static func _mix(look: Dictionary, main: String, kinds: Array) -> Array:
+	var plants: Dictionary = look.get("plants", {})
+	var out := []
+	var most := 0.0
+	for kind: String in plants:
+		if kind in kinds and kind != main and float(plants[kind]) > 0.0:
+			out.append([kind, float(plants[kind])])
+			most = maxf(most, float(plants[kind]))
+	out.append([main, maxf(most * 1.3, 1.0)])
+	out.sort_custom(func(a, b): return float(a[1]) > float(b[1]))
+	return out
+
+
+## A tree of mix `mix` (_mix) in patch `patch` (a hash): its lead kinds (the patch's pick of one or two) for MIX_LEAD of
+## them, the rest from the whole mix by weight.
+static func _pick(mix: Array, patch: int, rng: RandomNumberGenerator) -> String:
+	var total := 0.0
+	for m: Array in mix:
+		total += float(m[1])
+	var roll := rng.randf() * total
+	if rng.randf() < MIX_LEAD:
+		# (the patch's lead: picked by weight from the patch's own hash, so it's the same for every tree in it)
+		roll = float(patch % 10007) / 10007.0 * total
+		if rng.randf() < 0.3:
+			roll = float((patch / 10007) % 10007) / 10007.0 * total
+	for m: Array in mix:
+		roll -= float(m[1])
+		if roll <= 0.0:
+			return str(m[0])
+	return str(mix[mix.size() - 1][0])
 
 
 ## Stands one `kind` at region-frame (x, z) on the land (RoadNet.ground_at), at least `clear` m past any road's verge,
