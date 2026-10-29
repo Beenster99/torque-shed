@@ -120,6 +120,15 @@ func test_lay_out() -> void:
 		check(arms.size() == 4 and arms.all(func(x): return absf((x as Transform3D).origin.z - 100.0) > clear),
 			"four barriers, each past the verge (%s)" % str(arms.map(func(x): return (x as Transform3D).origin)))
 		check(float(gates[0]["length"]) > net.width_of(1) * 0.5, "an arm reaches over its half of the road")
+	# Each crossing is laid once, by the block its road point is in, though the blocks either side see it.
+	var runs := Rail.runs_of(r)
+	var laid := 0
+	for k: Vector2i in runs["filed"]:
+		laid += (Rail.lay_out(net, k, {})["dress"]["gates"] as Array).size()
+	check(laid == 1, "the crossing laid by one block only (%d)" % laid)
+	# Beside a bridge the map has on either line, a road goes under: no crossing there.
+	check(Rail._bridge_near(runs, Vector2(330.0, 100.0)) and not Rail._bridge_near(runs, Vector2(250.0, 100.0)),
+		"a road beside a rail bridge has no crossing")
 	# The station: a platform beside the track, boards with its name.
 	check((d["boards"] as Array).size() == 1 and d["boards"][0]["text"] == "Askrigg" and (d["boards"][0]["at"] as Array).size() >= 2,
 		"the station's name boards (%s)" % str(d["boards"]))

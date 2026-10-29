@@ -22,7 +22,7 @@ extends RefCounted
 ## where they meet.
 
 ## Part of the crew's builder hash (SceneryStreamer.script_versions): bump it when what a block lays out changes.
-const VERSION := 1
+const VERSION := 2
 const RailTrains := preload("res://scripts/scenery/rail_train.gd")
 const Geo := preload("res://scripts/scenery/rail_geo.gd")
 const Models := preload("res://scripts/scenery/rail_models.gd")
@@ -98,6 +98,11 @@ const STATION_NEAR := 70.0
 const POST_OUT := SceneryStreamer.CLEAR + 0.2
 const ARM_H := 1.0
 const TRACK_HALF := 3.0
+## The roads a level crossing is put on (a farm track's crossing has no barriers), and how near the line's own bed and
+## the road must be to one height for it to be on the level (m).
+const CROSSING_ROADS := ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street"]
+const AT_GRADE := 2.5
+const BRIDGE_NEAR := 20.0
 ## Where a crossing's barriers come down: a train within this of it along the line (m).
 const CLOSE_M := 550.0
 ## How far the track (and what's beside it) is drawn (m), and the trains.
@@ -124,9 +129,9 @@ static var _lock := Mutex.new()
 ## run passes through (overlapping by PAD) and the lay-outs again after it ask once: net's instance id -> {run id ->
 ## {sample's s in quarter metres -> [land, road], Vector2i(span's ends in quarter metres) -> its deck (_deck)}}.
 static var _seen := {}
-## How far round a section the ground must be final for what was found along it to be kept (m): past the roads' banks
-## and the stretch of a road its height is faired over.
-const SEEN_PAD := 300.0
+## How far round a section the ground must be final for what was found along it to be kept (m): as far as the scenery
+## waits for round a block before laying it out (a road's heights near it are final by then too).
+const SEEN_PAD := SceneryStreamer.READY_PAD
 static var _meshes := {}
 
 
@@ -518,13 +523,14 @@ static func lay_out(net: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary
 		_lay_track(multis, r, sec, own, o)
 		_lay_spans(geo, multis, net, r, sec, own, o, memo)
 		if r["track"] and str(r["kind"]) in CROSSING_KINDS:
-			crossings.append_array(_crossings(net, r, int(f[0]), sec, own))
+			crossings.append_array(_crossings(net, r, int(f[0]), sec))
 		if r["track"] and r["timetable"].get("mode", "") != "":
 			portions.append(_portion(int(f[0]), r, sec, own, o))
-	crossings = _merge_crossings(crossings)
 	var gates: Array = []
-	for c: Dictionary in crossings:
-		gates.append(_lay_crossing(geo, net, c, o))
+	for c: Dictionary in _merge_crossings(crossings):
+		# (each block sees the crossings a little past its edge too: the one where its first road point is lays it)
+		if own.has_point(c["at"]) and not _bridge_near(runs, c["at"]):
+			gates.append(_lay_crossing(geo, net, c, o))
 	for pr: Array in rows.get("points", []):
 		var row: Array = pr[0]
 		if PLATFORM.has(row[0]):
@@ -618,7 +624,8 @@ static func section(net: RoadNet, r: Dictionary, s0: float, s1: float, memo: Dic
 			if asked[i] != 2:
 				seen[roundi(ss[i] * 4.0)] = [land[i], road[i]]
 		_lock.unlock()
-	var y := _heights(net, r, ss, land, flags, road, memo)
+	var hs := _heights(net, r, ss, land, flags, road, memo)
+	var y: PackedFloat32Array = hs["y"]
 	var cut := PackedByteArray()
 	cut.resize(n)
 	for i in n:
@@ -633,7 +640,7 @@ static func section(net: RoadNet, r: Dictionary, s0: float, s1: float, memo: Dic
 			else:
 				c = 1 if clear < RoadNet.VERGE + CLEAR else 0
 		cut[i] = c
-	return {"s": ss, "p": ps, "land": land, "y": y, "flags": flags, "cut": cut, "road": road}
+	return {"s": ss, "p": ps, "land": land, "y": y, "line": hs["line"], "flags": flags, "cut": cut, "road": road}
 
 
 ## What's been found along run `id` on `net` (kept in _seen).
@@ -656,8 +663,15 @@ static func _ask(net: RoadNet, p: Vector2, i: int, land: PackedFloat32Array, roa
 	var bare := float(net.height.call(p.x, p.y))
 	if is_nan(bare):
 		return false
-	land[i] = net.ground_at(p.x, p.y, bare, memo)
-	road[i] = _road_at(net, p, memo)
+	var near := _roads_near(net, p, memo)
+	road[i] = near[0]
+	# (past every road's furthest bank, and no stop's flat ground in its block, the land is as it lies: ground_at's own
+	# answer there, without asking it)
+	if float(near[1]) > RoadNet.VERGE + RoadNet.BANK_MAX + RoadNet.LAND_PAD + 1.0 \
+			and not net._flats_by_block.has(RoadBlock.key_of(p.x, p.y)):
+		land[i] = bare
+	else:
+		land[i] = net.ground_at(p.x, p.y, bare, memo)
 	return true
 
 
@@ -665,6 +679,11 @@ static func _ask(net: RoadNet, p: Vector2, i: int, land: PackedFloat32Array, roa
 ## -1 in a junction), width, its height there (NAN unless `heights` or it's within its verge and CLEAR), lat]; [] for
 ## none. (A road's height is worked out only where it's wanted: it's most of the cost.)
 static func _road_at(net: RoadNet, p: Vector2, memo: Dictionary, heights := false) -> Array:
+	return _roads_near(net, p, memo, heights)[0]
+
+
+## _road_at's answer, and how far past its carriageway's edge the nearest road filed near `p` is (m; INF for none).
+static func _roads_near(net: RoadNet, p: Vector2, memo: Dictionary, heights := false) -> Array:
 	# (RoadNet.locate's choice, from the block's grid and lines kept in `memo`, and its junctions looked at only for a
 	# road near enough to matter)
 	var near := net._near_memo(p.x, p.y, memo)
@@ -672,11 +691,13 @@ static func _road_at(net: RoadNet, p: Vector2, memo: Dictionary, heights := fals
 	var best := -1
 	var best_key := INF
 	var best_proj := []
+	var nearest := INF
 	for c in cands.size():
 		var ei := cands[c]
 		var v := net._edge_memo(ei, memo)
 		var pr := RoadNet._project_on(v[0], v[1], p, near[1][c])
 		var off := float(pr[2]) - net.width_of(ei) * 0.5
+		nearest = minf(nearest, off)
 		if off > RoadNet.REACH:
 			continue
 		var key := maxf(off, 0.0) * 1000.0 + float(pr[2])
@@ -685,11 +706,11 @@ static func _road_at(net: RoadNet, p: Vector2, memo: Dictionary, heights := fals
 			best = ei
 			best_proj = pr
 	if best < 0:
-		return []
+		return [[], nearest]
 	var w := net.width_of(best)
 	var clear := absf(float(best_proj[1])) - w * 0.5
 	if clear > NEAR_TO:
-		return []
+		return [[], nearest]
 	for n: int in [net.region.edge_a[best], net.region.edge_b[best]]:
 		var j := net.junction_of(n, false)
 		if j.is_empty() or j["kind"] == "end":
@@ -700,14 +721,15 @@ static func _road_at(net: RoadNet, p: Vector2, memo: Dictionary, heights := fals
 	var y := NAN
 	if heights or clear < RoadNet.VERGE + CLEAR:
 		y = net.road_y(best, float(best_proj[0]))
-	return [best, float(best_proj[0]), clear, w, y, float(best_proj[1])]
+	return [[best, float(best_proj[0]), clear, w, y, float(best_proj[1])], nearest]
 
 
 ## The rail bed's height at each of a section's samples: the land smoothed (a railway climbs gently), never under the land
 ## (no cutting), on the land as it is near a road, straight across a bridge from the land at its ends (lifted to clear a
-## road under it), and eased onto each bridge's and tunnel's ends.
+## road under it), and eased onto each bridge's and tunnel's ends: {y, line (the same before it's brought onto the land
+## near a road)}.
 static func _heights(net: RoadNet, r: Dictionary, ss: PackedFloat32Array, land: PackedFloat32Array, flags: PackedInt32Array,
-		road: Array, memo: Dictionary) -> PackedFloat32Array:
+		road: Array, memo: Dictionary) -> Dictionary:
 	var n := ss.size()
 	var kind := str(r["kind"])
 	# Every bridge and tunnel whose deck (or its ease) reaches the samples: the same ones whichever block asks.
@@ -754,6 +776,7 @@ static func _heights(net: RoadNet, r: Dictionary, ss: PackedFloat32Array, land: 
 			var at_s := float(d[e * 2])
 			var at_end := _deck_y(d, at_s)
 			ends.append(Vector3(at_s, at_end, clampf(absf(at_end - float(d[e * 2 + 1])) / EASE_GRADE, EASE, EASE_MOST)))
+	var line := y.duplicate()
 	for i in n:
 		if pinned[i]:
 			continue
@@ -763,6 +786,7 @@ static func _heights(net: RoadNet, r: Dictionary, ss: PackedFloat32Array, land: 
 			if away < e.z:
 				var t := 1.0 - away / e.z
 				h = lerpf(h, e.y, t * t * (3.0 - 2.0 * t))
+		line[i] = h
 		var rd: Array = road[i]
 		if not rd.is_empty():
 			var t := 1.0 - smoothstep(NEAR_FROM, NEAR_TO, float(rd[2]))
@@ -771,7 +795,7 @@ static func _heights(net: RoadNet, r: Dictionary, ss: PackedFloat32Array, land: 
 	if kind == "monorail":
 		for i in n:
 			y[i] += MONO_H
-	return y
+	return {"y": y, "line": line}
 
 
 ## Span `sp` of run `r`'s heights: [s0, y0, s1, y1, lifts], straight from the land at its ends (a tunnel's too), a bridge
@@ -1041,10 +1065,10 @@ static func _portal(geo: Geo, r: Dictionary, sec: Dictionary, s: float, out: flo
 
 # ---------------------------------------------------------------------------- level crossings
 
-## Where a run meets a road on the level in this block: {run, s (along the run), edge, road_s, at: Vector2 (the road's
+## Where a run meets a road on the level (in its section, past the block's edge too): {run, s (along the run), edge, road_s, at: Vector2 (the road's
 ## middle), road_y, width, along: Vector2 (the road's way), cross_angle}. A stretch the track stops for that crosses the
 ## road's middle is one.
-static func _crossings(net: RoadNet, r: Dictionary, ri: int, sec: Dictionary, own: Rect2) -> Array:
+static func _crossings(net: RoadNet, r: Dictionary, ri: int, sec: Dictionary) -> Array:
 	var out: Array = []
 	var cut: PackedByteArray = sec["cut"]
 	var flags: PackedInt32Array = sec["flags"]
@@ -1077,8 +1101,11 @@ static func _crossings(net: RoadNet, r: Dictionary, ri: int, sec: Dictionary, ow
 			var rs := lerpf(float(a[1]), float(b[1]), t)
 			var at := net.point_at(e, rs)
 			var ry := lerpf(float(a[4]), float(b[4]), t)
-			# (at grade: the line's own bed here is near the road's height, and the road isn't on a bridge)
-			if own.has_point(at) and net.bridge_at(e, rs) <= 0.0 and absf(_sec_y(sec, s) - ry) < 3.0:
+			# (on the level: a road a crossing is put on (not a farm track or a motorway), off any bridge, and the line's own
+			# bed, before it's brought onto the road, at the road's height; else it's a bridge the map hasn't, one way or the
+			# other)
+			var line_y := lerpf(sec["line"][best], sec["line"][best + 1], t)
+			if str(net.region.class_of(e)) in CROSSING_ROADS and net.bridge_at(e, rs) <= 0.0 and absf(line_y - ry) < AT_GRADE:
 				var ahead := (net.point_at(e, minf(rs + 2.0, net.length_of(e))) - net.point_at(e, maxf(rs - 2.0, 0.0))).normalized()
 				var rail := (_point_on(r, minf(s + 2.0, float(r["len"]))) - _point_on(r, maxf(s - 2.0, 0.0))).normalized()
 				out.append({"runs": [ri], "s": [s], "edge": e, "road_s": rs, "at": at, "road_y": ry, "width": float(a[3]),
@@ -1087,9 +1114,28 @@ static func _crossings(net: RoadNet, r: Dictionary, ri: int, sec: Dictionary, ow
 	return out
 
 
+## Whether any line has a bridge within BRIDGE_NEAR of `p` (a road crossing a double track one of whose lines the map
+## has on a bridge, or a bridge a little along from where the map's road crosses: the road goes under, not over).
+static func _bridge_near(runs: Dictionary, p: Vector2) -> bool:
+	for f: Array in runs["filed"].get(RoadBlock.key_of(p.x, p.y), []):
+		var r: Dictionary = runs["runs"][int(f[0])]
+		for sp: Array in r["spans"]:
+			if int(sp[2]) != BRIDGE:
+				continue
+			var s := float(sp[0])
+			while true:
+				if _point_on(r, s).distance_to(p) < BRIDGE_NEAR:
+					return true
+				if s >= float(sp[1]):
+					break
+				s = minf(s + STEP, float(sp[1]))
+	return false
+
+
 ## Crossings of the same road within 18 m of each other (a double track) are one, closed for a train on either line.
 static func _merge_crossings(list: Array) -> Array:
 	var out: Array = []
+	list.sort_custom(func(a, b): return int(a["edge"]) < int(b["edge"]) or (int(a["edge"]) == int(b["edge"]) and float(a["road_s"]) < float(b["road_s"])))
 	for c: Dictionary in list:
 		var into := -1
 		for k in out.size():
