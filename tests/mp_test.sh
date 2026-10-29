@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts a host and a client on this machine and checks each sees the other's bike move.
-# Then a second pair rides an adventure together (tests/mp_adventure.gd), a third breaks down
-# on one and fixes it at the roadside (a mate swapping its pads from the toolbox), then tows (tests/mp_wrench.gd), a fourth sits
+# Then a second pair rides an adventure together (tests/mp_adventure.gd), a third stops on
+# one to fix a slack chain at the roadside (a mate swapping its pads from the toolbox), then tows (tests/mp_wrench.gd), a fourth sits
 # and sleeps on one (tests/mp_needs.gd),
 # a fifth starts one along a planned journey and arrives at its destination together (tests/mp_dest.gd),
 # a sixth keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),

@@ -380,6 +380,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	_sync(state)
 	adventure = {}   # nobody is out on an adventure in a save just opened
 	Roadside.bring_home()   # and nobody's bike is left at an adventure's roadside (see Roadside)
+	_forget_punctures()
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -733,11 +734,6 @@ func condition_of(item: Dictionary) -> Dictionary:
 			cond["lighten_extra"] = float(item["lighten_extra"])
 	if item.has("bead"):
 		cond["bead"] = item["bead"]
-	# A punctured tyre, and the air it has lost (see Puncture).
-	if Puncture.punctured(item):
-		cond["puncture"] = Puncture.rate(item)
-	if Puncture.lost(item) > 0.0:
-		cond["deflate"] = Puncture.lost(item)
 	# A manufacturer prototype's built-in quirk (see ContractTestRide).
 	if item.get("proto") is Dictionary:
 		cond["proto"] = item["proto"]
@@ -1490,9 +1486,6 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + bead_text(item)
 	if str(item.get("kind", "")) == "toolbox":
 		text += "\n" + toolbox_text(item)
-	var holed := Puncture.text(item)
-	if holed != "":
-		text += "\n" + holed
 	return text
 
 
@@ -1542,9 +1535,6 @@ func fluid_text(item: Dictionary) -> String:
 	var f: Dictionary = item["fluid"]
 	var cap := PartsDB.fluid_capacity(item["part"])
 	var k := PartsDB.fluid_kind(item["part"])
-	if k == "puncture_kit":
-		var plugs := roundi(float(f["litres"]))
-		return "Puncture repair kit: %s" % ("no plugs left" if plugs <= 0 else "%d plug%s left" % [plugs, "" if plugs == 1 else "s"])
 	var what: String = {"petrol": "Petrol", "oil": "Oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube"}.get(k, "Fluid")
 	var amount := ("%.2f of %.2f L" if cap < 1.0 else "%.1f of %.0f L") % [float(f["litres"]), cap]
 	if float(f["litres"]) <= 0.001:
@@ -2290,32 +2280,6 @@ func bead_text(item: Dictionary) -> String:
 	return "Bead badly seated (%d%%): it loses pressure and grips less. Refit it on the tyre changer." % roundi(q * 100.0)
 
 
-## Gives a bike's tyre a puncture (see Puncture): "slow" or "fast", with `lost` bar of air
-## already gone (an arrival that's stood a while). A plug it had no longer counts.
-func puncture_tyre(bike_id: int, side: String, kind := "slow", lost := 0.0) -> void:
-	var tyre := item_on(bike_id, side + "_tyre")
-	if tyre == 0:
-		return
-	items[tyre]["puncture"] = Puncture.rate_of_kind(kind)
-	items[tyre].erase("plug")
-	if lost > 0.0:
-		items[tyre]["deflate"] = maxf(Puncture.lost(items[tyre]), lost)
-
-
-## A bike just arrived from `where` (a key of Puncture.ARRIVE) may be on a punctured tyre, gone
-## soft or flat standing. Rolled on its own dice, so the bike's other rolls are unchanged.
-func arrival_puncture(bike_id: int, where: String) -> bool:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash("puncture:%d:%d" % [bike_id, _rng.seed])
-	if not bikes.has(bike_id) or rng.randf() >= float(Puncture.ARRIVE.get(where, 0.0)):
-		return false
-	var side := "front" if rng.randf() < 0.45 else "rear"
-	var kind := Puncture.kind_of_roll(rng.randf())
-	var psi := build_of(bike_id).tune_value("psi_f" if side == "front" else "psi_r")
-	puncture_tyre(bike_id, side, kind, psi * rng.randf_range(0.35, 1.0))
-	return true
-
-
 ## "front" or "rear": the wheel a tyre is on (on the bike, or a loose wheel by its kind of slot).
 func _tyre_side(tyre: int) -> String:
 	var bike := _bike_of(tyre)
@@ -2584,8 +2548,6 @@ func check(peer: int, action: Dictionary) -> String:
 		return "That's %s's own bike: only they can ride it or wheel it off." % Collection.owner_of_bike(bike_id)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
-	if a == "debug_fix_bike":
-		return "" if bikes.has(int(action.get("bike", 0))) else "No such bike."
 	if a == "diary_delete":
 		return AdventureDest.delete_check(peer, action)
 	if a == "diary_photos_down":
@@ -2842,12 +2804,6 @@ func check(peer: int, action: Dictionary) -> String:
 			var slack := float(items[chain].get("slack", CHAIN_SLACK_SET))
 			if absf(slack - CHAIN_SLACK_SET) < 3.0:
 				return "The chain tension is spot on."
-		"puncture":
-			if not str(action.get("side", "")) in ["front", "rear"]:
-				return "Which tyre?"
-			var holed := int(action.get("bike", 0)) if action.get("debug", false) else riding(peer)
-			if not bikes.has(holed) or item_on(holed, str(action["side"]) + "_tyre") == 0:
-				return "There's no tyre there to puncture."
 		"toolbox_pack":
 			var box := int(action.get("item", 0))
 			if not items.has(box) or items[box]["kind"] != "toolbox":
@@ -2899,26 +2855,6 @@ func check(peer: int, action: Dictionary) -> String:
 				return "This screen doesn't adjust."
 			if not (action.get("value") is float or action.get("value") is int):
 				return "How high?"
-		"plug_tyre", "inflate":
-			var tyre := int(action.get("item", 0))
-			if not items.has(tyre) or items[tyre]["kind"] != "tyre":
-				return "Aim at a tyre."
-			if not items[tyre]["at"] in ["bike", "wheel"]:
-				return "It has to be on a wheel to hold air."
-			if _bike_of(tyre) != 0 and int(bikes[_bike_of(tyre)].get("rider", 0)) != 0:
-				return "Someone is riding that bike."
-			if a == "inflate":
-				if held != 0:
-					return "Put down what you're holding to use the air line."
-				if Puncture.lost(items[tyre]) < 0.05:
-					return "It's up to its set pressure."
-			else:
-				if held == 0 or PartsDB.kind_of(items[held]["part"]) != "puncture_kit":
-					return "You need a puncture repair kit in your hands. Order one on the parts computer."
-				if float(items[held].get("fluid", {}).get("litres", 0.0)) < 0.5:
-					return "The kit's out of plugs."
-				if not Puncture.punctured(items[tyre]):
-					return "There's no hiss anywhere: it holds its air."
 		"lube":
 			if held == 0 or PartsDB.kind_of(items[held]["part"]) != "chain_lube":
 				return "You need a can of chain lube in your hands."
@@ -3509,13 +3445,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_mark_dirty()
 			changed.emit()
 		return
-	if a == "debug_fix_bike":
-		var fixed := debug_fix_bike(int(action.get("bike", 0)))
-		if fixed != "":
-			_tell(peer, fixed, true)
-		_mark_dirty()
-		changed.emit()
-		return
 	if a == "retrieve_bike":
 		# The whole crew hears that it's back.
 		var back := _retrieve(peer, action)
@@ -3555,8 +3484,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"bolt":
 			host_of(bike_id, slot, engine_id)["bolted"][slot] = true
 			text = "%s bolted up" % PartsDB.slot_name(slot)
-			if engine_id == 0 and str(Roadside.faults_of(bike_id).get("rattle", "")) == slot:
-				bikes[bike_id]["faults"].erase("rattle")   # bolted up tight: no more rattle (see Roadside)
 			if engine_id == 0 and is_complete(bike_id):
 				text += ". The bike is ready to ride!"
 			elif engine_id != 0 and engine_missing(engine_id).is_empty():
@@ -3602,8 +3529,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["slots"][s] = item_id
 			host["bolted"][s] = false
 			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
-			if engine_id == 0 and s == "chain" and Roadside.faults_of(bike_id).has("chain_snap"):
-				bikes[bike_id]["faults"].erase("chain_snap")   # a new chain on in place of the snapped one
 			var tyre := tyre_on_wheel(item_id)
 			if tyre != 0 and WHEEL_TYRE.has(s) and int(host["slots"].get(WHEEL_TYRE[s], 0)) == 0:
 				# A wheel goes back on with its tyre seated on it.
@@ -3659,7 +3584,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 			items[wheel]["tyre"] = tyre
 			_move(tyre, "wheel", wheel)
 			items[tyre]["bead"] = q
-			items[tyre].erase("deflate")   # seated with the bead popped on, it's pumped up fresh
 			_bump(c, "fitted")
 			_xp(peer, "tyre_fit", q, "item:%d" % tyre)
 			text = "Fitted the %s to the %s. %s" % [item_title(tyre), item_title(wheel), bead_text(items[tyre])]
@@ -3668,7 +3592,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var tyre := tyre_on_wheel(wheel)
 			items[wheel].erase("tyre")
 			items[tyre].erase("bead")
-			items[tyre].erase("deflate")
 			_move(tyre, "held", peer)
 			_bump(c, "removed")
 			_xp(peer, "tyre_remove", 1.0, "item:%d" % tyre)
@@ -3835,32 +3758,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 			items[chain]["slack"] = CHAIN_SLACK_SET
 			text = "Chain %s to %d mm of slack" % ["tightened" if was > CHAIN_SLACK_SET else "slackened off", roundi(CHAIN_SLACK_SET)]
 			_xp(peer, "chain_tension", 1.0, "item:%d" % chain)
-		"puncture":
-			var holed := int(action.get("bike", 0)) if action.get("debug", false) else riding(peer)
-			var side := str(action["side"])
-			var kind := "fast" if str(action.get("kind", "")) == "fast" else "slow"
-			if action.get("debug", false) or not Puncture.punctured(items[item_on(holed, side + "_tyre")]):
-				puncture_tyre(holed, side, kind)
-				if kind == "fast" or action.get("debug", false):
-					text = "Puncture! The %s tyre's picked something up: it's going down %s." % [side, "fast" if kind == "fast" else "slowly"]
-		"plug_tyre":
-			# The plug kit: find the hiss with the soapy spray, then push a plug in (see PlugGame).
-			var tyre := int(action["item"])
-			var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
-			if q <= 0.0:
-				text = "Couldn't find the leak. Sweep the soapy spray round the tread and watch for the bubbles."
-			else:
-				var kit: Dictionary = items[held_by(peer)]["fluid"]
-				kit["litres"] = maxf(0.0, float(kit["litres"]) - 1.0)
-				q = clampf(q + _finish_bonus(peer), 0.0, 1.0)
-				items[tyre]["plug"] = q
-				if q >= Puncture.PLUG_SEALS:
-					items[tyre].erase("puncture")
-					text = "Plugged the puncture in the %s (%d%%): it holds its air. Pump it back up at the air line." % [item_title(tyre), roundi(q * 100.0)]
-				else:
-					items[tyre]["puncture"] = Puncture.SLOW * Puncture.PLUG_WEEP
-					text = "The plug's in crooked (%d%%): it still weeps air. Try another, or change the tyre." % roundi(q * 100.0)
-				_xp(peer, "tyre_plug", q, "item:%d" % tyre)
 		"toolbox_pack":
 			var box := int(action["item"])
 			var packed: Array = toolbox_contents(box).duplicate()
@@ -3894,15 +3791,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if not items[fairing].has("tune"):
 				items[fairing]["tune"] = {}
 			items[fairing]["tune"]["screen"] = clampf(float(action["value"]), 0.0, 1.0)
-		"inflate":
-			var tyre := int(action["item"])
-			items[tyre].erase("deflate")
-			text = "Pumped the %s back up" % item_title(tyre)
-			if _bike_of(tyre) != 0:
-				var key := "psi_f" if _tyre_side(tyre) == "front" else "psi_r"
-				text = "Pumped the %s up to %.1f bar" % [item_title(tyre), build_of(_bike_of(tyre)).tune_value(key)]
-			if Puncture.punctured(items[tyre]):
-				text += ", but it's hissing: it'll go down again. Plug it or change it."
 		"lube":
 			# How well it went on: coverage along the chain, less any flung off where it was overdone.
 			var chain := int(action["item"])
@@ -4188,8 +4076,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 				bikes[id]["ordered_by"] = str(c.get("name", ""))
 			bikes[id]["name"] = owned_name(str(c.get("name", "")), Contracts.current_parts(id) if style == "" else {}, style, id)
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
-			if age != 0.0:
-				arrival_puncture(id, "project")
 			text = "%s has been delivered to bay %d%s, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1,
 				", ready to ride" if age == 0.0 else "" if quality < 0.0 else " (%s)" % BikeCopy.quality_name(quality).to_lower(), TvChannels.money_text(cost)]
 		"radio":
@@ -4301,8 +4187,8 @@ func adventure_ride(peer: int, action: Dictionary) -> bool:
 ## What a ride does to a bike: road dirt on its parts (where it really goes, see Dirt.accrue,
 ## dead flies on the front at speed), petrol used, oil and brake fluid aging, and engine wear,
 ## which climbs steeply when the oil is low or worn out. On an adventure (`on_adventure`) the
-## bike takes no harm: it gets muddy and burns petrol, and its tyres wear and can go down (a
-## puncture, a badly seated bead), but nothing else wears, rusts, ages or slackens.
+## bike takes no harm at all: it gets muddy and burns petrol, but nothing wears, rusts, ages,
+## slackens or loses air.
 func _wear_from_ride(bike_id: int, action: Dictionary, on_adventure := false) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
@@ -4329,6 +4215,17 @@ func _wear_from_ride(bike_id: int, action: Dictionary, on_adventure := false) ->
 			items[id]["coat_q"] = maxf(0.0, float(items[id].get("coat_q", 1.0)) - (km + dirty) * COAT_WEAR)
 		if id != 0 and items[id].get("lightened", false):
 			items[id]["wear"] = minf(1.0, float(items[id]["wear"]) + km * 0.0003)
+	# Petrol burnt: an auxiliary tank feeds the main one, so it empties first.
+	var burnt := clampf(float(action.get("fuel", 0.0)), 0.0, 2.0)
+	for slot in ["aux_tank", "tank"]:
+		var tank := item_on(bike_id, slot)
+		if tank != 0 and items[tank].has("fluid") and burnt > 0.0:
+			var f: Dictionary = items[tank]["fluid"]
+			var take := minf(burnt, float(f["litres"]))
+			f["litres"] = float(f["litres"]) - take
+			burnt -= take
+	if on_adventure:
+		return
 	# Tyres wear, faster at the wrong pressure, and a badly seated bead slowly lets one down.
 	for side in ["front", "rear"]:
 		var tyre := item_on(bike_id, side + "_tyre")
@@ -4341,33 +4238,11 @@ func _wear_from_ride(bike_id: int, action: Dictionary, on_adventure := false) ->
 				var psi := float(tune.get("pressure", build.tune_default(key)))
 				tune["pressure"] = maxf(float(BikeBuild.TUNE_LIMITS[key][0]), psi - km * BEAD_LEAK * (1.0 - bead / BikeBuild.BEAD_OK))
 				items[tyre]["tune"] = tune
-			# Ridden on a flat, the tyre is chewed up and the rim takes the knocks; a puncture
-			# keeps letting the air out (see Puncture).
-			var flat: float = build.flat[side]
-			if flat > 0.0 and km > 0.0:
-				items[tyre]["wear"] = minf(1.0, float(items[tyre]["wear"]) + km * Puncture.FLAT_TYRE_WEAR * flat)
-				var rim := item_on(bike_id, side + "_wheel")
-				if rim != 0 and not on_adventure:
-					items[rim]["wear"] = minf(1.0, float(items[rim]["wear"]) + km * Puncture.FLAT_RIM_WEAR * flat)
-			if Puncture.punctured(items[tyre]) and km > 0.0:
-				items[tyre]["deflate"] = minf(build.tune_value("psi_f" if side == "front" else "psi_r"),
-					Puncture.lost(items[tyre]) + km * Puncture.rate(items[tyre]))
 	# Burnouts scrub the back tyre down fast.
 	var spin := clampf(float(action.get("spin", 0.0)), 0.0, 5.0)
 	var rear_tyre := item_on(bike_id, "rear_tyre")
 	if rear_tyre != 0 and spin > 0.0:
 		items[rear_tyre]["wear"] = minf(1.0, float(items[rear_tyre]["wear"]) + spin * BURNOUT_WEAR)
-	# Petrol burnt: an auxiliary tank feeds the main one, so it empties first.
-	var burnt := clampf(float(action.get("fuel", 0.0)), 0.0, 2.0)
-	for slot in ["aux_tank", "tank"]:
-		var tank := item_on(bike_id, slot)
-		if tank != 0 and items[tank].has("fluid") and burnt > 0.0:
-			var f: Dictionary = items[tank]["fluid"]
-			var take := minf(burnt, float(f["litres"]))
-			f["litres"] = float(f["litres"]) - take
-			burnt -= take
-	if on_adventure:
-		return
 	var block := item_on(bike_id, "engine")
 	if block != 0 and items[block].has("fluid"):
 		var oil: Dictionary = items[block]["fluid"]
@@ -6374,7 +6249,7 @@ func next_kit(item_id: int) -> String:
 	return ""
 
 
-## "tools, plug kit and pump" for what's packed.
+## "tools, oil and chain lube" for what's packed.
 static func kit_list(packed: Array) -> String:
 	var names := packed.map(func(w): return str(PartsDB.TOOLBOX_CONTENTS.get(str(w), {}).get("short", w)))
 	if names.is_empty():
@@ -6384,7 +6259,7 @@ static func kit_list(packed: Array) -> String:
 	return ", ".join(names.slice(0, names.size() - 1)) + " and " + str(names[-1])
 
 
-## A toolbox's contents for the info panel: "Packed (3 of 6): tools, plug kit and pump".
+## A toolbox's contents for the info panel: "Packed (3 of 6): tools, oil and chain lube".
 func toolbox_text(item: Dictionary) -> String:
 	var packed: Array = item.get("contents", []) if item.get("contents") is Array else []
 	var slots := int(PartsDB.get_part(str(item["part"])).get("slots", 0))
@@ -6515,40 +6390,30 @@ func _retrieve(peer: int, action: Dictionary) -> String:
 	return "%s had %s brought back to the yard by the roller door (%s)." % [who, str(b["name"]), TvChannels.money_text(RETRIEVE_FEE)]
 
 
-## Debug, host: puts a bike right for a long test ride. Every part fitted to it (and in its
-## engine) is made like new, punctures and lost air go, the chain is set and lubed, the stored
-## roadside faults clear, and the tanks, the engine oil and the brake fluid are topped up.
-## Returns what was done ("" when there's no such bike).
-func debug_fix_bike(bike_id: int) -> String:
-	if not bikes.has(bike_id):
-		return ""
-	var fitted := {}   # item id -> the slot it's in
-	var block := item_on(bike_id, "engine")
-	for host in [bikes[bike_id], items.get(block, {})]:
-		var slots: Dictionary = host.get("slots", {})
-		for slot in slots:
-			fitted[int(slots[slot])] = str(slot)
-	var mended := 0
-	for id: int in fitted:
+## Saves from before punctures, flat tyres, the plug kit and roadside faults were taken out:
+## tyres lose their holes, lost air and barn-find flatness, plug kits go, toolboxes keep only
+## the kit there still is, and bikes lose any stored faults.
+func _forget_punctures() -> void:
+	for id in items.keys():
 		if not items.has(id):
 			continue
 		var it: Dictionary = items[id]
-		if float(it["rust"]) > 0.0 or float(it["wear"]) > 0.0 or Puncture.punctured(it) or Puncture.lost(it) > 0.0:
-			mended += 1
-		it["rust"] = 0.0
-		it["wear"] = 0.0
-		it.erase("puncture")
-		it.erase("deflate")
-		it.erase("plug")
-		var f = it.get("fluid")
-		if f is Dictionary and not fitted[id] in ["tank", "aux_tank"]:   # the tanks get fresh fuel below
-			f["litres"] = PartsDB.fluid_capacity(str(it["part"]))
-			f["age"] = 0.0
-	var chain := item_on(bike_id, "chain")
-	if chain != 0:
-		items[chain]["slack"] = CHAIN_SLACK_SET
-		items[chain]["lube"] = 1.0
-	if bikes[bike_id].get("faults") is Dictionary:
-		bikes[bike_id]["faults"].clear()
-	_fill_tanks(bike_id, fuel_space(bike_id))
-	return "Debug: %s fixed up (%d part%s mended, topped up)" % [str(bikes[bike_id]["name"]), mended, "" if mended == 1 else "s"]
+		if str(it.get("kind", "")) == "puncture_kit":
+			_erase_item(int(id))
+			continue
+		for key in ["puncture", "deflate", "plug"]:
+			it.erase(key)
+		if str(it.get("kind", "")) == "tyre":
+			it.erase("flat")
+		if it.get("contents") is Array:
+			it["contents"] = (it["contents"] as Array).filter(func(w): return PartsDB.TOOLBOX_CONTENTS.has(str(w)))
+		for key in ["used", "left"]:
+			var v = it.get(key)
+			if v is Array:
+				it[key] = v.filter(func(w): return PartsDB.TOOLBOX_CONTENTS.has(str(w)))
+			elif v is Dictionary:
+				for w in v.keys():
+					if not PartsDB.TOOLBOX_CONTENTS.has(str(w)):
+						v.erase(w)
+	for id in bikes:
+		bikes[id].erase("faults")

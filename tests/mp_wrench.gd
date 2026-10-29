@@ -1,19 +1,19 @@
 extends Node
 ## Two-process co-op check of roadside wrenching (see Roadside), run by tests/mp_test.sh: a host
-## and a client go on an adventure with toolboxes packed. The client's chain snaps; they get off
-## and the host must see the client's bike stood at the roadside where they left it, then its
-## toolbox open with the kit out on a cloth, and the chain fixed with the spare (gone from the
-## toolbox). Then the host gets off and lends a hand with the toolbox's spanners (see ToolboxSpares):
+## and a client go on an adventure with toolboxes packed, their bikes setting off with a slack
+## chain and low on oil. The client gets off and the host must see the client's bike stood at
+## the roadside where they left it, then its toolbox open with the kit out on a cloth, and the
+## chain tightened with the tool roll. Then the host gets off and lends a hand with the toolbox's spanners (see ToolboxSpares):
 ## unbolts the client's front pads, takes them off, packs them in the client's toolbox, takes a
 ## spare out and fits and bolts it, all through the host's shed, and the client must see each step.
-## Then it snaps again and the host tows the client on a strap: the client's bike must
+## Then, still low on oil, the host tows the client on a strap: the client's bike must
 ## be pulled along the road behind the host's, and the host must see the strap between them.
 
 const Rides := preload("res://tests/rides.gd")
 
 const SEED := 654
 const KM := 20.0
-const KIT: Array[String] = ["tools", "spare_chain", "fuses", "levers"]   # (room left for a spare part and the old one)
+const KIT: Array[String] = ["tools", "chain_lube"]   # (room left for a spare part and the old one)
 const SPARE_PADS := "sintered"
 
 var role := "host"
@@ -86,12 +86,13 @@ func _ready() -> void:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP wrench %s %s: on the adventure=%s, the bike at the roadside seen=%s, its toolbox open=%s, fixed with the spare chain=%s, a mate swapped its pads=%s, towed along=%s, strap seen=%s, home=%s" % [
+	print("MP wrench %s %s: on the adventure=%s, the bike at the roadside seen=%s, its toolbox open=%s, chain tightened=%s, a mate swapped its pads=%s, towed along=%s, strap seen=%s, home=%s" % [
 		"PASS" if ok else "FAIL", role, ok_start, seen_parked, seen_open, seen_fixed, helped, towed_ok, strap_seen, home_ok])
 	get_tree().quit(0 if ok else 1)
 
 
-## The host packs a toolbox on every bike before setting off.
+## The host packs a toolbox on every bike before setting off, and leaves every bike's chain slack
+## and its oil low (faults it sets off with: an adventure itself harms nothing).
 func _pack_toolboxes() -> void:
 	for bike in Shed.bikes:
 		var old := Shed.item_on(int(bike), "toolbox")
@@ -105,17 +106,22 @@ func _pack_toolboxes() -> void:
 		# A spare set of brake pads in it, for the host to fit (see ToolboxSpares).
 		Shed.items[id]["spares"] = [{"part": SPARE_PADS, "kind": "pads", "rust": 0.0, "dirt": 0.0, "wear": 0.0,
 			"color": PartsDB.default_color(SPARE_PADS), "finish": "", "boxed": false}]
+		var chain := Shed.item_on(int(bike), "chain")
+		if chain != 0:
+			Shed.items[chain]["slack"] = 62.0
+		var engine := Shed.item_on(int(bike), "engine")
+		if engine != 0 and Shed.items[engine].get("fluid") is Dictionary:
+			Shed.items[engine]["fluid"]["litres"] = PartsDB.fluid_capacity(str(Shed.items[engine]["part"])) * 0.3
 	Shed._mark_dirty()
 	Shed.changed.emit()
 
 
-## The client: chain snaps, off at the roadside, toolbox open, fixed. Returns what it saw of its
-## own (that the shed took each step).
+## The client: the slack chain, off at the roadside, toolbox open, tightened. Returns what it saw
+## of its own (that the shed took each step).
 func _client_breakdown(trip: AdventureTrip) -> Array:
 	var bike := Shed.riding(Shed.me())
 	await _wait(3.0)
-	Shed.request({"a": "roadside_fault", "kind": "chain_snap"})
-	var snapped := await _until(func(): return Roadside.dead(bike), 10.0)
+	var snapped := await _until(func(): return not Roadside.find(bike, "chain_slack").is_empty(), 10.0)
 	main.bike.linear_velocity = Vector3.ZERO
 	await _wait(1.0)
 	main._get_off()
@@ -124,9 +130,9 @@ func _client_breakdown(trip: AdventureTrip) -> Array:
 	Shed.request({"a": "roadside_open", "bike": bike, "open": true})
 	var opened := await _until(func(): return Roadside.spot_of(bike).get("open", false), 10.0)
 	await _wait(4.0)
-	Shed.request({"a": "roadside_fix", "bike": bike, "fault": "chain_snap", "crouched": true, "quality": 0.8})
-	var fixed := await _until(func(): return not Roadside.dead(bike), 10.0)
-	print("MP wrench note client: snapped %s, parked %s, opened %s, fixed %s" % [snapped, parked, opened, fixed])
+	Shed.request({"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true})
+	var fixed := await _until(func(): return Roadside.find(bike, "chain_slack").is_empty(), 10.0)
+	print("MP wrench note client: slack %s, parked %s, opened %s, fixed %s" % [snapped, parked, opened, fixed])
 	# The host gets off and swaps the front pads for a spare from the toolbox: each step seen here.
 	var box := Roadside.toolbox_of(bike)
 	var first := Shed.item_on(bike, "front_pads")
@@ -168,9 +174,8 @@ func _host_watch(trip: AdventureTrip) -> Array:
 			return false
 		return (view[0]._views[theirs[0]]["node"] as Node3D).get_child_count() > 3, 20.0)
 	var fixed := await _until(func():
-		var box := Roadside.toolbox_of(theirs[0])
-		var shown: bool = view[0]._views.has(theirs[0]) and str(view[0]._views[theirs[0]]["sig"]).contains("chain")
-		return theirs[0] != 0 and not Roadside.dead(theirs[0]) and Roadside.used_of(box).has("spare_chain") and shown, 20.0)
+		var shown: bool = view[0]._views.has(theirs[0]) and str(view[0]._views[theirs[0]]["sig"]).contains("tools")
+		return theirs[0] != 0 and Roadside.find(theirs[0], "chain_slack").is_empty() and shown, 20.0)
 	var helped := await _host_help(theirs[0]) if fixed else false
 	return [parked, opened, fixed, helped]
 
@@ -204,7 +209,7 @@ func _host_help(theirs: int) -> bool:
 	return ok and back
 
 
-## The client: back on, the chain snaps again, and the host's bike tows it on.
+## The client: back on, still low on oil, and the host's bike tows it on.
 func _client_tow(trip: AdventureTrip) -> bool:
 	var bike := Shed.riding(Shed.me())
 	for id in Shed.bikes:
@@ -212,8 +217,6 @@ func _client_tow(trip: AdventureTrip) -> bool:
 			bike = int(id)
 	main._try_mount(bike)
 	await _until(func(): return main.bike != null, 10.0)
-	Shed.request({"a": "roadside_fault", "kind": "chain_snap"})
-	await _until(func(): return Roadside.dead(bike), 10.0)
 	var host_peer := 1
 	# Held on the back brake while it waits, as a rider would on a hill (the new roads climb).
 	Input.action_press("rear_brake")
@@ -251,9 +254,8 @@ func _host_tow(trip: AdventureTrip) -> Array:
 			if int(id) != Shed.riding(Shed.me()) and int(Shed.bikes[id].get("rider", 0)) != 0:
 				their_bike[0] = int(id)
 		return their_bike[0] != 0 and _remote_bike() != null, 30.0)
-	# Once its chain has gone and it's come to rest where the client got on it: the remote bike is
-	# drawn where it was a moment ago, and placed off a stale spot the host ends up behind it.
-	await _until(func(): return Roadside.dead(their_bike[0]), 30.0)
+	# Once it's come to rest where the client got on it: the remote bike is drawn where it was a
+	# moment ago, and placed off a stale spot the host ends up behind it.
 	var rb := _remote_bike()
 	if rb == null:
 		return [false, false]

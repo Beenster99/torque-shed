@@ -1750,13 +1750,6 @@ func _make_plan() -> Dictionary:
 							near.append(id)
 				if not near.is_empty() or item_id != 0:
 					p = {"action": {"a": "wash", "items": near, "at": target["at"]}, "time": 0.2, "verb": "blast the muck off"}
-	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
-		# A tyre that's lost air: the air line pumps it back up to its set pressure.
-		var soft := air_tyre(item_id)
-		if soft != 0 and Puncture.lost(Shed.items[soft]) >= 0.05:
-			alt_plan = {"action": {"a": "inflate", "item": soft}, "time": 1.0 + 0.8 * Puncture.lost(Shed.items[soft]),
-				"verb": "pump it up from the air line"}
-			alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0 and Shed.items[item_id]["kind"] == "toolbox":
 		# A toolbox: the second button packs the next thing in it (bought from the business's
 		# account), or once it's full, empties it out. With spare parts in it, the turn keys pick
@@ -1788,25 +1781,6 @@ func _make_plan() -> Dictionary:
 		return {}
 	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "sales_pc", "write_label"] else Shed.check(me, p["action"])
 	return p
-
-
-## The tyre that holds air for `item_id`: the tyre itself, or the one on a wheel (fitted to a
-## bike or loose), or 0.
-func air_tyre(item_id: int) -> int:
-	if not Shed.items.has(item_id):
-		return 0
-	var it: Dictionary = Shed.items[item_id]
-	if it["kind"] == "tyre":
-		return item_id if it["at"] in ["bike", "wheel"] else 0
-	if it["kind"] != "wheel":
-		return 0
-	if it["at"] == "bike":
-		var bike := int(it["ref"])
-		for side in ["front", "rear"]:
-			if Shed.item_on(bike, side + "_wheel") == item_id:
-				return Shed.item_on(bike, side + "_tyre")
-		return 0
-	return Shed.tyre_on_wheel(item_id)
 
 
 ## Empty hands on a part: right mouse peels masking tape off it, or (with the colour meter)
@@ -2039,9 +2013,8 @@ func _set_down_plan(key: String) -> Dictionary:
 
 
 ## At the roadside on an adventure (see Roadside): the fix for what's wrong where the crosshair
-## is, with what the bike's toolbox holds: the wrench tightens a slack chain or a rattling part,
-## hands top up the oil, plug a tyre (the plug kit's game), swap a fuse, a lever or a snapped
-## chain (RoadsideGame), pump a tyre up (second button), or open and shut the toolbox.
+## is, with what the bike's toolbox holds: the wrench tightens a slack chain, hands top up the
+## oil, or open and shut the toolbox.
 func _roadside_plan(held: int) -> Dictionary:
 	if held != 0:
 		if PartsDB.is_fluid(Shed.items[held]["part"]) or tool != "hands":
@@ -2067,30 +2040,9 @@ func _roadside_plan(held: int) -> Dictionary:
 				if tool == "wrench":
 					a["crouched"] = crouched
 					p = {"action": a, "time": 3.0, "verb": "tighten the chain back up"}
-			"rattle":
-				if tool == "wrench":
-					p = {"action": a, "time": 1.6, "verb": "bolt the %s up tight" % PartsDB.slot_name(slot).to_lower()}
 			"oil":
 				if tool == "hands":
 					p = {"action": a, "time": 3.0, "verb": "top the oil up from the toolbox's bottle"}
-			"chain_snap", "lever", "fuse":
-				if tool == "hands":
-					if kind == "chain_snap":
-						a["crouched"] = crouched
-					var verbs := {"chain_snap": "fit the spare chain and clip its split link on",
-						"lever": "fit a spare %s lever" % str(f.get("detail", "")), "fuse": "find the blown fuse under the seat and swap it"}
-					p = {"action": a, "time": PlugGame.duration(), "game": "roadside", "kind": RoadsideGame.for_fault(kind),
-						"verb": verbs[kind]}
-			"puncture":
-				if tool == "hands":
-					a["side"] = str(f["detail"])
-					a["item"] = Shed.item_on(bike, slot)
-					p = {"action": a, "time": PlugGame.duration(), "game": "plug", "verb": "find the hiss with the soapy spray and plug it"}
-			"pressure":
-				if tool == "hands":
-					alt_plan = {"action": {"a": "roadside_pump", "bike": bike, "side": str(f["detail"])},
-						"time": 1.5 + 2.0 * Puncture.lost(Shed.items[Shed.item_on(bike, slot)]), "verb": "pump it up with the mini pump"}
-					alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 		if not p.is_empty():
 			break
 	if p.is_empty() and tool == "hands" and slot == "toolbox":
@@ -2194,15 +2146,6 @@ func _fluid_plan(held: int, kind: String) -> Dictionary:
 	var me := Shed.me()
 	var can: Dictionary = Shed.items[held]
 	var fluid := PartsDB.kind_of(can["part"])
-	if fluid == "puncture_kit":
-		# The plug kit on a tyre: find the hiss and push a plug in, a skill game (PlugGame).
-		var holed := air_tyre(target_item()) if kind in ["part", "spot", "item"] else 0
-		if holed != 0:
-			var plug := {"action": {"a": "plug_tyre", "item": holed}, "time": PlugGame.duration(), "game": "plug",
-				"verb": "find the hiss with the soapy spray and plug it"}
-			plug["blocked"] = Shed.check(me, plug["action"])
-			return plug
-		return {}
 	if fluid == "chain_lube":
 		var chain := target_item() if kind in ["part", "spot", "item"] else 0
 		if chain != 0 and Shed.items[chain]["kind"] == "chain":
@@ -2851,36 +2794,25 @@ func _changer_of(p: Dictionary) -> int:
 ## Returns true while the game has the work button.
 func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
 	var game := str(plan_now.get("game", ""))
-	var playing: bool = not use_alt and game in ["tyre", "plug", "roadside"] and plan_now["blocked"] == "" and _acting() \
+	var playing: bool = not use_alt and game == "tyre" and plan_now["blocked"] == "" and _acting() \
 		and not _need_release
 	var key := str(plan_now.get("action", {}))
 	if tyre_game and (not playing or key != _game_key):
-		var plugging := tyre_game is PlugGame and not tyre_game is RoadsideGame
-		var fixing := tyre_game is RoadsideGame
 		tyre_game = null
 		progress = 0.0
 		_send_status("")
 		Sfx.set_loop(_work_sound, "")
-		Shed.feedback.emit("You let go before the plug was in. Hold on until it's done." if plugging
-			else "You let go before it was done. Hold on until it's in." if fixing
-			else "The bead slipped back off the rim. Hold on all the way round.", false)
+		Shed.feedback.emit("The bead slipped back off the rim. Hold on all the way round.", false)
 		_need_release = _acting()
 		return true
 	if not playing:
 		return false
 	if tyre_game == null:
-		# The plug game is seeded by the tyre, so the hole is in the same place each go at it.
-		if game == "roadside":
-			# A roadside fix (RoadsideGame), seeded by the bike so the spot's the same each go.
-			tyre_game = RoadsideGame.new(int(plan_now["action"].get("bike", 0)) * 6151 + str(plan_now.get("kind", "")).length(),
-				str(plan_now.get("kind", "fuse")))
-		else:
-			tyre_game = PlugGame.new(int(plan_now["action"].get("item", 0)) * 7919 + 1) if game == "plug" else TyreGame.new()
+		tyre_game = TyreGame.new()
 		_game_key = key
 		_active_plan = plan_now
-		_send_status("Fixing it at the roadside" if game == "roadside" else "Plugging a puncture" if game == "plug"
-			else "Fitting a tyre on the tyre changer", _changer_of(plan_now))
-		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get("lube" if game == "plug" else "tyre_fit", ""))
+		_send_status("Fitting a tyre on the tyre changer", _changer_of(plan_now))
+		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get("tyre_fit", ""))
 	tyre_game.step(delta)
 	progress = tyre_game.progress()
 	if tyre_game.done():
@@ -3749,7 +3681,7 @@ func _activity_text() -> String:
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
-		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture", "toolbox_pack": "Packing a toolbox"}
+		"toolbox_pack": "Packing a toolbox"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()

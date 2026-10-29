@@ -55,11 +55,8 @@ var _laps := 0               # laps of it since the last ride stats went
 var _fly_km := 0.0         # distance at speed since the last stats, for dead flies on the front
 var _dirt_shown := 0       # ride stats sent since the muck on your bike was last redrawn
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
-var _was_bottomed := [false, false]   # each wheel's suspension bottomed last frame (a kerb or pothole hit)
-var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
 var _fault_seen := {}      # the ridden bike's faults as last told to the rider (see Roadside)
 var _rattle_timer := 0.0   # the next slap of a slack chain, seconds
-var _rattle: AudioStreamPlayer3D   # a loose part rattling, on the ridden bike (see _rattle_sound)
 var _tow_check := 0.0
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
@@ -761,8 +758,6 @@ func _start_riding(bike_id: int) -> void:
 	_ride_top = 0.0
 	_dirt_km = 0.0
 	_ride_dirt = 0.0
-	_was_bottomed = [false, false]
-	_flat_told = [false, false]
 	_fault_seen = {}
 	_sync_faults()
 	_lap_seen = []
@@ -1103,10 +1098,8 @@ func _physics_process_body(delta: float) -> void:
 				* (1.0 + wet * (3.0 if paved else 1.0)) * pace
 			_dirt_km += muck
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
-		_puncture_rolls(km)
 		if trip.on_trip():
 			_roadside_step(delta)
-		_rattle_sound()
 		if fuel_stop:
 			var filled := fuel_stop.update(delta, active and Input.is_action_pressed("interact"))
 			if filled != "":
@@ -1202,13 +1195,12 @@ func _send_ride_stats() -> void:
 	var ride := {"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
 		"dirt_km": _dirt_km, "fly_km": _fly_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()}
 	if trip.on_trip():
-		ride["adv"] = true   # out on an adventure: nothing but the tyres wears (see Shed._ride_apply)
+		ride["adv"] = true   # out on an adventure: nothing wears (see Shed._ride_apply)
 	ride.merge(_logger_peaks(), true)
 	if _laps > 0:
 		ride["laps"] = _laps
 		_laps = 0
 	Shed.request(ride)
-	_sync_tyre_air()
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0
@@ -1222,30 +1214,8 @@ func _send_ride_stats() -> void:
 		bike.model.show_dirt(Dirt.of_bike(riding))
 
 
-## Now and then a tyre picks up a puncture: a nail or a thorn as the km go by (more off the road),
-## or a pinch from a hard hit on a kerb or a pothole (see Puncture). The bike starts letting its
-## air out straight away; the shed is told, so the crew see it and it's saved.
-func _puncture_rolls(km: float) -> void:
-	if bike.heat == null or bike.is_crashed:
-		return
-	for i in 2:
-		var w: Dictionary = bike.wheels[i]
-		var hit: bool = bool(w.get("bottomed", false)) and not _was_bottomed[i]
-		_was_bottomed[i] = bool(w.get("bottomed", false))
-		if not w["contact"] or bike.heat.leak[i] > 0.0:
-			continue
-		if Puncture.ride_punctures(str(w.get("surface", bike.surface)), km, randf()) \
-				or (hit and Puncture.hit_punctures(bike.speed, randf(), float(w.get("bottom_hit", 0.0)))):
-			var kind := Puncture.kind_of_roll(randf())
-			bike.heat.leak[i] = Puncture.rate_of_kind(kind)
-			Shed.request({"a": "puncture", "side": "front" if i == 0 else "rear", "kind": kind})
-			if trip.on_trip():
-				trip.photos.report("breakdown", "", {"what": "Puncture (%s tyre)" % ("front" if i == 0 else "rear")})
-
-
-## Out on an adventure: the sound of any fault the bike already had (an adventure never breaks a
-## bike itself: only a tyre can go, see Roadside and _puncture_rolls), the tow strap, and the
-## hint for getting off to fix it.
+## Out on an adventure: the sound of any fault the bike already had (an adventure never harms a
+## bike itself, see Roadside), the tow strap, and the hint for getting off to fix it.
 func _roadside_step(delta: float) -> void:
 	var pt := Perf.t0()
 	_roadside_sounds(delta)
@@ -1257,18 +1227,17 @@ func _roadside_step(delta: float) -> void:
 		hint = "On the tow strap to the next stop   ·   {tow}: let it go"
 	elif bike.pushing:
 		hint = "Pushing it: {throttle} to walk it along   ·   {interact}: stop and stand it up"
-	elif absf(bike.speed) < 2.0 and not bike.is_crashed and (Roadside.dead(riding_id) or not Roadside.active(riding_id).is_empty()):
+	elif absf(bike.speed) < 2.0 and not bike.is_crashed and not Roadside.active(riding_id).is_empty():
 		hint = "{interact}: get off and fix it at the roadside   ·   {tow}: ask a mate for a tow"
 	hud.ride_hint = hint
 	Perf.add("roadside", pt)
 
 
-## The ridden bike's faults onto it (how it rides), and the rider told of a new one: what it is,
-## how it shows and what to do.
+## Whether the ridden bike's being pushed, and the rider told of a fault it set off with: what
+## it is, how it shows and what to do.
 func _sync_faults() -> void:
 	if bike == null or riding_id == 0 or not Shed.bikes.has(riding_id):
 		return
-	bike.faults = Roadside.faults_of(riding_id).duplicate()
 	bike.pushing = bool(Shed.bikes[riding_id].get("push", false))
 	if bike.pushing and bike.engine_on:
 		bike.stop_engine()
@@ -1276,24 +1245,16 @@ func _sync_faults() -> void:
 	for f in Roadside.active(riding_id):
 		now[str(f["kind"])] = f
 	for kind in now:
-		if not _fault_seen.has(kind) and kind not in ["puncture", "pressure"] and trip.on_trip():
+		if not _fault_seen.has(kind) and trip.on_trip():
 			hud.flash("%s %s" % [Roadside.symptom(now[kind]), Controls.hint(Roadside.hint(now[kind]))], 7.0, true)
-			if kind == "chain_snap":
-				Sfx.play_at("clunk", bike.global_position, 2.0)
-				Sfx.play_at("scrap", bike.global_position, -2.0)
-			elif kind == "fuse":
-				Sfx.play_at("switch", bike.global_position, 0.0)
 	_fault_seen = now
 	var lights := []
 	if now.has("oil"):
 		lights.append("OIL")
-	if str(bike.faults.get("fuse", "")) == "lights":
-		lights.append("LIGHTS OUT")
 	hud.warn_lights = lights
 
 
-## What a slack chain sounds like on the move: slapping now and then (a loose part's rattle
-## is _rattle_sound).
+## What a slack chain sounds like on the move: slapping now and then.
 func _roadside_sounds(delta: float) -> void:
 	_rattle_timer -= delta
 	if _rattle_timer > 0.0 or absf(bike.speed) < 3.0 or not _fault_seen.has("chain_slack"):
@@ -1301,32 +1262,6 @@ func _roadside_sounds(delta: float) -> void:
 	var v := clampf(absf(bike.speed) / 25.0, 0.0, 1.0)
 	Sfx.play_at("clunk", bike.global_transform * Vector3(0.0, 0.3, 0.5), lerpf(-14.0, -4.0, v))
 	_rattle_timer = randf_range(0.24, 0.9) / maxf(v, 0.3)
-
-
-## A part that's worked loose (the rattle fault, see Roadside) rattling as you ride: a mechanical
-## buzz from where it sits on the bike, harder and quicker with the revs (the engine shaking it)
-## and the road (rough ground bouncing it), quiet ticking over at a standstill.
-func _rattle_sound() -> void:
-	var slot := str(bike.faults.get("rattle", "")) if bike else ""
-	if slot == "" or (not bike.engine_on and absf(bike.speed) < 1.0):
-		if _rattle and is_instance_valid(_rattle):
-			Sfx.set_loop(_rattle, "")
-		return
-	if _rattle == null or not is_instance_valid(_rattle) or _rattle.get_parent() != bike:
-		_rattle = Sfx.make_loop_player(bike)
-		_rattle.name = "Rattle"
-	if str(_rattle.get_meta("slot", "")) != slot:
-		# From the loose part itself.
-		_rattle.set_meta("slot", slot)
-		var box := bike.model.slot_bounds(slot) if bike.model else AABB()
-		_rattle.position = bike.to_local(bike.model.to_global(box.get_center())) if box.size != Vector3.ZERO else Vector3(0.0, 0.6, 0.0)
-	var revs := clampf(inverse_lerp(bike.build.idle_rpm, bike.build.redline, bike.rpm), 0.0, 1.0) if bike.engine_on else 0.0
-	var rough := clampf((float(Roadside.SURFACE.get(bike.surface, 1.5)) - 1.0) / 1.6, 0.0, 1.0) * clampf(absf(bike.speed) / 12.0, 0.0, 1.0)
-	var shake := clampf(0.25 + 0.5 * revs + 0.5 * rough + 0.15 * clampf(absf(bike.speed) / 30.0, 0.0, 1.0), 0.0, 1.0)
-	Sfx.set_loop(_rattle, "rattle")
-	_rattle.set_meta("base_db", lerpf(-20.0, -3.0, shake))
-	_rattle.volume_db = float(_rattle.get_meta("base_db")) + Sfx.occlusion_db(_rattle.global_position)
-	_rattle.pitch_scale = lerpf(0.8, 1.25, 0.6 * revs + 0.4 * rough)
 
 
 ## On the tow strap: the towing bike's back is where the strap pulls to, and the bars follow it
@@ -1440,23 +1375,6 @@ func _tow_button() -> void:
 		hud.flash("Nobody on a bike close enough to tow you (within %d m)." % int(Roadside.TOW_REACH), 2.5, true)
 		return
 	Shed.request({"a": "roadside_tow", "by": best, "dry": bike.fuel_litres <= 0.0})
-
-
-## Keeps the ridden bike's punctures in step with the shed's (one given from the Debug tab, say),
-## and tells the rider once when a tyre has gone flat.
-func _sync_tyre_air() -> void:
-	var riding := Shed.riding(Shed.me())
-	if bike.heat == null or not Shed.bikes.has(riding):
-		return
-	for i in 2:
-		var side := "front" if i == 0 else "rear"
-		var tyre := Shed.item_on(riding, side + "_tyre")
-		if tyre != 0 and Puncture.punctured(Shed.items[tyre]):
-			bike.heat.leak[i] = Puncture.rate(Shed.items[tyre])
-		if bike.heat.flat(i) > 0.3 and not _flat_told[i]:
-			_flat_told[i] = true
-			hud.flash("The %s tyre's gone flat: it'll wallow and slide. %s" % [side, "Stop and plug it at the roadside from the toolbox, and pump it up."
-				if trip.on_trip() else "Get it back to the shed to plug it, and go easy."], 5.0, true)
 
 
 ## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if

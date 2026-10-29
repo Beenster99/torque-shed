@@ -1,12 +1,10 @@
 extends RefCounted
 ## Riding on adventures (Simon: "brakes seem to fade on adventures", later "remove brake fade",
-## "too many rattles", "a sharper handlebar turn at <10mph"): the brakes after a long ride, how
-## often something goes wrong over a whole ride, and how tight a turn the bars make slow. Run from
+## "too many rattles", "a sharper handlebar turn at <10mph"): the brakes after a long ride, and how
+## tight a turn the bars make slow. Run from
 ## tests/run_tests.gd: its _test_adv_ride_* functions hand over to these.
 
 const Rides := preload("res://tests/rides.gd")
-## The ride lengths the odds are checked over (km).
-const LENGTHS := {"Short": 100.0, "Ride": 150.0, "Epic": 220.0}
 
 var t: Node   # the test runner: check(), ride(), _done()
 
@@ -211,51 +209,6 @@ static func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 	return out
 
 
-
-
-## What goes wrong over whole adventures: only tyres (an adventure breaks nothing else, see
-## Roadside). Rides of about 90 minutes, two hours and three hours (100, 150 and 220 km) on the
-## tours' own mix of surfaces (round them as many times as it takes), ridden km by km a few hundred
-## times: a puncture now and then, more often on the longer rides, and a ride with two or more is rare.
-func test_breakdown_odds() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 1808
-	var means := {}
-	for length in LENGTHS:
-		var km := float(LENGTHS[length])
-		var rides := 0
-		var events := 0
-		var many := 0
-		var expected := 0.0
-		var seeds := [3, 11, 27, 40, 52]
-		for seed in seeds:
-			var route := Rides.tour_route("dales" if seed % 2 == 1 else "shodoshima", seed)
-			var surfs := []
-			for k in int(km):
-				surfs.append(route.surface_at_s(fmod(k * 1000.0 + 500.0, route.length)))
-			for surf in surfs:
-				expected += 2.0 * float(Puncture.PER_KM.get(surf, 0.003)) / seeds.size()
-			for ride in 60:
-				var n := 0
-				for surf in surfs:
-					for tyre in 2:
-						if Puncture.ride_punctures(surf, 1.0, rng.randf()):
-							n += 1
-				rides += 1
-				events += n
-				many += 1 if n >= 2 else 0
-		var mean := float(events) / rides
-		means[length] = mean
-		var nm := str(length)
-		print("    %s (%d km): %.2f punctures a ride (%.2f expected), %d of %d rides with 2 or more" % [
-			nm, roundi(km), mean, expected, many, rides])
-		check(absf(mean - expected) < 0.15, "%s: the rolls come out as the odds say (%.2f a ride against %.2f)" % [nm, mean, expected])
-		check(mean > 0.02 and mean < 0.8 and float(many) / rides < 0.2,
-			"%s (%d km, about %d minutes): %.2f punctures a ride and nothing else, %d%% of rides see 2 or more" % [
-				nm, roundi(km), AdventureDest.minutes_for(km), mean, roundi(100.0 * many / rides)])
-	check(means["Short"] < means["Ride"] and means["Ride"] < means["Epic"], "the longer the ride, the more chance of a puncture")
-	check(not Puncture.hit_punctures(20.0, 0.0, 0.4) and Puncture.hit_punctures(20.0, 0.0, 3.0) and not Puncture.hit_punctures(5.0, 0.0, 3.0),
-		"a pothole hit at speed can pinch a tyre; the fork sinking on to its stop under the brakes can't")
 
 
 ## The widest a full-input turn at 15 mph may be (m), by style (before: 7.4 and 11.6 m).
