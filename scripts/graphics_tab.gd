@@ -115,6 +115,7 @@ func _build_quality(body: VBoxContainer) -> void:
 	_check(body, "gfx_ssr", "Screen-space reflections")
 	_check(body, "gfx_ssao", "Ambient occlusion (SSAO)")
 	_check(body, "gfx_glow", "Glow and bloom")
+	_slider(body, "gfx_bloom", "Bloom strength", 0.0, 2.0, 0.05, func(v): return "Off" if v < 0.005 else "%d%%" % roundi(v * 100.0))
 	_check(body, "gfx_avatar_shadows", "Avatar shadow (players, staff and townsfolk cast shadows)")
 	_steps(body, "gfx_mirrors", "Mirror detail", [["off", "Off"], ["low", "Low"], ["medium", "Medium"],
 		["high", "High"], ["ultra", "Ultra"]])
@@ -165,6 +166,7 @@ func refresh() -> void:
 			"check":
 				(c["control"] as CheckBox).set_pressed_no_signal(bool(v))
 	_rt.set_pressed_no_signal(Settings.gfx_gi == "sdfgi")
+	(_controls["gfx_bloom"]["control"] as HSlider).editable = Settings.gfx_glow
 	var scale := Settings.gfx_render_scale
 	var off := Settings.gfx_upscaler == "off"
 	for k in ["gfx_render_scale", "gfx_sharpness"]:

@@ -15,10 +15,10 @@ extends Node
 
 ## The settings it reads, with what they are when a settings file doesn't have them.
 const DEFAULTS := {"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true,
-	"gfx_ssao": true, "gfx_glow": true, "gfx_shadows": "high", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
+	"gfx_ssao": true, "gfx_glow": true, "gfx_bloom": 1.0, "gfx_shadows": "high", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
 ## The same with the old "high quality" switch turned off (and no Graphics settings yet).
 const LOW := {"gfx_gi": "off", "gfx_volumetrics": "off", "gfx_clouds": "low", "gfx_ssr": false,
-	"gfx_ssao": true, "gfx_glow": true, "gfx_shadows": "low", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
+	"gfx_ssao": true, "gfx_glow": true, "gfx_bloom": 1.0, "gfx_shadows": "low", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
 ## Shadows at each quality: the sun's shadow map size and soft filter (0 hard .. 5 ultra), its
 ## splits and reach, the size of the lamps' shadow atlas, whether round lamps (omni) cast
 ## shadows, whether the yard floodlights do (god rays through the night air), and soft
@@ -78,6 +78,8 @@ var daylight: Daylight
 var profile_now := {}
 ## The eye adaptation now: the picture's exposure is the time of day's times this.
 var adapt := 1.0
+## The Bloom strength setting (1 = as tuned): scales the time of day's glow.
+var bloom := 1.0
 var dust: FogVolume
 var overspray: FogVolume
 ## How much overspray is hanging in the paint shop's air, 0..1.
@@ -138,7 +140,9 @@ static func profile(opts: Dictionary, fp: bool) -> Dictionary:
 		"ssil": fp and gi == "ssil",
 		"ssr": bool(opts.get("gfx_ssr", true)),
 		"ssao": bool(opts.get("gfx_ssao", true)),
-		"glow": bool(opts.get("gfx_glow", true)),
+		# Bloom at 0% is the same as glow off.
+		"glow": bool(opts.get("gfx_glow", true)) and float(opts.get("gfx_bloom", 1.0)) > 0.0,
+		"bloom": clampf(float(opts.get("gfx_bloom", 1.0)), 0.0, 2.0),
 		"volumetric_fog": vol != "off",
 		"fog_volumes": fp and vol != "off",
 		"fog_size": 128 if vol == "high" else 64,
@@ -275,6 +279,7 @@ func _apply_environment(p: Dictionary) -> void:
 	env.set_glow_level(2, 0.6)
 	env.set_glow_level(3, 0.35)
 	env.set_glow_level(4, 0.2)
+	bloom = float(p["bloom"])
 	# Volumetric fog: the air the sun, the lamps and the headlights shine through.
 	env.volumetric_fog_enabled = p["volumetric_fog"]
 	env.volumetric_fog_length = float(p["fog_length"])
@@ -563,8 +568,8 @@ func _update_exposure(delta: float) -> void:
 	var base := daylight.exposure if daylight else 1.0
 	env.tonemap_exposure = base * adapt
 	if daylight:
-		env.glow_intensity = daylight.glow_intensity
-		env.glow_bloom = daylight.glow_bloom
+		env.glow_intensity = daylight.glow_intensity * bloom
+		env.glow_bloom = daylight.glow_bloom * bloom
 
 
 # ---------------------------------------------------------------------------- fog volumes
