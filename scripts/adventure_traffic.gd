@@ -68,6 +68,9 @@ const CLOCK_TAG := -55555.0
 ## SIDE_BIN metres along it (RegionKit's facts: "drive"). Off a real road, or where the country isn't
 ## known, it keeps left as at home.
 const SIDE_BIN := 400.0
+## On the network ride, where the road's one way (a slip road, a dual carriageway's or motorway's carriageway) and where
+## its other carriageway is (RoadNet.one_way_at), looked at every WAY_BIN metres along it.
+const WAY_BIN := 10.0
 
 var world: AdventureWorld
 var stream: TrafficStream
@@ -90,6 +93,8 @@ var _town_timer := 0.0
 var _rng := RandomNumberGenerator.new()
 var _left := PackedByteArray()   # per SIDE_BIN: 1 where they drive on the left, 0 on the right
 var _side_task := -1
+var _ways := PackedVector2Array()   # per WAY_BIN: RoadNet.one_way_at under the planned line (empty off the network)
+var _way_task := -1
 
 
 func _ready() -> void:
@@ -118,7 +123,9 @@ func _ready() -> void:
 	stream.reach = SPAWN_FAR + 50.0
 	stream.weigh_busy = true
 	stream.keep_left = keeps_left
+	stream.one_way = one_way
 	_find_sides()
+	_find_ways()
 	add_child(stream)
 	stream.set_physics_process(false)   # stepped from here, after the riders are found
 	_tables()
@@ -134,6 +141,9 @@ func _exit_tree() -> void:
 	if _side_task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_side_task)
 		_side_task = -1
+	if _way_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_way_task)
+		_way_task = -1
 	if Net.adv_traffic_received.is_connected(_on_net):
 		Net.adv_traffic_received.disconnect(_on_net)
 
@@ -174,6 +184,38 @@ func _got_sides(left: PackedByteArray) -> void:
 	for v in _villages:
 		v[2] = int(v[3]) * stream.keep(float(v[0]))
 	stream.bus_stops = _villages.map(func(v): return {"s": v[1], "dir": v[2]})
+
+
+## Where the planned road's one way, all along it (on the network ride), on a worker: the net's roads under it.
+func _find_ways() -> void:
+	if world.roads == null:
+		return
+	var r := world.route
+	var net: RoadNet = world.roads.net
+	var n := int(ceil(r.total / WAY_BIN)) + 1
+	_way_task = WorkerThreadPool.add_task(func():
+		var out := PackedVector2Array()
+		out.resize(n)
+		for b in n:
+			var f := clampf(b * WAY_BIN / AdventureRoute.STEP, 0.0, float(r.px.size() - 1))
+			var i := int(round(f))
+			out[b] = net.one_way_at(Vector2(r.px[i], r.pz[i]), r.hd[i])
+		_got_ways.call_deferred(out), false, "Traffic one-ways")
+
+
+func _got_ways(ways: PackedVector2Array) -> void:
+	_ways = ways
+	if _way_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_way_task)
+		_way_task = -1
+
+
+## The road's one way at `s`, for the stream (TrafficStream.one_way): Vector2(0, NAN) where it's both ways or not
+## yet known.
+func one_way(s: float) -> Vector2:
+	if _ways.is_empty():
+		return Vector2(0.0, NAN)
+	return _ways[clampi(int(round(s / WAY_BIN)), 0, _ways.size() - 1)]
 
 
 ## 1 if they drive on the left beside the road at `s` (or it isn't known), else 0.

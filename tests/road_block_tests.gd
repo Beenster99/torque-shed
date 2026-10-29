@@ -288,6 +288,16 @@ func test_locate() -> void:
 	var mid := net.locate(101.0, 102.0)
 	check(int(mid.get("node", -1)) == 0 and bool(mid["on_road"]), "in the middle of the tee, at its junction")
 	check(net.locate(250.0, 102.0, 2) == on, "a hint doesn't change the answer")
+	# One way: a dual carriageway's two carriageways 16 m apart, and a slip road on its own.
+	var dual := RoadNet.new(graph([[-300, 100], [300, 100], [300, 116], [-300, 116], [-300, 400], [300, 400], [-300, 600], [300, 600]],
+		[[0, 1, "primary", 1], [2, 3, "primary", 1], [4, 5, "tertiary", 1], [6, 7, "tertiary"]]), flat)
+	var east := dual.one_way_at(Vector2(0, 100), PI * 0.5)
+	var west := dual.one_way_at(Vector2(0, 100), PI * 1.5)
+	check(east.x == 1.0 and absf(east.y - 16.0) < 0.5 and west.x == -1.0 and absf(west.y + 16.0) < 0.5,
+		"a dual carriageway is one way, its other carriageway 16 m across (%s, %s)" % [east, west])
+	var slip := dual.one_way_at(Vector2(0, 400), PI * 0.5)
+	check(slip.x == 1.0 and is_nan(slip.y), "a slip road is one way with no other carriageway beside it (%s)" % slip)
+	check(dual.one_way_at(Vector2(0, 600), PI * 0.5).x == 0.0, "and an ordinary road both ways")
 	var rn := RoadNet.new(roundabout(), flat)
 	var ring := rn.locate(100.0 + 16.0, 100.0)
 	check(int(ring.get("node", -1)) == 0 and rn.on_ring(int(ring["edge"])), "on the ring, at the roundabout")

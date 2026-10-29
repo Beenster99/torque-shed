@@ -2079,6 +2079,47 @@ func locate(x: float, z: float, hint := -1, heights := true) -> Dictionary:
 		"node": node}
 
 
+## How far either side of a one-way road its other carriageway is looked for (m), and how near its heading has to be
+## to the opposite way (radians) to count (one_way_at).
+const OTHER_WAY_M := 45.0
+const OTHER_WAY_TURN := 0.5
+
+
+## The road at `p` (region x, z) ridden on bearing `h`: Vector2(1 where it's one way the way `h` goes, -1 one way
+## against it, 0 both ways (or no road); and where the other way's traffic is, m right of it: the nearest road
+## alongside going the other way only, a dual carriageway's or motorway's other carriageway, within OTHER_WAY_M; NAN
+## where there's none, as beside a slip road).
+func one_way_at(p: Vector2, h: float) -> Vector2:
+	var on := locate(p.x, p.y, -1, false)
+	if on.is_empty() or not bool(on["on_road"]) or int(on["node"]) >= 0:
+		return Vector2(0.0, NAN)
+	var ow := region.edge_oneway[int(on["edge"])]
+	if ow == 0:
+		return Vector2(0.0, NAN)
+	var goes := float(on["heading"]) + (0.0 if ow == 1 else PI)
+	var way := 1.0 if absf(angle_difference(goes, h)) < PI * 0.5 else -1.0
+	var other := h + (PI if way > 0.0 else 0.0)   # (the way the other carriageway's traffic goes)
+	var right := Vector2(cos(h), sin(h))
+	var mine := int(on["edge"])
+	for k in range(1, int(OTHER_WAY_M / 3.0) + 1):
+		for side: float in [1.0, -1.0]:
+			var q := p + right * side * (k * 3.0)
+			var o2 := locate(q.x, q.y, mine, false)
+			if o2.is_empty() or not bool(o2["on_road"]) or int(o2["edge"]) == mine or int(o2["node"]) >= 0:
+				continue
+			var ow2 := region.edge_oneway[int(o2["edge"])]
+			if ow2 == 0:
+				continue
+			var hd := float(o2["heading"])
+			var goes2 := hd + (0.0 if ow2 == 1 else PI)
+			if absf(angle_difference(goes2, other)) > OTHER_WAY_TURN:
+				continue
+			# Its middle: back across it from where it was found.
+			var mid := q - Vector2(cos(hd), sin(hd)) * float(o2["lat"])
+			return Vector2(way, (mid - p).dot(right))
+	return Vector2(way, NAN)
+
+
 # ---------------------------------------------------------------------------- flat ground for the stops
 
 ## Sets the stops' flat ground (flats) from `list` ({edge, s, side, out, along, shift (m further out the stop stands,
