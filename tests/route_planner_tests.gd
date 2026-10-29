@@ -592,6 +592,13 @@ func test_survey() -> void:
 	check(board.view.shown_note().begins_with("Surveying the roads here (2 cells): 0:0") and board.view.shown_note().contains("about 10 min to go")
 		and not board._survey.visible,
 		"the map says they're being surveyed, how long it's been and about how long to go, and there's no second survey to ask for (%s)" % board.view.shown_note())
+	# The note fits along the foot of a small map, wrapped onto more lines.
+	var was_size: Vector2 = board.view.size
+	board.view.size = Vector2(360, 300)
+	var nb: Rect2 = board.view.note_box(board.view.shown_note())
+	check(nb.position.x >= 0.0 and nb.end.x <= 360.0 and nb.end.y <= 300.0 and nb.size.y > 30.0,
+		"the note fits along a small map's foot, wrapped (%s)" % str(nb))
+	board.view.size = was_size
 	# Along its foot a bar fills as the survey goes, and the clock moves on, so it's plain nothing has stuck.
 	var s0: Dictionary = Shed.route_tv["survey"]
 	var since := float(s0["since"])
