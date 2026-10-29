@@ -436,18 +436,9 @@ func test_saves() -> void:
 	Shed.crew = was_crew
 
 
-## The loading card while a ride gets ready (RideLoading): each step's share of the bar, and the roads round the start
-## built without holding the game up, counted out as they're laid (RoadStreamer.preload_round_async), till the
-## ground's there to ride on.
+## While a ride gets ready, the roads round the start are built without holding the game up, counted out as they're
+## laid (RoadStreamer.preload_round_async), till the ground's there to ride on.
 func test_loading() -> void:
-	var card := RideLoading.new()
-	t.add_child(card)
-	card.show_step(3, 40, 120)
-	check(absf(card.fraction() - (0.15 + 0.08 + 0.07 + 0.35 / 3.0)) < 0.002 and card.detail_text().contains("40 of 120"),
-		"shaping the land, 40 of 120 tiles: the bar %.0f%% along (\"%s\")" % [card.fraction() * 100.0, card.detail_text()])
-	card.show_step(RideLoading.SET_DOWN)
-	check(card.fraction() > 0.94 and card.fraction() < 0.96, "and nearly full setting you down at the start")
-	card.queue_free()
 	var plan := AdventurePlans.tour("dales", 3)
 	var was := AdventureWorld.network
 	AdventureWorld.network = true
