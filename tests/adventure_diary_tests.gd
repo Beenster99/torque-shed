@@ -248,7 +248,7 @@ func test_highlight_log() -> void:
 		"a stop's one highlight, with both who stopped there: %s %s" % [str(stops[0].get("text", "")) if not stops.is_empty() else "", str(stops[0].get("who", "")) if not stops.is_empty() else ""])
 	Shed.request({"a": "adventure_highlight", "kind": "surface", "key": "surf_40", "s": 5120.0, "what": "gravel"})
 	Shed.request({"a": "adventure_highlight", "kind": "peak", "key": "peak_8000", "s": 8000.0, "h": 612.0})
-	Shed.request({"a": "adventure_highlight", "kind": "breakdown", "s": 9000.0, "what": "Puncture (rear tyre)"})
+	Shed.request({"a": "adventure_highlight", "kind": "breakdown", "s": 9000.0, "what": "Ran out of petrol"})
 	Shed.request({"a": "adventure_highlight", "kind": "nonsense", "s": 9000.0})
 	Shed.request({"a": "adventure_highlight", "kind": "sunset", "key": "sunset_0", "s": 9100.0})
 	AdventureDiary.fined(2, 250, 42)
@@ -259,7 +259,7 @@ func test_highlight_log() -> void:
 		by[str(e["kind"])] = e
 	check(str(by.get("surface", {}).get("text", "")) == "Onto gravel", "onto a new surface: %s" % str(by.get("surface", {}).get("text", "")))
 	check(str(by.get("peak", {}).get("text", "")).contains("612"), "a high point: %s" % str(by.get("peak", {}).get("text", "")))
-	check(str(by.get("breakdown", {}).get("text", "")) == "Broke down: puncture (rear tyre)", "a breakdown: %s" % str(by.get("breakdown", {}).get("text", "")))
+	check(str(by.get("breakdown", {}).get("text", "")) == "Broke down: ran out of petrol", "a breakdown: %s" % str(by.get("breakdown", {}).get("text", "")))
 	check(not by.has("nonsense"), "only highlights go in the log")
 	check(str(by.get("fine", {}).get("text", "")).contains("£250") and (by.get("fine", {}).get("who", []) as Array) == ["Dave"], "a fine, Dave's")
 	check(by.has("fix") and by.has("tow") and (by.get("tow", {}).get("who", []) as Array).size() == 2, "a roadside fix and a tow")

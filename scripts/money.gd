@@ -67,7 +67,7 @@ const KIND_PRICE := {"frame": 900, "fork": 450, "shock": 350, "wheel": 250, "tyr
 	"front_mudguard": 80, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 260, "steering_damper": 220,
 	"tank_bag": 80, "aux_tank": 160, "toolbox": 80, "satnav": 240, "lever_guards": 90}
 ## Fluids by the litre; empty cans and pans are a flat price.
-const FLUID_LITRE := {"petrol": 1.6, "oil": 6.0, "brake_fluid": 12.0, "chain_lube": 25.0, "puncture_kit": 2.0}
+const FLUID_LITRE := {"petrol": 1.6, "oil": 6.0, "brake_fluid": 12.0, "chain_lube": 25.0}
 const EMPTY_CONTAINER := 8
 
 ## Running costs, a day, in pounds at "normal" (see bill_lines). An idle shed with the lights on

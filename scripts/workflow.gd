@@ -102,8 +102,8 @@ static func assess_bike(bike_id: int, peer: int) -> Dictionary:
 	return c
 
 
-## The task list for a damage list: each part to restore or replace, the tyres pumped up, old
-## fuel and oil changed, and last every part on and bolted up.
+## The task list for a damage list: each part to restore or replace, old fuel and oil changed,
+## and last every part on and bolted up.
 static func _tasks_from(bike_id: int, rows: Array) -> Array:
 	var out := []
 	for r in rows:
@@ -112,10 +112,6 @@ static func _tasks_from(bike_id: int, rows: Array) -> Array:
 		var verb := "Replace" if str(r["fix"]) == "replace" else "Restore"
 		out.append({"id": str(r["slot"]), "text": "%s the %s" % [verb, PartsDB.slot_name(str(r["slot"])).to_lower()],
 			"slot": str(r["slot"]), "part": str(r["part"]), "fix": str(r["fix"])})
-	for slot in ["front_tyre", "rear_tyre"]:
-		var t := Shed.item_on(bike_id, slot)
-		if t != 0 and float(Shed.items[t].get("flat", 0.0)) > 0.0 and not out.any(func(x): return x["id"] == slot):
-			out.append({"id": "air_" + slot, "text": "Pump up the %s" % PartsDB.slot_name(slot).to_lower(), "slot": slot, "fix": "air"})
 	if _old_fluids(bike_id):
 		out.append({"id": "fluids", "text": "Fresh petrol and oil", "fix": "fluids"})
 	out.append({"id": "bolted", "text": "Every part on and bolted up", "fix": "bolted"})
@@ -138,9 +134,6 @@ static func auto_done(bike_id: int, task: Dictionary) -> bool:
 			return Shed.is_complete(bike_id)
 		"fluids":
 			return not _old_fluids(bike_id)
-		"air":
-			var t := Shed.item_on(bike_id, str(task["slot"]))
-			return t != 0 and float(Shed.items[t].get("flat", 0.0)) <= 0.0
 	var id := Shed.item_on(bike_id, str(task.get("slot", "")))
 	if id == 0 or not Shed.is_bolted(bike_id, str(task["slot"])):
 		return false
@@ -205,14 +198,14 @@ static func missing_parts(bike_id: int) -> Array:
 
 
 ## The staff job that does a task: fitting the part (a new one for a replace, like for like),
-## a service for the fluids and tyres; {} for one only the crew can do.
+## a service for the fluids; {} for one only the crew can do.
 static func staff_job(bike_id: int, task: Dictionary) -> Dictionary:
 	match str(task.get("fix", "")):
 		"replace", "restore":
 			var slot := str(task.get("slot", ""))
 			if Staff.JOBS.has("fit") and not slot in ["frame", "engine"]:
 				return {"kind": "fit", "bike": bike_id, "slot": slot, "part": str(task["part"])}
-		"fluids", "air":
+		"fluids":
 			if Staff.JOBS.has("service"):
 				return {"kind": "service", "bike": bike_id}
 	return {}

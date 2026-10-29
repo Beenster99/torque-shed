@@ -4,7 +4,7 @@ extends Node
 ## AdventureDiary for the crew's highlights, DiaryBook for the book).
 ##
 ## It notices what this rider does (pulling in at a stop, onto a new surface, over the top of a
-## climb, a puncture) and tells the host, who keeps the crew's highlights; the host's game also
+## climb) and tells the host, who keeps the crew's highlights; the host's game also
 ## watches the clock for sunrise and sunset. As each highlight comes in, it takes a photo of it if
 ## this rider was part of it (or it was the whole crew's), a few seconds' grace apart, through
 ## PhotoCapture, so nothing stutters; the arrival is snapped in the middle of the moment there.

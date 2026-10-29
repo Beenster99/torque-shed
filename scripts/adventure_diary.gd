@@ -26,7 +26,7 @@ extends RefCounted
 ## added to its who), text, who [names; [] is the whole crew], s (m along the road), hours (the
 ## clock), day (nights in), t (s since setting off)}.
 ## Action (Shed.request): adventure_highlight {kind, key, s, what?, peer?} for what a rider's own
-## game notices (a stop, a surface, a peak, a puncture) or the host's (sunrise, sunset, a chase).
+## game notices (a stop, a surface, a peak) or the host's (sunrise, sunset, a chase).
 
 ## Every kind of highlight: what it's called in the book, its mark on the route strip, its
 ## colour, and whether everyone's camera takes it (else only the riders it's about).
@@ -207,11 +207,7 @@ static func fined(peer: int, amount: int, mph: int) -> void:
 	note("fine", "", [_name(peer)], s_of(peer), "Fined £%d by the police, %d mph too fast" % [amount, mph])
 
 
-## `peer`'s bike breaks down with `what` (Roadside.name_of), or is fixed of it at the roadside.
-static func broke(peer: int, what: String) -> void:
-	note("breakdown", "", [_name(peer)], s_of(peer), "Broke down: %s" % what.to_lower())
-
-
+## `peer`'s bike is fixed of `what` (Roadside.name_of) at the roadside.
 static func fixed(peer: int, what: String) -> void:
 	note("fix", "", [_name(peer)], s_of(peer), "Fixed it at the roadside: %s" % what.to_lower())
 

@@ -4,16 +4,8 @@ extends ScrollContainer
 ## everyone's XP (the host tells every player's game), empty the garage's account or give it
 ## a million pounds or pay tonight's bills now (host), and start any kind of contract there and then for testing (host):
 ## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
-## the recovery jobs with the truck granted if the garage hasn't got it. Puncture a tyre, or fix
-## a bike up (now, or by itself whenever it needs it, to keep a long test ride going). The
-## performance profiler and its recording (see PerfOverlay). Every reset asks first.
-
-## How often (seconds) the automatic fix looks the bike you're riding over.
-const AUTO_FIX_EVERY := 3.0
-## The automatic fix tops the tanks up once they're down to this share of full.
-const AUTO_FIX_FUEL := 0.3
-## ...and mends the bike once a part has worn this far.
-const AUTO_FIX_WEAR := 0.2
+## the recovery jobs with the truck granted if the garage hasn't got it. The performance
+## profiler and its recording (see PerfOverlay). Every reset asks first.
 
 var _info: Label
 var _all_xp: Button
@@ -24,12 +16,6 @@ var _tier: OptionButton
 var _host_only: Array[Control] = []    # the contract buttons, for the host only
 var _confirm: ConfirmationDialog
 var _pending := Callable()
-var _tyre_note: Label
-## Whether the bike you're riding is fixed up by itself whenever it needs it (see auto_fix_tick).
-var auto_fix := false
-var _auto_fix_toggle: CheckButton
-var _auto_fix_t := 0.0
-var _fix_note: Label
 var _perf_toggle: CheckButton
 var _perf_note: Label
 var _adv_seed: SpinBox
@@ -123,25 +109,6 @@ func _ready() -> void:
 	box.add_child(_row([truck]))
 	_host_only.append(truck)
 
-	box.add_child(UITheme.label("Tyres: the bike you're riding, or the one nearest you", 15, UITheme.ACCENT))
-	box.add_child(_row([
-		_button("Slow puncture, front", func(): puncture("front", "slow")),
-		_button("Slow puncture, rear", func(): puncture("rear", "slow")),
-		_button("Fast puncture, front", func(): puncture("front", "fast")),
-		_button("Fast puncture, rear", func(): puncture("rear", "fast")),
-	]))
-	_tyre_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
-	box.add_child(_tyre_note)
-
-	# Fixing a bike up (see Shed.debug_fix_bike): wear, rust, punctures, faults, fuel and fluids.
-	box.add_child(UITheme.label("Bike: the one you're riding, or the one nearest you", 15, UITheme.ACCENT))
-	_auto_fix_toggle = CheckButton.new()
-	_auto_fix_toggle.text = "Automatically fix my bike while I ride (for long test rides)"
-	_auto_fix_toggle.toggled.connect(func(on): auto_fix = on)
-	box.add_child(_row([_button("Fix my bike now", fix_bike), _auto_fix_toggle]))
-	_fix_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
-	box.add_child(_fix_note)
-
 	# Staff (see Staff): a full payroll at once, whatever the level, and everyone off sick or back.
 	box.add_child(UITheme.label("Staff (host)", 15, UITheme.ACCENT))
 	var staff_row := _row([
@@ -210,10 +177,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	auto_fix_tick(delta)
 	if not is_visible_in_tree():
 		return
-	_auto_fix_toggle.set_pressed_no_signal(auto_fix)
 	var host := Shed.is_authority()
 	var trip := AdventureTrip.current
 	_adv_note.text = "Out on an adventure. Road streaming: %s" % trip.world.timing_text() if trip and trip.on_trip() \
@@ -324,76 +289,6 @@ func press_named(node_name: String) -> void:
 	var b := find_child(node_name, true, false) as Button
 	if b and not b.disabled:
 		b.pressed.emit()
-
-
-## Punctures a tyre for testing (see Puncture): on the bike you're riding, else the bike nearest you.
-func puncture(side: String, kind: String) -> void:
-	var bike := puncture_target()
-	if bike == 0:
-		_tyre_note.text = "No bike near you to puncture."
-		return
-	Shed.request({"a": "puncture", "bike": bike, "side": side, "kind": kind, "debug": true})
-	_tyre_note.text = "Punctured the %s tyre on %s (%s)." % [side, str(Shed.bikes[bike]["name"]), kind]
-
-
-## Fixes up the bike you're riding, or the nearest one (see Shed.debug_fix_bike).
-func fix_bike() -> void:
-	var bike := puncture_target()
-	if bike == 0:
-		_fix_note.text = "No bike near you to fix."
-		return
-	Shed.request({"a": "debug_fix_bike", "bike": bike})
-	_fix_note.text = "Fixed up %s." % str(Shed.bikes[bike]["name"])
-
-
-## With the automatic fix on, now and then: the bike you're riding is fixed up once it needs it.
-func auto_fix_tick(delta: float) -> void:
-	if not auto_fix:
-		return
-	_auto_fix_t -= delta
-	if _auto_fix_t > 0.0:
-		return
-	_auto_fix_t = AUTO_FIX_EVERY
-	var bike := Shed.riding(Shed.me())
-	if bike != 0 and needs_fix(bike):
-		Shed.request({"a": "debug_fix_bike", "bike": bike})
-
-
-## Whether a bike needs the automatic fix: a fault, a worn part or low on fuel.
-static func needs_fix(bike_id: int) -> bool:
-	if not Shed.bikes.has(bike_id):
-		return false
-	if not Roadside.active(bike_id).is_empty():
-		return true
-	var cap := 0.0
-	for slot in ["tank", "aux_tank"]:
-		var id := Shed.item_on(bike_id, slot)
-		if id != 0:
-			cap += PartsDB.fluid_capacity(str(Shed.items[id]["part"]))
-	if cap > 0.0 and cap - Shed.fuel_space(bike_id) < cap * AUTO_FIX_FUEL:
-		return true
-	for id in Shed.bikes[bike_id].get("slots", {}).values():
-		if Shed.items.has(int(id)) and float(Shed.items[int(id)]["wear"]) >= AUTO_FIX_WEAR:
-			return true
-	return false
-
-
-## The bike a debug puncture goes in: the one you're riding, or the nearest within 10 m of you.
-func puncture_target() -> int:
-	var riding := Shed.riding(Shed.me())
-	if riding != 0:
-		return riding
-	var walker := get_tree().get_first_node_in_group("local_walker") as Node3D
-	if walker == null:
-		return 0
-	var best := 0
-	var best_d := 10.0
-	for id in Shed.bikes:
-		var d := (Shed.bikes[id]["xf"] as Transform3D).origin.distance_to(walker.global_position)
-		if d < best_d:
-			best_d = d
-			best = int(id)
-	return best
 
 
 ## Presses the button labelled `text` (for tests).

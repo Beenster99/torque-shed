@@ -195,9 +195,7 @@ func _draw() -> void:
 		_draw_toolbar()
 		if walker.target.get("roadside", false) and walker.tyre_game == null:
 			_draw_toolbox(int(walker.target.get("bike", 0)), str(walker.target.get("slot", "")))
-		if walker.tyre_game is PlugGame:
-			_draw_plug_game(walker.tyre_game)
-		elif walker.tyre_game:
+		if walker.tyre_game:
 			_draw_tyre_game(walker.tyre_game)
 	if walker and (walker.stopwatch.showing() or (bike == null and walker.tool == "watch")):
 		_draw_stopwatch()
@@ -397,95 +395,6 @@ func _draw_toolbox(bike_id: int, slot: String) -> void:
 		draw_string(font, Vector2(panel.position.x + 20, y), ("> " if i == pick else "   ") + text, HORIZONTAL_ALIGNMENT_LEFT,
 			panel.size.x - 30.0, 14, Color(1, 1, 1, 0.95) if i == pick else Color(1, 1, 1, 0.7))
 		y += 24.0
-
-
-## The puncture plug game: the tread laid out as a strip, the soapy nozzle (then the reamer) on
-## it, bubbles foaming thicker the nearer it is to the hole, and the plug going in.
-func _draw_plug_game(game: PlugGame) -> void:
-	var font := get_theme_default_font()
-	var w := minf(size.x * 0.4, 560.0)   # clear of the part info down the right
-	var strip := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 + 60.0, w, 46.0)
-	draw_rect(strip.grow(28.0), Color(0.03, 0.03, 0.04, 0.6))
-	draw_rect(strip, Color(0.07, 0.07, 0.08))
-	var rg := game as RoadsideGame   # a roadside fix run the same way (see RoadsideGame)
-	if rg != null:
-		_draw_roadside_strip(rg, strip)
-	else:
-		# The tread blocks.
-		var blocks := 26
-		for i in blocks:
-			var x := strip.position.x + (i + 0.5) * strip.size.x / blocks
-			draw_line(Vector2(x - 6.0, strip.position.y + 4.0), Vector2(x + 6.0, strip.end.y - 4.0), Color(0.16, 0.16, 0.17), 5.0)
-	var at := func(u: float) -> float: return strip.position.x + (u * 0.5 + 0.5) * strip.size.x
-	var nozzle_x: float = at.call(game.cursor.x)
-	var t := float(Time.get_ticks_msec()) / 1000.0
-	if not game.found and rg != null:
-		# The test lamp (or the pliers, or the lever) glowing brighter the nearer it is.
-		var glow := game.foam()
-		draw_circle(Vector2(nozzle_x, strip.get_center().y), 6.0 + 14.0 * glow, Color(1.0, 0.85, 0.3, 0.15 + 0.55 * glow))
-		draw_line(Vector2(nozzle_x, strip.position.y - 26.0), Vector2(nozzle_x, strip.get_center().y), Color(0.85, 0.85, 0.9), 4.0)
-		draw_circle(Vector2(nozzle_x, strip.position.y - 30.0), 7.0, Color(1.0, 0.85, 0.3).lerp(Color(0.6, 0.6, 0.6), 1.0 - glow))
-		var lock_r := game.lock_progress()
-		if lock_r > 0.0:
-			draw_arc(Vector2(nozzle_x, strip.position.y - 30.0), 13.0, -PI * 0.5, -PI * 0.5 + TAU * lock_r, 24, UITheme.ACCENT, 3.0, true)
-		draw_string(font, Vector2(0, strip.position.y - 56.0), rg.label("find"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
-		draw_string(font, Vector2(0, strip.end.y + 44.0), Controls.hint(rg.label("find_hint")), HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
-		draw_string(font, Vector2(0, strip.end.y + 66.0), "%.0f s left" % maxf(0.0, PlugGame.FIND_TIME - game.t), HORIZONTAL_ALIGNMENT_CENTER, size.x, 13, Color(1, 1, 1, 0.55))
-		return
-	if not game.found:
-		# Soap where the nozzle is: a few bubbles anywhere, a froth growing right over the hole.
-		var foam := game.foam()
-		var n := 3 + roundi(foam * 14.0)
-		for i in n:
-			var k := float(i) / maxf(float(n), 1.0)
-			var jx := sin(t * 3.1 + i * 2.39) * (10.0 + 6.0 * foam)
-			var jy := cos(t * 2.3 + i * 1.71) * 14.0
-			var r := 2.5 + (5.0 + 3.0 * sin(t * 6.0 + i)) * foam * (0.5 + k)
-			draw_arc(Vector2(nozzle_x + jx, strip.get_center().y + jy), r, 0.0, TAU, 12, Color(0.9, 0.95, 1.0, 0.45 + 0.4 * foam), 1.5, true)
-		draw_line(Vector2(nozzle_x, strip.position.y - 26.0), Vector2(nozzle_x, strip.position.y - 4.0), Color(0.5, 0.8, 1.0), 4.0)
-		draw_circle(Vector2(nozzle_x, strip.position.y - 30.0), 7.0, Color(0.5, 0.8, 1.0))
-		var lock := game.lock_progress()
-		if lock > 0.0:
-			draw_arc(Vector2(nozzle_x, strip.position.y - 30.0), 13.0, -PI * 0.5, -PI * 0.5 + TAU * lock, 24, UITheme.ACCENT, 3.0, true)
-		draw_string(font, Vector2(0, strip.position.y - 56.0), "FIND THE HISS", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
-		draw_string(font, Vector2(0, strip.end.y + 44.0), Controls.hint("Sweep the soapy spray along the tread with the {aim}: hold it where it froths up"),
-			HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
-		var left := maxf(0.0, PlugGame.FIND_TIME - game.t)
-		draw_string(font, Vector2(0, strip.end.y + 66.0), "soap left %.0f s" % left, HORIZONTAL_ALIGNMENT_CENTER, size.x, 13, Color(1, 1, 1, 0.55))
-		return
-	# Found: the hole, drifting as the tyre creeps, and the reamer to keep on it.
-	var hole_x: float = at.call(game.hole_now())
-	draw_circle(Vector2(hole_x, strip.get_center().y), 6.0, Color(0.95, 0.85, 0.3))
-	var on := game.on_target()
-	draw_line(Vector2(nozzle_x, strip.position.y - 34.0), Vector2(nozzle_x, strip.get_center().y), Color(0.75, 0.75, 0.78), 4.0)
-	draw_line(Vector2(nozzle_x - 16.0, strip.position.y - 34.0), Vector2(nozzle_x + 16.0, strip.position.y - 34.0), Color(0.75, 0.75, 0.78), 6.0)
-	draw_circle(Vector2(nozzle_x, strip.get_center().y), 4.0, Color(1, 1, 1).lerp(Color(0.3, 1.0, 0.4), on))
-	var bar := Rect2(strip.position.x, strip.end.y + 14.0, strip.size.x, 6.0)
-	draw_rect(bar, Color(1, 1, 1, 0.15))
-	draw_rect(Rect2(bar.position, Vector2(bar.size.x * game.plug_progress(), bar.size.y)), UITheme.ACCENT)
-	draw_string(font, Vector2(0, strip.position.y - 56.0), rg.label("fix") if rg else "PUSH THE PLUG IN", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
-	draw_string(font, Vector2(0, strip.end.y + 44.0), "%s  ·  %s %d%%" % [Controls.hint(rg.label("fix_hint") if rg else "Keep the reamer on the hole with the {aim}"),
-		rg.label("score") if rg else "plug", roundi(game.quality() * 100.0)], HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
-
-
-## What a roadside game's strip shows: a row of fuses, the run of the spare chain, or the bar
-## end with the lever's pivot.
-func _draw_roadside_strip(game: RoadsideGame, strip: Rect2) -> void:
-	match game.kind:
-		"fuse":
-			var n := 12
-			for i in n:
-				var x := strip.position.x + (i + 0.5) * strip.size.x / n
-				var col: Color = [Color(0.85, 0.2, 0.15), Color(0.2, 0.45, 0.9), Color(0.95, 0.8, 0.2), Color(0.3, 0.75, 0.35)][i % 4]
-				draw_rect(Rect2(x - 9.0, strip.position.y + 8.0, 18.0, strip.size.y - 16.0), col.darkened(0.25))
-				draw_rect(Rect2(x - 3.0, strip.position.y + 4.0, 6.0, 6.0), Color(0.8, 0.8, 0.82))
-		"chain":
-			var links := 30
-			for i in links:
-				var x := strip.position.x + (i + 0.5) * strip.size.x / links
-				draw_arc(Vector2(x, strip.get_center().y), 7.0, 0.0, TAU, 12, Color(0.55, 0.55, 0.58), 3.0, true)
-		_:
-			draw_rect(Rect2(strip.position.x, strip.get_center().y - 5.0, strip.size.x, 10.0), Color(0.5, 0.5, 0.52))
 
 
 func _draw_crosshair() -> void:

@@ -9,7 +9,7 @@ const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
-const KIT: Array[String] = ["tools", "plug_kit", "pump"]
+const KIT: Array[String] = ["tools", "oil", "brake_fluid"]
 
 
 func _init(runner: Node) -> void:
@@ -118,7 +118,7 @@ func test_rules() -> void:
 	check(ToolboxSpares.room_left(box) == 0 and Shed.next_kit(box) == "", "kit and spares fill its six places: no more kit to pack")
 	_hold(me, str(PartsDB.by_kind["oil_filter"][0]))
 	check(Shed.check(me, {"a": "spare_stow", "item": box}).contains("packed full"), "and no room for another spare")
-	check(Shed.check(me, {"a": "toolbox_pack", "item": box, "what": "fuses"}).contains("packed full"), "nor more kit")
+	check(Shed.check(me, {"a": "toolbox_pack", "item": box, "what": "chain_lube"}).contains("packed full"), "nor more kit")
 	Shed.items.erase(Shed.held_by(me))
 	# Taken out again: the mirrors, as they went in.
 	check(Shed.check(me, {"a": "spare_take", "item": box, "index": 2, "part": "nothing"}) != "", "the spare has to be the one asked for")
@@ -145,8 +145,8 @@ func test_rules() -> void:
 	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "engine"}).contains("job for the shed")
 		and Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_wheel"}).contains("job for the shed")
 		and Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "frame"}).contains("job for the shed"), "but not the engine, a wheel or the frame")
-	check(Shed.check(me, {"a": "toolbox_pack", "item": box, "what": "fuses"}).contains("Ride it back"), "kit's still packed in the shed only")
-	Shed.items[box]["contents"] = ["plug_kit", "pump"]
+	check(Shed.check(me, {"a": "toolbox_pack", "item": box, "what": "chain_lube"}).contains("Ride it back"), "kit's still packed in the shed only")
+	Shed.items[box]["contents"] = ["oil", "brake_fluid"]
 	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}).contains("tool roll"), "no tool roll, no spanners")
 	Shed.items[box]["contents"] = KIT.duplicate()
 	# Worn pads off and a fresh spare on, all at the roadside.

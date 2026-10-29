@@ -1,59 +1,43 @@
 class_name Roadside
 extends RefCounted
-## Breaking down out on an adventure, and fixing it at the side of the road. Only on an
-## adventure: an ordinary ride out of the shed still has no roadside fixing (a bike out on the
-## road is just a bike to ride, see Shed.road_bike_block), exactly as before.
+## Fixing a bike at the side of the road on an adventure. Only on an adventure: an ordinary ride
+## out of the shed still has no roadside fixing (a bike out on the road is just a bike to ride,
+## see Shed.road_bike_block), exactly as before.
 ##
-## An adventure never breaks a bike: nothing wears or works loose out there and a drop does no
-## harm (Shed._wear_from_ride keeps only the tyres wearing, Main rolls nothing but punctures).
-## The one thing that can go wrong on the way is a tyre: a puncture (see Puncture), or one
-## going soft. The rest here is for faults the bike already had when it set off (a chain left
-## slack, low oil, or one carried over from an older save): the chain slack or snapped, the oil
-## low (the oil light), a bolt loose and something rattling, a snapped clutch or brake lever, a
-## blown fuse (the lights, or the ignition). Each has a clear symptom (a sound, a dash light,
-## the way it rides) and a hint.
+## An adventure never harms a bike: nothing wears or works loose out there, a drop does no harm
+## and the tyres keep their air (Shed._wear_from_ride). What can still want seeing to on the way
+## is something the bike already had when it set off: the chain left slack, or the oil low (the
+## oil light). Each has a clear symptom (a sound, a dash light) and a hint. And a bike that's run
+## out of petrol can be pushed, or towed by a mate.
 ##
 ## Stopped on an adventure you get off, and the bike stands at the roadside on its stand (drawn
 ## for the whole crew by RoadsideView, with its toolbox open and parts out on a cloth when
 ## they're being worked on). You fix it with only what its toolbox holds: each fix needs its kit
-## (the tool roll, a spare chain, a litre of oil, levers, fuses, the plug kit, the pump), and what
-## gets used up is gone from the box (shown as gone, until it's packed again in the shed). No
-## toolbox, or not the right thing in it, and that can't be fixed here: push the bike (wheel it
-## along on foot), or a mate tows you to the next stop on a strap from their bike.
+## (the tool roll, a litre of oil), and what gets used up is gone from the box (shown as gone,
+## until it's packed again in the shed). No toolbox, or not the right thing in it, and that can't
+## be fixed here: push the bike (wheel it along on foot), or a mate tows you to the next stop on
+## a strap from their bike.
 ## With the toolbox open the crew can also take its spanners to the bike's small parts, and fit
 ## the spare parts packed in it: see ToolboxSpares.
 ##
 ## Shared state, all in Shed (so the crew see it and it's saved):
-##   bikes[id]["faults"]    {chain_snap: true, rattle: slot, lever: "clutch"|"brake",
-##                           fuse: "lights"|"ignition"}; a slack chain and low oil are the
-##                           chain's own slack and the engine's own oil, as in the shed.
 ##   bikes[id]["roadside"]  where a bike was left on this adventure, in the route's frame (the
 ##                          floating origin moves, the route frame doesn't): {trip, x, y, z, yaw,
 ##                          s, open (the toolbox), out (slots of parts laid out on the cloth)}.
 ##   bikes[id]["push"]      true while its rider is wheeling it along on foot.
 ##   bikes[id]["tow"]       the peer whose bike is towing it, while it's on the strap.
 ##   items[box]["used"]     what's been used up out of a toolbox (gone till it's packed again),
-##   items[box]["left"]     and how many goes are left of the kit that has several (plugs, fuses).
+##   items[box]["left"]     and how many goes are left of the kit that has several (the lube).
 
-const KINDS: Array[String] = ["chain_slack", "chain_snap", "oil", "rattle", "lever", "fuse"]
-## How rough each surface is to ride (1 for tarmac): how hard a loose part rattles on it.
-const SURFACE := {"tarmac": 1.0, "concrete": 1.0, "gravel": 2.6, "dirt": 2.2, "sand": 2.2, "snow": 1.4, "grass": 1.8}
+const KINDS: Array[String] = ["chain_slack", "oil"]
 ## A chain this slack (mm) is the slack chain fault (the shed's own reading, see BikeBuild).
 const SLACK_FAULT := 50.0
-const SLACK_GONE := 64.0       # how slack a chain goes when it's let go
-## The oil light comes on below this share of the engine's oil, and a leak leaves it at OIL_LEFT.
+## The oil light comes on below this share of the engine's oil.
 const OIL_LIGHT := 0.45
-const OIL_LEFT := 0.3
 const OIL_TOP_UP := 1.0        # litres in the toolbox's bottle
-## The parts that can work loose and rattle, in the order they're picked from (those fitted).
-const RATTLE_SLOTS: Array[String] = ["exhaust", "front_mudguard", "number_boards", "side_panels", "headlight", "mirrors",
-	"top_box", "panniers", "fairing", "indicators", "guards", "tail"]
 ## The toolbox kit that gets used up, and how many goes there are in it (the tool roll and the
-## pump never run out).
-const USES := {"plug_kit": 3, "spare_chain": 1, "oil": 1, "brake_fluid": 1, "chain_lube": 4, "levers": 2, "fuses": 3}
-## The fuse box is under the seat; the clutch lever's on the bars, the brake lever's the master's.
-const FUSE_SLOTS: Array[String] = ["saddle", "dashboard", "headlight", "ecu"]
-const LEVER_SLOTS: Array[String] = ["handlebars", "front_master"]
+## never runs out).
+const USES := {"oil": 1, "brake_fluid": 1, "chain_lube": 4}
 ## Pushing it: walking pace. The strap from a mate's bike: this long (m), and the tow comes off
 ## once you're this close to the next stop and slowed right down.
 const PUSH_SPEED := 1.6
@@ -69,34 +53,10 @@ const INFO := {
 		"symptom": "A slapping and clunking from the back: the chain's gone slack and snatches on and off the throttle.",
 		"hint": "Stop and tighten it: crouch at the chain with the wrench (the tool roll's spanners).",
 		"needs": ["tools"]},
-	"chain_snap": {"name": "Snapped chain", "light": "",
-		"symptom": "A bang and a clatter, and the engine revs with nothing driving the back wheel: the chain's snapped.",
-		"hint": "Fit the spare chain with its split link (crouch at the chain, hands). No spare? Push it, or get a tow.",
-		"needs": ["tools", "spare_chain"]},
 	"oil": {"name": "Low oil", "light": "OIL",
 		"symptom": "The oil light's on: it's low on oil. Top it up before the engine suffers for it.",
 		"hint": "Stop and top it up from the toolbox's bottle of oil (hands, at the engine).",
 		"needs": ["oil"]},
-	"rattle": {"name": "Rattling part", "light": "",
-		"symptom": "Something's rattling: a bolt has worked loose.",
-		"hint": "Stop, find what's rattling and bolt it up tight with the wrench (the tool roll).",
-		"needs": ["tools"]},
-	"lever": {"name": "Broken lever", "light": "",
-		"symptom": "The lever snapped off in the drop.",
-		"hint": "Fit a spare lever (hands, at the bars) from the toolbox's spare levers and the tool roll.",
-		"needs": ["tools", "levers"]},
-	"fuse": {"name": "Blown fuse", "light": "",
-		"symptom": "A fuse has blown.",
-		"hint": "Swap it from the spares in the toolbox: the fuse box is under the seat (hands, at the seat).",
-		"needs": ["fuses"]},
-	"puncture": {"name": "Puncture", "light": "",
-		"symptom": "The tyre's going soft: it squirms and wallows. A puncture.",
-		"hint": "Stop and plug it with the toolbox's plug kit (hands, at the tyre), then pump it up with the mini pump.",
-		"needs": ["plug_kit"]},
-	"pressure": {"name": "Soft tyre", "light": "",
-		"symptom": "The tyre's soft.",
-		"hint": "Pump it up with the toolbox's mini pump (hands, at the tyre, the second button).",
-		"needs": ["pump"]},
 }
 
 
@@ -111,46 +71,24 @@ static func oil_level(bike_id: int) -> float:
 
 # ---------------------------------------------------------------------------- what's wrong
 
-static func faults_of(bike_id: int) -> Dictionary:
-	var f = Shed.bikes.get(bike_id, {}).get("faults", {})
-	return f if f is Dictionary else {}
-
-
-## Everything wrong with the bike that a roadside fix can sort out: [{kind, slot, detail}], the
-## stored faults and the ones read off its parts (a slack chain, low oil, a puncture, a soft tyre).
+## Everything wrong with the bike that a roadside fix can sort out: [{kind, slot}], read off its
+## parts (a slack chain, low oil).
 static func active(bike_id: int) -> Array:
 	var out := []
 	if not Shed.bikes.has(bike_id):
 		return out
-	var f := faults_of(bike_id)
 	var chain := Shed.item_on(bike_id, "chain")
-	if f.get("chain_snap", false):
-		out.append({"kind": "chain_snap", "slot": "chain"})
-	elif chain != 0 and float(Shed.items[chain].get("slack", Shed.CHAIN_SLACK_SET)) >= SLACK_FAULT:
+	if chain != 0 and float(Shed.items[chain].get("slack", Shed.CHAIN_SLACK_SET)) >= SLACK_FAULT:
 		out.append({"kind": "chain_slack", "slot": "chain"})
 	if Shed.item_on(bike_id, "engine") != 0 and oil_level(bike_id) < OIL_LIGHT:
 		out.append({"kind": "oil", "slot": "engine"})
-	if str(f.get("rattle", "")) != "":
-		out.append({"kind": "rattle", "slot": str(f["rattle"])})
-	if str(f.get("lever", "")) != "":
-		out.append({"kind": "lever", "slot": "handlebars" if str(f["lever"]) == "clutch" else "front_master", "detail": str(f["lever"])})
-	if str(f.get("fuse", "")) != "":
-		out.append({"kind": "fuse", "slot": "saddle", "detail": str(f["fuse"])})
-	for side in ["front", "rear"]:
-		var tyre := Shed.item_on(bike_id, side + "_tyre")
-		if tyre == 0:
-			continue
-		if Puncture.punctured(Shed.items[tyre]):
-			out.append({"kind": "puncture", "slot": side + "_tyre", "detail": side})
-		elif Puncture.lost(Shed.items[tyre]) >= 0.05:
-			out.append({"kind": "pressure", "slot": side + "_tyre", "detail": side})
 	return out
 
 
-## The fault of `kind` on the bike (and `detail`, a tyre's side), or {}.
-static func find(bike_id: int, kind: String, detail := "") -> Dictionary:
+## The fault of `kind` on the bike, or {}.
+static func find(bike_id: int, kind: String) -> Dictionary:
 	for f in active(bike_id):
-		if str(f["kind"]) == kind and (detail == "" or str(f.get("detail", "")) == detail):
+		if str(f["kind"]) == kind:
 			return f
 	return {}
 
@@ -160,40 +98,20 @@ static func at_slot(bike_id: int, slot: String) -> Array:
 	var out := []
 	for f in active(bike_id):
 		var s := str(f["slot"])
-		if s == slot or (str(f["kind"]) == "fuse" and FUSE_SLOTS.has(slot)) or (str(f["kind"]) == "lever" and LEVER_SLOTS.has(slot)):
+		if s == slot:
 			out.append(f)
 	return out
 
 
-## The fault's name, with which lever or fuse, or which tyre.
+## The fault's name.
 static func name_of(f: Dictionary) -> String:
 	var kind := str(f.get("kind", ""))
-	var n := str(INFO.get(kind, {}).get("name", kind))
-	match kind:
-		"lever":
-			return "Broken %s lever" % str(f.get("detail", "clutch"))
-		"fuse":
-			return "Blown fuse (%s)" % ("the lights" if str(f.get("detail", "")) == "lights" else "the ignition")
-		"puncture", "pressure":
-			return "%s (%s tyre)" % [n, str(f.get("detail", "rear"))]
-		"rattle":
-			return "Rattling %s" % PartsDB.slot_name(str(f.get("slot", ""))).to_lower()
-	return n
+	return str(INFO.get(kind, {}).get("name", kind))
 
 
-## How the fault shows itself, as the rider's told when it happens.
+## How the fault shows itself, as the rider's told when it's noticed.
 static func symptom(f: Dictionary) -> String:
-	var kind := str(f.get("kind", ""))
-	match kind:
-		"lever":
-			return "The %s lever snapped off in the drop: %s" % [str(f.get("detail", "clutch")),
-				"the gears crunch and shift slowly without it." if str(f.get("detail", "")) == "clutch" else "the front brake's next to useless."]
-		"fuse":
-			return "A fuse has blown: %s" % ("the headlight's out." if str(f.get("detail", "")) == "lights"
-				else "the engine cut out and the dash went dark. It won't start.")
-		"rattle":
-			return "Something's rattling: the %s has worked loose." % PartsDB.slot_name(str(f.get("slot", ""))).to_lower()
-	return str(INFO.get(kind, {}).get("symptom", ""))
+	return str(INFO.get(str(f.get("kind", "")), {}).get("symptom", ""))
 
 
 static func hint(f: Dictionary) -> String:
@@ -210,16 +128,10 @@ static func uses(kind: String) -> Array:
 	return needs(kind).filter(func(w): return USES.has(str(w)))
 
 
-## Whether a fault stops the bike: it won't go under its own power.
-## Whether the bike's in a state to want a tow: dead, out of fuel (`dry`, the rider's own tank
+## Whether the bike's in a state to want a tow: out of fuel (`dry`, the rider's own tank
 ## reading) or carrying a roadside fault.
 static func needs_tow(bike_id: int, dry := false) -> bool:
-	return dry or dead(bike_id) or not active(bike_id).is_empty()
-
-
-static func dead(bike_id: int) -> bool:
-	var f := faults_of(bike_id)
-	return f.get("chain_snap", false) or str(f.get("fuse", "")) == "ignition"
+	return dry or not active(bike_id).is_empty()
 
 
 # ---------------------------------------------------------------------------- the toolbox
@@ -240,7 +152,7 @@ static func used_of(box: int) -> Array:
 	return u if u is Array else []
 
 
-## Goes left of a kit in the box (plugs in the plug kit, fuses): 1 for the rest.
+## Goes left of a kit in the box (coats in the can of chain lube): 1 for the rest.
 static func goes_left(box: int, what: String) -> int:
 	if not Shed.toolbox_contents(box).has(what):
 		return 0
@@ -300,7 +212,7 @@ static func kit_missing(bike_id: int, kind: String) -> String:
 			var info: Dictionary = PartsDB.TOOLBOX_CONTENTS.get(str(what), {})
 			var gone := used_of(box).has(what)
 			return "%s the %s in the toolbox. Push it, or get a mate to tow you." % ["You've used up" if gone else "There's no",
-				str(info.get("short", what))] if kind in ["chain_snap", "puncture"] or str(what) == "tools" \
+				str(info.get("short", what))] if str(what) == "tools" \
 				else "%s the %s in the toolbox." % ["You've used up" if gone else "There's no", str(info.get("short", what))]
 	return ""
 
@@ -373,63 +285,25 @@ static func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	var bike_id := int(action.get("bike", 0))
 	match a:
-		"roadside_fault":
-			# Nothing on a ride asks for one (an adventure breaks nothing but tyres): it's for
-			# setting a fault up by hand, to fix it at the roadside.
-			var ridden := Shed.riding(peer)
-			if not Adventure.active() or ridden == 0:
-				return "Only out on an adventure."
-			var kind := str(action.get("kind", ""))
-			if not KINDS.has(kind):
-				return "Unknown fault."
-			if kind == "lever" and Shed.item_on(ridden, "handlebars") == 0:
-				return "No bars to snap a lever off."
-			if kind == "rattle" and _rattle_slot(ridden, str(action.get("slot", ""))) == "":
-				return "Nothing to work loose."
-			if not find(ridden, kind).is_empty() or (kind == "chain_slack" and not find(ridden, "chain_snap").is_empty()):
-				return "That's gone already."
-			if kind in ["chain_slack", "chain_snap"] and Shed.item_on(ridden, "chain") == 0:
-				return "There's no chain."
-			if kind == "oil" and Shed.item_on(ridden, "engine") == 0:
-				return "There's no engine."
-			return ""
-		"roadside_fix", "roadside_open", "roadside_pump":
+		"roadside_fix", "roadside_open":
 			if not Shed.bikes.has(bike_id):
 				return "That bike has gone."
-			var at_shed := a == "roadside_fix" and Shed.bike_at_work(bike_id) and str(action.get("fault", "")) in ["lever", "fuse"] \
-				and not Adventure.active()
-			if not at_shed:
-				var why := _on_adventure(bike_id)
-				if why != "":
-					return why
-				if not parked(bike_id):
-					return "Stop and get off first: you can only work on it at the roadside."
-			elif int(Shed.bikes[bike_id].get("rider", 0)) != 0:
-				return "Someone is riding that bike."
+			var why := _on_adventure(bike_id)
+			if why != "":
+				return why
+			if not parked(bike_id):
+				return "Stop and get off first: you can only work on it at the roadside."
 			if Shed.held_by(peer) != 0:
 				return "Put down what you're holding first."
 			if a == "roadside_open":
 				if toolbox_of(bike_id) == 0:
 					return "There's no toolbox on it."
 				return ""
-			var kind := str(action.get("fault", "puncture" if a == "roadside_fix" and action.has("side") else ""))
-			if a == "roadside_pump":
-				kind = "pressure"
-			var detail := str(action.get("side", ""))
-			var f := find(bike_id, kind, detail)
-			if a == "roadside_pump":
-				var tyre := Shed.item_on(bike_id, detail + "_tyre")
-				if tyre == 0 or Puncture.lost(Shed.items[tyre]) < 0.05:
-					return "It's up to its pressure."
-				if Puncture.punctured(Shed.items[tyre]):
-					return "It's still punctured: plug it first, or it'll just go down again."
-				f = {"kind": "pressure"}
-			if f.is_empty():
+			var kind := str(action.get("fault", ""))
+			if find(bike_id, kind).is_empty():
 				return "Nothing like that wrong with it."
-			if kind in ["chain_slack", "chain_snap"] and not action.get("crouched", false):
+			if kind == "chain_slack" and not action.get("crouched", false):
 				return "Crouch down to get at the chain ({crouch})."
-			if at_shed:
-				return ""
 			return kit_missing(bike_id, kind)
 		"roadside_push":
 			var why := _on_adventure(bike_id)
@@ -473,31 +347,18 @@ static func apply(peer: int, action: Dictionary) -> String:
 	var bike_id := int(action.get("bike", 0))
 	var who := str(Shed.crew.get(peer, {}).get("name", "Someone"))
 	match a:
-		"roadside_fault":
-			_break(Shed.riding(peer), str(action["kind"]), action)
-			AdventureDiary.broke(peer, str(INFO.get(str(action["kind"]), {}).get("name", "a fault")))
-			return ""   # the rider's own game tells them, as their bike changes (Main._sync_faults)
 		"roadside_open":
 			var r: Dictionary = Shed.bikes[bike_id]["roadside"]
 			r["open"] = bool(action.get("open", not r.get("open", false)))
 			return ""
-		"roadside_pump":
-			var tyre := Shed.item_on(bike_id, str(action["side"]) + "_tyre")
-			Shed.items[tyre].erase("deflate")
-			_lay_out(bike_id, "pump")
-			return "Pumped the %s tyre back up with the mini pump." % str(action["side"])
 		"roadside_fix":
-			var kind := str(action.get("fault", "puncture"))
-			var at_shed := not Adventure.active()
-			var text := _fix(peer, bike_id, kind, action)
-			if text.begins_with("!"):
-				return text.substr(1)   # it didn't take: nothing used up
-			if not at_shed:
-				var box := toolbox_of(bike_id)
-				for what in uses(kind):
-					use_kit(box, str(what))
-				_lay_out(bike_id, "tools")
-				AdventureDiary.fixed(peer, str(INFO.get(kind, {}).get("name", kind)))
+			var kind := str(action.get("fault", ""))
+			var text := _fix(peer, bike_id, kind)
+			var box := toolbox_of(bike_id)
+			for what in uses(kind):
+				use_kit(box, str(what))
+			_lay_out(bike_id, "tools")
+			AdventureDiary.fixed(peer, str(INFO.get(kind, {}).get("name", kind)))
 			return text
 		"roadside_push":
 			var bike: Dictionary = Shed.bikes[bike_id]
@@ -524,54 +385,6 @@ static func apply(peer: int, action: Dictionary) -> String:
 	return ""
 
 
-## The part that works loose on the bike: `want` if it's fitted and can, else the first fitted.
-static func _rattle_slot(bike_id: int, want: String) -> String:
-	if want != "" and RATTLE_SLOTS.has(want) and Shed.item_on(bike_id, want) != 0:
-		return want
-	var fitted := RATTLE_SLOTS.filter(func(s): return Shed.item_on(bike_id, s) != 0)
-	if fitted.is_empty():
-		return ""
-	return str(fitted[Shed._rng.randi() % fitted.size()])
-
-
-## Gives the bike the fault; returns what its rider's told (the symptom and the hint).
-static func _break(bike_id: int, kind: String, action: Dictionary) -> String:
-	var bike: Dictionary = Shed.bikes[bike_id]
-	var faults := faults_of(bike_id).duplicate()
-	var f := {"kind": kind}
-	match kind:
-		"chain_slack":
-			var chain := Shed.item_on(bike_id, "chain")
-			Shed.items[chain]["slack"] = maxf(float(Shed.items[chain].get("slack", Shed.CHAIN_SLACK_SET)), SLACK_GONE)
-			f["slot"] = "chain"
-		"chain_snap":
-			faults["chain_snap"] = true
-		"oil":
-			var engine := Shed.item_on(bike_id, "engine")
-			var cap := PartsDB.fluid_capacity(str(Shed.items[engine]["part"]))
-			var fl: Dictionary = Shed.items[engine].get("fluid", {"litres": cap, "type": "semi_10w40", "age": 0.0})
-			fl["litres"] = minf(float(fl.get("litres", cap)), cap * OIL_LEFT)
-			Shed.items[engine]["fluid"] = fl
-		"rattle":
-			var slot := _rattle_slot(bike_id, str(action.get("slot", "")))
-			faults["rattle"] = slot
-			f["slot"] = slot
-		"lever":
-			var which := str(action.get("which", ""))
-			if not which in ["clutch", "brake"]:
-				which = "clutch" if Shed._rng.randf() < 0.5 else "brake"
-			faults["lever"] = which
-			f["detail"] = which
-		"fuse":
-			var which := str(action.get("which", ""))
-			if not which in ["lights", "ignition"]:
-				which = "lights" if Shed._rng.randf() < 0.6 else "ignition"
-			faults["fuse"] = which
-			f["detail"] = which
-	bike["faults"] = faults
-	return "%s %s" % [symptom(f), hint(f)]
-
-
 ## Puts something out on the cloth beside the bike (the toolbox's kit, a part off it).
 static func _lay_out(bike_id: int, what: String) -> void:
 	var r = Shed.bikes[bike_id].get("roadside", null)
@@ -583,78 +396,28 @@ static func _lay_out(bike_id: int, what: String) -> void:
 	r["out"] = out
 
 
-## Does the fix. Returns what the player's told; starting with "!" it didn't take.
-static func _fix(peer: int, bike_id: int, kind: String, action: Dictionary) -> String:
-	var faults := faults_of(bike_id).duplicate()
-	var name := str(Shed.bikes[bike_id]["name"])
-	var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
-	var text := ""
+## Does the fix. Returns what the player's told.
+static func _fix(peer: int, bike_id: int, kind: String) -> String:
 	match kind:
 		"chain_slack":
 			var chain := Shed.item_on(bike_id, "chain")
 			Shed.items[chain]["slack"] = Shed.CHAIN_SLACK_SET
 			Shed._xp(peer, "chain_tension", 1.0, "item:%d" % chain)
-			text = "Chain tightened back to %d mm of slack at the roadside." % roundi(Shed.CHAIN_SLACK_SET)
-		"chain_snap":
-			if q < 0.25:
-				return "!The split link didn't seat. Try again: keep the pliers on the clip."
-			var chain := Shed.item_on(bike_id, "chain")
-			faults.erase("chain_snap")
-			Shed.items[chain]["wear"] = 0.05
-			Shed.items[chain]["slack"] = Shed.CHAIN_SLACK_SET
-			Shed.items[chain]["lube"] = 1.0
-			_lay_out(bike_id, "chain")
-			text = "The spare chain's on and the split link clipped in (%d%%). Off you go." % roundi(q * 100.0)
+			return "Chain tightened back to %d mm of slack at the roadside." % roundi(Shed.CHAIN_SLACK_SET)
 		"oil":
 			var engine := Shed.item_on(bike_id, "engine")
 			var cap := PartsDB.fluid_capacity(str(Shed.items[engine]["part"]))
 			var fl: Dictionary = Shed.items[engine].get("fluid", {"litres": 0.0, "type": "semi_10w40", "age": 0.0})
 			fl["litres"] = minf(cap, float(fl.get("litres", 0.0)) + OIL_TOP_UP)
 			Shed.items[engine]["fluid"] = fl
-			text = "Topped the oil up from the toolbox's bottle: %.1f of %.1f litres, the light's off." % [float(fl["litres"]), cap]
-		"rattle":
-			var slot := str(faults.get("rattle", ""))
-			faults.erase("rattle")
-			text = "Bolted the %s up tight: no more rattle." % PartsDB.slot_name(slot).to_lower()
-		"lever":
-			if q < 0.25:
-				return "!The pivot bolt wouldn't line up. Try again: hold it steady."
-			var which := str(faults.get("lever", "clutch"))
-			faults.erase("lever")
-			_lay_out(bike_id, "handlebars")
-			text = "A spare %s lever's on (%d%%)." % [which, roundi(q * 100.0)]
-		"fuse":
-			if q < 0.25:
-				return "!Couldn't find the blown one. Try again: watch for the test lamp."
-			var which := str(faults.get("fuse", "lights"))
-			faults.erase("fuse")
-			_lay_out(bike_id, "saddle")
-			text = "Swapped the blown fuse: %s." % ("the headlight's back" if which == "lights" else "the dash lights up again and it'll start")
-		"puncture":
-			var side := str(action.get("side", "rear"))
-			var tyre := Shed.item_on(bike_id, side + "_tyre")
-			if q <= 0.0:
-				return "!Couldn't find the leak. Sweep the soapy spray round the tread and watch for the bubbles."
-			q = clampf(q + Shed._finish_bonus(peer), 0.0, 1.0)
-			Shed.items[tyre]["plug"] = q
-			_lay_out(bike_id, side + "_tyre")
-			if q >= Puncture.PLUG_SEALS:
-				Shed.items[tyre].erase("puncture")
-				text = "Plugged the %s tyre at the roadside (%d%%): it holds. Pump it back up with the mini pump." % [side, roundi(q * 100.0)]
-			else:
-				Shed.items[tyre]["puncture"] = Puncture.SLOW * Puncture.PLUG_WEEP
-				text = "The plug's in crooked (%d%%): it still weeps air, but slowly." % roundi(q * 100.0)
-			Shed._xp(peer, "tyre_plug", q, "item:%d" % tyre)
-	Shed.bikes[bike_id]["faults"] = faults
-	if not Adventure.active():
-		text = text.replace(" at the roadside", "").replace("the toolbox's ", "the shed's ").replace(" from the toolbox's bottle", "")
-	return text if text != "" else "Fixed %s." % name
+			return "Topped the oil up from the toolbox's bottle: %.1f of %.1f litres, the light's off." % [float(fl["litres"]), cap]
+	return "Fixed %s." % str(Shed.bikes[bike_id]["name"])
 
 
 # ---------------------------------------------------------------------------- the end of a trip
 
 ## The adventure's over (or a save is loading): bikes left at the roadside come home to a bay,
-## and nobody's pushing or towing any more. Faults stay on the bikes, for the shed to sort out.
+## and nobody's pushing or towing any more.
 static func bring_home() -> void:
 	for id in Shed.bikes:
 		var bike: Dictionary = Shed.bikes[id]

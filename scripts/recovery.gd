@@ -4,7 +4,7 @@ extends RefCounted
 ## trailer, a garage upgrade from the parts computer at character level LEVEL), the phone rings
 ## with jobs to fetch bikes from round the map:
 ##   barn     a barn find: a bike left for years beside a farm's barn or under a tarp behind a
-##            village house. Rusty, filthy, flat tyres, old fluids, often with its brakes seized
+##            village house. Rusty, filthy, worn tyres, old fluids, often with its brakes seized
 ##            solid so it won't roll.
 ##   crash    a crash rescue: a bike gone off the road onto the verge, lying on its side with
 ##            parts smashed; the rider's insurer wants it recovered. A buckled wheel won't roll.
@@ -755,7 +755,6 @@ static func _accept(offer_id: int) -> String:
 	bike["xf"] = o["xf"]
 	bike["wb"] = Shed.build_of(bike_id).wheelbase
 	_wreck(bike_id, kind, bool(o["rolls"]), rng)
-	Shed.arrival_puncture(bike_id, kind)
 	bike["stand"] = "down" if kind == "crash" else ("side" if Shed.item_on(bike_id, "side_stand") != 0 else Shed._rest_stand(bike_id))
 	var s := _st()
 	var jid := int(s["next"])
@@ -771,7 +770,7 @@ static func _accept(offer_id: int) -> String:
 		job["name"], float(o["km"])]
 
 
-## A recovery bike as it's found. Barn finds: rust and muck on everything, flat tyres, stale
+## A recovery bike as it's found. Barn finds: rust and muck on everything, worn tyres, stale
 ## fuel and oil, and maybe seized brakes. Crashes: smashed parts on the side it went down on,
 ## and maybe a buckled front wheel.
 static func _wreck(bike_id: int, kind: String, rolls: bool, rng: RandomNumberGenerator) -> void:
@@ -789,7 +788,6 @@ static func _wreck(bike_id: int, kind: String, rolls: bool, rng: RandomNumberGen
 		for slot in ["front_tyre", "rear_tyre"]:
 			var t := Shed.item_on(bike_id, slot)
 			if t != 0:
-				Shed.items[t]["flat"] = 1.0
 				Shed.items[t]["wear"] = maxf(float(Shed.items[t]["wear"]), 0.7)
 		for slot in ["engine", "tank"]:
 			var f := Shed.item_on(bike_id, slot)

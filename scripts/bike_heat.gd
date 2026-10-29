@@ -82,9 +82,6 @@ var _side_area := PackedFloat32Array([0.2, 0.25])
 var _set_psi := PackedFloat32Array([2.3, 2.5])
 var _best_psi := PackedFloat32Array([2.3, 2.5])
 var _dev_build := PackedFloat32Array([0.0, 0.0])
-var _flat_build := PackedFloat32Array([0.0, 0.0])
-## How fast each tyre is losing air to a puncture, bar per km ridden (see Puncture).
-var leak := PackedFloat32Array([0.0, 0.0])
 var _disc_c := PackedFloat32Array([700.0, 600.0])
 var _disc_area := PackedFloat32Array([0.06, 0.05])
 var _disc_cool := PackedFloat32Array([1.0, 1.0])
@@ -122,8 +119,6 @@ func setup(build: BikeBuild) -> void:
 		_set_psi[i] = build.pressure_now(sides[i])
 		_best_psi[i] = maxf(build.tune_default(key), 0.1)
 		_dev_build[i] = build.pressure_offset(sides[i])
-		_flat_build[i] = float(build.flat[sides[i]])
-		leak[i] = float(build.condition.get(sides[i] + "_tyre", {}).get("puncture", 0.0))
 		var disc := build.part(sides[i] + "_disc")
 		_disc_c[i] = disc_capacity(disc)
 		_disc_area[i] = disc_area(disc)
@@ -346,10 +341,6 @@ func step(bike: Bike, delta: float) -> void:
 		road = road_c()
 	var v := absf(bike.speed)
 	for i in 2:
-		if leak[i] > 0.0:
-			# A punctured tyre lets its air out as it rolls (the shed takes the same off it, by
-			# the distance the ride reports: see Shed._wear_from_ride).
-			_set_psi[i] = maxf(0.0, _set_psi[i] - leak[i] * v * delta / 1000.0)
 		var w: Dictionary = bike.wheels[i]
 		var on: bool = w["contact"] and not bike.is_crashed
 		_tyre_step(i, delta, v, float(w.get("p_slip", 0.0)) if on else 0.0, float(w.get("p_roll", 0.0)) if on else 0.0,
@@ -473,16 +464,6 @@ func pressure(i: int) -> float:
 	return _set_psi[i] * (float(tyres[i]["carcass"]) + KELVIN) / (SET_AT + KELVIN)
 
 
-## How flat a tyre is now: 0 holding its shape .. 1 no air at all, rolling on the rim.
-func flat(i: int) -> float:
-	return Puncture.flat_of(_set_psi[i], _best_psi[i])
-
-
-## How far a flat tyre has squashed down, metres, for a tyre `height` tall off its rim.
-func squash(i: int, height: float) -> float:
-	return flat(i) * Puncture.SQUASH * maxf(height, 0.0)
-
-
 ## The grip a tyre has on `surf` from its heat and the pressure that's brought, against the grip
 ## the bike was built with (1 = as built). Softened by Riding realism.
 func tyre_grip(i: int, surf: String) -> float:
@@ -494,7 +475,6 @@ func tyre_grip(i: int, surf: String) -> float:
 		var dev_now := (_set_psi[i] / _best_psi[i]) * (float(tyres[i]["carcass"]) + KELVIN) / (working(i) + KELVIN) - 1.0
 		var road_surf := "tarmac" if surf == "concrete" else surf
 		g *= _build._pressure_grip(dev_now, road_surf) / maxf(_build._pressure_grip(_dev_build[i], road_surf), 0.1)
-		g *= Puncture.flat_grip(flat(i)) / Puncture.flat_grip(_flat_build[i])
 	return lerpf(g, 1.0, soften) if g < 1.0 else g
 
 

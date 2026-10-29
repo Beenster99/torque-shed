@@ -320,7 +320,7 @@ func _build_settings() -> void:
 	_pad = UITheme.label("", 16)
 	pad.add_child(_pad)
 	pad.add_child(_button("Recalibrate (hands off the controller)", func(): Controls.recalibrate()))
-	# Testing helpers: XP, money, contracts, punctures, fixing the bike, the profiler.
+	# Testing helpers: XP, money, contracts, the profiler.
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
 
@@ -712,8 +712,6 @@ func _refresh_debug() -> void:
 	if client and _tabs.current_tab == at:
 		_tabs.current_tab = 0
 	_tabs.set_tab_hidden(at, client)
-	if client:
-		debug.auto_fix = false
 
 
 ## Shows "Back to the garage" while you're out in the world, greyed out (and saying why) when

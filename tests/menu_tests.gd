@@ -1,7 +1,7 @@
 extends RefCounted
 ## The Esc menu's layout (see MainMenu): its short list of buttons, the Settings panel's tabs,
-## and the corner badges that open the garage's panel and yours; and the Debug tab fixing a bike
-## up, now or by itself while riding (see Shed.debug_fix_bike). Run from tests/run_tests.gd:
+## and the corner badges that open the garage's panel and yours; and the Debug tab with no bike
+## fixing on it. Run from tests/run_tests.gd:
 ## its _test_menu_* functions hand over to these.
 
 var t: Node   # the test runner: check(), get_tree()
@@ -91,48 +91,17 @@ func test_layout() -> void:
 	await _frames(1)
 
 
-## Debug: Fix my bike now puts the bike right (wear, punctures, faults, the chain, fuel), and the
-## automatic fix does it by itself whenever the bike you're riding needs it.
+## Debug: there's no fixing a bike up any more (Simon: "remove fixing bike from debug menu"),
+## and no punctures to give one.
 func test_fix_bike() -> void:
 	Shed.start_new("Tester", 81)
-	var me := Shed.me()
-	var bike: int = t._bike_named("Old Faithful")
-	var tyre := Shed.item_on(bike, "rear_tyre")
-	var chain := Shed.item_on(bike, "chain")
-	var tank := Shed.item_on(bike, "tank")
-	var wreck := func() -> void:
-		for id in Shed.bikes[bike]["slots"].values():
-			if not Shed.items.has(int(id)):
-				continue
-			Shed.items[int(id)]["wear"] = 0.6
-			Shed.items[int(id)]["rust"] = 0.3
-		Shed.puncture_tyre(bike, "rear", "fast", 1.2)
-		Shed.items[chain]["slack"] = 50.0
-		Shed.bikes[bike]["faults"] = {"lever": "clutch"}
-		if tank != 0:
-			Shed.items[tank]["fluid"] = {"type": "unleaded", "litres": 0.5, "age": 0.0}
-	wreck.call()
-	check(DebugTab.needs_fix(bike) and not Roadside.active(bike).is_empty(), "a worn bike, a puncture, a slack chain and a snapped lever")
 	var tab := DebugTab.new()
 	t.add_child(tab)
-	Shed.bikes[bike]["rider"] = me
-	Shed.crew[me]["riding"] = bike
-	tab.fix_bike()
-	check(Roadside.active(bike).is_empty() and not Puncture.punctured(Shed.items[tyre]) and float(Shed.items[tyre]["wear"]) == 0.0
-		and float(Shed.items[chain]["slack"]) == Shed.CHAIN_SLACK_SET, "Fix my bike now: no faults, the tyre holds, the chain's set")
-	check(tank == 0 or Shed.fuel_space(bike) < 0.01, "and the tank's brimmed")
-	check(not DebugTab.needs_fix(bike), "nothing left to fix")
-	# The automatic fix, while riding.
-	wreck.call()
-	tab.auto_fix_tick(10.0)
-	check(DebugTab.needs_fix(bike), "off, the automatic fix leaves it alone")
-	tab.auto_fix = true
-	tab.auto_fix_tick(10.0)
-	check(not DebugTab.needs_fix(bike), "on, it fixes the bike you're riding as soon as it needs it")
-	Shed.items[chain]["wear"] = 0.05
-	check(not DebugTab.needs_fix(bike), "a little wear isn't worth a fix")
-	Shed.crew[me]["riding"] = 0
-	Shed.bikes[bike]["rider"] = 0
+	await _frames(1)
+	var texts := tab.find_children("*", "BaseButton", true, false).map(func(b): return str((b as BaseButton).get("text")))
+	check(not texts.any(func(x): return x.contains("Fix my bike") or x.contains("fix my bike") or x.contains("puncture")),
+		"the Debug tab has no bike fixing or puncture buttons")
+	check(not tab.has_method("fix_bike") and not Shed.has_method("debug_fix_bike"), "nor anything behind them")
 	tab.queue_free()
 	await _frames(1)
 
