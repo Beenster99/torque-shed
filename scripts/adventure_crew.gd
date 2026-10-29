@@ -33,12 +33,14 @@ static var _builds := ""   # (builds(), worked out once)
 # ---------------------------------------------------------------------------- the same roads on every machine
 
 ## This game's builder hash: everything that decides what a road block holds and how the agreed route is planned
-## (RoadBlock.VERSION, the planner's version, the place profiles' format, the regional kits and country facts).
+## (RoadBlock.VERSION, the planner's version, the place profiles' format, the regional kits and country facts), and
+## what decides the scenery beside them (SceneryStreamer.VERSION and its kit library).
 ## Two games with different ones lay out different roads from the same map, so they can't ride the network together.
 static func builds() -> String:
 	if _builds == "":
 		_builds = builds_of([RoadBlock.VERSION, RoutePlanner.VERSION, PlaceProfile.FORMAT,
-			FileAccess.get_md5(RegionKit.KITS), FileAccess.get_md5(RegionKit.COUNTRIES)])
+			FileAccess.get_md5(RegionKit.KITS), FileAccess.get_md5(RegionKit.COUNTRIES),
+			SceneryStreamer.VERSION, FileAccess.get_md5(SceneryStreamer.KITS)])
 	return _builds
 
 
@@ -48,16 +50,21 @@ static func builds_of(parts: Array) -> String:
 
 
 ## The ride hash for `region` with builder hash `with` (this game's by default): the builders, the region's cells
-## (its hash is made of theirs) and its place profile. Every machine on a network ride must have the same one.
+## (its hash is made of theirs), its place profile and its features (the scenery). Every machine on a network ride must
+## have the same one.
 static func ride_hash(region: RealRegion, with := "") -> String:
 	if region == null:
 		return ""
 	var profile := str(PlaceProfile.of_region(region).get("hash", ""))
-	return ride_hash_of(with if with != "" else builds(), region.hash, profile)
+	return ride_hash_of(with if with != "" else builds(), region.hash, profile, region.features_hash)
 
 
-static func ride_hash_of(builders: String, region_hash: String, profile_hash: String) -> String:
-	return ("%s|%s|%s" % [builders, region_hash, profile_hash]).sha1_text().substr(0, 12)
+## (A region with no features has the ride hash it had before there were any.)
+static func ride_hash_of(builders: String, region_hash: String, profile_hash: String, features_hash := "") -> String:
+	var parts := [builders, region_hash, profile_hash]
+	if features_hash != "":
+		parts.append(features_hash)
+	return "|".join(parts).sha1_text().substr(0, 12)
 
 
 ## Why this game can't ride network adventure `info` ("" if it can): a different version (`mine`, this game's

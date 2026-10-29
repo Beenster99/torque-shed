@@ -80,6 +80,8 @@ var roads: RoadStreamer
 var roads_region: RealRegion
 ## The planned ride's places (its stops, fuel, start and destination) beside the network's roads, or null (NetSites).
 var net_sites: NetSites
+## The scenery round the riders on the network ride (SceneryStreamer); null on the single road.
+var scenery: SceneryStreamer
 var _net_y := {}         # route knot -> the network road's height there (network_y)
 var _net_y_hint := -1
 var _box := _Results.new()
@@ -162,6 +164,9 @@ func _start_network() -> bool:
 	net_sites = NetSites.new()
 	net_sites.setup(self)   # (before any block is laid out: the stops' flat ground is in them)
 	add_child(net_sites)
+	scenery = SceneryStreamer.new()
+	scenery.setup(self, net)   # (beside the roads, never in them: phase D's things worth stopping for)
+	add_child(scenery)
 	return true
 
 

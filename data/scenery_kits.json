@@ -1,0 +1,996 @@
+{
+ "format": 1,
+ "about": [
+  "The scenery kit library (Ride Anywhere v2, phase D: interfaces/scenery.md). Each kind the features baker keeps (tools/feature_bake.py KINDS) has a row: the phase D round that models it, and its 'default' (every region) with any of the thirteen regional kits' ids (data/region_kits.json) under 'regions' laid over it.",
+  "A row's fields: model (a SceneryStreamer model: 'standin' is round 0's post, until the round's thread adds its own), reach (m: drawn while the camera is this close), and whatever else the round's model reads. Nothing here decides where a thing is: that is the map's (features.json)."
+ ],
+ "kinds": {
+  "aerialway_pylon": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "aerialway_station": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "airfield": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "airport": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "airstrip": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "allotments": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "apron": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "aquaculture": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "aqueduct": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "artwork": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "bell_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "bench": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "blowhole": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "boardwalk": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "bollard": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "border_control": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "breakwater": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "bus_stop": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "cable_car": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "caldera_rim": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "canal_lock": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "catenary_mast": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "cattle_grid": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "cave_entrance": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "cemetery": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "chair_lift": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "charging_station": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "city_wall": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "cliff": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "communication_line": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "communication_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "cooling_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "country_border": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "crater": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "dam": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "danger_area": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "defensive_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "dock": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "drag_lift": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "dune": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "fence": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "ferry": {
+   "round": "D7",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "ferry_terminal": {
+   "round": "D7",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "fish_pass": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "fountain": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "funicular": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "gasometer": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "gate": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "generator": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "geyser": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "glacier": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "golf_bunker": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "golf_course": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "golf_fairway": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "golf_green": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "golf_tee": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "gondola": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "goods_lift": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "grave_yard": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "greenhouses": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "groyne": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "hedge": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "helipad": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "hot_spring": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "information": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "kissing_gate": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "level_crossing": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "lift_gate": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "light_rail": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "lighting_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "lock_gate": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "marina": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "milestone": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "military": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "minaret": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "minor_line": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "mixed_lift": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "moat": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "mobile_phone_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "monorail": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "narrow_gauge": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "nordic_piste": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "observation_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "orchard": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "peak": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "picnic_table": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "pier": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "piste": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "plant_nursery": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "post_box": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "power_cable": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "power_line": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "power_plant": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "power_pole": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "power_portal": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "power_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "quarry": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "quay": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "race_track": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "radar_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "railway": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "railway_halt": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "railway_station": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "range": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "rapids": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "reef": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "region_border": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "reservoir": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "retaining_wall": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "ridge": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "roller_coaster": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "runway": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "saddle": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "sally_port": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "salt_pond": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "scree": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "shingle": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "silo": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "solar": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "stile": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "storage_tank": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "street_lamp": {
+   "round": "D9",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "substation": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "taxiway": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "theme_park": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "toll_booth": {
+   "round": "D8",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "tram": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "viaduct": {
+   "round": "D2",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "viewpoint": {
+   "round": "D6",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "vineyard": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "volcano": {
+   "round": "D4",
+   "default": {
+    "model": "standin",
+    "reach": 3000
+   }
+  },
+  "wall": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 600
+   }
+  },
+  "watchtower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "water_tower": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "waterfall": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "weir": {
+   "round": "D3",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "wind_turbine": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "winter_sports": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "works": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  },
+  "zip_line": {
+   "round": "D1",
+   "default": {
+    "model": "standin",
+    "reach": 4000
+   }
+  },
+  "zoo": {
+   "round": "D5",
+   "default": {
+    "model": "standin",
+    "reach": 1500
+   }
+  }
+ }
+}

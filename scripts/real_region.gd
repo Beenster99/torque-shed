@@ -8,6 +8,8 @@ extends RefCounted
 ## Regions are read-only once loaded, so one can be shared by every thread (the planner reads it on a worker).
 
 const FORMAT := 2
+## The features files this game reads (tools/feature_bake.py FORMAT).
+const FEATURES_FORMAT := 1
 const DIR := "res://data/regions"
 ## Downloaded regions (RegionStore) live here, beside the bundled ones.
 const USER_DIR := "user://regions"
@@ -70,6 +72,15 @@ var spans: Array = []
 ## roads: [[kind (0 a river, 1 a stream, 2 a canal), PackedVector2Array of points], ...] in the region's frame. A bundled
 ## region's from its streams.json, an area's from its cells' own files (CellStore.streams).
 var streams: Array = []
+## Its things worth stopping for (tools/feature_bake.py: interfaces/scenery.md), in the region's frame: {points: [[kind,
+## x, z, height, elevation, heading, name, id], ...], lines: [[kind, PackedVector2Array, height, width, flags, name,
+## id], ...], areas: [[kind, PackedVector2Array (the outer ring), height, elevation, name, id], ...]}, kind and name as
+## Strings, the numbers null where the map says nothing. A bundled region's from its features.json, an area's from its
+## cells' own files (CellStore.features). Empty where none are baked.
+var features := {"points": [], "lines": [], "areas": []}
+## The hash of the features read ("" for none): part of the ride hash (AdventureCrew.ride_hash), never of `hash` (a road
+## block's seeds), so scenery never moves a road.
+var features_hash := ""
 var counts := {}
 ## For each node the connected piece of road it is in (numbered in order of the lowest node), and how many junctions that has.
 var component := PackedInt32Array()
@@ -150,6 +161,7 @@ static func _load(region_id: String) -> RealRegion:
 		if stitched != null:
 			stitched.spans = _cell_spans(cells, mid)
 			stitched.streams = _cell_streams(cells, mid)
+			_cell_features(cells, mid, stitched)
 			_cell_trees(cells, stitched.terrain)
 			if stitched.terrain.has_trees():
 				stitched.credits.append(TREES_CREDIT)
@@ -204,6 +216,13 @@ static func _load(region_id: String) -> RealRegion:
 	var rows_w = _json(dir.path_join("streams.json"))
 	if rows_w is Dictionary and rows_w.get("streams") is Array:
 		r.streams = _streams_in(rows_w["streams"], Vector2(r.frame_lat, r.frame_lon))
+	var features_path := dir.path_join("features.json")
+	if FileAccess.file_exists(features_path):
+		var text := FileAccess.get_file_as_string(features_path)
+		var rows_f = JSON.parse_string(text)
+		if rows_f is Dictionary:
+			add_features(r.features, rows_f, Vector2(r.frame_lat, r.frame_lon))
+			r.features_hash = text.trim_suffix("\n").sha1_text().left(12)
 	r.terrain = RealTerrain.new(dir, meta)
 	if r.terrain.live:
 		r.terrain.set_buildings(r.buildings)   # (live heights level the ground under them; baked ones were levelled by the baker)
@@ -561,6 +580,54 @@ static func _cell_streams(cells: Array[Vector2i], frame: Vector2) -> Array:
 	for c in cells:
 		out.append_array(_streams_in(CellStore.streams("%d_%d" % [c.x, c.y], idx), frame))
 	return out
+
+
+## The features of `cells` (their own files, CellStore.features, fetched if this game hasn't the ones the world's index
+## names) into region `r`, in the frame at `frame`, and their hash (made of theirs) as its features_hash. Blocks while
+## it fetches: a worker's job.
+static func _cell_features(cells: Array[Vector2i], frame: Vector2, r: RealRegion) -> void:
+	var idx := CellStore.saved_index()
+	var hashes: Array = []
+	for c in cells:
+		var got := CellStore.features("%d_%d" % [c.x, c.y], idx)
+		if not got.is_empty():
+			add_features(r.features, got, frame)
+			hashes.append("%d_%d:%s" % [c.x, c.y, str((idx.get("features", {}) as Dictionary).get("%d_%d" % [c.x, c.y], ""))])
+	hashes.sort()
+	r.features_hash = "" if hashes.is_empty() else "|".join(hashes).sha1_text().left(12)
+
+
+## Adds features file `rows` (tools/feature_bake.py's, a cell's or a bundled region's) to `into` (RealRegion.features'
+## shape) in the frame at `frame` (lat, lon). A file of another format is left out.
+static func add_features(into: Dictionary, rows: Dictionary, frame: Vector2) -> void:
+	if int(rows.get("format", 0)) != FEATURES_FORMAT:
+		return
+	var kinds: Array = rows.get("kinds", [])
+	var names: Array = rows.get("names", [""])
+	for row in rows.get("points", []):
+		if row is Array and (row as Array).size() >= 8 and int(row[0]) < kinds.size():
+			var p := to_frame(frame, float(row[1]) * 1e-5, float(row[2]) * 1e-5)
+			(into["points"] as Array).append([str(kinds[int(row[0])]), p.x, p.y, row[3], row[4], row[5],
+				str(names[int(row[6])]) if int(row[6]) < names.size() else "", row[7]])
+	for part: String in ["lines", "areas"]:
+		var first := 6 if part == "lines" else 5
+		for row in rows.get(part, []):
+			if not row is Array or (row as Array).size() < first + 4 or int(row[0]) >= kinds.size():
+				continue
+			var pts := PackedVector2Array()
+			var lat := int(row[first])
+			var lon := int(row[first + 1])
+			pts.append(to_frame(frame, lat * 1e-5, lon * 1e-5))
+			for k in range(first + 2, (row as Array).size() - 1, 2):
+				lat += int(row[k])
+				lon += int(row[k + 1])
+				pts.append(to_frame(frame, lat * 1e-5, lon * 1e-5))
+			var at := 4 if part == "lines" else 3
+			var nm := str(names[int(row[at])]) if int(row[at]) < names.size() else ""
+			if part == "lines":
+				(into["lines"] as Array).append([str(kinds[int(row[0])]), pts, row[1], row[2], int(row[3]), nm, row[5]])
+			else:
+				(into["areas"] as Array).append([str(kinds[int(row[0])]), pts, row[1], row[2], nm, row[4]])
 
 
 ## The trees of `cells` (their own files, CellStore.trees, fetched if this game hasn't the ones the world's index names)

@@ -152,6 +152,19 @@ static func trees(cell: String, idx: Dictionary) -> Dictionary:
 	return v if v is Dictionary and v.get("trees") is String else {}
 
 
+## Where cell "ROW_COL"'s features are (tools/feature_bake.py: its things worth stopping for), beside the index.
+static func features_url(cell: String) -> String:
+	return index_url.get_base_dir().path_join("feature/c%s.json" % cell)
+
+
+## The features of cell `cell` ("ROW_COL"): tools/feature_bake.py's file (RealRegion.add_features reads it), from the copy
+## kept on disk if it is the one index `idx` names, else fetched (and kept). {} when the index has none for it, or it
+## can't be had. Blocks while it fetches: a worker's job.
+static func features(cell: String, idx: Dictionary) -> Dictionary:
+	var v = _kept_json("features", "feature", cell, idx, features_url(cell))
+	return v if v is Dictionary and v.get("points") is Array else {}
+
+
 ## A cell's own file of the world's store (its index's `key` hash names the one wanted), from the copy kept on disk
 ## under `folder` if it is that one, else fetched (and kept): its JSON, or null when the index has none or it can't be had.
 static func _kept_json(key: String, folder: String, cell: String, idx: Dictionary, url: String) -> Variant:
@@ -283,7 +296,7 @@ static func _used() -> Dictionary:
 
 
 ## Deletes the kept cells past `keep`, those used longest ago first (a cell kept before used.json was, by when it was
-## fetched), with their streams and trees; never one used this run. Returns how many went.
+## fetched), with their streams, trees and features; never one used this run. Returns how many went.
 static func prune() -> int:
 	_lock.lock()
 	var used := _used()
@@ -305,7 +318,7 @@ static func prune() -> int:
 			if _used_now.has(name):
 				continue
 			RegionStore._remove_tree(dir.path_join("c" + name))
-			for folder in ["stream", "tree"]:
+			for folder in ["stream", "tree", "feature"]:
 				DirAccess.remove_absolute(dir.path_join(folder).path_join("c%s.json" % name))
 			used.erase(name)
 			gone += 1
