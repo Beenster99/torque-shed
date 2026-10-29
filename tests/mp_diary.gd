@@ -125,26 +125,13 @@ func _ready() -> void:
 		return not trip.on_trip() and not Adventure.active(), 25.0)
 	var kept := AdventureDiary.load_diary(trip.photos.diary_id)
 	var kept_ok := not kept.is_empty() and bool(kept["done"]) and trip.diary_open()
-	# Taking the photo down (Simon: "We need to be able to delete wall mounted diaries"): the
-	# client, who was on the ride, asks; the photo goes from both sheds, the client's diary is
-	# deleted, and the host keeps its own copy but forgets the photo from its album.
+	# No photo on either shed's wall (Simon: the diaries go on the bookshelf, not the walls).
 	var down_ok := false
 	if home_ok and kept_ok:
 		trip.close_diary()
 		var key := str((kept["photo"] as Dictionary).get("key", ""))
-		var hung := AdventureDest.photo_on_wall(key)
-		if role == "client" and not hung.is_empty():
-			Shed.request({"a": "diary_delete", "furniture": int(hung["id"])})
-		var gone := await _until(func(): return key != "" and AdventureDest.photo_on_wall(key).is_empty(), 15.0)
-		var files_ok := await _until(func():
-			var here := AdventureDiary.load_diary(str(kept["id"]))
-			return here.is_empty() if role == "client" else not here.is_empty(), 5.0)
-		var album_ok := true
-		if role == "host":
-			album_ok = AdventureDest.album_of(Settings.player_name).all(func(p): return str(p["key"]) != key)
-		down_ok = not hung.is_empty() and gone and files_ok and album_ok
-		print("MP diary note %s: photo %s was up %s, taken down for both %s, diary %s %s, host's album forgot it %s" % [
-			role, key, not hung.is_empty(), gone, "deleted" if role == "client" else "kept", files_ok, album_ok])
+		down_ok = key != "" and AdventureDest.photo_on_wall(key).is_empty() and AdventureDiary.list().any(func(e): return str(e["id"]) == str(kept["id"]))
+		print("MP diary note %s: photo %s on no wall and its diary on the shelf %s" % [role, key, down_ok])
 	var ok := ok_start and stop_ok and arrived and log_ok and photos_ok and home_ok and kept_ok and down_ok
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
@@ -154,7 +141,7 @@ func _ready() -> void:
 	DirAccess.remove_absolute(AdventureDest.album_path)
 	_wipe(AdventureDiary.root)
 	PhotoCapture.fake_source = Callable()   # (a lambda of this script's, not left behind it)
-	print("MP diary %s %s: on it=%s, the client's stop and the host's sunset in both logs=%s, arrived=%s, the diary's highlights the shared ones=%s, both riders' photos in it, credited=%s, home with the diary kept and open=%s, the photo taken down and its diary deleted=%s" % [
+	print("MP diary %s %s: on it=%s, the client's stop and the host's sunset in both logs=%s, arrived=%s, the diary's highlights the shared ones=%s, both riders' photos in it, credited=%s, home with the diary kept and open=%s, no photo on the wall, the diary on the shelf=%s" % [
 		"PASS" if ok else "FAIL", role, ok_start, stop_ok, arrived, log_ok, photos_ok, home_ok and kept_ok, down_ok])
 	get_tree().quit(0 if ok else 1)
 

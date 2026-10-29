@@ -2,8 +2,8 @@ extends Node
 ## Two-process co-op check of an adventure's destination, run by tests/mp_test.sh: a host and a
 ## client start the real game; the host starts an adventure for both (a short one, so it loads quickly). The client rides to the finish: both
 ## must be brought to the destination together (each parked past the finish, seeing the other
-## there), both get XP, the photo must hang on the shed wall on both games and be in each
-## player's own album. Then the host rides everyone home.
+## there), both get XP, the photo must be in each player's own album and on neither shed's wall
+## (the diary's on the bookshelf). Then the host rides everyone home.
 
 const Rides := preload("res://tests/rides.gd")
 
@@ -68,7 +68,7 @@ func _ready() -> void:
 			int(Shed.adventure.get("arrived", 0)), both_there,
 			trip.world.distance_of(main.bike.global_position, "check_me") if trip.world and main.bike else -1.0,
 			trip.world.distance_of(_remote_bike().global_position, "check_them") if trip.world and _remote_bike() else -1.0, ds])
-	# The photo: on the shed wall on both games, and in each player's own album; XP for both.
+	# The photo: in each player's own album, on neither game's shed wall; XP for both.
 	var photo_ok := false
 	var key := [""]
 	if arrived_ok:
@@ -77,7 +77,7 @@ func _ready() -> void:
 			key[0] = str(p.get("key", ""))
 			var hung := AdventureDest.photo_on_wall(key[0])
 			var mine := AdventureDest.album_of(Settings.player_name).filter(func(x): return str(x["key"]) == key[0])
-			return key[0] != "" and not hung.is_empty() and (p["names"] as Array).size() == 2 and mine.size() == 1, 15.0)
+			return key[0] != "" and hung.is_empty() and (p["names"] as Array).size() == 2 and mine.size() == 1, 15.0)
 	var xp_ok := await _until(func(): return int(Progress.profile.get("xp", 0)) - xp0[0] >= 10, 10.0)
 	print("MP dest note %s: photo %s on the wall %s and in my album %d, XP %d -> %d" % [role, key[0],
 		not AdventureDest.photo_on_wall(key[0]).is_empty(), AdventureDest.album_of(Settings.player_name).size(), xp0[0], int(Progress.profile.get("xp", 0))])
@@ -90,16 +90,16 @@ func _ready() -> void:
 			asked[0] = true
 			Adventure.menu_action()
 		return not trip.on_trip() and main.bike == null and not Adventure.active(), 25.0)
-	var still_hung := not AdventureDest.photo_on_wall(key[0]).is_empty()
-	var ok := ok_start and arrived_ok and both_there and photo_ok and xp_ok and stays and home_ok and still_hung
+	var never_hung := AdventureDest.photo_on_wall(key[0]).is_empty()
+	var ok := ok_start and arrived_ok and both_there and photo_ok and xp_ok and stays and home_ok and never_hung
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
 	DirAccess.remove_absolute(AdventureDest.album_path)
-	print("MP dest %s %s: host started it=%s, arrived=%s, both brought to the destination=%s, photo on the wall and in the album=%s, XP=%s, stays till Ride home=%s, home with the photo still up=%s" % [
-		"PASS" if ok else "FAIL", role, ok_start, arrived_ok, both_there, photo_ok, xp_ok, stays, home_ok and still_hung])
+	print("MP dest %s %s: host started it=%s, arrived=%s, both brought to the destination=%s, photo in the album and not on the wall=%s, XP=%s, stays till Ride home=%s, home with no photo up=%s" % [
+		"PASS" if ok else "FAIL", role, ok_start, arrived_ok, both_there, photo_ok, xp_ok, stays, home_ok and never_hung])
 	get_tree().quit(0 if ok else 1)
 
 

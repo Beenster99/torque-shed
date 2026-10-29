@@ -814,6 +814,7 @@ func _run_all() -> void:
 	await _t(&"_test_smooth_real")
 	print("Simon's v0.22.0 round: deleting a wall-mounted diary, and a more dipped dipped beam")
 	await _t(&"_test_diary_delete_take_down")
+	await _t(&"_test_diary_remove_all")
 	await _t(&"_test_beam_dipped")
 	await _t(&"_test_beam_ride")
 	await _t(&"_test_smooth_surface")
@@ -23931,6 +23932,10 @@ func _test_smooth_ride() -> void:
 
 func _test_diary_delete_take_down() -> void:
 	load("res://tests/diary_delete_tests.gd").new(self).test_take_down()
+
+
+func _test_diary_remove_all() -> void:
+	load("res://tests/diary_delete_tests.gd").new(self).test_remove_all()
 
 
 func _test_beam_dipped() -> void:
