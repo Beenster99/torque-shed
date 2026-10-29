@@ -865,6 +865,11 @@ func _run_all() -> void:
 	await _t(&"_test_scenery_lay_out")
 	await _t(&"_test_scenery_filing")
 	await _t(&"_test_scenery_ride")
+	print("Ride Anywhere v2, phase D round 1: the skyline (turbines, pylons and wires, towers, lifts)")
+	await _t(&"_test_skyline_models")
+	await _t(&"_test_skyline_lines")
+	await _t(&"_test_skyline_block")
+	await _t(&"_test_skyline_regions")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22751,6 +22756,26 @@ func _test_scenery_filing() -> void:
 
 func _test_scenery_ride() -> void:
 	await _scenery().test_ride()
+
+
+func _skyline() -> RefCounted:
+	return load("res://tests/skyline_tests.gd").new(self)
+
+
+func _test_skyline_models() -> void:
+	_skyline().test_models()
+
+
+func _test_skyline_lines() -> void:
+	_skyline().test_lines()
+
+
+func _test_skyline_block() -> void:
+	await _skyline().test_block()
+
+
+func _test_skyline_regions() -> void:
+	_skyline().test_regions()
 
 
 func _coop() -> RefCounted:
