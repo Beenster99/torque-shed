@@ -304,6 +304,7 @@ func _run_all() -> void:
 	await _t(&"_test_engine_bank")
 	await _t(&"_test_engine_events")
 	await _t(&"_test_engine_users")
+	await _t(&"_test_engine_loop_clicks")
 	await _t(&"_test_engine_samples")
 	await _t(&"_test_gear_clunks")
 	await _t(&"_test_starter_variety")
@@ -10949,6 +10950,75 @@ func _test_engine_users() -> void:
 	es.rpm = 120.0
 	es._process(1.0 / 60.0)
 	check(es.cranking, "a remote bike's starter is heard when its revs rise with the engine off")
+	es.queue_free()
+	await get_tree().process_frame
+
+
+## Simon heard the engines clicking: a loop played a touch slower than it was made (the revs just
+## under a loop's rpm) clicked every time it came round, Godot's resampler reading past its end
+## into silence; and a loop's player was started and stopped mid-wave as the revs moved between
+## loops. Every loop now carries its own start on past its end, players ease in and out, and a
+## made two-stroke's loop is warmed up long enough to come round seamlessly.
+func _test_engine_loop_clicks() -> void:
+	var spec := EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0})
+	var x := EngineSynth.render_loop(spec, "ex_on", 3000.0)
+	var w := EngineSynth.to_stream(EngineSynth.to_bytes(x), true)
+	var pad_ok := w.loop_end == x.size() and w.data.size() == (x.size() + EngineSynth.LOOP_PAD) * 2
+	for i in EngineSynth.LOOP_PAD:
+		pad_ok = pad_ok and w.data.decode_s16((x.size() + i) * 2) == w.data.decode_s16(i * 2)
+	check(pad_ok, "a made engine loop carries its first %d samples on past its end" % EngineSynth.LOOP_PAD)
+	check(EngineSynth.to_stream(EngineSynth.to_bytes(x), false).data.size() == x.size() * 2, "a one-shot isn't padded")
+	var rec := "res://audio/engines/2stroke_1/ex_on_5760.wav"
+	var r1 := EngineBank._load_wav(rec, true)
+	var r2 := EngineBank._load_wav(rec, true)
+	var frames := r1.data.size() / 2 - EngineSynth.LOOP_PAD
+	check(r1.loop_end == frames and r2.loop_end == frames and r2.data.size() == r1.data.size() and frames > 1000,
+		"so does a recorded loop, padded once however often it's loaded (%d, %d of %d)" % [r1.loop_end, r2.loop_end, frames])
+	var amb: AudioStreamWAV = Sfx.stream("amb_out")
+	check(amb.data.size() == (amb.loop_end + EngineSynth.LOOP_PAD) * 2, "and the shed's looped sounds")
+	# A made two-stroke comes round seamlessly: one more loop's warm-up changes nothing.
+	var two := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	var rpm := EngineSynth.bucket_rpms(two)[-2]
+	var info := EngineSynth.loop_info(two, rpm)
+	var a := EngineSynth.render_loop(two, "ex_on", rpm, 3)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(EngineSynth.signature(two)) + 3 * 7919
+	var b := EngineSynth._exhaust(two, info["rpm"], 1.0, EngineSynth._cycle_events(two, info, true, rng), info["n"],
+		EngineSynth.WARMUP_TWO_STROKE + int(info["n"]), rng)
+	var jump := 0.0
+	var e := 0.0
+	for i in a.size():
+		jump = maxf(jump, absf(a[i] - b[i]))
+		e += a[i] * a[i]
+	jump /= sqrt(e / a.size())
+	check(jump < 0.01, "a made two-stroke's loop comes round without a jump (%.4f of its level)" % jump)
+	# The revs leaping from one loop to another: the old ones fade out, the new ones fade in.
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(spec)
+	es.bank.bake_now()
+	es.running = true
+	es.throttle = 1.0
+	es.rpm = 3000.0
+	for i in 60:
+		es._process(1.0 / 60.0)
+	var before: Array = es._assigned["ex_on"].values()
+	es.rpm = 7000.0
+	es._process(1.0 / 60.0)
+	var after: Array = es._assigned["ex_on"].values()
+	var easing := before.all(func(p): return p.playing and not after.has(p))
+	var coming: AudioStreamPlayer3D = after[0] if not after.is_empty() else null
+	var want := linear_to_db(0.0001)
+	if coming:
+		for wgt in es.bank.mix_weights(7000.0, es._load):
+			if wgt[0] == "ex_on" and es._assigned["ex_on"].get(wgt[1]) == coming:
+				want = linear_to_db(float(wgt[2]) * es._level)
+	check(before.size() > 0 and easing, "a loop the revs have left behind fades out rather than stopping dead")
+	check(coming != null and coming.volume_db < want - 3.0, "and the new one comes in from quiet (%.1f dB, heading for about %.1f)" %
+		[coming.volume_db if coming else 0.0, want])
+	for i in 30:
+		es._process(1.0 / 60.0)
+	check(before.all(func(p): return not p.playing or after.has(p)) and (es._fading["ex_on"] as Array).is_empty(), "and stops once it's silent")
 	es.queue_free()
 	await get_tree().process_frame
 

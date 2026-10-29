@@ -145,10 +145,13 @@ static func _load_wav(path: String, loop: bool) -> AudioStreamWAV:
 		wav = ResourceLoader.load(path) as AudioStreamWAV
 	else:
 		wav = AudioStreamWAV.load_from_file(path)
-	if wav and loop:
+	if wav and loop and not wav.has_meta("padded"):
+		# (The shipped ones are shared, cached by ResourceLoader: set up and padded the once.)
 		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		wav.loop_begin = 0
 		wav.loop_end = int(wav.get_length() * wav.mix_rate)
+		EngineSynth.pad_loop(wav)
+		wav.set_meta("padded", true)
 	return wav
 
 
