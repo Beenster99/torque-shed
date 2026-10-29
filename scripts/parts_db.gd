@@ -12,8 +12,7 @@ const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc",
 	"rearsets", "guards", "number_boards", "swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav",
 	"lever_guards"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
-## A puncture repair kit is carried the same way: its "litres" are the plugs left in it.
-const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube", "puncture_kit"]
+const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
 	"frame": "Frame", "fork": "Front fork", "shock": "Rear suspension", "wheel": "Wheel", "tyre": "Tyre",
 	"disc": "Brake disc", "caliper": "Brake caliper", "pads": "Brake pads", "master": "Master cylinder",
@@ -26,7 +25,6 @@ const KIND_NAMES := {
 	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
 	"swingarm": "Swingarm", "steering_damper": "Steering damper", "tank_bag": "Tank bag", "aux_tank": "Auxiliary fuel tank",
 	"toolbox": "Toolbox", "satnav": "Sat nav", "lever_guards": "Lever guards", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
-	"puncture_kit": "Puncture repair kit",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
@@ -132,14 +130,9 @@ const SATNAV_FEATURES := {"map": "the map", "route": "the way to go", "fuel": "t
 ## lets you sort out at the roadside, for later)}. Packed in this order.
 const TOOLBOX_CONTENTS := {
 	"tools": {"name": "Tool roll (spanners, sockets, screwdrivers)", "short": "tools", "price": 25, "mass": 1.5, "fixes": "bolts"},
-	"plug_kit": {"name": "Tyre plug kit", "short": "plug kit", "price": 12, "mass": 0.3, "fixes": "puncture"},
-	"pump": {"name": "Mini tyre pump", "short": "pump", "price": 35, "mass": 0.8, "fixes": "pressure"},
-	"spare_chain": {"name": "Spare chain and split link", "short": "spare chain", "price": 45, "mass": 1.6, "fixes": "chain"},
 	"oil": {"name": "Litre of engine oil", "short": "oil", "price": 10, "mass": 1.0, "fixes": "oil"},
 	"brake_fluid": {"name": "Bottle of brake fluid", "short": "brake fluid", "price": 8, "mass": 0.3, "fixes": "brakes"},
 	"chain_lube": {"name": "Can of chain lube", "short": "chain lube", "price": 9, "mass": 0.4, "fixes": "lube"},
-	"levers": {"name": "Spare clutch and brake levers", "short": "levers", "price": 20, "mass": 0.3, "fixes": "levers"},
-	"fuses": {"name": "Fuses, cable ties and duct tape", "short": "fuses and tape", "price": 6, "mass": 0.2, "fixes": "electrics"},
 }
 const ECU_AID_NAMES := {"traction": "traction control", "abs": "ABS", "anti_wheelie": "anti-wheelie",
 	"stability": "stability control"}
@@ -158,7 +151,6 @@ const KIND_MATERIAL := {
 	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
 	"swingarm": "metal", "steering_damper": "metal", "tank_bag": "fabric", "aux_tank": "metal", "toolbox": "metal",
 	"satnav": "electronics", "lever_guards": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
-	"puncture_kit": "mixed",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
 	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
@@ -428,8 +420,6 @@ func spec_line(id: String) -> String:
 		"chain":
 			bits = [p["type"], "power loss %.1f%%" % (float(p["friction"]) * 100.0), "stretches %s" % ("slowly" if p["stretch"] < 6.0 else "fast" if p["stretch"] > 10.0 else "normally"),
 				"lube lasts %s" % Units.distance(float(p["lube_life"]), 0)]
-		"puncture_kit":
-			bits = ["%d plugs" % int(p["litres"]), "find the hiss, push a plug in"]
 		"chain_lube":
 			bits = [p["container"], "%.1f L (about %d coats)" % [p["litres"], roundi(float(p["litres"]) / 0.03)], "lasts x%.1f" % float(p["lasts"])]
 		"side_stand":

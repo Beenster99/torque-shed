@@ -3,8 +3,8 @@ extends RefCounted
 ## Spare parts carried in a bike's toolbox, and working on the bike with its tools at the side
 ## of the road on an adventure.
 ##
-## A toolbox still packs its kit as it always has (the tool roll, the plug kit, the pump, oil,
-## fuses and so on: PartsDB.TOOLBOX_CONTENTS, see Shed.toolbox_pack). As well as that, a real
+## A toolbox still packs its kit as it always has (the tool roll, oil, brake fluid and chain lube:
+## PartsDB.TOOLBOX_CONTENTS, see Shed.toolbox_pack). As well as that, a real
 ## part from the catalogue can go in it as a spare, as long as it's one of the small things worth
 ## carrying on a ride (SPARE_KINDS: spark plugs, brake pads, filters, a master cylinder or caliper,
 ## a headlight, a chain and sprockets, mirrors, indicators, the horn, the ECU...) and it weighs no

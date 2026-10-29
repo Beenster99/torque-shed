@@ -888,7 +888,7 @@ func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
 	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)]
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -906,11 +906,6 @@ static func _coat_sig(it: Dictionary) -> String:
 		return ""
 	return "|q%.3f:%.3f:%.3f:%.3f" % [float(it.get("paint_quality", 0.0)), float(it.get("paint_runs", 0.0)), float(it.get("primer", 0.0)),
 		float(it.get("coat_q", 0.0))]
-
-
-## A tyre gone soft or flat is drawn squashed out (see BikeModel.set_flat): redrawn as it changes.
-static func _air_sig(it: Dictionary) -> String:
-	return "|air%.1f" % Puncture.lost(it) if Puncture.lost(it) > 0.0 else ""
 
 
 ## The engine's own slots, to look up quickly.
@@ -955,7 +950,7 @@ func _item_look_sig(item_id: int) -> Array:
 		_look_sigs.clear()
 	# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
 	var before := "%s:%.1f:%.1f:%s:%s:" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", "")]
-	var after := Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it) + ("|sh" if it.get("shine") is Dictionary else "")
+	var after := Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + ("|sh" if it.get("shine") is Dictionary else "")
 	_look_sigs[item_id] = [h, before, after]
 	return [before, after]
 
@@ -1040,12 +1035,6 @@ func _make_bike_view(id: int) -> Node3D:
 		lean.basis = Basis(Vector3.BACK, deg_to_rad(74.0))
 		lift = 0.12
 	model.position.y = build.rear_radius + lift
-	if lift == 0.0 and stand != "down":
-		# Standing on a flat tyre, the bike has sunk onto that rim (see BikeModel.set_flat).
-		var drop_f := BikeModel.flat_drop(build, "front")
-		var drop_r := BikeModel.flat_drop(build, "rear")
-		model.position.y -= (drop_f + drop_r) * 0.5
-		model.rotation.x = -(drop_f - drop_r) / maxf(build.wheelbase, 0.5)
 	model.stand_pose = stand
 	model.geometry = Shed.geometry_of(id)
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)

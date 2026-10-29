@@ -204,9 +204,7 @@ static func _peak(w: AudioStreamWAV) -> float:
 	return p / 32768.0
 
 
-## A loose part rattles: the made sound is a buzz of quick, irregular contacts with nothing
-## ringing on, not a ping; on the move it's a loop from the loose part, louder and higher with
-## the revs and the road, and no pinging one-shots. Bolted up, it stops.
+## The rattle sound: a buzz of quick, irregular contacts with nothing ringing on, not a ping.
 func test_rattle() -> void:
 	# The sound itself.
 	var d := SfxSynth.make("rattle", 0)
@@ -254,74 +252,6 @@ func test_rattle() -> void:
 			zc += 1
 	var bright := zc / 2.0 / (d.size() / float(SfxSynth.RATE))
 	check(bright > 700.0 and bright < 6000.0, "metallic: its energy round %.0f Hz" % bright)
-	# On the move.
-	AdventureTrip.instant = true
-	var main: Node = load("res://scenes/main.tscn").instantiate()
-	t.add_child(main)
-	await t.get_tree().process_frame
-	main._start_session()
-	Shed.start_new("Tester", 9)
-	await t.get_tree().physics_frame
-	var faithful: int = t._bike_named("Old Faithful")
-	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
-	main._left_bike = 0
-	Rides.start(20.0, 91)
-	await _ticks(10)
-	var trip: AdventureTrip = main.trip
-	check(trip.on_trip() and main.bike != null, "out on an adventure")
-	if main.bike == null:
-		main.queue_free()
-		return
-	trip.world.preload_range(0.0, 1200.0)
-	main.bike.engine_on = true
-	main.bike.fuel_litres = main.bike.build.fuel_capacity
-	Shed.request({"a": "roadside_fault", "kind": "rattle", "slot": "exhaust"})
-	await _ticks(3)
-	# (the world's one-shots: a sat nav or menu blip isn't the rattle pinging)
-	var in_world := func() -> Array:
-		return t.get_tree().get_nodes_in_group(Sfx.ONESHOT_GROUP).filter(func(p): return p is AudioStreamPlayer3D and not p.is_queued_for_deletion())
-	var before: int = in_world.call().size()
-	var r: AudioStreamPlayer3D = main._rattle
-	check(r != null and r.playing and str(r.get_meta("loop", "")) == "rattle" and r.get_parent() == main.bike,
-		"the loose exhaust rattles on the bike (%s)" % (str(r.get_meta("loop", "")) if r else "nothing"))
-	if r == null:
-		main.queue_free()
-		return
-	var tip: Vector3 = main.bike.model.to_global(main.bike.model.slot_bounds("exhaust").get_center())
-	check(r.global_position.distance_to(tip) < 0.2, "from the exhaust itself (%.2f m off)" % r.global_position.distance_to(tip))
-	check(slider_bus(r.bus) == "SFX", "on the sound effects bus")
-	main.bike.rpm = main.bike.build.idle_rpm
-	main.bike.surface = "tarmac"
-	main._rattle_sound()
-	var idle := [float(r.get_meta("base_db")), r.pitch_scale]
-	main.bike.rpm = main.bike.build.redline * 0.95
-	main._rattle_sound()
-	var revved := [float(r.get_meta("base_db")), r.pitch_scale]
-	main.bike.linear_velocity = -main.bike.global_basis.z * 15.0
-	main.bike.speed = 15.0
-	main.bike.surface = "gravel"
-	main._rattle_sound()
-	var rough := [float(r.get_meta("base_db")), r.pitch_scale]
-	check(revved[0] > idle[0] + 4.0 and revved[1] > idle[1], "it rattles louder and quicker with the revs (%.0f dB x%.2f idling, %.0f dB x%.2f revved)" % [idle[0], idle[1], revved[0], revved[1]])
-	check(rough[0] > revved[0] and rough[1] >= revved[1], "and more on rough ground (%.0f dB x%.2f on gravel)" % [rough[0], rough[1]])
-	await _ticks(120)
-	var sounding: Array = in_world.call().map(func(p): return str(p.get_meta("sound", p.name)))
-	check(sounding.size() <= before, "no pinging one-shots on top (%d, was %d: %s)" % [sounding.size(), before, str(sounding)])
-	main.bike.engine_on = false
-	main.bike.linear_velocity = Vector3.ZERO
-	main.bike.speed = 0.0
-	main._rattle_sound()
-	check(not r.playing, "stopped with the engine off it's quiet")
-	main.bike.engine_on = true
-	main._rattle_sound()
-	Roadside._fix(Shed.me(), faithful, "rattle", {"quality": 1.0})
-	main._sync_faults()
-	await _ticks(3)
-	check(not r.playing, "bolted up, the rattle stops")
-	AdventureTrip.instant = false
-	main._leave()
-	main.queue_free()
-	await _ticks(2)
 
 
 ## How long after its loudest moment `d` takes to fall 20 dB and stay there (ms), on 2 ms frames.

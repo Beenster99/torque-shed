@@ -69,10 +69,6 @@ static func inspect(bike_id: int) -> Array:
 		var perished := float(t["rust"]) > 0.6 or float(t["wear"]) > 0.95
 		rows.append(_row("Tyres", "%s tyre condition (cracks, cuts, bulges)" % side_name,
 			"perished sidewalls" if perished else "sound", not perished, "Cracked and perished: replace the %s tyre." % side))
-		var holds := not Puncture.punctured(t) and Puncture.lost(t) < 0.3
-		rows.append(_row("Tyres", "%s tyre holds its air" % side_name, "puncture" if Puncture.punctured(t) else (
-			"%.1f bar down" % Puncture.lost(t) if Puncture.lost(t) >= 0.3 else "holds"), holds,
-			"Plug the puncture (or fit a new %s tyre) and pump it up." % side if Puncture.punctured(t) else "Pump the %s tyre up." % side))
 		if t.has("bead"):
 			var seated := float(t["bead"]) >= BikeBuild.BEAD_OK
 			rows.append(_row("Tyres", "%s tyre bead seated" % side_name, _pct(float(t["bead"])), seated,

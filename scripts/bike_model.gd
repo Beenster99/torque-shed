@@ -62,7 +62,6 @@ var _front_hub: Node3D
 var _front_wheel: Node3D
 var _rear_hub: Node3D
 var _rear_wheel: Node3D
-var _flat_tyres := {}   # side -> the squashed tyre's mesh, held still as the wheel turns (see set_flat)
 var _swingarm: Node3D
 var _rider: Node3D
 ## The rider's head (helmet) and left arm, each on a pivot of its own (at the neck and the left
@@ -244,7 +243,6 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_geo_anchors.clear()
 	_rear_guard.clear()
 	_plates.clear()
-	_flat_tyres.clear()
 	_dash_face = PackedVector3Array()
 	_tank_secs = []
 	_rails = []
@@ -295,7 +293,6 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		_draw_rim(wheel, rim_r, rim_w)
 		_current_slot = side + "_tyre"
 		_draw_tyre(wheel, rim_r, build.front_radius if front else build.rear_radius, width, rim_w)
-		set_flat(side, float(build.flat.get(side, 0.0)))
 		_draw_brake(side, wheel, hub, rim_r, rim_w)
 	_draw_rear_master()
 	_draw_final_drive(zr)
@@ -5418,71 +5415,6 @@ func _tread_ring(wheel: Node3D, radius: float, size: Vector3, count: int, sink: 
 	return placed
 
 
-## A flat tyre squashed down under its rim, 0 (holding its shape) .. 1 (no air in it, see
-## Puncture): the bottom of the tyre flattened onto the ground the rim has sunk towards, and the
-## sidewalls bulging out round it. The squashed tyre is held still while the rim turns inside it
-## (see update_pose_from), so the flat stays at the bottom.
-func set_flat(side: String, amount: float) -> void:
-	var wheel := _front_wheel if side == "front" else _rear_wheel
-	if wheel == null or _build == null:
-		return
-	var tyre_mi: MeshInstance3D = null
-	for c in wheel.get_children():
-		if c is MeshInstance3D and c.has_meta("hoop"):
-			tyre_mi = c
-			break
-	if tyre_mi == null:
-		return
-	if absf(float(tyre_mi.get_meta("flat", 0.0)) - amount) < 0.02 and (amount > 0.02) == _flat_tyres.has(side):
-		return
-	if not tyre_mi.has_meta("round"):
-		tyre_mi.set_meta("round", tyre_mi.mesh)
-	var round_mesh: Mesh = tyre_mi.get_meta("round")
-	tyre_mi.set_meta("flat", amount)
-	if amount <= 0.02:
-		tyre_mi.mesh = round_mesh
-		tyre_mi.rotation.x = 0.0
-		_flat_tyres.erase(side)
-		return
-	var hoop: Vector3 = tyre_mi.get_meta("hoop")
-	# Squashed as it sits with the wheel still (it's held that way, see update_pose_from).
-	var still := Transform3D(Basis.from_euler(Vector3(0.0, 0.0, tyre_mi.rotation.z)), tyre_mi.position)
-	tyre_mi.mesh = _squashed_tyre(round_mesh, still, hoop.x, hoop.y, amount)
-	_flat_tyres[side] = tyre_mi
-
-
-## How far a flat tyre lets its rim down towards the ground, metres (see Puncture).
-static func flat_drop(build: BikeBuild, side: String) -> float:
-	var front := side == "front"
-	var h := (build.front_radius - build.front_rim_radius) if front else (build.rear_radius - build.rear_rim_radius)
-	return float(build.flat.get(side, 0.0)) * Puncture.SQUASH * h
-
-
-## A copy of a tyre's mesh squashed flat by `amount` (0..1), from where it sits on the wheel (`xf`).
-static func _squashed_tyre(round_mesh: Mesh, xf: Transform3D, rim_r: float, radius: float, amount: float) -> ArrayMesh:
-	var h := radius - rim_r
-	var ground := -(radius - amount * Puncture.SQUASH * h)
-	var inv := xf.affine_inverse()
-	var out := ArrayMesh.new()
-	for si in round_mesh.get_surface_count():
-		var arrays := round_mesh.surface_get_arrays(si)
-		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		for i in verts.size():
-			var p := xf * verts[i]
-			var dist := Vector2(p.y, p.z).length()
-			# Below the axle the sidewalls bulge out, most at mid-height, more the nearer the ground.
-			if p.y < 0.0 and dist > rim_r:
-				var low := clampf(-p.y / maxf(radius, 0.01), 0.0, 1.0)
-				var wall := sin(PI * clampf((dist - rim_r) / maxf(h, 0.005), 0.0, 1.0))
-				p.x *= 1.0 + 0.45 * amount * low * low * wall
-			if p.y < ground:
-				p.y = ground
-			verts[i] = inv * p
-		arrays[Mesh.ARRAY_VERTEX] = verts
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return out
-
-
 ## The maker's name and the size moulded into both sidewalls, in raised rubber a shade lighter
 ## than the tyre: "TORQUE RADIAL" over the top, "120/70 ZR17" under it. Every letter on a tyre
 ## goes into one mesh (its text kept in the "text" meta): drawn one by one, a bike's 88 letters
@@ -6501,11 +6433,6 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	var front_axle := Vector3(0.0, 0.0, -wb * 0.5) + _build.fork_path * comp_f
 	_front_hub.position = _steer_node.transform.affine_inverse() * front_axle
 	_front_wheel.rotation.x = -spin_f
-	# A flat tyre stays squashed at the bottom while the rim turns inside it (see set_flat).
-	if _flat_tyres.has("front"):
-		(_flat_tyres["front"] as Node3D).rotation.x = spin_f
-	if _flat_tyres.has("rear"):
-		(_flat_tyres["rear"] as Node3D).rotation.x = spin_r
 	var rear_axle := _build.rear_axle_at(comp_r)
 	_rear_hub.position = rear_axle
 	_rear_wheel.rotation.x = -spin_r
@@ -6650,8 +6577,6 @@ func _bake_static() -> int:
 		moving[s["mi"]] = true
 	for n in _needles:
 		moving[n["node"]] = true
-	for side in _flat_tyres:
-		moving[_flat_tyres[side]] = true
 	var gone := 0
 	for slot in _slot_meshes:
 		var groups := {}    # [parent, material, shadows, layers] -> [[mesh, surface, transform], ...]
@@ -7213,22 +7138,6 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 				[_box_mesh(Vector3(0.014, 0.16, 0.004)), strip, Vector3(0.0, 0.095, 0.0335)]]
 			if level > 0.01:
 				pieces.append([_box_mesh(Vector3(0.01, 0.155 * level, 0.004)), liquid, Vector3(0.0, 0.018 + 0.0775 * level, 0.034)])
-		"Repair kit":
-			# A puncture repair kit: a little tin box with the soapy spray bottle and the T-handle reamer.
-			size = Vector3(0.16, 0.06, 0.1)
-			var steel := StandardMaterial3D.new()
-			steel.albedo_color = Color(0.7, 0.72, 0.75)
-			steel.metallic = 0.8
-			steel.roughness = 0.35
-			pieces = [[_box_mesh(Vector3(0.16, 0.05, 0.1)), body, Vector3(0.0, 0.025, 0.0)],
-				[_box_mesh(Vector3(0.162, 0.012, 0.102)), dark, Vector3(0.0, 0.05, 0.0)],
-				[_cyl_mesh(0.004, 0.09), steel, Vector3(0.03, 0.06, 0.0)],
-				[_box_mesh(Vector3(0.05, 0.012, 0.012)), dark, Vector3(0.03, 0.105, 0.0)]]
-			if level > 0.01:
-				# The plugs left, brown sticky strips in a row on the lid.
-				var n := clampi(ceili(level * 5.0), 1, 5)
-				for i in n:
-					pieces.append([_box_mesh(Vector3(0.006, 0.004, 0.05)), liquid, Vector3(-0.07 + i * 0.012, 0.058, 0.0)])
 		"Race fuel drum":
 			# A 25 litre drum stands taller and wider than the 5 litre one.
 			var k := 1.0 if float(p["litres"]) < 10.0 else 1.6
@@ -7479,7 +7388,6 @@ func build_fit_parts(build: BikeBuild, tail: bool) -> void:
 		_slot_meshes[slot] = []
 	_rear_guard.clear()
 	_plates.clear()
-	_flat_tyres.clear()
 	_dash_face = PackedVector3Array()
 	_lay_out(build)
 	_layout_cylinders(build)

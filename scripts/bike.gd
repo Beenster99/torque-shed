@@ -241,10 +241,6 @@ var burnout_time := 0.0
 ## How far a burnout has spun the bike round, radians (+ to the left), since it lit up.
 var donut_turn := 0.0
 var paddling := false      # walking the bike backwards with the rider's feet
-## What's gone wrong with it out on an adventure (Shed's bikes[id]["faults"], see Roadside):
-## a snapped chain drives nothing, a blown fuse kills the lights or the ignition, a snapped
-## lever leaves a feeble front brake or slow, crunching shifts.
-var faults := {}
 ## Wheeled along on foot (Roadside): no engine, the throttle walks it at up to Roadside.PUSH_SPEED.
 var pushing := false
 ## On a tow strap: the point on the towing bike the strap's tied to (local), else INF.
@@ -484,8 +480,6 @@ func start_engine() -> String:
 		return "Out of petrol."
 	if pushing:
 		return "You're pushing it: get on it first ({interact} to stop)."
-	if str(faults.get("fuse", "")) == "ignition":
-		return "Not even a click, and the dash is dark: a blown fuse. Get off and swap it (under the seat)."
 	_starting = start_time(start_struggle())
 	return ""
 
@@ -667,10 +661,6 @@ func _physics_process_body(delta: float) -> void:
 
 	if horn_audio:
 		horn_audio.pressed = horn and controls_enabled and not is_crashed
-	if engine_on and str(faults.get("fuse", "")) == "ignition":
-		stop_engine("The engine cut out and the dash went dark: a blown fuse.")
-	if str(faults.get("fuse", "")) == "lights":
-		beam = 0   # the lights' fuse has gone: the switch does nothing
 	# Every lamp, lens and the clocks run off the ignition: a bike that isn't running is dark.
 	var fog_on := engine_on and beam >= BEAM_FOG
 	for l in _fog:
@@ -725,8 +715,6 @@ func _physics_process_body(delta: float) -> void:
 		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * _steadiness(), 0.0, 1.0)
 	if paddling:
 		front_grip = 0.0
-	if str(faults.get("lever", "")) == "brake":
-		front_grip *= 0.15   # a stub of a lever: barely any front brake
 	# Cold pads bite a little less (see BikeHeat); hot ones never fade.
 	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque * _bite(0)
 	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque * _bite(1)
@@ -747,10 +735,6 @@ func _physics_process_body(delta: float) -> void:
 		model.update_rider(lean_angle, steer, speed, maxf(front_brake, rear_brake * 0.6) if controls_enabled else 0.0, delta)
 		# Coming to rest the rider puts their left foot down (not crashed, airborne or in a burnout).
 		model.update_foot(speed, delta, not is_crashed and burnout <= 0.0 and (wheels[0]["contact"] or wheels[1]["contact"]))
-		if heat:
-			# A tyre going flat squashes out under the rim as it loses its air (see Puncture).
-			model.set_flat("front", heat.flat(0))
-			model.set_flat("rear", heat.flat(1))
 	if effects:
 		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
 			wheels[1]["contact"], wheels[1]["slip"])
@@ -1184,8 +1168,7 @@ func kick_bars(impulse: float) -> void:
 
 func _update_engine(delta: float) -> void:
 	var rear: Dictionary = wheels[1]
-	# A snapped chain: the engine spins free with nothing to drive, as in neutral.
-	var neutral: bool = gear == NEUTRAL or bool(faults.get("chain_snap", false))
+	var neutral: bool = gear == NEUTRAL
 	var ratio := build.overall_ratio(maxi(gear, 1))
 	var wheel_rpm: float = rear["omega"] * ratio * 60.0 / TAU
 	var idle_rpm := idle_now()
@@ -1356,8 +1339,6 @@ func _select(g: int) -> void:
 	_shift_from_rpm = rpm
 	gear = g
 	_shift_timer = build.shift_time if g != NEUTRAL else 0.0
-	if str(faults.get("lever", "")) == "clutch" and g != NEUTRAL:
-		_shift_timer *= 3.5   # no clutch lever: every shift crunches in slowly
 	_since_shift = 0.0
 	gear_changed.emit(gear)
 
@@ -1512,11 +1493,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var is_front: bool = w["is_front"]
 	var tp: Dictionary = build.tyre_front if is_front else build.tyre_rear
 	var radius: float = w["radius"]
-	# A flat tyre folds under the rim: the wheel rides lower, drags and wallows (see Puncture).
-	var flat_now := heat.flat(0 if is_front else 1) if heat else 0.0
-	if flat_now > 0.0:
-		radius -= heat.squash(0 if is_front else 1, radius - (build.front_rim_radius if is_front else build.rear_rim_radius))
-	var roll_k := build.rolling * (1.0 + Puncture.FLAT_DRAG * maxf(flat_now - float(build.flat["front" if is_front else "rear"]), 0.0))
+	var roll_k := build.rolling
 	var crown := minf(float(tp.get("crown", 0.0)), radius * 0.6)
 	var travel: float = w["travel"]
 	var q_was: float = w["compression"]
@@ -1711,9 +1688,6 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	mu_surf = _fade_grip(w, mu_surf, delta)
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
-	if flat_now > 0.0:
-		# The folded carcass bunches up and lets go once a turn of the wheel: it wallows.
-		mu_surf *= 1.0 - 0.18 * flat_now * (0.5 + 0.5 * sin(float(w["spin"]) * 2.0))
 	var mu := TyreModel.mu_at(mu_surf, fz, build.total_mass * G * 0.5, tp)
 	var f_peak := mu * fz
 	var bc := TyreModel.stiffness_at_zero(tp)
@@ -2114,17 +2088,14 @@ func indicate(which: int) -> String:
 		return "No indicators on this bike"
 	if not engine_on:
 		return "The indicators need the engine running"
-	if str(faults.get("fuse", "")) == "lights":
-		return "The lights' fuse has gone: no indicators"
 	lamps.press(which)
 	Sfx.play_at("switch", global_position, -16.0)
 	return ""
 
 
-## The stop lamp from the brakes as the bike uses them (the rider's, or a menu's held brake), and the indicators' flash, self-cancel and relay tick. They need the ignition
-## (and the lights' fuse).
+## The stop lamp from the brakes as the bike uses them (the rider's, or a menu's held brake), and the indicators' flash, self-cancel and relay tick. They need the ignition.
 func _step_lamps(delta: float) -> void:
-	var live := engine_on and str(faults.get("fuse", "")) != "lights"
+	var live := engine_on
 	lamps.set_brakes(front_brake if live else 0.0, rear_brake if live else 0.0)
 	if not live:
 		lamps.set_side(0)

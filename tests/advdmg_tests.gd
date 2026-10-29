@@ -1,8 +1,9 @@
 extends RefCounted
 ## Simon: "Please stop any bike damage being incurred on an adventure, we shouldn't hear any
-## rattles. A problem with a tyre is fine." Out on an adventure the bike takes no harm: nothing
-## but the tyres wears, nothing works loose, a drop breaks nothing, and it comes home as it set
-## off (muddier and lighter on petrol); a tyre can still go down. Run from tests/run_tests.gd:
+## rattles." Then: "remove the idea of a bike taking damage on an adventure tour", punctures and
+## all. Out on an adventure the bike takes no harm: nothing wears, not even the tyres, nothing
+## works loose, a drop breaks nothing, no tyre goes down, and it comes home as it set off
+## (muddier and lighter on petrol). Run from tests/run_tests.gd:
 ## its _test_advdmg_* functions hand over to these.
 
 const Rides := preload("res://tests/rides.gd")
@@ -79,8 +80,7 @@ static func _ready_to_wear(bike_id: int) -> void:
 
 
 ## The shed's side, as the host applies every rider's ride stats: ten minutes of rough tracks on
-## an adventure (mud and all) wear the tyres and burn petrol, and nothing else on the bike
-## changes; a crew mate's ride on the adventure (a client's stats, applied on the host) the same;
+## an adventure (mud and all) burn petrol, and nothing on the bike changes, the tyres neither; a crew mate's ride on the adventure (a client's stats, applied on the host) the same;
 ## the last stats arriving just after the host ends it too; a ride at the shed meanwhile, or
 ## after, wears a bike as it always did.
 func test_shed_wear() -> void:
@@ -103,23 +103,13 @@ func test_shed_wear() -> void:
 		Shed.request({"a": "ride", "km": 0.025, "top_kmh": 95.0, "kmh": 90.0, "dirt_km": 0.06, "fly_km": 0.02, "fuel": 0.0015,
 			"spin": 0.01, "adv": true})
 	var after := _health(faithful)
-	var changed := _changed(before, after).filter(func(s): return not str(s).ends_with("_tyre"))
-	check(changed.is_empty(), "ten minutes of rough tracks on an adventure: nothing on the bike changes but the tyres %s" % str(changed))
-	check(float(Shed.items[front]["wear"]) > float(tyres[0]) and float(Shed.items[rear]["wear"]) > float(tyres[1]),
-		"the tyres wear, as on any ride (%.4f, %.4f)" % [float(Shed.items[front]["wear"]) - float(tyres[0]), float(Shed.items[rear]["wear"]) - float(tyres[1])])
+	var changed := _changed(before, after)
+	check(changed.is_empty(), "ten minutes of rough tracks on an adventure: nothing on the bike changes %s" % str(changed))
+	check(float(Shed.items[front]["wear"]) == float(tyres[0]) and float(Shed.items[rear]["wear"]) == float(tyres[1]),
+		"not even the tyres wear, burnout and all (%.4f, %.4f)" % [float(Shed.items[front]["wear"]) - float(tyres[0]), float(Shed.items[rear]["wear"]) - float(tyres[1])])
 	check(float(Shed.items[tank]["fluid"]["litres"]) < fuel - 0.5, "petrol burnt (%.2f l)" % (fuel - float(Shed.items[tank]["fluid"]["litres"])))
 	check(float(Shed.items[Shed.item_on(faithful, "frame")]["dirt"]) > dirt, "and it's muddier")
-	check(Roadside.faults_of(faithful).is_empty() and Roadside.active(faithful).is_empty(), "no fault to show for it")
-	# A puncture can still happen, and riding on it (flat) chews the tyre but not the rim.
-	var rim := Shed.item_on(faithful, "rear_wheel")
-	var rim_wear := float(Shed.items[rim]["wear"])
-	Shed.request({"a": "puncture", "side": "rear", "kind": "fast"})
-	check(Puncture.punctured(Shed.items[rear]) and not Roadside.find(faithful, "puncture", "rear").is_empty(), "a puncture still happens on an adventure")
-	var rear_wear := float(Shed.items[rear]["wear"])
-	for i in 60:
-		Shed.request({"a": "ride", "km": 0.02, "dirt_km": 0.02, "adv": true})
-	check(Puncture.lost(Shed.items[rear]) > 0.5 and float(Shed.items[rear]["wear"]) > rear_wear, "it lets the air out, and riding it wears the tyre")
-	check(float(Shed.items[rim]["wear"]) == rim_wear, "but not the wheel under it (%.4f)" % (float(Shed.items[rim]["wear"]) - rim_wear))
+	check(Roadside.active(faithful).is_empty() and not Shed.bikes[faithful].has("faults"), "no fault to show for it")
 	# A crew mate on the adventure: their game's stats, applied on the host.
 	var mate := 2
 	var theirs := 0
@@ -140,7 +130,7 @@ func test_shed_wear() -> void:
 	var mate_before := _health(theirs)
 	for i in 120:
 		Shed._ride_apply(mate, {"a": "ride", "km": 0.03, "dirt_km": 0.06, "fuel": 0.002})
-	var mate_changed := _changed(mate_before, _health(theirs)).filter(func(s): return not str(s).ends_with("_tyre"))
+	var mate_changed := _changed(mate_before, _health(theirs))
 	check(mate_changed.is_empty(), "a crew mate's ride on the adventure (applied on the host) harms nothing either %s" % str(mate_changed))
 	# Someone who stayed at the shed: their ride wears their bike as ever.
 	Shed.adventure["riders"].erase(mate)
@@ -151,7 +141,7 @@ func test_shed_wear() -> void:
 	before = _health(faithful)
 	Shed.request({"a": "adventure_end"})
 	Shed.request({"a": "ride", "km": 0.03, "dirt_km": 0.06, "fuel": 0.002, "adv": true})
-	var home := _changed(before, _health(faithful)).filter(func(s): return not str(s).ends_with("_tyre"))
+	var home := _changed(before, _health(faithful))
 	check(not Adventure.active() and home.is_empty(), "home again: nothing put on the bike for the adventure, nor by the last stats after it %s" % str(home))
 	Shed.request({"a": "ride", "km": 3.0, "dirt_km": 1.0})
 	check(not _changed(before, _health(faithful)).filter(func(s): return not str(s).ends_with("_tyre")).is_empty(),
@@ -161,8 +151,7 @@ func test_shed_wear() -> void:
 
 ## In the game: a couple of minutes ridden along an adventure's road (the roughest stretch of
 ## it) with the engine running: no fault comes up, no rattle or chain slap starts, the parts are
-## as they were but for the tyres; a drop breaks nothing; a puncture can still happen; and it
-## comes home in the same nick.
+## as they were, tyres and all; a drop breaks nothing; and it comes home in the same nick.
 func test_ride() -> void:
 	AdventureTrip.instant = true
 	var main: Node = load("res://scenes/main.tscn").instantiate()
@@ -215,7 +204,6 @@ func test_ride() -> void:
 	var s := best_s
 	var rough := {}
 	var faults_seen := []
-	var rattled := false
 	var frames := 120 * 120
 	for f in frames:
 		s = minf(s + step, w.route.total - 30.0)
@@ -229,17 +217,8 @@ func test_ride() -> void:
 		if main.bike == null:
 			break
 		rough[str(main.bike.surface)] = int(rough.get(str(main.bike.surface), 0)) + 1
-		if not main.bike.faults.is_empty() or not main._fault_seen.is_empty():
-			faults_seen.append(var_to_str(main.bike.faults) + var_to_str(main._fault_seen.keys()))
-		if main._rattle != null and is_instance_valid(main._rattle) and main._rattle.playing:
-			rattled = true
-		# A puncture may come along the way (that's allowed): pump it up so the ride goes on.
-		for side in ["front", "rear"]:
-			var ty := Shed.item_on(faithful, side + "_tyre")
-			if ty != 0 and Puncture.punctured(Shed.items[ty]):
-				Shed.items[ty].erase("puncture")
-				Shed.items[ty].erase("deflate")
-				main.bike.heat.leak[0 if side == "front" else 1] = 0.0
+		if not main._fault_seen.is_empty():
+			faults_seen.append(var_to_str(main._fault_seen.keys()))
 	await _ticks(Engine.physics_ticks_per_second * 2)   # the last stats in
 	print("    ADVENTURE RIDE: %.1f km in %d frames, surfaces %s" % [(s - best_s) / 1000.0, frames, str(rough)])
 	var off_road := 0
@@ -247,38 +226,26 @@ func test_ride() -> void:
 		if not str(k) in ["tarmac", "concrete"]:
 			off_road += int(rough[k])
 	check(s - best_s > 2500.0 and off_road > 0, "two minutes ridden along the road, %.1f km, some of it off the tarmac (%d frames)" % [(s - best_s) / 1000.0, off_road])
-	check(faults_seen.is_empty() and Roadside.faults_of(faithful).is_empty(), "no fault came up on the way %s" % str(faults_seen.slice(0, 3)))
-	check(not rattled and not main._fault_seen.has("chain_slack"), "no rattle and no chain slap")
-	var changed := _changed(before, _health(faithful)).filter(func(sl): return not str(sl).ends_with("_tyre"))
-	check(changed.is_empty(), "every part's health as it was but the tyres' %s" % str(changed))
+	check(faults_seen.is_empty() and Roadside.active(faithful).is_empty(), "no fault came up on the way %s" % str(faults_seen.slice(0, 3)))
+	check(not main._fault_seen.has("chain_slack"), "no chain slap")
+	var changed := _changed(before, _health(faithful))
+	check(changed.is_empty(), "every part's health as it was, the tyres' too %s" % str(changed))
 	check(float(Shed.items[tank]["fluid"]["litres"]) < fuel, "and the petrol burnt")
 	# A drop: nothing snaps or works loose.
 	main.bike.crash()
 	await _ticks(30)
-	check(Roadside.faults_of(faithful).is_empty() and main._fault_seen.is_empty(), "a drop breaks nothing (%s)" % str(Roadside.faults_of(faithful)))
+	check(Roadside.active(faithful).is_empty() and main._fault_seen.is_empty(), "a drop breaks nothing (%s)" % str(Roadside.active(faithful)))
 	main._get_off()   # (crashed: back on its wheels)
 	await _ticks(30)
-	# A puncture still can happen: the game's own roll, on a long enough way.
 	check(main.bike != null and not main.bike.is_crashed, "back up after the drop")
 	if main.bike:
-		main.bike.linear_velocity = Vector3.ZERO
-		await _ticks(30)
-		# (the roll needs a tyre on the ground: give the bike a moment to settle back on its wheels)
-		for i in Engine.physics_ticks_per_second * 3:
-			if main.bike.wheels.all(func(w): return w["contact"]):
-				break
-			await _ticks(1)
-		var contact: Array = main.bike.wheels.map(func(w): return w["contact"])
-		main._puncture_rolls(1.0e6)
-		await _ticks(3)
-		var punctured := Roadside.active(faithful).filter(func(f): return f["kind"] == "puncture")
-		check(not punctured.is_empty(), "a tyre can still pick up a puncture on an adventure (%s, wheels down %s)" % [str(Roadside.active(faithful)), str(contact)])
-		check(Roadside.active(faithful).all(func(f): return f["kind"] in ["puncture", "pressure"]), "and that's all that's wrong")
+		for i in 2:
+			check(main.bike.heat.pressure(i) > 1.0, "the %s tyre holds its air (%.2f bar)" % ["front" if i == 0 else "rear", main.bike.heat.pressure(i)])
 	# Home in the same nick.
 	before = _health(faithful)
 	Shed.request({"a": "adventure_end"})
 	await _ticks(Engine.physics_ticks_per_second * 2)
-	var home := _changed(before, _health(faithful)).filter(func(sl): return not str(sl).ends_with("_tyre"))
+	var home := _changed(before, _health(faithful))
 	check(not trip.on_trip() and home.is_empty(), "home: nothing done to the bike for the adventure %s" % str(home))
 	await _done(main)
 

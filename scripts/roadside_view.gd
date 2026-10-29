@@ -3,8 +3,7 @@ extends Node3D
 ## The bikes left at the side of the road on an adventure, for everyone: each up on its stand
 ## where its rider got off (kept in the route's frame, see Roadside, so the floating origin
 ## never moves it), with click targets on its parts for the walker; with its toolbox open the
-## kit is laid out on a cloth beside it, and the parts worked on show out there too (a coil of
-## the old chain, the plug kit, the pump...). And the tow straps between bikes on a tow.
+## kit is laid out on a cloth beside it, and the parts worked on show out there too. And the tow straps between bikes on a tow.
 ## A child of the AdventureWorld, so it goes when the adventure does.
 
 var world: AdventureWorld
@@ -155,8 +154,6 @@ func _kit_piece(what: String) -> Node3D:
 			spanner.position = Vector3(0.05, 0.03, 0.0)
 			roll.add_child(spanner)
 			return roll
-		"spare_chain":
-			return _coil()
 		"oil", "brake_fluid", "chain_lube":
 			var bottle := _cylinder(0.045, 0.2, _mat({"oil": Color(0.85, 0.65, 0.1), "brake_fluid": Color(0.9, 0.9, 0.85),
 				"chain_lube": Color(0.2, 0.3, 0.75)}[what], 0.2, 0.4))
@@ -164,33 +161,17 @@ func _kit_piece(what: String) -> Node3D:
 			var n := Node3D.new()
 			n.add_child(bottle)
 			return n
-		"pump":
-			var p := _cylinder(0.03, 0.24, _box_mat)
-			p.rotation.z = PI * 0.5
-			p.position.y = 0.03
-			var n := Node3D.new()
-			n.add_child(p)
-			return n
-	# Small boxes: the plug kit, levers, fuses and tape.
-	return _box(Vector3(0.14, 0.04, 0.1), _mat({"plug_kit": Color(0.9, 0.4, 0.05), "levers": Color(0.6, 0.6, 0.62),
-		"fuses": Color(0.95, 0.85, 0.2)}.get(what, Color(0.5, 0.5, 0.5)), 0.2, 0.5))
+	# Anything else (packed in an older save): a small box.
+	return _box(Vector3(0.14, 0.04, 0.1), _mat(Color(0.5, 0.5, 0.5), 0.2, 0.5))
 
 
-## What's been taken off or used, on the cloth: the old chain, the old lever, the pump.
+## What's been taken off or used, on the cloth: the tool roll, a part off the bike.
 func _out_piece(what: String) -> Node3D:
 	match what:
 		"chain":
 			return _coil()
-		"handlebars":
-			return _box(Vector3(0.18, 0.02, 0.03), _chain_mat)   # the snapped lever
-		"saddle":
-			return _box(Vector3(0.4, 0.06, 0.25), _mat(Color(0.08, 0.08, 0.08), 0.0, 0.8))   # the seat, off to get at the fuses
-		"pump":
-			return _kit_piece("pump")
 		"tools":
 			return _kit_piece("tools")
-	if what.ends_with("_tyre"):
-		return _kit_piece("plug_kit")
 	return null
 
 
