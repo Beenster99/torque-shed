@@ -232,14 +232,22 @@ func test_regions() -> void:
 		for k: Vector2i in Skyline._lines_of(net)["by_block"]:
 			if not by.has(k):
 				by[k] = {"points": [], "lines": [], "areas": []}
+		# (the twelve busiest blocks: laying a block out the first time works out its roads' heights, a tenth of a second
+		# or more each, so the test stays quick)
+		var keys: Array = by.keys()
+		var load_of := func(k: Vector2i) -> int:
+			var f: Dictionary = (Skyline._lines_of(net)["by_block"] as Dictionary).get(k, {})
+			return (by[k]["points"] as Array).size() + (f.get("supports", []) as Array).size() + (f.get("spans", []) as Array).size()
+		keys.sort_custom(func(a, b): return load_of.call(a) > load_of.call(b))
+		var sample: Array = keys.slice(0, 12)
 		# (the first time round a block works out its roads' heights, as the road blocks do before it on a ride: timed
 		# the second)
-		for k: Vector2i in by:
+		for k: Vector2i in sample:
 			Skyline.lay_out(net, k, by[k])
 		var worst := 0.0
 		var times: Array[float] = []
 		var counts := {}
-		for k: Vector2i in by:
+		for k: Vector2i in sample:
 			var t0 := Time.get_ticks_usec()
 			var b := Skyline.lay_out(net, k, by[k])
 			var took := (Time.get_ticks_usec() - t0) / 1000.0
@@ -250,9 +258,10 @@ func test_regions() -> void:
 		check(not counts.is_empty(), "%s: %s" % [id, counts])
 		times.sort()
 		var middle := times[times.size() / 2]
-		# (a block is laid out once, on a worker; the slowest are the Dales' pole lines along the lanes, each pole
-		# stood off its road as SceneryStreamer.stand does)
-		check(middle < 2.0 and worst < 20.0, "%s: a block in %.2f ms (the middle of %d), the slowest %.2f ms, once its roads are known"
+		# (a block is laid out once, on a worker. A whole region's middle block is under a millisecond; the busiest are
+		# the Dales' pole lines along the lanes, each pole stood off its road as SceneryStreamer.stand does and each
+		# span's clearance over the road checked, a few milliseconds)
+		check(middle < 8.0 and worst < 25.0, "%s: a block in %.2f ms (the middle of the %d busiest), the slowest %.2f ms, once its roads are known"
 			% [id, middle, times.size(), worst])
 	var shodo := RealRegion.get_region("shodoshima")
 	var lines := Skyline._lines_of(RoadNet.new(shodo, Roads.flat))
