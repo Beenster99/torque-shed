@@ -137,6 +137,17 @@ func test_strands() -> void:
 		var p := fork.point_at(2, s)
 		across = maxf(across, absf(fork.road_y(2, s) - fork._across_y(Vector2i(0, 1), p)) / maxf(fork._project(1, p)[2] - 3.0, 1.0))
 	check(across < 0.15, "a side road leaving at a slant keeps near the through road's height while beside it (%.2f m a metre between them at most)" % across)
+	# The same where the junction is drawn as one with another just along the road (Simon's step on Route 273 in
+	# Kamikawa: the side road came away at its own height, a slab of it over the through road beside it).
+	var fork2 := RoadNet.new(graph([[100, 100], [-300, 100], [500, 100], [400, 200], [115, 100], [115, -300]],
+		[[1, 0, "primary"], [0, 4, "primary"], [4, 2, "primary"], [0, 3, "residential"], [4, 5, "residential"]]), hillside)
+	var across2 := 0.0
+	for d in range(10, 30, 2):
+		var s := float(d)
+		var p := fork2.point_at(3, s)
+		across2 = maxf(across2, absf(fork2.road_y(3, s) - fork2._across(fork2._main_edges(0), p).x) / maxf(minf(fork2._project(1, p)[2], fork2._project(2, p)[2]) - 3.0, 1.0))
+	check(fork2._cluster(0).size() > 1 and across2 < 0.15,
+		"and so it does where the junction's drawn as one with the next along (%.2f m a metre at most)" % across2)
 	# The junction's surface follows the through road across it.
 	var mid := Vector2(100.0, 103.0)
 	check(absf(net.surface_y(0, mid) - net.road_y(1, net.length_of(1))) < 0.05 and
