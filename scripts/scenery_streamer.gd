@@ -477,7 +477,7 @@ static func model_mesh(model: String) -> Mesh:
 	if have != null:
 		return have
 	var s := script_of(model)
-	var mesh: Mesh = s.call("mesh", model.get_slice(":", 1)) if s != null else null
+	var mesh: Mesh = s.call("mesh", model.substr(model.find(":") + 1)) if s != null else null
 	if mesh == null:
 		mesh = BoxMesh.new()
 	_kits_lock.lock()
