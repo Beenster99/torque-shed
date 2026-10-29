@@ -11,43 +11,50 @@ extends Node3D
 ## (lay_out). Everything is instanced: one MultiMesh a block for each model, drawn while the camera is within its
 ## kind's reach.
 ##
-## Round 0 has one model, "standin": a post at every point, coloured by the round that will model it, as the proof
-## the pipeline works, drawn only while show_standins is on (Esc > Debug; the tests): an ordinary ride shows nothing
-## until a round models a kind. A round adds its models to MODELS (or a script of its own under scripts/scenery/) and its kinds'
-## rows to the kit library; the streaming, the filing and the rules stay here.
+## A kind's model is a kit row's "model", "SCRIPT:MODEL": res://scripts/scenery/SCRIPT.gd, a round's own script of
+## static functions the streamer calls (docs/scenery.md):
+##   lay_out(net: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary   on a worker: rows is {points, lines, areas},
+##       each [[feature row, kit], ...] of the rows in the block whose kit names the script; returns {items: {MODEL:
+##       [Transform3D in the block's frame (its corner)]}, dress (optional, anything), moved, skipped (optional counts)}
+##   mesh(model: String) -> Mesh                                            the mesh each of MODEL's MultiMeshes draws
+##   dress(node: Node3D, data) -> void                                      optional, on the main thread once the block
+##       is in: what isn't instanced (wires, lamps, moving parts)
+## so a round adds its script and its kit rows and never edits this file. Round 0's model is "standin:post"
+## (scripts/scenery/standin.gd): a post at every point, coloured by the round that will model it, drawn only while
+## show_standins is on (Esc > Debug; the tests): an ordinary ride shows nothing until a round models a kind.
 
 ## Part of the builder hash (AdventureCrew.builds): bump it when what a block lays out changes.
 const VERSION := 1
 const KITS := "res://data/scenery_kits.json"
+const SCRIPTS := "res://scripts/scenery/%s.gd"
 ## Blocks whose middle is within REACH of a rider are wanted; kept until every rider is KEEP away (m).
 const REACH := 2000.0
 const KEEP := 2400.0
+## A block holding a kind whose kit reach is past REACH (a wind farm, a pylon line, a mast) is wanted out to that reach
+## (FAR_MOST at most), laid out on whatever ground is known there (unknown ground counts as sea level for a kit with
+## "sea": true, else it's left out) and laid out again once it's within REACH and its ground is final. Both scale with
+## Settings.gfx_draw_distance, as the roads' do.
+const FAR_MOST := 8000.0
 const MAX_TASKS := 1
 ## How far round a block the ground must be final before it's laid out (m), as the road blocks' (RoadStreamer).
 const READY_PAD := 128.0
-## A block with this many points or more keeps its own copy of the roads it asks after (lay_out).
-const MEMO_FROM := 32
 ## How far past a road's verge a thing the map puts on the road is stood (m).
 const CLEAR := 1.5
-## The stand-in post's colour by the round that will model its kind (phase D plan).
-const ROUND_COLOURS := {"D1": Color(0.95, 0.3, 0.2), "D2": Color(0.35, 0.35, 0.4), "D3": Color(0.2, 0.55, 0.95),
-	"D4": Color(0.95, 0.95, 0.95), "D5": Color(0.4, 0.8, 0.25), "D6": Color(0.75, 0.55, 0.25),
-	"D7": Color(0.1, 0.85, 0.85), "D8": Color(0.95, 0.85, 0.15), "D9": Color(0.75, 0.3, 0.8)}
-## The models a kit row can name.
-const MODELS := ["standin"]
-## Whether the stand-in posts are drawn (Esc > Debug's scenery markers; off for an ordinary ride). It changes only what
-## this machine draws: never a road, the land or the crew's hashes.
+## A line or area is filed in at most this many blocks a side of its box (a power line across a whole cell is in
+## every block it crosses; a country's border only where it is near).
+const FILE_MOST := 64
+## Whether the stand-ins are drawn (Esc > Debug's scenery markers; off for an ordinary ride). It changes only what this
+## machine draws: never a road, the land or the crew's hashes.
 static var show_standins := false
-## The stand-in post: this tall and this thick (m), with a cap to see it by.
-const POST_H := 3.0
-const POST_W := 0.25
 
 var world: AdventureWorld
 var net: RoadNet
 var region: RealRegion
 var blocks := {}         # Vector2i -> Node3D in the world
 var stats := {"built": 0, "items": 0, "moved": 0, "skipped": 0, "build_ms_max": 0.0}
-var _filed := {}         # Vector2i -> PackedInt32Array: the points in the block (indices into region.features.points)
+var _filed := {}         # Vector2i -> {points, lines, areas: PackedInt32Array}: what is in the block (file_features)
+var _far := {}           # Vector2i -> m: the blocks holding a kind whose reach is past REACH, and the farthest
+var _coarse := {}        # Vector2i -> true: blocks laid out before their ground was final (laid out again once it is)
 var _tasks := {}         # Vector2i -> JobPool job id
 var _done := {}          # Vector2i -> Dictionary (lay_out's), read under the lock
 var _stale := {}
@@ -56,6 +63,7 @@ var _lock := Mutex.new()
 static var _kits := {}
 static var _kits_lock := Mutex.new()
 static var _meshes := {}
+static var _scripts := {}   # SCRIPT -> its Script (loaded once: load_scripts)
 
 
 func setup(w: AdventureWorld, n: RoadNet) -> void:
@@ -63,7 +71,9 @@ func setup(w: AdventureWorld, n: RoadNet) -> void:
 	world = w
 	net = n
 	region = n.region
-	_filed = file_points(region.features.get("points", []))
+	load_scripts()
+	_filed = file_features(region.features)
+	_far = far_blocks(region.features, _filed)
 	var terrain = w.route.real.terrain if w.route != null and w.route.real != null else null
 	if terrain != null and terrain.has_signal("ground_arrived"):
 		terrain.connect("ground_arrived", _on_ground_arrived)
@@ -76,16 +86,76 @@ func _exit_tree() -> void:
 	_tasks.clear()
 
 
-## The points of `points` (RealRegion.features' rows) filed by the road block they stand in.
-static func file_points(points: Array) -> Dictionary:
+## What of `features` (RealRegion.features) is in each road block: {key: {"points", "lines", "areas":
+## PackedInt32Array of indices}}. A point is in the block it stands in; a line or an area in every block its points'
+## box touches (FILE_MOST a side at most), each model placing only what is in its block (in_block).
+static func file_features(features: Dictionary) -> Dictionary:
 	var out := {}
+	var points: Array = features.get("points", [])
 	for i in points.size():
 		var row: Array = points[i]
-		var k := RoadBlock.key_of(float(row[1]), float(row[2]))
-		var list: PackedInt32Array = out.get(k, PackedInt32Array())
-		list.append(i)
-		out[k] = list   # (a packed array is a copy: put back)
+		_file(out, RoadBlock.key_of(float(row[1]), float(row[2])), "points", i)
+	for part: String in ["lines", "areas"]:
+		var rows: Array = features.get(part, [])
+		for i in rows.size():
+			var pts: PackedVector2Array = rows[i][1]
+			if pts.is_empty():
+				continue
+			var box := Rect2(pts[0], Vector2.ZERO)
+			for p in pts:
+				box = box.expand(p)
+			var k0 := RoadBlock.key_of(box.position.x, box.position.y)
+			var k1 := RoadBlock.key_of(box.end.x, box.end.y)
+			if k1.x - k0.x > FILE_MOST or k1.y - k0.y > FILE_MOST:
+				k0 = Vector2i(k0.x, k0.y)
+				k1 = Vector2i(mini(k1.x, k0.x + FILE_MOST), mini(k1.y, k0.y + FILE_MOST))
+			for bz in range(k0.y, k1.y + 1):
+				for bx in range(k0.x, k1.x + 1):
+					_file(out, Vector2i(bx, bz), part, i)
 	return out
+
+
+static func _file(out: Dictionary, k: Vector2i, part: String, i: int) -> void:
+	if not out.has(k):
+		out[k] = {"points": PackedInt32Array(), "lines": PackedInt32Array(), "areas": PackedInt32Array()}
+	var list: PackedInt32Array = out[k][part]
+	list.append(i)
+	out[k][part] = list   # (a packed array is a copy: put back)
+
+
+## The blocks of `filed` (file_features') holding a kind whose kit reach (in its default or any region's row) is past
+## REACH: {key: the farthest such reach, FAR_MOST at most}.
+static func far_blocks(features: Dictionary, filed: Dictionary) -> Dictionary:
+	var by_kind := {}
+	for kind: String in (kits().get("kinds", {}) as Dictionary):
+		var r := kind_reach(kind)
+		if r > REACH:
+			by_kind[kind] = minf(r, FAR_MOST)
+	var out := {}
+	if by_kind.is_empty():
+		return out
+	for k: Vector2i in filed:
+		for part: String in ["points", "lines", "areas"]:
+			var rows: Array = features.get(part, [])
+			for i in (filed[k] as Dictionary).get(part, PackedInt32Array()):
+				var m := float(by_kind.get(str(rows[i][0]), 0.0))
+				if m > float(out.get(k, 0.0)):
+					out[k] = m
+	return out
+
+
+## The farthest reach `kind` is drawn to in any region (m).
+static func kind_reach(kind: String) -> float:
+	var k: Dictionary = (kits().get("kinds", {}) as Dictionary).get(kind, {})
+	var out := float((k.get("default", {}) as Dictionary).get("reach", 0.0))
+	for r: Dictionary in (k.get("regions", {}) as Dictionary).values():
+		out = maxf(out, float(r.get("reach", out)))
+	return out
+
+
+## Whether region-frame point `p` is in block `key` (a model places a line's or area's things only in their own block).
+static func in_block(key: Vector2i, p: Vector2) -> bool:
+	return RoadBlock.key_of(p.x, p.y) == key
 
 
 # ---------------------------------------------------------------------------- the kit library
@@ -107,13 +177,43 @@ static func kit(kind: String, region_id := "") -> Dictionary:
 ## Whether any kind's kit names a model of its own (not the stand-in): until a round adds one, an ordinary ride has
 ## nothing to place.
 static func models_beyond_standin() -> bool:
-	for k: Dictionary in (kits().get("kinds", {}) as Dictionary).values():
-		if str((k.get("default", {}) as Dictionary).get("model", "standin")) != "standin":
+	for m in models():
+		if not m.begins_with("standin:"):
 			return true
-		for r: Dictionary in (k.get("regions", {}) as Dictionary).values():
-			if str(r.get("model", "standin")) != "standin":
-				return true
 	return false
+
+
+## Every model the kit library names ("SCRIPT:MODEL"), in its default or any region's row.
+static func models() -> Array[String]:
+	var out: Array[String] = []
+	for k: Dictionary in (kits().get("kinds", {}) as Dictionary).values():
+		var rows: Array = [k.get("default", {})] + (k.get("regions", {}) as Dictionary).values()
+		for r: Dictionary in rows:
+			var m := str(r.get("model", ""))
+			if m != "" and not out.has(m):
+				out.append(m)
+	return out
+
+
+## Loads the scripts the kit library's models name (once, on the main thread, before any block is laid out).
+static func load_scripts() -> void:
+	for m in models():
+		script_of(m)
+
+
+## The script of model "SCRIPT:MODEL" (loaded the first time), or null when there's no such script.
+static func script_of(model: String) -> Script:
+	var name := model.get_slice(":", 0)
+	_kits_lock.lock()
+	var have = _scripts.get(name)
+	if have == null and not _scripts.has(name):
+		var path := SCRIPTS % name
+		have = load(path) if ResourceLoader.exists(path) else null
+		if have == null:
+			push_warning("Scenery: no model script %s (kit model %s)" % [path, model])
+		_scripts[name] = have
+	_kits_lock.unlock()
+	return have
 
 
 ## The kit library as read (once).
@@ -129,52 +229,68 @@ static func kits() -> Dictionary:
 
 # ---------------------------------------------------------------------------- laying a block out
 
-## What block `key` holds: {key, items: {"model|round": [Transform3D in the block's frame (its corner)]}, reach:
-## {"model|round": m}, moved, skipped, ms}. Every point in it as its kind's model, stood on the land (RoadNet.ground_at),
-## pushed off any carriageway and verge it's on (or left out where it can't be: inside a junction). Safe on a worker.
+## What block `key` holds: {key, items: {"SCRIPT:MODEL": [Transform3D in the block's frame (its corner)]}, reach:
+## {"SCRIPT:MODEL": m (the farthest of its rows' kits)}, dress: {SCRIPT: its lay_out's dress}, moved, skipped, ms}. Each
+## row in the block goes to the script its kit's model names (the stand-ins only while show_standins is on). Safe on a
+## worker.
 static func lay_out(n: RoadNet, filed: Dictionary, key: Vector2i) -> Dictionary:
 	var t0 := Time.get_ticks_usec()
-	var out := {"key": key, "items": {}, "reach": {}, "moved": 0, "skipped": 0}
-	var points: Array = n.region.features.get("points", [])
-	var o := Vector3(key.x * RoadBlock.SIZE, 0.0, key.y * RoadBlock.SIZE)
-	var many: PackedInt32Array = filed.get(key, PackedInt32Array())
-	# (a busy block keeps its own copy of the roads it asks after, out of the lock the other workers wait on: worth it
-	# from a few dozen points, RoadNet.ground_at)
-	var memo = {} if many.size() >= MEMO_FROM else null
-	var kits_of := {}   # "kind|region" -> its kit row, looked up once a block
-	for i in many:
-		var row: Array = points[i]
-		var kind := str(row[0])
-		var region_id := str(RegionKit.at_frame(n.region.frame_lat, n.region.frame_lon, float(row[1]), float(row[2])).get("region", ""))
-		var slot_key := kind + "|" + region_id
-		if not kits_of.has(slot_key):
-			kits_of[slot_key] = kit(kind, region_id)
-		var k: Dictionary = kits_of[slot_key]
-		var model := str(k.get("model", ""))
-		if model not in MODELS or (model == "standin" and not show_standins):
+	var out := {"key": key, "items": {}, "reach": {}, "dress": {}, "moved": 0, "skipped": 0}
+	var here: Dictionary = filed.get(key, {})
+	var by_script := {}   # SCRIPT -> {points, lines, areas: [[row, kit], ...]}
+	var reach := {}       # "SCRIPT:MODEL" -> m
+	var kits_of := {}     # "kind|region" -> its kit row, looked up once a block
+	for part: String in ["points", "lines", "areas"]:
+		var rows: Array = n.region.features.get(part, [])
+		for i in here.get(part, PackedInt32Array()):
+			var row: Array = rows[i]
+			var at: Vector2 = Vector2(float(row[1]), float(row[2])) if part == "points" else (row[1] as PackedVector2Array)[0]
+			var region_id := str(RegionKit.at_frame(n.region.frame_lat, n.region.frame_lon, at.x, at.y).get("region", ""))
+			var kk := str(row[0]) + "|" + region_id
+			if not kits_of.has(kk):
+				kits_of[kk] = kit(str(row[0]), region_id)
+			var k: Dictionary = kits_of[kk]
+			var model := str(k.get("model", ""))
+			if model == "" or (model.begins_with("standin:") and not show_standins):
+				continue
+			var script := model.get_slice(":", 0)
+			if not by_script.has(script):
+				by_script[script] = {"points": [], "lines": [], "areas": []}
+			(by_script[script][part] as Array).append([row, k])
+			reach[model] = maxf(float(reach.get(model, 0.0)), float(k.get("reach", 1500.0)))
+	for script: String in by_script:
+		var s := script_of(script + ":")
+		if s == null:
 			continue
-		var p := off_road(n, Vector2(float(row[1]), float(row[2])))
-		if is_nan(p.x):
-			out["skipped"] += 1
-			continue
-		if p != Vector2(float(row[1]), float(row[2])):
-			out["moved"] += 1
-		var bare := float(n.height.call(p.x, p.y))
-		if is_nan(bare):
-			out["skipped"] += 1
-			continue
-		var y := n.ground_at(p.x, p.y, bare, memo) - 0.1
-		var turn := deg_to_rad(float(row[5])) if row[5] != null else 0.0
-		# (a heading is clockwise from north; a yaw about +y is anticlockwise from -z)
-		var xf := Transform3D(Basis(Vector3.UP, -turn), Vector3(p.x, y, p.y) - o)
-		var slot := "%s|%s" % [model, str(k.get("round", ""))]
-		if not (out["items"] as Dictionary).has(slot):
-			out["items"][slot] = []
-			out["reach"][slot] = 0.0
-		(out["items"][slot] as Array).append(xf)
-		out["reach"][slot] = maxf(float(out["reach"][slot]), float(k.get("reach", 1500.0)))
+		var got: Dictionary = s.call("lay_out", n, key, by_script[script])
+		var farthest := 0.0   # (a model the script names that no kit row does is drawn to its rows' farthest reach)
+		for m: String in reach:
+			if m.begins_with(script + ":"):
+				farthest = maxf(farthest, float(reach[m]))
+		for m: String in got.get("items", {}):
+			var full := script + ":" + m
+			out["items"][full] = got["items"][m]
+			out["reach"][full] = float(reach.get(full, farthest))
+		if got.has("dress"):
+			out["dress"][script] = got["dress"]
+		out["moved"] += int(got.get("moved", 0))
+		out["skipped"] += int(got.get("skipped", 0))
 	out["ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	return out
+
+
+## Where a thing the map puts at `p` (region x, z) stands on the land, off any road (off_road), in the region frame: y
+## just under the land's (RoadNet.ground_at, `memo` a block's own: pass {} once a block). NAN where it can't stand
+## (inside a junction, or no ground known there yet: at sea level instead when `sea`, for a thing that may stand
+## offshore or far off, as a kit's "sea" says).
+static func stand(n: RoadNet, p: Vector2, memo = null, sea := false) -> Vector3:
+	var q := off_road(n, p)
+	if is_nan(q.x):
+		return Vector3(NAN, NAN, NAN)
+	var bare := float(n.height.call(q.x, q.y))
+	if is_nan(bare):
+		return Vector3(q.x, 0.0, q.y) if sea else Vector3(NAN, NAN, NAN)
+	return Vector3(q.x, n.ground_at(q.x, q.y, bare, memo) - 0.1, q.y)
 
 
 ## Where a thing the map puts at `p` (region x, z) stands: there, or just past the verge of a road it's on (CLEAR
@@ -237,12 +353,25 @@ func _process(_delta: float) -> void:
 func stream(at: Array[Vector2]) -> void:
 	if at.is_empty():
 		return
+	var scale := clampf(Settings.gfx_draw_distance, 0.5, 2.0)
 	for k: Vector2i in blocks.keys():
 		var c := (Vector2(k) + Vector2(0.5, 0.5)) * RoadBlock.SIZE
-		if at.all(func(p): return c.distance_to(p) > KEEP):
+		var keep := maxf(KEEP, (float(_far.get(k, 0.0)) * scale) + KEEP - REACH)
+		if at.all(func(p): return c.distance_to(p) > keep):
 			blocks[k].queue_free()
 			blocks.erase(k)
+			_coarse.erase(k)
 	var want := RoadStreamer.wanted(at, REACH).filter(func(k): return _filed.has(k))
+	var near := {}
+	for k in want:
+		near[k] = true
+	for k: Vector2i in _far:
+		if near.has(k):
+			continue
+		var c := (Vector2(k) + Vector2(0.5, 0.5)) * RoadBlock.SIZE
+		var r := float(_far[k]) * scale
+		if at.any(func(p): return c.distance_to(p) <= r):
+			want.append(k)
 	var ready_one: Dictionary = {}
 	_lock.lock()
 	for k in _done.keys():
@@ -260,9 +389,17 @@ func stream(at: Array[Vector2]) -> void:
 	for k in want:
 		if _tasks.size() >= MAX_TASKS:
 			break
-		if (blocks.has(k) and not _stale.has(k)) or _tasks.has(k) or _done.has(k) or not can_build(k):
+		var coarse := not near.has(k) or not can_build(k)
+		if coarse and not _far.has(k):
+			continue
+		var redo := _stale.has(k) or (_coarse.has(k) and not coarse)
+		if (blocks.has(k) and not redo) or _tasks.has(k) or _done.has(k):
 			continue
 		_stale.erase(k)
+		if coarse:
+			_coarse[k] = true
+		else:
+			_coarse.erase(k)
 		# (ranked with the road blocks by distance: a block of scenery is a fraction of a millisecond)
 		_tasks[k] = JobPool.add(_work.bind(k), ((Vector2(k) + Vector2(0.5, 0.5)) * RoadBlock.SIZE).distance_to(at[0]))
 
@@ -296,46 +433,42 @@ func commit(b: Dictionary) -> Node3D:
 		var list: Array = b["items"][slot]
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
-		multi.mesh = model_mesh(slot.get_slice("|", 0), slot.get_slice("|", 1))
+		multi.mesh = model_mesh(slot)
 		multi.instance_count = list.size()
 		for i in list.size():
 			multi.set_instance_transform(i, list[i])
 		var mmi := MultiMeshInstance3D.new()
-		mmi.name = slot.replace("|", "_")
+		mmi.name = slot.replace(":", "_")
 		mmi.multimesh = multi
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		AdventureChunk._range(mmi, float(b["reach"][slot]))
+		AdventureChunk._range(mmi, float(b["reach"][slot]) * clampf(Settings.gfx_draw_distance, 0.5, 2.0))
 		node.add_child(mmi)
 		stats["items"] += list.size()
 	blocks[key] = node
 	_place(node)
 	add_child(node)
+	for script: String in b.get("dress", {}):
+		var s := script_of(script + ":")
+		if s != null and s.has_method("dress"):
+			s.call("dress", node, b["dress"][script])
 	return node
 
 
-## The mesh of `model` for a kind of round `round` (the stand-in's colour is its round's).
-static func model_mesh(model: String, round: String) -> Mesh:
-	var key := "%s|%s" % [model, round]
-	if _meshes.has(key):
-		return _meshes[key]
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(POST_W, POST_H, POST_W)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = ROUND_COLOURS.get(round, Color(0.9, 0.9, 0.9))
-	mat.emission_enabled = true
-	mat.emission = mat.albedo_color * 0.35
-	mesh.material = mat
-	# (the box stood on the ground: its middle half its height up)
-	var arrays := mesh.get_mesh_arrays()
-	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	for i in v.size():
-		v[i].y += POST_H * 0.5
-	arrays[Mesh.ARRAY_VERTEX] = v
-	var out := ArrayMesh.new()
-	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	out.surface_set_material(0, mat)
-	_meshes[key] = out
-	return out
+## The mesh model "SCRIPT:MODEL" is drawn with (its script's mesh, made once).
+static func model_mesh(model: String) -> Mesh:
+	_kits_lock.lock()
+	var have = _meshes.get(model)
+	_kits_lock.unlock()
+	if have != null:
+		return have
+	var s := script_of(model)
+	var mesh: Mesh = s.call("mesh", model.get_slice(":", 1)) if s != null else null
+	if mesh == null:
+		mesh = BoxMesh.new()
+	_kits_lock.lock()
+	_meshes[model] = mesh
+	_kits_lock.unlock()
+	return mesh
 
 
 ## Puts every block at its corner in the world's local frame (after the origin moves).

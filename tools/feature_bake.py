@@ -127,6 +127,7 @@ CLASSES = {
         "waterfall": ("waterfall", False), "rapids": ("rapids", False), "reservoir": ("reservoir", False),
         "dock": ("dock", False), "lock": ("canal_lock", False), "hot_spring": ("hot_spring", False),
         "geyser": ("geyser", False), "blowhole": ("blowhole", False), "moat": ("moat", False),
+        "canal": ("canal", False),
     },
     ("base", "land_use", "class"): {
         # D1 skyline: pistes.
@@ -148,8 +149,8 @@ CLASSES = {
     ("transportation", "segment", "class"): {
         # D2 rail (a road segment is never kept: the roads are roads.json's).
         "standard_gauge": ("railway", False), "narrow_gauge": ("narrow_gauge", False),
-        "light_rail": ("light_rail", False), "tram": ("tram", False), "funicular": ("funicular", False),
-        "monorail": ("monorail", False), "unknown": ("railway", False),
+        "light_rail": ("light_rail", False), "subway": ("subway", False), "tram": ("tram", False),
+        "funicular": ("funicular", False), "monorail": ("monorail", False), "unknown": ("railway", False),
         # D7 ferries (water segments).
         "ferry": ("ferry", False),
     },

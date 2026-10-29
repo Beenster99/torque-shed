@@ -66,32 +66,69 @@ areas:  [[kind, PackedVector2Array (outer ring), height, elevation, name, id], .
 hash it had), and `SceneryStreamer.VERSION` with the kit library's MD5 into the builder hash, so a crew whose games
 place different scenery finds out at the lobby.
 
-`SceneryStreamer` (one per network ride, `AdventureWorld.scenery`): files the points by road block key
-(`RoadBlock.key_of`), lays out each block within `REACH` of a rider on a JobPool worker once its ground is final
-(`RoadNet.ready`), stands each point on the land (`RoadNet.ground_at`), puts it in one block a frame as one
-MultiMesh per model and round (drawn to the kind's reach), frees it past `KEEP`, lays it out again when the ground
-sharpens. Pure and testable: `SceneryStreamer.lay_out(net, filed, key)`, `off_road(net, p)`, `kit(kind, region)`.
+`SceneryStreamer` (one per network ride, `AdventureWorld.scenery`) files the points, lines and areas by road block
+key (`RoadBlock.key_of`; a line or area in every block its box touches, `FILE_MOST` a side at most), lays out each
+block within `REACH` (2 km) of a rider on a JobPool worker once its ground is final (`RoadNet.ready`), puts it in one
+block a frame as one MultiMesh per model, frees it past `KEEP`, and lays it out again when the ground sharpens. A block
+holding a kind whose kit `reach` is past `REACH` (turbines, pylons, masts) is wanted out to that reach (`FAR_MOST`,
+8 km, at most), laid out on whatever ground is known there and again once it's near and final. Reaches (drawing and
+the far blocks') scale with Settings' draw distance (0.5 to 2), as the roads' do.
+
+## The model hook: scripts/scenery/SCRIPT.gd
+
+A kit row's `"model"` is `"SCRIPT:MODEL"`. The streamer loads `res://scripts/scenery/SCRIPT.gd` once (on the main
+thread, before any block) and calls its static functions; a round adds its script and its kit rows and never edits
+the streamer.
+
+```
+static func lay_out(net: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary     # on a worker
+    rows: {"points": [[row, kit], ...], "lines": [...], "areas": [...]}: the RealRegion.features rows filed in block
+          `key` whose kit names this script, each with its kit row (the default with the point's region laid over it,
+          plus "round"). A line or area is passed to every block it touches: place only its things in this block.
+    returns {"items": {MODEL: [Transform3D in the block's frame (its corner: x - key.x * 512, z - key.y * 512)]},
+             "dress": anything (optional, handed to dress), "moved": int, "skipped": int (optional counts)}
+static func mesh(model: String) -> Mesh                  # once a model: what each of its MultiMeshes draws
+static func dress(node: Node3D, data) -> void            # optional, main thread, once the block's node is in the world:
+                                                         # what isn't instanced (wires, lamps, moving parts)
+```
+
+- An item is drawn to the farthest `reach` of the kit rows naming `SCRIPT:MODEL` (a MODEL no row names, to the
+  script's rows' farthest), times the draw distance. A model's mesh is made once and shared by every block.
+- `net.region` is the region; `net.region.features` all its rows, for a script that needs a whole line (a pylon line
+  over several blocks): keep any cache of your own static, keyed by region, built under a Mutex on the worker.
+- Helpers, all safe on a worker:
+  - `SceneryStreamer.stand(net, p, memo = null, sea = false) -> Vector3`: where a thing the map puts at region point
+    `p` stands, on the land and off any road (region frame, y the land's less 0.1 m). NAN where it can't: inside a
+    junction, or ground not known yet (sea level instead when `sea`, for things offshore or far off; the kit's
+    `"sea"` is the way to say so). `memo`: pass one `{}` for a block's calls once it has a few dozen.
+  - `SceneryStreamer.off_road(net, p) -> Vector2`: `p` pushed `CLEAR` m past the verge of a road it's on, NAN in a
+    junction.
+  - `SceneryStreamer.in_block(key, p) -> bool`: whether region point `p` is in block `key`.
+  - `SceneryStreamer.kit(kind, region_id)`, `SceneryStreamer.kind_reach(kind)`.
+- Rail pieces meet end to end: where a line is cut at a cell's edge or a flag change, the pieces either side share
+  that point exactly (the same 1e-5 degrees, so the same region-frame point), as do Overture segments that meet.
+- Round 0's script is `standin` (`"standin:post"`): a post at each point (and a line's or area's first point in the
+  block), coloured by its kit's round, laid out only while `show_standins` is on (Esc > Debug > Scenery markers; the
+  tests), so an ordinary ride lays out nothing until a round's kit row names its own model.
 
 ## The kit library: data/scenery_kits.json
 
 ```
-{"format": 1, "kinds": {kind: {"round": "D1", "default": {"model": "standin", "reach": 4000, ...},
+{"format": 1, "kinds": {kind: {"round": "D1", "default": {"model": "standin:post", "reach": 4000, ...},
                                "regions": {region_kit_id: {fields laid over the default}}}}}
 ```
 
 Region ids are the regional kits' thirteen (`RegionKit.regions()`), chosen per point by its cell's place profile
-(`RegionKit.at_frame`). A round thread owns its kinds' rows. Round 0 has one model, `standin`: a post coloured by
-the round that will model the kind, shown only with Esc > Debug > Scenery markers on (`show_standins`), so an
-ordinary ride shows nothing until a round adds a real model.
+(`RegionKit.at_frame`). A round thread owns its kinds' rows. Fields the streamer reads: `model`, `reach` (m), `sea`
+(true: may stand offshore); anything else is the model's own.
 
 ## What a round thread does
 
-1. Add its model(s): a name in `SceneryStreamer.MODELS` and its mesh (a script of its own under `scripts/scenery/`,
-   called from `model_mesh` and, for moving parts or lines, from `lay_out`). Points work today; lines and areas are
-   in `RealRegion.features` and filed per block by the round that first places one (add `file_lines` next to
-   `file_points`, keep one owner: ask D0).
-2. Set its kinds' rows in the kit library to the new model, with any region rows.
-3. Bump `SceneryStreamer.VERSION` if what a block lays out changes (the kit library's own change is hashed already).
-4. Only when the map has a class not in `CLASSES`: add the row, and run **Map the features** once.
-5. Keep the budget: a block under 2 ms on a worker once its roads' heights are known (the first block round a new
-   place waits on them, as the road blocks do), and at most one draw call a kind a block.
+1. Add `scripts/scenery/<round>.gd` with `lay_out`, `mesh` and, if it wants, `dress` (above). Never edit
+   `scenery_streamer.gd`; ask D0 for a change to it.
+2. Set its kinds' rows in the kit library to its models (`"<script>:<model>"`), with any region rows.
+3. Bump `SceneryStreamer.VERSION` when a script's `lay_out` changes what a block holds (the kit library's MD5 is in the
+   builder hash already; the scripts aren't).
+4. Only when the map has a class not in `CLASSES`: add the row and its kit row, and run **Map the features** once.
+5. Keep the budget: a block under 2 ms on a worker once its roads' heights are known, and one draw call a model a
+   block.

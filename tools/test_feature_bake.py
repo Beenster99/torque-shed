@@ -123,6 +123,27 @@ class FeatureTests(unittest.TestCase):
         self.assertAlmostEqual(mid[0][1], W + 0.09, places=4)
         self.assertAlmostEqual(mid[-1][1], W + 0.13, places=4)
 
+    def test_rail_pieces_meet_end_to_end(self):
+        # A railway on a slant over the cell's west edge with a bridge on it: the piece in the next cell west ends, and
+        # each piece after a flag change starts, at exactly the point (to the 1e-5 degree) the one before ends.
+        line = wkb_line([(W - 0.0731, S + 0.1013), (W + 0.0417, S + 0.1377), (W + 0.1903, S + 0.1171)])
+        flags = [{"values": ["is_bridge"], "between": [0.55, 0.62]}]
+        r = row("standard_gauge", line, subtype="rail", rail_flags=flags)
+        here = self.bake([(RAIL, r)])
+        west = fb.cell_features([(RAIL, r)], GRID, ROW, COL - 1, "test")
+        pieces = [points(x, 6) for x in west["lines"]] + [points(x, 6) for x in here["lines"]]
+        self.assertEqual(len(pieces), 4)
+        # (the files keep their lines in a fixed order, not along the railway: each join is one piece's end that is
+        # exactly another's start)
+        starts = [p[0] for p in pieces]
+        self.assertEqual(len([p[-1] for p in pieces if p[-1] in starts]), 3)
+
+    def test_canals_and_subways_are_kept(self):
+        line = wkb_line([(W + 0.01, S + 0.1), (W + 0.21, S + 0.1)])
+        got = self.bake([(("base", "water", "class"), row("canal", line)),
+                         (RAIL, row("subway", line, subtype="rail"))])
+        self.assertEqual(sorted(self.kinds(got, "lines")), ["canal", "subway"])
+
     def test_a_road_segment_is_never_a_feature(self):
         line = wkb_line([(W + 0.01, S + 0.1), (W + 0.21, S + 0.1)])
         self.assertEqual(self.bake([(RAIL, row("unknown", line, subtype="road"))])["lines"], [])

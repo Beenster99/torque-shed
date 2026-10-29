@@ -863,6 +863,7 @@ func _run_all() -> void:
 	await _t(&"_test_scenery_features")
 	await _t(&"_test_scenery_kits")
 	await _t(&"_test_scenery_lay_out")
+	await _t(&"_test_scenery_filing")
 	await _t(&"_test_scenery_ride")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
@@ -22742,6 +22743,10 @@ func _test_scenery_kits() -> void:
 
 func _test_scenery_lay_out() -> void:
 	_scenery().test_lay_out()
+
+
+func _test_scenery_filing() -> void:
+	_scenery().test_filing()
 
 
 func _test_scenery_ride() -> void:

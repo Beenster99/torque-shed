@@ -4,6 +4,7 @@ extends RefCounted
 ## small graphs of their own (road_block_tests.gd's), no scene and no network.
 
 const Roads := preload("res://tests/road_block_tests.gd")
+const Standin := preload("res://scripts/scenery/standin.gd")
 
 var t: Node   # the test runner: check()
 
@@ -71,26 +72,29 @@ func test_features() -> void:
 ## The kit library: a row for a kind, a region's laid over its default.
 func test_kits() -> void:
 	var k := SceneryStreamer.kit("wind_turbine")
-	check(k.get("model") == "standin" and k.get("round") == "D1" and float(k.get("reach", 0)) > 1000.0,
+	check(k.get("model") == "standin:post" and k.get("round") == "D1" and float(k.get("reach", 0)) > 1000.0,
 		"a turbine is round 1's, a stand-in for now, seen from afar (%s)" % k)
 	check(SceneryStreamer.kit("no_such_thing").is_empty(), "a kind the library hasn't got has no row")
 	var kinds: Dictionary = SceneryStreamer.kits()["kinds"]
 	var bad := []
 	for kind: String in kinds:
 		var row: Dictionary = kinds[kind]
-		if not str(row.get("round", "")) in SceneryStreamer.ROUND_COLOURS or str((row.get("default", {}) as Dictionary).get("model", "")) not in SceneryStreamer.MODELS:
+		var model := str((row.get("default", {}) as Dictionary).get("model", ""))
+		if not str(row.get("round", "")) in Standin.ROUND_COLOURS or not ":" in model or SceneryStreamer.script_of(model) == null:
 			bad.append(kind)
 		for region: String in (row.get("regions", {}) as Dictionary):
 			if not region in RegionKit.regions():
 				bad.append("%s/%s" % [kind, region])
-	check(bad.is_empty(), "every row names a round, a model there is and only real regional kits (%s)" % str(bad))
+	check(bad.is_empty(), "every row names a round, a model whose script there is and only real regional kits (%s)" % str(bad))
+	var post := SceneryStreamer.model_mesh("standin:post_D1")
+	check(post is ArrayMesh and post.get_aabb().size.y > 2.0, "the stand-in's script makes its post")
 	check(not SceneryStreamer.models_beyond_standin(), "round 0 has stand-ins only, so an ordinary ride places nothing")
 	# A region's row over the default (made up here: the library's own has none yet).
 	var was := SceneryStreamer.kits()
-	SceneryStreamer._kits = {"kinds": {"x": {"round": "D1", "default": {"model": "standin", "reach": 100},
+	SceneryStreamer._kits = {"kinds": {"x": {"round": "D1", "default": {"model": "standin:post", "reach": 100},
 		"regions": {"nordic": {"reach": 900, "colour": "red"}}}}}
 	var n := SceneryStreamer.kit("x", "nordic")
-	check(n["reach"] == 900 and n["colour"] == "red" and n["model"] == "standin" and SceneryStreamer.kit("x", "east_asia")["reach"] == 100,
+	check(n["reach"] == 900 and n["colour"] == "red" and n["model"] == "standin:post" and SceneryStreamer.kit("x", "east_asia")["reach"] == 100,
 		"a region's fields laid over the default, other regions the default's")
 	SceneryStreamer._kits = was
 
@@ -105,8 +109,8 @@ func test_lay_out() -> void:
 		["no_such_thing", 320.0, 300.0, null, null, null, "", "d"],   # a kind the library hasn't got
 	], "lines": [], "areas": []}
 	var net := RoadNet.new(r, Roads.flat)
-	var filed := SceneryStreamer.file_points(r.features["points"])
-	check(filed.size() == 1 and (filed[Vector2i(0, 0)] as PackedInt32Array).size() == 4, "all four filed in their block")
+	var filed := SceneryStreamer.file_features(r.features)
+	check(filed.size() == 1 and (filed[Vector2i(0, 0)]["points"] as PackedInt32Array).size() == 4, "all four filed in their block")
 	var was := SceneryStreamer.show_standins
 	SceneryStreamer.show_standins = false
 	check((SceneryStreamer.lay_out(net, filed, Vector2i(0, 0))["items"] as Dictionary).is_empty(), "no stand-ins unless asked for")
@@ -136,8 +140,31 @@ func test_lay_out() -> void:
 	var bodies := node.find_children("*", "CollisionObject3D", true, false)
 	check(multis.size() == b["items"].size() and bodies.is_empty() and int(s.stats["items"]) == 2,
 		"one MultiMesh a model and round, nothing a bike can touch")
+	check(b["items"].keys().all(func(m): return str(m).begins_with("standin:post_")), "drawn by the stand-in's script (%s)" % str(b["items"].keys()))
 	s.world.free()
 	s.free()
+
+
+## Lines and areas are filed in every block their box touches; a block holding a kind seen from afar is laid out that
+## far; unknown ground is sea level only when asked.
+func test_filing() -> void:
+	var f := {"points": [["wind_turbine", 3000.0, 100.0, null, null, null, "", "a"], ["bench", 100.0, 100.0, null, null, null, "", null]],
+		"lines": [["railway", PackedVector2Array([Vector2(100, 100), Vector2(100, 1100)]), null, null, 0, "", "b"]],
+		"areas": [["quarry", PackedVector2Array([Vector2(-10, -10), Vector2(10, -10), Vector2(10, 10)]), null, null, "", "c"]]}
+	var filed := SceneryStreamer.file_features(f)
+	var with_line := filed.keys().filter(func(k): return not (filed[k]["lines"] as PackedInt32Array).is_empty())
+	check(with_line.size() == 3 and filed.has(Vector2i(0, 2)), "a line 1 km north to south in the three blocks it crosses (%s)" % str(with_line))
+	check((filed[Vector2i(-1, -1)]["areas"] as PackedInt32Array).size() == 1 and (filed[Vector2i(0, 0)]["areas"] as PackedInt32Array).size() == 1,
+		"an area round a block corner in each block it touches")
+	check(SceneryStreamer.in_block(Vector2i(0, 1), Vector2(100, 600)) and not SceneryStreamer.in_block(Vector2i(0, 0), Vector2(100, 600)),
+		"a model asks which block a line's point is in")
+	var far := SceneryStreamer.far_blocks(f, filed)
+	check(far.has(RoadBlock.key_of(3000.0, 100.0)) and float(far[RoadBlock.key_of(3000.0, 100.0)]) > SceneryStreamer.REACH
+		and not far.has(Vector2i(0, 2)), "the turbine's block is wanted from afar, the railway's only near (%s)" % str(far))
+	var r := Roads.tee()
+	var net := RoadNet.new(r, func(_x, _z): return NAN)
+	check(is_nan(SceneryStreamer.stand(net, Vector2(300, 300)).y) and SceneryStreamer.stand(net, Vector2(300, 300), null, true).y == 0.0,
+		"unknown ground: left out, or at sea level when the kit says it may stand at sea")
 
 
 ## On the network ride: the streamer stands the region's points round a rider, off the roads, and puts nothing a bike
@@ -162,7 +189,7 @@ func test_ride() -> void:
 	var best := Vector2i.ZERO
 	var most := 0
 	for k: Vector2i in w.scenery._filed:
-		var n := (w.scenery._filed[k] as PackedInt32Array).size()
+		var n := (w.scenery._filed[k]["points"] as PackedInt32Array).size()
 		if n > most and (Vector2(k) * RoadBlock.SIZE).length() < 3000.0:
 			best = k
 			most = n
