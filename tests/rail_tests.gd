@@ -133,7 +133,8 @@ func test_lay_out() -> void:
 	node.free()
 
 
-## Two blocks laying out the same line agree where they meet: the same heights at the same samples.
+## Two blocks laying out the same line agree where they meet: the same heights at the same samples, each worked out
+## afresh; and what one block found along it, kept for the next, changes nothing a block lays.
 func test_seams() -> void:
 	Rail.forget()
 	var r := Roads.tee()
@@ -147,6 +148,7 @@ func test_seams() -> void:
 	var a := {}
 	for k: Vector2i in filed:
 		for f: Array in filed[k]:
+			Rail._seen.clear()
 			var sec := Rail.section(net, runs["runs"][int(f[0])], float(f[1]), float(f[2]), {})
 			var own := Rect2(Vector2(k) * RoadBlock.SIZE, Vector2.ONE * RoadBlock.SIZE).grow(8.0)
 			for i in (sec["s"] as PackedFloat32Array).size():
@@ -158,6 +160,17 @@ func test_seams() -> void:
 					worst = maxf(worst, absf(float(a[s]) - sec["y"][i]))
 				a[s] = sec["y"][i]
 	check(shared > 4 and worst < 0.01, "blocks agree at their seams (%d shared samples, %.4f m apart at most)" % [shared, worst])
+	var differ: Array = []
+	for k: Vector2i in filed:
+		Rail._seen.clear()
+		var cold: Dictionary = Rail.lay_out(net, k, {})["dress"]["multis"]
+		for k2: Vector2i in filed:
+			if k2 != k:
+				Rail.lay_out(net, k2, {})
+		var warm: Dictionary = Rail.lay_out(net, k, {})["dress"]["multis"]
+		if str(cold) != str(warm):
+			differ.append(k)
+	check(differ.is_empty() and filed.size() > 2, "a block lays the same with its neighbours' findings kept as without (%s)" % str(differ))
 	# A climb no steeper than the land's, and never under the land.
 	var sec := Rail.section(net, runs["runs"][0], 0.0, float(runs["runs"][0]["len"]), {})
 	var under := 0

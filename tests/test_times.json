@@ -639,7 +639,7 @@
 	"_test_scenery_ride": 9000,
 	"_test_rail_runs": 50,
 	"_test_rail_lay_out": 150,
-	"_test_rail_seams": 200,
+	"_test_rail_seams": 400,
 	"_test_rail_timetable": 30,
 	"_test_rail_regions": 2000,
 	"_test_rail_viaduct": 100,

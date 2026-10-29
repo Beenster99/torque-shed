@@ -120,6 +120,13 @@ const C_POST := Color(0.12, 0.12, 0.13)
 
 static var _runs := {}
 static var _lock := Mutex.new()
+## What the land and roads were found to be along each run, kept once the ground round them is final so the blocks a
+## run passes through (overlapping by PAD) and the lay-outs again after it ask once: net's instance id -> {run id ->
+## {sample's s in quarter metres -> [land, road], Vector2i(span's ends in quarter metres) -> its deck (_deck)}}.
+static var _seen := {}
+## How far round a section the ground must be final for what was found along it to be kept (m): past the roads' banks
+## and the stretch of a road its height is faired over.
+const SEEN_PAD := 300.0
 static var _meshes := {}
 
 
@@ -129,6 +136,8 @@ static var _meshes := {}
 ## [[run index, from s, to s], ...]}}. A run: {kind, id, name, pts: PackedVector2Array, cum: PackedFloat32Array (s at each
 ## point), flags: PackedInt32Array (a segment's), len, spans: [[s0, s1, flag, style], ...] (its bridges and tunnels),
 ## track: false for a viaduct the map has with no live line on it, kit (its region's row), timetable (rail_train.gd's)}.
+
+
 static func runs_of(region: RealRegion) -> Dictionary:
 	var id := region.get_instance_id()
 	_lock.lock()
@@ -149,6 +158,7 @@ static func runs_of(region: RealRegion) -> Dictionary:
 static func forget() -> void:
 	_lock.lock()
 	_runs.clear()
+	_seen.clear()
 	_lock.unlock()
 
 
@@ -570,12 +580,20 @@ static func section(net: RoadNet, r: Dictionary, s0: float, s1: float, memo: Dic
 	road.resize(n)
 	var asked := PackedByteArray()   # (the land and roads are asked after every other sample, and between where needed)
 	asked.resize(n)
+	var seen := _seen_of(net, str(r["id"]))
+	_lock.lock()
 	for i in n:
-		var p := _point_on(r, ss[i])
-		ps[i] = p
+		ps[i] = _point_on(r, ss[i])
 		flags[i] = _flags_at(r, ss[i])
-		if roundi(ss[i] / STEP) % 2 == 0 or i == 0 or i == n - 1:
-			if not _ask(net, p, i, land, road, memo):
+		var had = seen.get(roundi(ss[i] * 4.0))
+		if had != null:
+			land[i] = float(had[0])
+			road[i] = had[1]
+			asked[i] = 2
+	_lock.unlock()
+	for i in n:
+		if not asked[i] and (roundi(ss[i] / STEP) % 2 == 0 or i == 0 or i == n - 1):
+			if not _ask(net, ps[i], i, land, road, memo):
 				return {}
 			asked[i] = 1
 	for i in n:
@@ -590,6 +608,16 @@ static func section(net: RoadNet, r: Dictionary, s0: float, s1: float, memo: Dic
 		else:
 			land[i] = (land[a] + land[b]) * 0.5
 			road[i] = []
+	# (kept for the next block to ask, where the ground round the whole section is final)
+	var box := Rect2(ps[0], Vector2.ZERO)
+	for p in ps:
+		box = box.expand(p)
+	if net._final(box.get_center(), maxf(box.size.x, box.size.y) * 0.5 + SEEN_PAD):
+		_lock.lock()
+		for i in n:
+			if asked[i] != 2:
+				seen[roundi(ss[i] * 4.0)] = [land[i], road[i]]
+		_lock.unlock()
 	var y := _heights(net, r, ss, land, flags, road, memo)
 	var cut := PackedByteArray()
 	cut.resize(n)
@@ -608,34 +636,71 @@ static func section(net: RoadNet, r: Dictionary, s0: float, s1: float, memo: Dic
 	return {"s": ss, "p": ps, "land": land, "y": y, "flags": flags, "cut": cut, "road": road}
 
 
+## What's been found along run `id` on `net` (kept in _seen).
+static func _seen_of(net: RoadNet, id: String) -> Dictionary:
+	_lock.lock()
+	var by_net: Dictionary = _seen.get(net.get_instance_id(), {})
+	if by_net.is_empty():
+		if _seen.size() > 3:
+			_seen.clear()
+		_seen[net.get_instance_id()] = by_net
+	var got: Dictionary = by_net.get(id, {})
+	if got.is_empty():
+		by_net[id] = got
+	_lock.unlock()
+	return got
+
+
 ## Sample `i` at `p`: its land and the road near it into `land` and `road`; false where the land isn't there yet.
 static func _ask(net: RoadNet, p: Vector2, i: int, land: PackedFloat32Array, road: Array, memo: Dictionary) -> bool:
 	var bare := float(net.height.call(p.x, p.y))
 	if is_nan(bare):
 		return false
 	land[i] = net.ground_at(p.x, p.y, bare, memo)
-	road[i] = _road_at(net, p)
+	road[i] = _road_at(net, p, memo)
 	return true
 
 
 ## The road nearest `p` if one is within NEAR_TO of it: [edge, s, clearance from its carriageway's edge (m, < 0 on it;
 ## -1 in a junction), width, its height there (NAN unless `heights` or it's within its verge and CLEAR), lat]; [] for
 ## none. (A road's height is worked out only where it's wanted: it's most of the cost.)
-static func _road_at(net: RoadNet, p: Vector2, heights := false) -> Array:
-	if net._near(p.x, p.y).is_empty():
+static func _road_at(net: RoadNet, p: Vector2, memo: Dictionary, heights := false) -> Array:
+	# (RoadNet.locate's choice, from the block's grid and lines kept in `memo`, and its junctions looked at only for a
+	# road near enough to matter)
+	var near := net._near_memo(p.x, p.y, memo)
+	var cands: PackedInt32Array = near[0]
+	var best := -1
+	var best_key := INF
+	var best_proj := []
+	for c in cands.size():
+		var ei := cands[c]
+		var v := net._edge_memo(ei, memo)
+		var pr := RoadNet._project_on(v[0], v[1], p, near[1][c])
+		var off := float(pr[2]) - net.width_of(ei) * 0.5
+		if off > RoadNet.REACH:
+			continue
+		var key := maxf(off, 0.0) * 1000.0 + float(pr[2])
+		if key < best_key or (key == best_key and ei < best):
+			best_key = key
+			best = ei
+			best_proj = pr
+	if best < 0:
 		return []
-	var on := net.locate(p.x, p.y, -1, false)
-	if on.is_empty():
-		return []
-	var clear := absf(float(on["lat"])) - float(on["width"]) * 0.5
-	if int(on["node"]) >= 0:
-		clear = -1.0
+	var w := net.width_of(best)
+	var clear := absf(float(best_proj[1])) - w * 0.5
 	if clear > NEAR_TO:
 		return []
+	for n: int in [net.region.edge_a[best], net.region.edge_b[best]]:
+		var j := net.junction_of(n, false)
+		if j.is_empty() or j["kind"] == "end":
+			continue
+		if Geometry2D.is_point_in_polygon(p, j["outline"]) or Vector2(j["pos"].x, j["pos"].z).distance_to(p) <= RoadNet._inner(j):
+			clear = -1.0
+			break
 	var y := NAN
 	if heights or clear < RoadNet.VERGE + CLEAR:
-		y = net.road_y(int(on["edge"]), float(on["s"]))
-	return [int(on["edge"]), float(on["s"]), clear, float(on["width"]), y, float(on["lat"])]
+		y = net.road_y(best, float(best_proj[0]))
+	return [best, float(best_proj[0]), clear, w, y, float(best_proj[1])]
 
 
 ## The rail bed's height at each of a section's samples: the land smoothed (a railway climbs gently), never under the land
@@ -680,20 +745,24 @@ static func _heights(net: RoadNet, r: Dictionary, ss: PackedFloat32Array, land: 
 				if not pinned[i]:
 					sm[i] = acc / (hi - lo + 1)
 			y = sm
+	# (eased onto the nearest bridge's deck or tunnel's mouth, over as far as a gentle grade takes to make it up: each end
+	# as [s, its deck's height, how far])
+	var ends := PackedVector3Array()
+	for dk: Array in decks:
+		var d: Array = dk[1]
+		for e in 2:
+			var at_s := float(d[e * 2])
+			var at_end := _deck_y(d, at_s)
+			ends.append(Vector3(at_s, at_end, clampf(absf(at_end - float(d[e * 2 + 1])) / EASE_GRADE, EASE, EASE_MOST)))
 	for i in n:
 		if pinned[i]:
 			continue
 		var h := maxf(y[i], land[i] - 0.15)
-		# (eased onto the nearest bridge's deck or tunnel's mouth, over as far as a gentle grade takes to make it up)
-		for dk: Array in decks:
-			var d: Array = dk[1]
-			for end in [[float(d[0]), float(d[1])], [float(d[2]), float(d[3])]]:
-				var at_end := _deck_y(d, float(end[0]))
-				var over := clampf(absf(at_end - float(end[1])) / EASE_GRADE, EASE, EASE_MOST)
-				var away := absf(ss[i] - float(end[0]))
-				if away < over:
-					var t := 1.0 - away / over
-					h = lerpf(h, at_end, t * t * (3.0 - 2.0 * t))
+		for e in ends:
+			var away := absf(ss[i] - e.x)
+			if away < e.z:
+				var t := 1.0 - away / e.z
+				h = lerpf(h, e.y, t * t * (3.0 - 2.0 * t))
 		var rd: Array = road[i]
 		if not rd.is_empty():
 			var t := 1.0 - smoothstep(NEAR_FROM, NEAR_TO, float(rd[2]))
@@ -710,14 +779,31 @@ static func _heights(net: RoadNet, r: Dictionary, ss: PackedFloat32Array, land: 
 static func _deck(net: RoadNet, r: Dictionary, sp: Array, memo: Dictionary) -> Array:
 	var s0 := float(sp[0])
 	var s1 := float(sp[1])
+	var seen := _seen_of(net, str(r["id"]))
+	var key := Vector2i(roundi(s0 * 4.0), roundi(s1 * 4.0))
+	_lock.lock()
+	var had = seen.get(key)
+	_lock.unlock()
+	if had != null:
+		return had
+	var out := _deck_of(net, r, s0, s1, int(sp[2]), memo)
+	var a := _point_on(r, s0)
+	if net._final((a + _point_on(r, s1)) * 0.5, a.distance_to(_point_on(r, s1)) * 0.5 + SEEN_PAD):
+		_lock.lock()
+		seen[key] = out
+		_lock.unlock()
+	return out
+
+
+static func _deck_of(net: RoadNet, r: Dictionary, s0: float, s1: float, flag: int, memo: Dictionary) -> Array:
 	var y0 := _end_y(net, r, s0, -1.0, memo)
 	var y1 := _end_y(net, r, s1, 1.0, memo)
 	var lifts: Array = []
-	if int(sp[2]) == BRIDGE:
+	if flag == BRIDGE:
 		var s := s0
 		while s <= s1:
 			var p := _point_on(r, s)
-			var rd := _road_at(net, p)
+			var rd := _road_at(net, p, memo)
 			if not rd.is_empty() and float(rd[2]) < RoadNet.VERGE + CLEAR:
 				lifts.append([s, float(rd[4]) + RoadNet.HEADROOM + RoadNet.HEADROOM_PAD + DECK_DEPTH])
 			s += STEP
@@ -852,7 +938,7 @@ static func _lay_spans(geo: Geo, multis: Dictionary, net: RoadNet, r: Dictionary
 				continue
 			var bare := float(net.height.call(p.x, p.y))
 			var g := net.ground_at(p.x, p.y, bare, memo) if not is_nan(bare) else y
-			var rd := _road_at(net, p)
+			var rd := _road_at(net, p, memo)
 			if y - DECK_DEPTH - g < PIER_FROM or (not rd.is_empty() and float(rd[2]) < RoadNet.VERGE + CLEAR + 1.5):
 				piers.append([])
 				continue
