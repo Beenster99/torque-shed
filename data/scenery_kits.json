@@ -46,8 +46,8 @@
   "allotments": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:plot",
+    "reach": 900
    }
   },
   "apron": {
@@ -60,8 +60,24 @@
   "aquaculture": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:cage",
+    "reach": 1500,
+    "farm": "cages",
+    "sea": true
+   },
+   "regions": {
+    "western_europe": {
+     "farm": "oysters"
+    },
+    "east_asia": {
+     "farm": "rafts"
+    },
+    "south_east_asia": {
+     "farm": "rafts"
+    },
+    "south_asia": {
+     "farm": "rafts"
+    }
    }
   },
   "aqueduct": {
@@ -301,8 +317,47 @@
   "cemetery": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:stone",
+    "reach": 700,
+    "graves": "slab",
+    "trees": ""
+   },
+   "regions": {
+    "british_isles": {
+     "trees": "yew"
+    },
+    "western_europe": {
+     "graves": "cross"
+    },
+    "eastern_europe": {
+     "graves": "cross"
+    },
+    "mediterranean": {
+     "graves": "tomb",
+     "trees": "cypress"
+    },
+    "latin_america": {
+     "graves": "tomb"
+    },
+    "north_africa_middle_east": {
+     "graves": "muslim",
+     "trees": "cypress"
+    },
+    "south_east_asia": {
+     "graves": "muslim"
+    },
+    "east_asia": {
+     "graves": "haka"
+    },
+    "north_america": {
+     "graves": "flat"
+    },
+    "sub_saharan_africa": {
+     "graves": "cross"
+    },
+    "nordic": {
+     "graves": "slab"
+    }
    }
   },
   "chair_lift": {
@@ -417,8 +472,10 @@
   "danger_area": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:fence",
+    "reach": 900,
+    "fence": "security",
+    "flags": 150.0
    }
   },
   "defensive_tower": {
@@ -567,11 +624,73 @@
     "reach": 3000
    }
   },
+  "farmland": {
+   "round": "D5",
+   "default": {
+    "model": "fields:paddy",
+    "reach": 1500,
+    "climates": []
+   },
+   "regions": {
+    "east_asia": {
+     "climates": [
+      "Cfa",
+      "Cwa",
+      "Cwb"
+     ]
+    },
+    "south_east_asia": {
+     "climates": [
+      "Af",
+      "Am",
+      "Aw",
+      "As",
+      "Cfa",
+      "Cwa",
+      "Cwb"
+     ]
+    },
+    "south_asia": {
+     "climates": [
+      "Af",
+      "Am",
+      "Aw",
+      "As",
+      "Cwa",
+      "Cwb"
+     ]
+    }
+   }
+  },
   "fence": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "fields:fence",
+    "reach": 600,
+    "fence": "wood_wire"
+   },
+   "regions": {
+    "north_america": {
+     "fence": "barbed"
+    },
+    "latin_america": {
+     "fence": "barbed"
+    },
+    "australia_nz": {
+     "fence": "barbed"
+    },
+    "sub_saharan_africa": {
+     "fence": "barbed"
+    },
+    "nordic": {
+     "fence": "roundpole"
+    },
+    "east_asia": {
+     "fence": "wire"
+    },
+    "north_africa_middle_east": {
+     "fence": "wire"
+    }
    }
   },
   "ferry": {
@@ -665,36 +784,36 @@
   "golf_bunker": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:drape",
+    "reach": 1200
    }
   },
   "golf_course": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:drape",
+    "reach": 1200
    }
   },
   "golf_fairway": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:drape",
+    "reach": 1200
    }
   },
   "golf_green": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:golf_flag",
+    "reach": 1200
    }
   },
   "golf_tee": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:drape",
+    "reach": 1200
    }
   },
   "gondola": {
@@ -740,15 +859,88 @@
   "grave_yard": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:stone",
+    "reach": 700,
+    "graves": "slab",
+    "trees": "yew"
+   },
+   "regions": {
+    "western_europe": {
+     "graves": "cross"
+    },
+    "eastern_europe": {
+     "graves": "cross"
+    },
+    "mediterranean": {
+     "graves": "tomb",
+     "trees": "cypress"
+    },
+    "latin_america": {
+     "graves": "tomb",
+     "trees": ""
+    },
+    "north_africa_middle_east": {
+     "graves": "muslim",
+     "trees": "cypress"
+    },
+    "south_east_asia": {
+     "graves": "muslim",
+     "trees": ""
+    },
+    "east_asia": {
+     "graves": "haka",
+     "trees": ""
+    },
+    "north_america": {
+     "graves": "slab",
+     "trees": ""
+    },
+    "sub_saharan_africa": {
+     "graves": "cross",
+     "trees": ""
+    }
    }
   },
   "greenhouses": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:house",
+    "reach": 2000,
+    "house": "glass",
+    "lit": false
+   },
+   "regions": {
+    "western_europe": {
+     "house": "glass",
+     "lit": true
+    },
+    "mediterranean": {
+     "house": "plastic"
+    },
+    "north_africa_middle_east": {
+     "house": "plastic"
+    },
+    "east_asia": {
+     "house": "tunnel"
+    },
+    "south_east_asia": {
+     "house": "tunnel"
+    },
+    "south_asia": {
+     "house": "tunnel"
+    },
+    "latin_america": {
+     "house": "plastic"
+    },
+    "sub_saharan_africa": {
+     "house": "tunnel"
+    },
+    "eastern_europe": {
+     "house": "tunnel"
+    },
+    "british_isles": {
+     "house": "tunnel"
+    }
    }
   },
   "groyne": {
@@ -773,8 +965,38 @@
   "hedge": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "fields:hedge",
+    "reach": 900,
+    "leaf": "green",
+    "h": 1.7,
+    "t": 1.1
+   },
+   "regions": {
+    "western_europe": {
+     "leaf": "bocage",
+     "h": 2.2,
+     "t": 1.4
+    },
+    "mediterranean": {
+     "leaf": "dark"
+    },
+    "north_africa_middle_east": {
+     "leaf": "dark",
+     "h": 1.4
+    },
+    "south_east_asia": {
+     "leaf": "bright"
+    },
+    "latin_america": {
+     "leaf": "bright"
+    },
+    "sub_saharan_africa": {
+     "leaf": "bright",
+     "h": 1.4
+    },
+    "south_asia": {
+     "leaf": "bright"
+    }
    }
   },
   "helipad": {
@@ -915,8 +1137,10 @@
   "military": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:fence",
+    "reach": 900,
+    "fence": "security",
+    "flags": 150.0
    }
   },
   "minaret": {
@@ -1085,7 +1309,48 @@
   "orchard": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
+    "model": "fields:tree",
+    "reach": 1200,
+    "tree": "apple",
+    "space": 6.0
+   },
+   "regions": {
+    "mediterranean": {
+     "tree": "olive",
+     "space": 7.0
+    },
+    "north_africa_middle_east": {
+     "tree": "date",
+     "space": 9.0
+    },
+    "south_east_asia": {
+     "tree": "coconut",
+     "space": 9.0
+    },
+    "south_asia": {
+     "tree": "citrus",
+     "space": 7.0
+    },
+    "latin_america": {
+     "tree": "citrus"
+    },
+    "sub_saharan_africa": {
+     "tree": "citrus",
+     "space": 7.0
+    },
+    "east_asia": {
+     "tree": "citrus",
+     "space": 5.0
+    },
+    "australia_nz": {
+     "tree": "citrus"
+    }
+   }
+  },
+  "paddy": {
+   "round": "D5",
+   "default": {
+    "model": "fields:paddy",
     "reach": 1500
    }
   },
@@ -1163,8 +1428,8 @@
   "plant_nursery": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:shrub",
+    "reach": 900
    }
   },
   "post_box": {
@@ -1324,8 +1589,8 @@
   "quarry": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:bench",
+    "reach": 1800
    }
   },
   "quay": {
@@ -1442,8 +1707,9 @@
   "race_track": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:track",
+    "reach": 1500,
+    "width": 10.0
    }
   },
   "radar_tower": {
@@ -1629,8 +1895,10 @@
   "range": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:flag",
+    "reach": 1200,
+    "fence": "wire",
+    "flags": 120.0
    }
   },
   "rapids": {
@@ -1666,8 +1934,29 @@
   "retaining_wall": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "fields:wall",
+    "reach": 900,
+    "stone": "concrete"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone"
+    },
+    "western_europe": {
+     "stone": "limestone"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "east_asia": {
+     "stone": "concrete"
+    },
+    "nordic": {
+     "stone": "granite"
+    },
+    "latin_america": {
+     "stone": "fieldstone"
+    }
    }
   },
   "ridge": {
@@ -1680,8 +1969,8 @@
   "roller_coaster": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:coaster_rail",
+    "reach": 1800
    }
   },
   "runway": {
@@ -1708,8 +1997,8 @@
   "salt_pond": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:pan",
+    "reach": 2000
    }
   },
   "scree": {
@@ -1817,8 +2106,8 @@
   "theme_park": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:coaster",
+    "reach": 2500
    }
   },
   "toll_booth": {
@@ -1860,8 +2149,29 @@
   "vineyard": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:vine",
+    "reach": 1200,
+    "rows": 2.2,
+    "vine": "trellis"
+   },
+   "regions": {
+    "mediterranean": {
+     "vine": "bush",
+     "rows": 2.5
+    },
+    "north_africa_middle_east": {
+     "vine": "bush",
+     "rows": 2.8
+    },
+    "latin_america": {
+     "rows": 2.5
+    },
+    "australia_nz": {
+     "rows": 3.0
+    },
+    "north_america": {
+     "rows": 2.6
+    }
    }
   },
   "volcano": {
@@ -1874,8 +2184,76 @@
   "wall": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "fields:wall",
+    "reach": 900,
+    "stone": "fieldstone",
+    "h": 1.2,
+    "t": 0.6
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone",
+     "h": 1.3
+    },
+    "western_europe": {
+     "stone": "limestone",
+     "h": 1.1
+    },
+    "nordic": {
+     "stone": "granite",
+     "h": 0.9,
+     "t": 0.8
+    },
+    "eastern_europe": {
+     "stone": "render",
+     "h": 1.6,
+     "t": 0.4
+    },
+    "mediterranean": {
+     "stone": "limestone",
+     "h": 1.0,
+     "t": 0.7
+    },
+    "north_africa_middle_east": {
+     "stone": "adobe",
+     "h": 1.8,
+     "t": 0.5
+    },
+    "sub_saharan_africa": {
+     "stone": "laterite",
+     "h": 1.6,
+     "t": 0.4
+    },
+    "north_america": {
+     "stone": "granite",
+     "h": 0.9,
+     "t": 0.8
+    },
+    "latin_america": {
+     "stone": "adobe",
+     "h": 1.6,
+     "t": 0.5
+    },
+    "south_asia": {
+     "stone": "laterite",
+     "h": 1.5,
+     "t": 0.4
+    },
+    "east_asia": {
+     "stone": "concrete",
+     "h": 1.4,
+     "t": 0.3
+    },
+    "south_east_asia": {
+     "stone": "render",
+     "h": 1.5,
+     "t": 0.3
+    },
+    "australia_nz": {
+     "stone": "basalt",
+     "h": 1.0,
+     "t": 0.7
+    }
    }
   },
   "watchtower": {
@@ -1983,8 +2361,8 @@
   "works": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:headframe",
+    "reach": 2500
    }
   },
   "zip_line": {
@@ -2008,8 +2386,8 @@
   "zoo": {
    "round": "D5",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "fields:fence",
+    "reach": 800
    }
   }
  }

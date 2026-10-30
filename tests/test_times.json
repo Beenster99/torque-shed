@@ -648,5 +648,10 @@
 	"_test_skyline_models": 500,
 	"_test_skyline_lines": 100,
 	"_test_skyline_block": 400,
-	"_test_skyline_regions": 12000
+	"_test_skyline_regions": 12000,
+	"_test_fields_kits": 1500,
+	"_test_fields_lay_out": 1500,
+	"_test_fields_paddies": 500,
+	"_test_fields_blocks_meet": 500,
+	"_test_fields_regions": 22000
 }
