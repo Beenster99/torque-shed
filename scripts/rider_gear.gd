@@ -319,10 +319,21 @@ static func style_of(worn: Dictionary) -> String:
 
 
 ## Picks the local player's riding style (one of RiderStyle.STYLES), saved in their profile and
-## sent round with their gear. Their own bike's rider changes at once.
+## sent round with their gear. Their own bike's rider changes at once. It's also remembered in
+## the settings as their preferred style, so every character they play rides that way.
 static func set_style(id: String) -> void:
 	mine()["worn"]["style"] = RiderStyle.clean(id)
+	if Settings.rider_style != RiderStyle.clean(id):
+		Settings.rider_style = RiderStyle.clean(id)
+		Settings.save_settings()
 	Progress._touch()
+
+
+## Puts the preferred riding style from the settings (see set_style) on `profile`'s gear, when
+## one has been picked: a new save, another save or someone else's shed all ride your way.
+static func prefer_style(profile: Dictionary) -> void:
+	if RiderStyle.STYLES.has(Settings.rider_style) and profile.get("gear") is Dictionary:
+		profile["gear"]["worn"]["style"] = Settings.rider_style
 
 
 # ---------------------------------------------------------------------------- the helmet

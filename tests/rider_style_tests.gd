@@ -278,7 +278,7 @@ func test_toggle() -> void:
 	t.add_child(menu)
 	await t.get_tree().process_frame
 	var box := menu.look_corner
-	check(box != null and box.get_parent().get_parent() == menu._gameplay and box.button_pressed == Settings.look_into_corner,
+	check(box != null and menu._gameplay.is_ancestor_of(box) and box.button_pressed == Settings.look_into_corner,
 		"a check box for it on the Gameplay tab")
 	box.button_pressed = not was
 	check(Settings.look_into_corner == not was, "ticking it sets it")
@@ -296,6 +296,8 @@ func test_save_and_sync() -> void:
 	var real_path := Progress.path
 	Progress.path = "user://profile_rider_style_test.json"
 	DirAccess.remove_absolute(Progress.path)
+	var real_pref := Settings.rider_style
+	Settings.rider_style = ""
 	Shed.start_new("Style Tester", 5)
 	Progress.select("Style Tester")
 	check(RiderGear.style_of(RiderGear.worn_of(Shed.me())) == "situp", "a new rider rides sit-up")
@@ -309,6 +311,16 @@ func test_save_and_sync() -> void:
 	Progress.profile = {}
 	Progress.select("Style Tester")
 	check(RiderGear.style_of(RiderGear.worn_of(Shed.me())) == "scratcher", "kept in your profile")
+	# Remembered as your preferred style: a brand new character (another save, someone else's
+	# shed) rides that way too, and so does one that was saved riding another way.
+	check(Settings.rider_style == "scratcher", "picking a style remembers it in the settings")
+	Progress.use_profile({}, "Style Tester")
+	check(RiderGear.style_of(RiderGear.worn_of(Shed.me())) == "scratcher", "a new save's character rides your preferred style")
+	Progress.use_profile({"gear": {"worn": {"style": "rossi"}}}, "Style Tester")
+	check(RiderGear.style_of(RiderGear.worn_of(Shed.me())) == "scratcher", "an older save takes your preferred style")
+	Progress.release("Style Tester")
+	Settings.rider_style = real_pref
+	Settings.save_settings()
 	menu.queue_free()
 	# Someone else's summary: a real style kept, nonsense dropped.
 	var clean: Dictionary = Progress._clean_summary({"gear": {"helmet": "helmet_sprint", "style": "rossi"}})["gear"]

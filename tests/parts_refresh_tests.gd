@@ -29,13 +29,14 @@ func test_catalogue() -> void:
 	var fairings: Array = PartsDB.by_kind["fairing"]
 	var schemes := (tanks + fairings).filter(func(id): var lk: Dictionary = PartsDB.get_part(id).get("look", {}); return lk.has("paint") or lk.has("accent"))
 	var unpriced := (tanks + fairings).filter(func(id): return not PartsDB.get_part(id).has("price"))
-	check(tanks.size() == 10 and fairings.size() == 10 and schemes.is_empty() and unpriced.is_empty(),
-		"ten tanks and ten fairings, all plain and priced (%d, %d) %s %s" % [tanks.size(), fairings.size(), schemes, unpriced])
+	# (Thirteen tanks since three angular ones came in.)
+	check(tanks.size() == 13 and fairings.size() == 10 and schemes.is_empty() and unpriced.is_empty(),
+		"thirteen tanks and ten fairings, all plain and priced (%d, %d) %s %s" % [tanks.size(), fairings.size(), schemes, unpriced])
 	var shapes := {}
 	for id in tanks:
 		shapes[str(PartsDB.get_part(id)["look"]["shape"])] = true
 	var bare := PartsDB.STYLES.filter(func(s): return not tanks.any(func(id): return PartsDB.styles_of(id).has(s)))
-	check(shapes.size() == 10 and bare.is_empty() and shapes.keys().all(func(k): return BikeModel.TANK_SHAPES.has(k)),
+	check(shapes.size() == tanks.size() and bare.is_empty() and shapes.keys().all(func(k): return BikeModel.TANK_SHAPES.has(k)),
 		"each tank a shape of its own, and every style has one that suits it %s" % [bare])
 	var frames: Array = PartsDB.by_kind["frame"]
 	var trellis := frames.filter(func(id): return str(PartsDB.get_part(id).get("style", "")) == "trellis" or "trellis" in PartsDB.part_name(id).to_lower())
@@ -44,7 +45,7 @@ func test_catalogue() -> void:
 	var bad := []
 	for old in PartsDB.retired:
 		var now := PartsDB.current_id(old)
-		if PartsDB.parts.has(old) or not PartsDB.parts.has(now):
+		if PartsDB.parts.has(old) or not (PartsDB.parts.has(now) or now == "none"):
 			bad.append(old)
 	check(PartsDB.retired.size() > 80 and bad.is_empty(), "every part taken out has one in its place (%d) %s" % [PartsDB.retired.size(), bad])
 

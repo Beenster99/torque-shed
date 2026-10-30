@@ -771,7 +771,8 @@ static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionar
 				var suits: Array = options.filter(func(id): return PartsDB.styles_of(str(id)).has(lean))
 				if not suits.is_empty():
 					options = suits
-			if PartsDB.is_optional(slot):
+			# A road bike keeps its tail unit: its rear light and number plate.
+			if PartsDB.is_optional(slot) and not (road and slot == "tail"):
 				options.append("none")
 			pick[key] = options[rng.randi() % options.size()]
 		parts[slot] = pick[key]
@@ -826,21 +827,21 @@ const STYLE_ENGINE := {
 	"chopper": {"engine": "vtwin_1800", "head": "two_valve_stock", "fuel": "throttle_bodies", "cooling": "oil_cooler",
 		"gearbox": "six_cruiser_od", "final_drive": "top_speed_16_40"},
 	"cruiser": {"engine": "vtwin_1800", "head": "two_valve_stock", "fuel": "throttle_bodies", "cooling": "oil_cooler",
-		"gearbox": "six_cruiser_od", "final_drive": "top_speed_16_40", "ecu": "abs_ecu"},
+		"gearbox": "six_cruiser_od", "final_drive": "top_speed_16_40", "ecu": "ecu_safety"},
 	"scrambler": {"engine": "boxer_800", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "air_fins",
 		"gearbox": "six_close", "final_drive": "tall_15_42"},
 	"adventure": {"engine": "boxer_1100", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "single_radiator",
-		"gearbox": "six_wide_enduro", "final_drive": "top_speed_16_40", "ecu": "abs_ecu"},
+		"gearbox": "six_wide_enduro", "final_drive": "top_speed_16_40", "ecu": "ecu_safety"},
 	"roader": {"engine": "triple_850", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "single_radiator",
-		"gearbox": "six_close", "final_drive": "tall_15_42", "ecu": "abs_ecu"},
+		"gearbox": "six_close", "final_drive": "tall_15_42", "ecu": "ecu_safety"},
 	"tourer": {"engine": "inline_1000", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "single_radiator",
-		"gearbox": "six_close", "final_drive": "stock_15_45", "ecu": "abs_ecu"},
+		"gearbox": "six_close", "final_drive": "stock_15_45", "ecu": "ecu_safety"},
 	"sport": {"engine": "inline_600", "head": "big_valve_ported", "fuel": "throttle_bodies", "cooling": "single_radiator",
 		"gearbox": "six_close", "final_drive": "stock_15_45", "ecu": "sport_ecu"},
 	"race": {"engine": "inline_1000", "head": "hot_cam", "fuel": "race_injection", "cooling": "twin_radiators",
 		"gearbox": "six_race_quickshift", "final_drive": "tall_15_42", "ecu": "race_ecu"},
 	"naked": {"engine": "triple_850", "head": "big_valve_ported", "fuel": "throttle_bodies", "cooling": "single_radiator",
-		"gearbox": "six_close", "final_drive": "tall_15_42", "ecu": "abs_ecu"},
+		"gearbox": "six_close", "final_drive": "tall_15_42", "ecu": "ecu_safety"},
 	"supermoto": {"engine": "single_450", "head": "four_valve", "fuel": "flat_slide_carbs", "cooling": "single_radiator",
 		"gearbox": "six_wide_enduro", "final_drive": "mx_13_52"},
 	"mx": {"engine": "single_450", "head": "four_valve", "fuel": "flat_slide_carbs", "cooling": "single_radiator",
@@ -857,11 +858,11 @@ static func style_build(style: String) -> Dictionary:
 				"mirrors": "round_mirrors", "front_tyre": "touring_road_110", "rear_tyre": "touring_road_130"}, true)
 		"roader":
 			b.merge({"frame": "roader_spar_red", "fork": "roader_usd_black", "shock": "sport_mono", "tank": "sport_17",
-				"saddle": "roader_comfort", "handlebars": "roader_wide", "tail": "roader_sport", "fairing": "half_fairing",
-				"exhaust": "roader_tri", "headlight": "roader_twin", "mirrors": "fairing_mirrors"}, true)
+				"saddle": "cruiser_stepped_seat", "handlebars": "roader_wide", "tail": "roader_sport", "fairing": "half_fairing",
+				"exhaust": "roader_tri", "headlight": "twin_round", "mirrors": "fairing_mirrors"}, true)
 		"naked":
 			b.merge({"frame": "alu_trestle", "fork": "naked_gold", "shock": "sport_mono", "tank": "sport_17",
-				"saddle": "naked_step_seat", "handlebars": "naked_fat_bar", "tail": "naked_sport_tail", "exhaust": "naked_stubby",
+				"saddle": "roader_sport_seat", "handlebars": "naked_fat_bar", "tail": "sport_pointed_tail", "exhaust": "naked_stubby",
 				"headlight": "naked_round_led", "mirrors": "sport_mirrors"}, true)
 		"cafe":
 			b.merge({"frame": "steel_cradle", "tank": "cafe_15", "saddle": "cafe_hump", "handlebars": "alloy_clip_ons",
@@ -887,7 +888,7 @@ static func style_build(style: String) -> Dictionary:
 			b.merge({"frame": "race_alu_perimeter", "tank": "carbon_sport_16", "saddle": "race_foam_seat", "handlebars": "race_black_clips",
 				"tail": "race_hump", "engine": "inline_1000", "exhaust": "race_hex_carbon", "fairing": "carbon_race_fairing",
 				"fork": "race_works_usd", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "none", "front_wheel": "cast_17_front",
-				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "race_white_hugger",
+				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "carbon_hugger",
 				"front_tyre": "sport_road_120", "rear_tyre": "sport_road_190"}, true)
 		"bobber":
 			b.merge({"frame": "softail_hardtail", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
@@ -905,7 +906,7 @@ static func style_build(style: String) -> Dictionary:
 				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic",
 				"front_tyre": "touring_road_130", "rear_tyre": "touring_road_150"}, true)
 		"adventure":
-			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_25", "saddle": "adv_comfort_seat",
+			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_25", "saddle": "cruiser_stepped_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "boxer_1100", "exhaust": "mx_upswept", "front_wheel": "spoked_19_adventure",
 				"rear_wheel": "adv_17_cast", "front_tyre": "trail_road_110", "rear_tyre": "trail_road_150", "panniers": "aluminium_boxes",
 				"fairing": "adventure_fairing", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
@@ -915,7 +916,7 @@ static func style_build(style: String) -> Dictionary:
 				"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_80", "rear_tyre": "knobbly_mx", "front_mudguard": "mx_high_fender",
 				"headlight": "rect_enduro", "number_boards": "mx_side_boards"}, true)
 		"supermoto":
-			b.merge({"frame": "sm_white_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "sm_flat_seat",
+			b.merge({"frame": "sm_white_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "mx_ribbed_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "supermoto_17",
 				"rear_wheel": "supermoto_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road_160", "front_mudguard": "mx_high_fender",
 				"headlight": "rect_enduro", "mirrors": "sport_mirrors"}, true)

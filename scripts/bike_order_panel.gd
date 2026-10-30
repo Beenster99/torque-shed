@@ -113,7 +113,7 @@ func open_bike(bike_src: Dictionary, bike_title: String) -> void:
 	_refresh()
 	var cond := {}
 	for slot in plan.get("colors", {}):
-		cond[slot] = {"color": plan["colors"][slot]["color"]}
+		cond[slot] = PartColours.clean(plan["colors"][slot])
 	_preview.show_bike("%s|%s" % [title_text, str(plan["parts"].hash())], plan["parts"], plan["paint"], cond)
 
 

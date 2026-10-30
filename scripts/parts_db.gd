@@ -33,10 +33,23 @@ const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rea
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
 	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper",
 	"tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
-## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
-const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
-	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards",
-	"swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
+## The optional parts: bike slots a bike is still complete and ridable without, in the order the
+## game lists them. "none" in a build means nothing is fitted there. Everything else (the side
+## stand among them) has to be on and bolted up before the bike can be ridden. Optional isn't road
+## legal: the MOT still wants a headlight, a tail unit's rear light and plate, a horn and mirrors.
+const OPTIONAL_SLOTS: Array[String] = ["headlight", "indicators", "front_mudguard", "ecu", "steering_damper", "mirrors",
+	"lever_guards", "fairing", "satnav", "tail", "guards", "panniers", "top_box", "tank_bag", "number_boards", "aux_tank",
+	"toolbox", "fog_lights", "horn", "side_panels", "centre_stand"]
+## What the optional parts list calls each one, in plain words.
+const OPTIONAL_NAMES := {"headlight": "headlight", "indicators": "indicators", "front_mudguard": "front mudguard",
+	"ecu": "ECU", "steering_damper": "steering damper", "mirrors": "mirrors", "lever_guards": "lever guards",
+	"fairing": "fairing", "satnav": "sat nav", "tail": "tail unit", "guards": "engine protectors", "panniers": "panniers",
+	"top_box": "top box", "tank_bag": "tank bag", "number_boards": "number boards", "aux_tank": "extra fuel tank",
+	"toolbox": "tool kit", "fog_lights": "fog lights", "horn": "horn", "side_panels": "side panels", "centre_stand": "centre stand"}
+## Slots the frame covers itself when they're empty: its own footpegs and its own swingarm. "none"
+## there is fine and the bike still rides, but they aren't extras a bike does without (it always
+## has pegs and a swingarm), so they aren't in OPTIONAL_SLOTS.
+const FRAME_OWN_SLOTS: Array[String] = ["rearsets", "swingarm"]
 ## The adventure kit: a tank bag, an extra fuel tank, a toolbox and a sat nav (the luggage and
 ## the screens are the panniers, top box and fairing). Bikes saved before they existed get the
 ## slots empty.
@@ -135,7 +148,7 @@ const TOOLBOX_CONTENTS := {
 	"chain_lube": {"name": "Can of chain lube", "short": "chain lube", "price": 9, "mass": 0.4, "fixes": "lube"},
 }
 const ECU_AID_NAMES := {"traction": "traction control", "abs": "ABS", "anti_wheelie": "anti-wheelie",
-	"stability": "stability control"}
+	"stability": "stability control", "lean_traction": "lean-angle traction control"}
 
 ## What each kind of part is mostly made of, which decides the bin it goes in when it's thrown
 ## away (see bin_for). A part can say otherwise with its own "material" in data/parts.json:
@@ -159,8 +172,120 @@ const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubb
 const BINS: Array[String] = ["general", "plastic", "metal"]
 const BIN_NAMES := {"general": "General waste", "plastic": "Plastic recycling", "metal": "Metal recycling"}
 
+## Parts taken out of the catalogue since, by kind: old id -> the part a save's copy becomes, or
+## "none" where nothing takes its place (that slot is optional, and a loose one is gone). Joined
+## to `retired` when the catalogue loads, so current_id and migrate see them too. In v0.39: the
+## stock ECU and ABS controller; the smallest of each engine family and the biggest two-strokes
+## (each becomes the smallest of its own layout that's left); and parts that were the same shape
+## as another and differed only in colour, merged into it when the colour picker came in (see
+## PartColours).
+const RETIRED_PARTS := {
+	"ecu": {"stock_ecu": "none", "abs_ecu": "ecu_safety"},
+	"engine": {
+		"2stroke_600": "2stroke_500", "2stroke_750": "2stroke_500", "2stroke_800": "2stroke_500",
+		"2stroke_1000": "2stroke_500", "2stroke_1100": "2stroke_500", "2stroke_1200": "2stroke_500",
+		"twin_50": "twin_500", "twin_125": "twin_500", "twin_350": "twin_500",
+		"parallel_50": "parallel_600", "parallel_125": "parallel_600", "parallel_350": "parallel_600",
+		"parallel_500": "parallel_600",
+		"vtwin_50": "vtwin_750", "vtwin_125": "vtwin_750", "vtwin_350": "vtwin_750", "vtwin_500": "vtwin_750",
+		"vtwin_600": "vtwin_750",
+		"boxer_50": "boxer_350", "boxer_125": "boxer_350",
+		"inline_50": "inline_500", "inline_125": "inline_500", "inline_350": "inline_500",
+	},
+	"saddle": {"mx_blue_seat": "mx_ribbed_seat", "mx_red_seat": "mx_ribbed_seat", "sm_flat_seat": "mx_ribbed_seat", "sm_red_seat": "mx_ribbed_seat", "adv_rally_seat": "mx_ribbed_seat", "adv_two_tone": "chopper_stepped_tuck", "roader_brown": "chopper_stepped_tuck", "adv_comfort_seat": "cruiser_stepped_seat", "roader_comfort": "cruiser_stepped_seat", "naked_step_seat": "roader_sport_seat", "sport_blue_seat": "naked_sport_seat", "tourer_brown": "classic_tuck_seat", "scrambler_ribbed_flat": "cafe_brat_seat", "sm_tracker_seat": "scrambler_tracker_seat"},
+	"handlebars": {"cafe_black_clip_ons": "clip_ons", "sport_gold_clip": "clip_ons", "race_ti_clips": "race_black_clips", "race_blue_clips": "race_black_clips", "roader_gold": "roader_wide", "sm_braced_orange": "mx_braced_blue"},
+	"front_mudguard": {"sm_low_hugger": "road_hugger", "adv_low_hugger": "road_hugger", "sport_red_hugger": "road_hugger", "roader_hugger": "road_hugger", "mx_white_front": "mx_high_fender", "mx_yellow_front": "mx_high_fender", "sm_white_beak": "mx_high_fender", "adv_high_beak": "enduro_front_fender", "naked_carbon": "carbon_hugger", "race_white_hugger": "carbon_hugger", "cruiser_full_valance": "valanced_painted_guard", "tourer_valance": "valanced_painted_guard"},
+	"tail": {"mx_white_fender": "enduro_fender", "mx_red_fender": "enduro_fender", "sm_white_fender": "enduro_fender", "adv_rack_tail": "enduro_fender", "adv_white_tail": "enduro_fender", "sport_white_tail": "sport_pointed_tail", "roader_red": "sport_pointed_tail", "naked_sport_tail": "sport_pointed_tail", "race_carbon_tail": "sport_pointed_tail", "chopper_cateye_stub": "bobber_cateye_fender", "cruiser_ribbed_fender": "classic_tombstone_guard", "tourer_halo": "cruiser_halo_fender"},
+	"exhaust": {"sm_tri_black": "mx_tri_oval", "adv_black_tri": "mx_tri_oval", "roader_stubby": "naked_stubby", "roader_carbon": "sport_carbon_slip", "sm_high_carbon": "mx_titanium"},
+	"panniers": {"roader_hard_cases": "cruiser_hard_bags", "tourer_hard_top": "cruiser_hard_bags", "tourer_leather": "cruiser_leather_saddlebags", "adv_alloy_black": "aluminium_boxes", "adv_soft_rolls": "adventure_soft"},
+	"side_panels": {"classic_toolbox_panels": "triangle_classic", "scrambler_oval_panels": "triangle_classic", "chopper_chrome_oil": "battery_cover_chrome", "mx_blue_panels": "mx_plate", "sm_orange_panels": "mx_plate"},
+	"number_boards": {"mx_yellow_boards": "mx_side_boards", "mx_white_boards": "mx_side_boards", "sm_white_plates": "front_plate_race", "race_white_plate": "front_plate_race", "cafe_oval_plates": "oval_race_plates", "scrambler_tracker_plates": "flat_track_boards"},
+	"headlight": {"mx_number_lamp": "rect_enduro", "sm_plate_lamp": "rect_enduro", "sm_led_plate": "led_projector", "sport_led_twin": "led_projector", "sport_quad_led": "adv_quad", "naked_quad": "adv_quad", "roader_quad": "adv_quad", "roader_twin": "twin_round", "adv_twin_led": "twin_round"},
+	"mirrors": {"scrambler_bar_end_black": "bar_end_mirrors", "naked_bar_end": "bar_end_mirrors"},
+}
+## The look each of those came in, carried over to the part it became (see carry_colours): its
+## colour, its second colour (stripe, piping, pad, trim) and its exhaust headers' finish.
+const RETIRED_COLOURS := {
+	"mx_blue_seat": {"color": [0.08, 0.22, 0.62], "color2": [0.93, 0.93, 0.92]},
+	"mx_red_seat": {"color": [0.72, 0.07, 0.05], "color2": [0.04, 0.04, 0.045]},
+	"sm_flat_seat": {"color": [0.04, 0.04, 0.045], "color2": [0.92, 0.38, 0.04]},
+	"sm_red_seat": {"color": [0.72, 0.07, 0.05], "color2": [0.04, 0.04, 0.045]},
+	"adv_rally_seat": {"color": [0.04, 0.04, 0.045]},
+	"adv_two_tone": {"color": [0.04, 0.04, 0.045], "color2": [0.3, 0.3, 0.32]},
+	"roader_brown": {"color": [0.28, 0.16, 0.09], "color2": [0.52, 0.33, 0.17]},
+	"adv_comfort_seat": {"color": [0.28, 0.16, 0.09], "color2": [0.52, 0.33, 0.17]},
+	"roader_comfort": {"color": [0.04, 0.04, 0.045], "color2": [0.72, 0.07, 0.05]},
+	"naked_step_seat": {"color": [0.04, 0.04, 0.045], "color2": [0.72, 0.07, 0.05]},
+	"sport_blue_seat": {"color": [0.08, 0.22, 0.62], "color2": [0.93, 0.93, 0.92]},
+	"tourer_brown": {"color": [0.28, 0.16, 0.09], "color2": [0.52, 0.33, 0.17]},
+	"scrambler_ribbed_flat": {"color": [0.52, 0.33, 0.17], "color2": [0.28, 0.16, 0.09]},
+	"sm_tracker_seat": {"color": [0.93, 0.93, 0.92], "color2": [0.04, 0.04, 0.045]},
+	"cafe_black_clip_ons": {"color": [0.04, 0.04, 0.045]},
+	"sport_gold_clip": {"color": [0.82, 0.66, 0.25]},
+	"race_ti_clips": {"color": [0.74, 0.75, 0.77]},
+	"race_blue_clips": {"color": [0.08, 0.22, 0.62]},
+	"roader_gold": {"color": [0.82, 0.66, 0.25]},
+	"sm_braced_orange": {"color": [0.74, 0.75, 0.77], "color2": [0.92, 0.38, 0.04]},
+	"sm_low_hugger": {"color": [0.04, 0.04, 0.045]},
+	"adv_low_hugger": {"color": [0.04, 0.04, 0.045]},
+	"sport_red_hugger": {"color": [0.72, 0.07, 0.05]},
+	"roader_hugger": {"color": [0.3, 0.3, 0.32]},
+	"mx_white_front": {"color": [0.93, 0.93, 0.92]},
+	"mx_yellow_front": {"color": [0.95, 0.74, 0.08]},
+	"sm_white_beak": {"color": [0.93, 0.93, 0.92]},
+	"adv_high_beak": {"color": [0.93, 0.93, 0.92]},
+	"naked_carbon": {"color": [0.05, 0.05, 0.06]},
+	"race_white_hugger": {"color": [0.93, 0.93, 0.92]},
+	"cruiser_full_valance": {"color": [0.04, 0.04, 0.045], "color2": [0.82, 0.66, 0.25]},
+	"tourer_valance": {"color": [0.04, 0.07, 0.2]},
+	"mx_white_fender": {"color": [0.93, 0.93, 0.92]},
+	"mx_red_fender": {"color": [0.72, 0.07, 0.05]},
+	"sm_white_fender": {"color": [0.93, 0.93, 0.92]},
+	"adv_rack_tail": {"color": [0.04, 0.04, 0.045]},
+	"adv_white_tail": {"color": [0.93, 0.93, 0.92]},
+	"sport_white_tail": {"color": [0.93, 0.93, 0.92], "color2": [0.08, 0.22, 0.62]},
+	"roader_red": {"color": [0.72, 0.07, 0.05]},
+	"naked_sport_tail": {"color": [0.92, 0.38, 0.04]},
+	"race_carbon_tail": {"color": [0.05, 0.05, 0.06]},
+	"chopper_cateye_stub": {"color": [0.55, 0.02, 0.04]},
+	"cruiser_ribbed_fender": {"color": [0.04, 0.04, 0.045]},
+	"tourer_halo": {"color": [0.04, 0.07, 0.2]},
+	"sm_tri_black": {"color": [0.04, 0.04, 0.045], "trim": "black"},
+	"adv_black_tri": {"color": [0.04, 0.04, 0.045], "trim": "black"},
+	"roader_stubby": {"color": [0.04, 0.04, 0.045]},
+	"roader_carbon": {"color": [0.05, 0.05, 0.06]},
+	"sm_high_carbon": {"color": [0.05, 0.05, 0.06]},
+	"roader_hard_cases": {"color": [0.3, 0.3, 0.32], "color2": [0.04, 0.04, 0.045]},
+	"tourer_hard_top": {"color": [0.04, 0.07, 0.2], "color2": [0.74, 0.75, 0.77]},
+	"tourer_leather": {"color": [0.28, 0.16, 0.09], "color2": [0.82, 0.66, 0.25]},
+	"adv_alloy_black": {"color": [0.04, 0.04, 0.045]},
+	"adv_soft_rolls": {"color": [0.68, 0.58, 0.4]},
+	"classic_toolbox_panels": {"color": [0.72, 0.07, 0.05]},
+	"scrambler_oval_panels": {"color": [0.93, 0.93, 0.92]},
+	"chopper_chrome_oil": {"color": [0.86, 0.87, 0.89]},
+	"mx_blue_panels": {"color": [0.08, 0.22, 0.62]},
+	"sm_orange_panels": {"color": [0.92, 0.38, 0.04]},
+	"mx_yellow_boards": {"color": [0.95, 0.74, 0.08]},
+	"mx_white_boards": {"color": [0.93, 0.93, 0.92]},
+	"sm_white_plates": {"color": [0.93, 0.93, 0.92]},
+	"race_white_plate": {"color": [0.93, 0.93, 0.92]},
+	"cafe_oval_plates": {"color": [0.9, 0.86, 0.74]},
+	"scrambler_tracker_plates": {"color": [0.95, 0.74, 0.08]},
+	"mx_number_lamp": {"color": [0.93, 0.93, 0.92]},
+	"sm_plate_lamp": {"color": [0.04, 0.04, 0.045]},
+	"sm_led_plate": {"color": [0.93, 0.93, 0.92]},
+	"sport_led_twin": {"color": [0.04, 0.04, 0.045]},
+	"sport_quad_led": {"color": [0.04, 0.04, 0.045]},
+	"naked_quad": {"color": [0.04, 0.04, 0.045]},
+	"roader_quad": {"color": [0.04, 0.04, 0.045]},
+	"roader_twin": {"color": [0.04, 0.04, 0.045]},
+	"adv_twin_led": {"color": [0.04, 0.04, 0.045]},
+	"scrambler_bar_end_black": {"color": [0.04, 0.04, 0.045]},
+	"naked_bar_end": {"color": [0.04, 0.04, 0.045]},
+}
+
 var parts := {}    # part id -> Dictionary of stats (with "id" and "kind" added)
-var by_kind := {}  # kind -> Array of part ids, in catalogue order
+var by_kind := {}  # kind -> Array of part ids, in catalogue order (wheels by size: see wheel_before)
 ## Parts taken out of the catalogue (data/retired_parts.json): old id -> the part that a save's
 ## copy of it becomes (see current_id and migrate).
 var retired := {}
@@ -170,6 +295,8 @@ func _ready() -> void:
 	load_catalogue("res://data/parts.json")
 	var r = JSON.parse_string(FileAccess.get_file_as_string("res://data/retired_parts.json"))
 	retired = r.get("parts", {}) if r is Dictionary else {}
+	for kind in RETIRED_PARTS:
+		retired.merge(RETIRED_PARTS[kind], true)
 
 
 ## The catalogue's id for a part a save calls `id`: the one that replaced it when it was taken out
@@ -181,24 +308,71 @@ func current_id(id: String) -> String:
 ## `v` (a save's shed, deep) with every retired part id in it swapped for the part that replaced
 ## it, in values and in keys. A part keeps its own colour (items carry it), so an old red tank
 ## is the new tank in that red.
+## A part retired with nothing in its place (see RETIRED_PARTS) becomes "none" where a build names
+## it, and drops out of a list or out of the keys (shop stock) altogether.
 func migrate(v: Variant) -> Variant:
 	if v is String:
 		return retired.get(v, v)
 	if v is Array:
-		var out: Array = v.duplicate()
-		for i in out.size():
-			out[i] = migrate(out[i])
+		var out: Array = []
+		for x in v:
+			if not (x is String and str(retired.get(x, "")) == "none"):
+				out.append(migrate(x))
 		return out
 	if v is Dictionary:
+		carry_colours(v)
 		var out: Dictionary = v.duplicate()
 		for k in v:
 			out[k] = migrate(v[k])
 			if k is String and retired.has(k):
-				if not out.has(retired[k]):
+				if not out.has(retired[k]) and str(retired[k]) != "none":
 					out[retired[k]] = out[k]
 				out.erase(k)
 		return out
 	return v
+
+
+## The look (see PartColours) a part merged away (RETIRED_COLOURS) came in: {color, color2?,
+## trim?}, or {} for any other part.
+func retired_look(id: String) -> Dictionary:
+	var r: Dictionary = RETIRED_COLOURS.get(id, {})
+	if r.is_empty():
+		return {}
+	var out := {}
+	for key in ["color", "color2"]:
+		if r.get(key) is Array:
+			var c: Array = r[key]
+			out[key] = Color(float(c[0]), float(c[1]), float(c[2]))
+	if r.has("trim"):
+		out["trim"] = str(r["trim"])
+	return out
+
+
+## Before a merged-away part's id is swapped (see migrate), the colours it came in go with it,
+## onto the dictionary `d` that holds it (only this one: migrate visits the rest): an item, an
+## order or a sale row ({part, color...}) keeps its own colour and gains the old second colour;
+## a plan or blueprint ({parts, colors}) gets the old part's colours for that slot.
+func carry_colours(d: Dictionary) -> void:
+	var pid = d.get("part")
+	if pid is String and RETIRED_COLOURS.has(pid) and d.has("color"):
+		var look := retired_look(pid)
+		if not (d["color"] is Color):
+			d["color"] = look["color"]
+		for key in ["color2", "trim"]:
+			if look.has(key) and not d.has(key):
+				d[key] = look[key]
+	if d.get("parts") is Dictionary and d.get("colors") is Dictionary:
+		var colors: Dictionary = d["colors"]
+		for slot in d["parts"]:
+			var old = d["parts"][slot]
+			if not (old is String and RETIRED_COLOURS.has(old)):
+				continue
+			var look := retired_look(old)
+			if not (colors.get(slot) is Dictionary):
+				colors[slot] = {"color": look["color"], "finish": ""}
+			for key in ["color2", "trim"]:
+				if look.has(key) and not (colors[slot] as Dictionary).has(key):
+					colors[slot][key] = look[key]
 
 
 func load_catalogue(path: String) -> void:
@@ -218,10 +392,35 @@ func load_catalogue(path: String) -> void:
 			part["kind"] = k
 			parts[id] = part
 			by_kind[k].append(id)
+	# Wheels are listed by size everywhere they're picked from: smallest rim first.
+	by_kind["wheel"].sort_custom(wheel_before)
+
+
+## Whether wheel `a` comes before wheel `b` in a list: the smaller rim diameter first, then the
+## narrower rim, then by name.
+func wheel_before(a, b) -> bool:
+	var pa := get_part(str(a))
+	var pb := get_part(str(b))
+	var da := float(pa.get("diameter", 17.0))
+	var db := float(pb.get("diameter", 17.0))
+	if not is_equal_approx(da, db):
+		return da < db
+	var wa := float(pa.get("rim_width", 0.0))
+	var wb := float(pb.get("rim_width", 0.0))
+	if not is_equal_approx(wa, wb):
+		return wa < wb
+	return part_name(str(a)).naturalnocasecmp_to(part_name(str(b))) < 0
 
 
 func get_part(id: String) -> Dictionary:
 	return parts.get(id, {})
+
+
+## The angle between a V-twin's cylinders in degrees ("v_angle" in data/parts.json; the V-twins
+## without one are 90 degree twins), or 0 for any other engine.
+func v_angle(id: String) -> float:
+	var p := get_part(id)
+	return float(p.get("v_angle", 90.0)) if str(p.get("layout", "")) == "vtwin" else 0.0
 
 
 func part_name(id: String) -> String:
@@ -268,8 +467,20 @@ func slot_name(slot: String) -> String:
 	return n
 
 
+## Whether a bike is complete and ridable without anything in `slot` (see OPTIONAL_SLOTS).
 func is_optional(slot: String) -> bool:
 	return OPTIONAL_SLOTS.has(slot)
+
+
+## Whether "none" in `slot` is a real state for a bike: an optional part left off, or the frame's
+## own pegs or swingarm (FRAME_OWN_SLOTS). A bike with only these empty is still complete.
+func may_be_empty(slot: String) -> bool:
+	return OPTIONAL_SLOTS.has(slot) or FRAME_OWN_SLOTS.has(slot)
+
+
+## The optional parts in plain words: "headlight, indicators, front mudguard, ...".
+func optional_text() -> String:
+	return ", ".join(OPTIONAL_SLOTS.map(func(s): return str(OPTIONAL_NAMES.get(s, slot_name(s).to_lower()))))
 
 
 func is_fluid(id: String) -> bool:
@@ -398,7 +609,8 @@ func spec_line(id: String) -> String:
 			bits = [p["type"], "%d cc" % int(p["displacement"]), "%.0f x %.1f mm" % [p["bore"], p["stroke"]],
 				"redline %d" % int(p["redline"])]
 		"head":
-			bits = ["%d valves per cylinder" % int(p["valves"]), str(p["cam"]) + " cam", "%.1f:1" % p["compression"]]
+			var valves := int(p["valves"])
+			bits = ["%d valve%s per cylinder" % [valves, "" if valves == 1 else "s"], str(p["cam"]) + " cam", "%.1f:1" % p["compression"]]
 		"fuel":
 			bits = [p["type"], "feeds up to %d cc" % int(p["flow"])]
 		"air_filter":
@@ -596,7 +808,7 @@ func sanitize_build(build: Dictionary) -> Dictionary:
 	var no_guard := false
 	for slot in SLOTS:
 		var id: String = current_id(str(build.get(slot, "")))
-		if id == "none" and is_optional(slot):
+		if id == "none" and may_be_empty(slot):
 			clean[slot] = id
 			continue
 		if not parts.has(id) or parts[id]["kind"] != SLOT_KIND[slot]:

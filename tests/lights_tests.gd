@@ -235,7 +235,7 @@ func test_far_terrain() -> void:
 	await _frames(2)
 
 
-const KIT := {"frame": "adv_trellis", "panniers": "adv_alloy_black", "top_box": "adv_black_top_42", "tank_bag": "rally_tank_bag",
+const KIT := {"frame": "adv_trellis", "panniers": "aluminium_boxes", "top_box": "adv_black_top_42", "tank_bag": "rally_tank_bag",
 	"aux_tank": "rear_rally_tank_10", "toolbox": "alloy_toolbox", "satnav": "adventure_gps", "fairing": "adventure_fairing",
 	"fog_lights": "halogen_spots"}
 

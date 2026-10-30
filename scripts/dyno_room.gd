@@ -6,9 +6,10 @@ extends Node3D
 ## screen on the far wall showing the latest run, and a wall-sized TV on the west wall for the crew
 ## to plan rides on (its home channel is the Route planner, see RouteTv). Wheel a bike in and let go of it near the
 ## drum and it squares up on the rig (Shed._park); strap it down at the four posts before a run.
-## The room has its own lights, a wall switch for the cooling fan, an exhaust extraction hose on
-## a hook and ear defenders hanging by the door (Shed.dyno holds their state). A run is the
-## same for everyone: the host stores the result on the bike and each player plays it back.
+## The room has its own lights, a wall switch for the cooling fan, an exhaust extraction hose
+## hanging from the ceiling over the back of the rig and ear defenders hanging by the door
+## (Shed.dyno holds their state). A run is the same for everyone: the host stores the result on
+## the bike and each player plays it back.
 
 const CENTER := Vector3(0.0, 0.0, 55.6)
 const HALF := Vector2(4.5, 3.6)           # interior: x -4.5..4.5, z 52.0..59.2 (the shed's back wall)
@@ -32,11 +33,15 @@ const COAST_T := 1.2
 ## The four strap posts round the rig (front left, front right, rear left, rear right), in rig
 ## space, and where on the bike each strap pulls to.
 const STRAP_POSTS := [Vector3(-0.95, 0.0, -0.6), Vector3(0.95, 0.0, -0.6), Vector3(-0.95, 0.0, 0.8), Vector3(0.95, 0.0, 0.8)]
-## The extraction hose: where it drops from the ceiling, its hook on the east wall, and how far
-## it reaches from the drop.
-const HOSE_DROP := Vector3(3.7, 3.45, 56.9)
-const HOSE_HOOK := Vector3(4.42, 1.45, 56.9)
+## The extraction hose: where it drops from the ceiling (over the back of the rig, above where a
+## bike's silencer ends up, on the side the pipes are), where its end hangs when nobody's using it
+## (clear over the tallest bike's top), and how far it reaches from the drop. Its rigid duct runs
+## along the ceiling at DUCT_Y from the drop to the extractor on the east wall.
+const HOSE_DROP := Vector3(0.25, 3.3, 56.8)
+const HOSE_PARK := Vector3(0.25, 2.1, 56.8)
 const HOSE_REACH := 5.6
+const DUCT_Y := 3.44
+const DUCT_RADIUS := 0.1
 ## Switches by the door (lights, fan) and the ear defenders' hook, on the shed side wall.
 const SWITCHES := Vector3(-1.3, 1.35, 59.17)
 const PHONES_HOOK := Vector3(-2.1, 1.62, 59.15)
@@ -569,12 +574,8 @@ func _build_decor() -> void:
 		_deco(self, c + Vector3(side * 1.45, 0.01, -0.3), Vector3(0.06, 0.004, 4.2), _mats["yellow"])
 	_deco(self, c + Vector3(0.0, 0.01, -2.4), Vector3(2.9, 0.004, 0.06), _mats["yellow"])
 	_deco(self, DESK + Vector3(0.0, 0.006, 0.85), Vector3(1.6, 0.012, 0.9), _mats["rubber"])
-	# Signs.
+	# The sign over the door.
 	_poster("DYNO ROOM", c + Vector3(0.0, DOOR_HEIGHT + 0.45, hz + 0.32), 0.0, Vector2(1.0, 0.26), 64)
-	_poster("STRAP IT DOWN. EARS ON.", c + Vector3(-2.6, 1.6, -hz + 0.025), 0.0, Vector2(1.2, 0.22), 40)
-	_poster("PULL IN, LET GO NEAR THE DRUM", c + Vector3(2.6, 2.3, -hz + 0.025), 0.0, Vector2(1.4, 0.22), 40)
-	_poster("HOSE ON THE EXHAUST", HOSE_HOOK + Vector3(-0.025, 0.45, 0.0), -PI * 0.5, Vector2(0.8, 0.16), 34)
-	_poster("TUNE AT THE DESK ({interact})", DESK + Vector3(0.0, 1.75, -0.33), 0.0, Vector2(0.9, 0.2), 40)
 
 
 func _blocker(center: Vector3, size: Vector3) -> void:
@@ -675,16 +676,31 @@ func _build_switches() -> void:
 			_rocker_fan = rocker
 
 
-## The exhaust extraction hose: a flexible duct dropping from the ceiling to a hook on the east
-## wall. Take it off the hook, carry it to the bike and push it over the exhaust; it's drawn
-## sagging from the drop to wherever its end is.
+## The exhaust extraction hose: a rigid duct along the ceiling from the extractor on the east wall
+## to a drop over the back of the rig, and a flexible hose hanging from the drop with its end
+## parked up out of the way. Pull it down, push it over the bike's exhaust; it's drawn from the
+## drop to wherever its end is.
 func _build_hose() -> void:
-	_cylinder(self, HOSE_DROP + Vector3(0.0, 0.1, 0.0), 0.13, 0.12, _mats["steel"])
-	# The hook.
-	_deco(self, HOSE_HOOK + Vector3(0.03, 0.0, 0.0), Vector3(0.04, 0.2, 0.2), _mats["steel"])
-	_deco(self, HOSE_HOOK + Vector3(-0.06, -0.06, 0.0), Vector3(0.14, 0.03, 0.04), _mats["steel"])
-	var t := workshop._target(HOSE_HOOK + Vector3(-0.15, -0.3, 0.0), Vector3(0.36, 0.8, 0.5), {"dyno_kit": "hose"}, self)
-	t.name = "HoseHook"
+	var steel: StandardMaterial3D = _mats["steel"]
+	var wall_x := CENTER.x + HALF.x
+	var run := wall_x - HOSE_DROP.x
+	# The duct, a little under the ceiling between the cross beams, clear of the light fittings.
+	_cylinder(self, Vector3(HOSE_DROP.x + run * 0.5, DUCT_Y, HOSE_DROP.z), DUCT_RADIUS, run, steel, Vector3.RIGHT).name = "ExtractDuct"
+	# Hangers up to the ceiling, each with a band round the duct.
+	for i in 3:
+		var x := HOSE_DROP.x + run * (0.2 + 0.3 * i)
+		_deco(self, Vector3(x, (DUCT_Y + HEIGHT) * 0.5, HOSE_DROP.z), Vector3(0.03, HEIGHT - DUCT_Y, 0.05), steel)
+		_cylinder(self, Vector3(x, DUCT_Y, HOSE_DROP.z), DUCT_RADIUS + 0.012, 0.04, _mats["dark"], Vector3.RIGHT)
+	# The elbow down at the drop, capped where the duct ends, and the collar the hose clamps to.
+	_cylinder(self, Vector3(HOSE_DROP.x, DUCT_Y, HOSE_DROP.z), DUCT_RADIUS + 0.01, DUCT_RADIUS * 2.0 + 0.02, steel, Vector3.RIGHT)
+	_cylinder(self, Vector3(HOSE_DROP.x, (DUCT_Y + HOSE_DROP.y) * 0.5, HOSE_DROP.z), 0.09, DUCT_Y - HOSE_DROP.y, steel)
+	_cylinder(self, HOSE_DROP + Vector3(0.0, 0.03, 0.0), 0.1, 0.06, _mats["dark"]).name = "HoseCollar"
+	# Where it meets the east wall: a flange and the extractor fan's box.
+	_deco(self, Vector3(wall_x - 0.02, DUCT_Y, HOSE_DROP.z), Vector3(0.04, 0.3, 0.3), steel)
+	_deco(self, Vector3(wall_x - 0.12, DUCT_Y, HOSE_DROP.z), Vector3(0.16, 0.24, 0.24), _mats["dark"]).name = "Extractor"
+	# Grab the hose where it hangs to pull it down, and hang it back up there.
+	var t := workshop._target(HOSE_PARK + Vector3(0.0, 0.5, 0.0), Vector3(0.4, 1.2, 0.4), {"dyno_kit": "hose"}, self)
+	t.name = "HoseDrop"
 	var duct := _material(Color(0.12, 0.12, 0.13), 0.2, 0.7)
 	var rib := _material(Color(0.3, 0.3, 0.32), 0.6, 0.4)
 	for i in 18:
@@ -747,7 +763,7 @@ func hose_end_transform() -> Transform3D:
 				if int(rp.get("peer")) == holder:
 					var xf: Transform3D = rp.world_transform()
 					return Transform3D(xf.basis, xf.origin + Vector3.UP * 1.05 - xf.basis.z * 0.4)
-	return Transform3D(Basis.looking_at(Vector3.DOWN, Vector3.FORWARD), HOSE_HOOK + Vector3(-0.14, -0.12, 0.0))
+	return Transform3D(Basis.looking_at(Vector3.DOWN, Vector3.FORWARD), HOSE_PARK)
 
 
 ## The bike on the rig's tailpipe, facing out of the pipe (-Z of the transform), or null.
@@ -765,15 +781,28 @@ func exhaust_tip():
 func _draw_hose(end: Transform3D) -> void:
 	var a := HOSE_DROP
 	var b := end.origin + end.basis.z * 0.12
-	var dist := a.distance_to(b)
-	var sag := clampf(HOSE_REACH - dist, 0.15, 2.2) * 0.55
-	var c := (a + b) * 0.5 + Vector3.DOWN * sag
-	c.y = maxf(c.y, 0.08)
+	# Parked, it hangs straight down. Otherwise it drops from the collar, sags with any slack,
+	# and comes into its boot from behind (on a bike, from outside the pipe's side, so it
+	# doesn't run through the back wheel).
+	var c1 := a.lerp(b, 1.0 / 3.0)
+	var c2 := a.lerp(b, 2.0 / 3.0)
+	var state := str(Shed.dyno.get("hose", "hook"))
+	if state != "hook":
+		var slack := clampf(HOSE_REACH - a.distance_to(b), 0.0, 2.0) * 0.35
+		c1 = a + Vector3.DOWN * (maxf(a.y - b.y, 0.0) * 0.55 + slack)
+		c2 = b + end.basis.z * 0.45 + Vector3.DOWN * slack * 0.5
+		if state == "bike":
+			var rig := rig_transform()
+			var side := signf((rig.affine_inverse() * b).x)
+			c2 += rig.basis.x * (side if side != 0.0 else 1.0) * 0.12
+		c1.y = maxf(c1.y, 0.08)
+		c2.y = maxf(c2.y, 0.08)
 	var n := _hose_parts.size()
 	var prev := a
 	for i in n:
 		var t := float(i + 1) / n
-		var p := a.lerp(c, t).lerp(c.lerp(b, t), t)
+		var u := 1.0 - t
+		var p := a * u * u * u + c1 * 3.0 * t * u * u + c2 * 3.0 * t * t * u + b * t * t * t
 		var seg := _hose_parts[i]
 		var d := p - prev
 		var length := maxf(d.length(), 0.01)
@@ -937,14 +966,14 @@ func _update_kit(delta: float, running: bool) -> void:
 		_draw_hose(end)
 	var on_bike: bool = Shed.dyno.get("hose", "") == "bike"
 	_hose_end_target.global_position = end.origin if on_bike else Vector3(0.0, -50.0, 0.0)
-	# Carried too far from the drop, the hose pulls out of your hands back to its hook.
+	# Carried too far from the drop, the hose pulls out of your hands back up to the ceiling.
 	if Shed.hose_holder() == Shed.me():
 		var w: Node = get_tree().get_first_node_in_group("local_walker")
 		if w is Node3D and Vector2((w as Node3D).global_position.x - HOSE_DROP.x, (w as Node3D).global_position.z - HOSE_DROP.z).length() > HOSE_REACH + 0.6:
 			if not has_meta("hose_pulled"):
 				set_meta("hose_pulled", true)
 				Shed.request({"a": "dyno_hose", "to": "hook"})
-				Shed.feedback.emit("The hose won't reach that far: it's back on its hook.", false)
+				Shed.feedback.emit("The hose won't reach that far: it's sprung back up to the ceiling.", false)
 		elif has_meta("hose_pulled"):
 			remove_meta("hose_pulled")
 	_phones.visible = int(Shed.dyno.get("headphones", 0)) == 0
@@ -982,7 +1011,7 @@ static func plan_for(target: Dictionary, peer: int) -> Dictionary:
 		if kind == "part" and on_rig != 0 and int(target.get("bike", 0)) == on_rig:
 			return {"action": {"a": "dyno_hose", "to": "bike"}, "time": 1.0, "verb": "push the extraction hose over the exhaust"}
 		if kit == "hose":
-			return {"action": {"a": "dyno_hose", "to": "hook"}, "time": 0.3, "verb": "hang the hose back on its hook"}
+			return {"action": {"a": "dyno_hose", "to": "hook"}, "time": 0.3, "verb": "let the hose back up to the ceiling"}
 		return {}
 	match kit:
 		"strap":
@@ -994,7 +1023,7 @@ static func plan_for(target: Dictionary, peer: int) -> Dictionary:
 			return {"action": {"a": "dyno_hose", "to": "held"}, "time": 0.6, "verb": "pull the hose off the exhaust"}
 		"hose":
 			if Shed.dyno.get("hose", "") == "hook":
-				return {"action": {"a": "dyno_hose", "to": "held"}, "time": 0.3, "verb": "take the extraction hose off its hook"}
+				return {"action": {"a": "dyno_hose", "to": "held"}, "time": 0.3, "verb": "pull the extraction hose down"}
 	return {}
 
 
@@ -1036,10 +1065,10 @@ static func describe(target: Dictionary, peer: int) -> Array:
 				lines.append("Wheel a bike onto the rig to strap it down.")
 		"hose", "hose_end":
 			var state := str(Shed.dyno.get("hose", "hook"))
-			lines = ["Exhaust extraction hose", str({"hook": "On its hook. Take it to the bike on the rig and fit it over the exhaust.",
+			lines = ["Exhaust extraction hose", str({"hook": "Hanging from the ceiling over the rig. Pull it down and fit it over the exhaust of the bike on the rig.",
 				"bike": "On the exhaust: the fumes go outside.", "held": "Being carried."}.get(state, ""))]
 	if Shed.hose_holder() == peer:
-		lines.append("Carrying the extraction hose: hold the work button on the bike on the rig to fit it, or hang it back on its hook.")
+		lines.append("Carrying the extraction hose: hold the work button on the bike on the rig to fit it, or let it back up to the ceiling.")
 	return lines
 
 

@@ -59,6 +59,10 @@ const GROUPS := [
 	["Course", ["eq:barrier", "eq:marker"]],
 	["Sell to the dealer", ["sell:bikes", "sell:parts"]],
 ]
+## The engine families, in the order the shop lists them under their headings (an engine's
+## "type" in data/parts.json): each family one heading, every size of it together.
+const ENGINE_FAMILIES: Array[String] = ["Single", "Twin", "Parallel twin", "V-twin", "45° V-twin", "60° V-twin", "Boxer twin",
+	"Inline triple", "Inline four", "Two-stroke"]
 ## How a list can be sorted: key -> what the picker says.
 const SORTS := {"shop": "Shop order", "price_up": "Price: low to high", "price_down": "Price: high to low",
 	"name": "Name: A to Z", "light": "Lightest first"}
@@ -81,6 +85,15 @@ var preview: PartPreview
 ## The style of project bike to order ("" for any old project bike), and its picker.
 var bike_style := ""
 var _bike_style_pick: OptionButton
+## The colours the part picked is ordered in (see PartColours): {color, finish, color2, trim},
+## empty for the factory's own. Set again for each part looked at.
+var look := {}
+var _look_box: VBoxContainer
+var _colour_row: HBoxContainer
+var _second_row: HBoxContainer
+var _second_label: Label
+var _finish_pick: OptionButton
+var _trim_pick: OptionButton
 
 
 func _ready() -> void:
@@ -232,6 +245,7 @@ func _ready() -> void:
 	info.add_child(_desc)
 	_spec = UITheme.label("", 16, UITheme.ACCENT)
 	info.add_child(_spec)
+	_build_look_box(info)
 	_sizes = HBoxContainer.new()
 	_sizes.add_theme_constant_override("separation", 6)
 	_sizes.add_child(UITheme.label("Size:", 16))
@@ -250,19 +264,7 @@ func _ready() -> void:
 	_order = Button.new()
 	_order.text = "Order it"
 	_order.custom_minimum_size = Vector2(0, 48)
-	_order.pressed.connect(func():
-		if _kind.begins_with("sell:"):
-			sell(_part)
-		elif _kind.begins_with("paint:"):
-			Shed.request({"a": "paint_buy", "code": _part, "n": 1})
-		elif design_of(_part) != 0:
-			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
-		elif Equipment.kind_of(_part) == "poster":
-			Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
-		elif _kind.begins_with("eq:"):
-			Shed.request({"a": "order_furniture", "model": _part})
-		else:
-			Shed.request({"a": "order_part", "part": _part}))
+	_order.pressed.connect(order)
 	detail.add_child(_order)
 
 	Shed.feedback.connect(func(text, _ok): if visible: _status.text = Controls.hint(text))
@@ -510,7 +512,7 @@ static func fit_problem(id: String, bike_id: int) -> String:
 	# may never have: the headlight under a fairing, the fairing under fairing mirrors.
 	for slot in PartsDB.slots_for_kind(PartsDB.kind_of(id)):
 		for m in PartsDB.part_mounts(slot, id):
-			if not PartsDB.is_optional(str(m)):
+			if not PartsDB.may_be_empty(str(m)):
 				continue
 			if on.call(str(m)) == "none":
 				return "It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower()
@@ -650,6 +652,10 @@ func _show_kind(k: String) -> void:
 			# Engines come in families: a heading over each layout's sizes.
 			group = str(PartsDB.get_part(id).get("type", ""))
 			_variants.add_child(UITheme.label(group.to_upper(), 14, UITheme.ACCENT))
+		if k == "wheel" and sort_key == "shop" and wheel_group(id) != group:
+			# Wheels by rim size, smallest first: a heading over each diameter.
+			group = wheel_group(id)
+			_variants.add_child(UITheme.label(group, 14, UITheme.ACCENT))
 		var title := str(Equipment.get_model(id)["name"]) if k.begins_with("eq:") else PartsDB.part_name(id)
 		var b := _row(id, title, price_text(k, id), key_spec(k, id))
 		b.pressed.connect(_pick_part.bind(id))
@@ -680,6 +686,11 @@ func _show_kind(k: String) -> void:
 		_show_nothing(kind_title(k))
 	else:
 		_show_part(ids[0] if not ids.has(_part) else _part)
+
+
+## The heading wheel `id` is listed under in shop order: its rim size, as "17\" WHEELS".
+static func wheel_group(id: String) -> String:
+	return "%s WHEELS" % PartsDB.inch_text(float(PartsDB.get_part(id).get("diameter", 17.0)))
 
 
 ## The models of a kind the list shows, filtered and in the order picked (see sort_key,
@@ -714,14 +725,24 @@ func listed(k: String) -> Array:
 					return float(PartsDB.get_part(str(a)).get("mass", 0.0)) < float(PartsDB.get_part(str(b)).get("mass", 0.0)))
 		_:
 			if k == "engine":
-				var order := ["Single", "Twin", "Parallel twin", "V-twin", "Boxer twin", "Inline triple", "Inline four", "Two-stroke"]
 				ids.sort_custom(func(a, b):
 					var pa := PartsDB.get_part(a)
 					var pb := PartsDB.get_part(b)
-					var ta := order.find(str(pa.get("type", "")))
-					var tb := order.find(str(pb.get("type", "")))
-					return ta < tb if ta != tb else float(pa["displacement"]) < float(pb["displacement"]))
+					var ta := engine_family(str(pa.get("type", "")))
+					var tb := engine_family(str(pb.get("type", "")))
+					if ta != tb:
+						return ta < tb
+					if str(pa.get("type", "")) != str(pb.get("type", "")):
+						return str(pa.get("type", "")) < str(pb.get("type", ""))
+					return float(pa["displacement"]) < float(pb["displacement"]))
 	return ids
+
+
+## Where an engine type comes in the shop's list (see ENGINE_FAMILIES): a type it doesn't
+## know goes after the rest, not before.
+static func engine_family(type: String) -> int:
+	var i := ENGINE_FAMILIES.find(type)
+	return i if i >= 0 else ENGINE_FAMILIES.size()
 
 
 ## Sorts every list by a key of SORTS.
@@ -838,6 +859,7 @@ func _fill_part(id: String) -> void:
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
 	_order.disabled = false
+	_fill_look(id)
 	if _kind.begins_with("sell:"):
 		_sizes.visible = false
 		_show_sale(id)
@@ -893,6 +915,9 @@ func _fill_part(id: String) -> void:
 		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
 	_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nFits: " + ", ".join(fits)
+	var need := needed_text(_kind)
+	if need != "":
+		_spec.text += "\n" + need
 	if fits_bike != 0 and Shed.bikes.has(fits_bike):
 		var why := fit_problem(id, fits_bike)
 		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), "goes on it as it is" if why == "" else why]
@@ -906,6 +931,184 @@ func _fill_part(id: String) -> void:
 		_desc.text += " The shed has %d already, not fitted to anything." % owned(id)
 	if _kind == "chain":
 		_spec.text += "\n\nCrouch by the bike with the wrench and hold {work2} to set the tension. Lube it with chain lube."
+
+
+## What a bike still needs before it's complete and can be ridden, naming every missing part, and
+## the parts it can do without: "Missing: side stand, tank. Optional parts (...): headlight, ...".
+static func missing_text(bike_id: int) -> String:
+	var names: Array = Shed.missing_slots(bike_id).map(func(s): return PartsDB.slot_name(str(s)).to_lower())
+	return "Missing: %s.\nOptional parts (it rides without these): %s." % [", ".join(names), PartsDB.optional_text()]
+
+
+## Whether a bike needs a part of kind `k` to be complete and ridable, in a line for the part's
+## page, with the optional parts listed where it's one of them ("" for kinds that aren't bike parts).
+static func needed_text(k: String) -> String:
+	var slots := PartsDB.slots_for_kind(k)
+	if slots.is_empty():
+		return ""
+	if slots.all(func(s): return PartsDB.is_optional(str(s))):
+		return "Optional: a bike is complete and ridable without one.\nOptional parts: %s." % PartsDB.optional_text()
+	if slots.all(func(s): return PartsDB.FRAME_OWN_SLOTS.has(str(s))):
+		return "Without one, a bike uses its frame's own."
+	return "Needed: a bike can't be ridden without one."
+
+
+## Orders what's picked: the part (in the colours picked for it), the equipment, the paint, or
+## sells it in the Sell aisle.
+func order() -> void:
+	if _kind.begins_with("sell:"):
+		sell(_part)
+	elif _kind.begins_with("paint:"):
+		Shed.request({"a": "paint_buy", "code": _part, "n": 1})
+	elif design_of(_part) != 0:
+		Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
+	elif Equipment.kind_of(_part) == "poster":
+		Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
+	elif _kind.begins_with("eq:"):
+		Shed.request({"a": "order_furniture", "model": _part})
+	elif not look.is_empty() and PartColours.pickable(_part):
+		Shed.request({"a": "order_part", "part": _part, "look": look.duplicate()})
+	else:
+		Shed.request({"a": "order_part", "part": _part})
+
+
+# ---------------------------------------------------------------------------- the colour picker
+
+## The colour picker under a part's spec: a row of the paint shop's colours for the part, its
+## finish, and a row for its second colour (or a list of finishes for an exhaust's headers).
+func _build_look_box(parent: Control) -> void:
+	_look_box = VBoxContainer.new()
+	_look_box.add_theme_constant_override("separation", 6)
+	parent.add_child(_look_box)
+	_look_box.add_child(UITheme.label("Colour:", 16))
+	_colour_row = HBoxContainer.new()
+	_colour_row.add_theme_constant_override("separation", 3)
+	_look_box.add_child(_colour_row)
+	var finish_row := HBoxContainer.new()
+	finish_row.add_theme_constant_override("separation", 8)
+	finish_row.add_child(UITheme.label("Finish:", 16))
+	_finish_pick = OptionButton.new()
+	_finish_pick.add_item("As it comes")
+	for f in Shed.FINISHES:
+		_finish_pick.add_item(str(Shed.FINISH_NAMES.get(f, f.capitalize())))
+	_finish_pick.item_selected.connect(func(i): pick_finish("" if i == 0 else Shed.FINISHES[i - 1]))
+	finish_row.add_child(_finish_pick)
+	_look_box.add_child(finish_row)
+	_second_label = UITheme.label("", 16)
+	_look_box.add_child(_second_label)
+	_second_row = HBoxContainer.new()
+	_second_row.add_theme_constant_override("separation", 3)
+	_look_box.add_child(_second_row)
+	_trim_pick = OptionButton.new()
+	_trim_pick.add_item("As it comes")
+	for h in PartColours.HEADERS:
+		_trim_pick.add_item(str(PartColours.HEADER_NAMES[h]))
+	_trim_pick.item_selected.connect(func(i): pick_trim("" if i == 0 else PartColours.HEADERS[i - 1]))
+	_look_box.add_child(_trim_pick)
+	_look_box.visible = false
+
+
+## A part looked at: the picker set back to how the factory makes it, shown if it has colours to pick.
+func _fill_look(id: String) -> void:
+	look = {}
+	var on := not _kind.begins_with("eq:") and not _kind.begins_with("sell:") and not _kind.begins_with("paint:") \
+		and PartColours.pickable(id)
+	_look_box.visible = on
+	if not on:
+		return
+	_finish_pick.select(0)
+	_trim_pick.select(0)
+	_fill_swatches(_colour_row, PartsDB.default_color(id), "As it comes", pick_colour)
+	var second := PartColours.second_of(id)
+	_second_label.visible = second != ""
+	_second_label.text = "%s:" % str(PartColours.SECOND_NAMES.get(second, ""))
+	_second_row.visible = second != "" and second != "header"
+	_trim_pick.visible = second == "header"
+	if _second_row.visible:
+		var factory = PartColours.factory_second(id)
+		_fill_swatches(_second_row, factory if factory is Color else Color(0.3, 0.3, 0.3, 0.4),
+			"As it comes" if factory is Color else "None", pick_second)
+	_relook()
+
+
+## A row of swatches: the factory's own (`first`, named `first_name`) and then each paint colour;
+## pressing one calls `picked` with its colour (null for the factory's).
+func _fill_swatches(row: HBoxContainer, first: Color, first_name: String, picked: Callable) -> void:
+	for c in row.get_children():
+		c.queue_free()
+	var group := ButtonGroup.new()
+	row.add_child(_swatch(first, first_name, group, picked.bind(null), true))
+	for i in Shed.PAINTS.size():
+		row.add_child(_swatch(Shed.PAINTS[i], str(Shed.PAINT_NAMES[i]).capitalize(), group, picked.bind(Shed.PAINTS[i]), false))
+
+
+func _swatch(c: Color, tip: String, group: ButtonGroup, on_press: Callable, pressed: bool) -> Button:
+	var b := Button.new()
+	b.toggle_mode = true
+	b.button_group = group
+	b.button_pressed = pressed
+	b.tooltip_text = tip
+	b.custom_minimum_size = Vector2(22, 22)
+	b.focus_mode = Control.FOCUS_ALL
+	for state in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = c
+		var lit: bool = state in ["pressed", "hover_pressed", "focus"]
+		sb.set_border_width_all(3 if lit else 1)
+		sb.border_color = Color.WHITE if lit else Color(0, 0, 0, 0.6)
+		sb.set_corner_radius_all(4)
+		b.add_theme_stylebox_override(state, sb)
+	b.pressed.connect(on_press)
+	return b
+
+
+## The part's colour picked (null: as the factory makes it).
+func pick_colour(c) -> void:
+	if c is Color:
+		look["color"] = c
+	else:
+		look.erase("color")
+	_relook()
+
+
+## Its second colour picked (null: as the factory makes it, or no stripe).
+func pick_second(c) -> void:
+	if c is Color:
+		look["color2"] = c
+	else:
+		look.erase("color2")
+	_relook()
+
+
+## Its finish picked ("": as it comes).
+func pick_finish(f: String) -> void:
+	if f != "":
+		look["finish"] = f
+	else:
+		look.erase("finish")
+	_relook()
+
+
+## An exhaust's headers picked ("": as they come).
+func pick_trim(t: String) -> void:
+	if t != "":
+		look["trim"] = t
+	else:
+		look.erase("trim")
+	_relook()
+
+
+## The turntable and the words under the part show the colours picked.
+func _relook() -> void:
+	if _part == "" or not PartColours.pickable(_part):
+		return
+	var cond := PartColours.clean(look)
+	if not cond.has("color"):
+		cond["color"] = PartsDB.default_color(_part)
+	if preview:
+		preview.show_part(_part, {} if look.is_empty() else cond)
+	if not look.is_empty():
+		_status.text = "In %s." % PartColours.text(cond, _part).to_lower()
 
 
 ## A kind picked (A on a pad, or a click): its parts list, with the pad's focus on the first.
@@ -1115,6 +1318,8 @@ func _show_sale(key: String) -> void:
 			if Money.rideable(id) else ("Complete, but needs petrol and oil to fetch the best price." if Shed.is_complete(id)
 			else "%d part%s missing and %d loose: a complete bike fetches more." % [missing, "" if missing == 1 else "s", loose])
 		_desc.text = "Sells the whole bike to the trade, off its display stand, with every part on it. %s" % state
+		if missing > 0:
+			_desc.text += "\n" + missing_text(id)
 		_spec.text = "The money goes into the business's account. Private buyers pay more: price it at the sales office PC. Bikes sold: XP for whoever sells it." \
 			+ "\n\nPaint, panel by panel:\n" + BikePaintInfo.text(id)
 		return

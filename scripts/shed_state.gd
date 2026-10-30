@@ -77,7 +77,8 @@ const SYNC_INTERVAL := 0.1
 ## are the bike's too (the rider's choice for that bike, kept if the ECU is changed).
 const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "limiter": ["bike", "limiter"],
 	"aid_traction": ["bike", "aid_traction"], "aid_stability": ["bike", "aid_stability"],
-	"aid_anti_wheelie": ["bike", "aid_anti_wheelie"],
+	"aid_anti_wheelie": ["bike", "aid_anti_wheelie"], "aid_lean_traction": ["bike", "aid_lean_traction"],
+	"aid_abs": ["bike", "aid_abs"],
 	"f_preload": ["fork", "preload"], "f_bump": ["fork", "bump"], "f_rebound": ["fork", "rebound"],
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
@@ -177,7 +178,7 @@ var posters := {}
 ## What each screen is tuned to: screen key (see TvChannels) -> {ch: channel id, rider: the peer
 ## its live channel follows, 0 for whoever is out first}. Screens not in here show their home channel.
 var screens := {}
-## The dyno room's kit (see DynoRoom): the extraction hose ("hook", "bike" or "held" with
+## The dyno room's kit (see DynoRoom): the extraction hose ("hook": parked up at the ceiling, "bike" or "held" with
 ## hose_by the peer holding it), the cooling fan and the room's own lights (on/off), the four
 ## straps on the rig (front left, front right, rear left, rear right), who is wearing the ear
 ## defenders (0: on their hook), how hot the engine on the rig is (0..1) and how much exhaust
@@ -381,6 +382,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	adventure = {}   # nobody is out on an adventure in a save just opened
 	Roadside.bring_home()   # and nobody's bike is left at an adventure's roadside (see Roadside)
 	_forget_punctures()
+	_drop_retired_items()
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -441,6 +443,21 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	ensure_fixtures()
 	_mark_dirty()
 	changed.emit()
+
+
+## Parts a save holds that were taken out of the catalogue with nothing in their place (PartsDB
+## migrate makes them "none", like the old stock ECU): gone, from the bikes they were on too.
+func _drop_retired_items() -> void:
+	var gone := items.keys().filter(func(id): return str(items[id].get("part", "")) == "none")
+	if gone.is_empty():
+		return
+	for bike_id in bikes:
+		for slot in bikes[bike_id].get("slots", {}):
+			if gone.has(int(bikes[bike_id]["slots"][slot])):
+				bikes[bike_id]["slots"][slot] = 0
+				bikes[bike_id].get("bolted", {})[slot] = false
+	for id in gone:
+		items.erase(id)
 
 
 ## Saves from before the pumps (and the adventure kit) come back with every bike's tanks full,
@@ -688,7 +705,7 @@ func riding(peer: int) -> int:
 func missing_slots(bike_id: int) -> Array:
 	var out := []
 	for slot in PartsDB.BIKE_SLOTS:
-		if item_on(bike_id, slot) == 0 and not PartsDB.is_optional(slot):
+		if item_on(bike_id, slot) == 0 and not PartsDB.may_be_empty(slot):
 			out.append(slot)
 	if item_on(bike_id, "engine") != 0:
 		for slot in PartsDB.ENGINE_SLOTS:
@@ -720,6 +737,10 @@ func is_complete(bike_id: int) -> bool:
 func condition_of(item: Dictionary) -> Dictionary:
 	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
+	# The second colour it was ordered in (piping, a stripe...) and its headers (see PartColours).
+	for key in ["color2", "trim"]:
+		if item.has(key):
+			cond[key] = item[key]
 	# Where the dirt is on it, region by region (see Dirt).
 	if item.get("grime") is PackedByteArray:
 		cond["grime"] = item["grime"]
@@ -776,7 +797,7 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 		if item_id != 0:
 			parts[slot] = items[item_id]["part"]
 			cond[slot] = condition_of(items[item_id])
-		elif PartsDB.is_optional(slot):
+		elif PartsDB.may_be_empty(slot):
 			parts[slot] = "none"
 	if swap != 0 and items.has(swap) and swap_slot != "":
 		var it: Dictionary = items[swap]
@@ -884,7 +905,7 @@ func _dyno_check(peer: int, action: Dictionary) -> String:
 						return "You've got the petrol nozzle in your hand. Hang it back on the pump first."
 				"bike":
 					if hose_holder() != peer:
-						return "Take the exhaust hose off its hook first."
+						return "Pull the exhaust hose down first."
 					if on_rig == 0:
 						return "Wheel a bike onto the rig first."
 					if item_on(on_rig, "exhaust") == 0:
@@ -927,7 +948,7 @@ func _dyno_apply(peer: int, action: Dictionary) -> String:
 			if to == "held":
 				return "Got the extraction hose. Hold the work button on the bike's exhaust to fit it." if was == "hook" \
 					else "Took the hose off the exhaust."
-			return "Hose back on its hook."
+			return "Hose back up out of the way."
 		"dyno_fan":
 			dyno["fan"] = bool(action.get("on", not bool(dyno["fan"])))
 			return "Cooling fan %s" % ("on" if dyno["fan"] else "off")
@@ -1442,7 +1463,12 @@ func paint_text(item: Dictionary) -> String:
 		return "%s (%s, %d coat%s)" % [mix["name"], PaintMix.effect_name(str(mix.get("effect", "solid"))).to_lower(),
 			int(item.get("mix_coats", 1)), "" if int(item.get("mix_coats", 1)) == 1 else "s"]
 	var n := paint_name(item["color"])
-	return n.capitalize() if f == "" else "%s %s" % [str(FINISH_NAMES.get(f, f.capitalize())), n]
+	var main := n.capitalize() if f == "" else "%s %s" % [str(FINISH_NAMES.get(f, f.capitalize())), n]
+	# "Red, white piping": the second colour it was ordered in, where it has one.
+	var second := PartColours.second_of(str(item.get("part", "")))
+	if item.get("color2") is Color and second != "" and second != "header":
+		main += ", %s %s" % [paint_name(item["color2"]), str(PartColours.SECOND_NAMES[second]).to_lower()]
+	return main
 
 
 ## The palette colour closest to `c`.
@@ -2234,6 +2260,8 @@ func ensure_fixtures() -> void:
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
+	elif (furniture[whiteboard_id()]["xf"] as Transform3D).origin.distance_to(Whiteboard.OLD_MOUNT) < 0.01:
+		furniture[whiteboard_id()]["xf"] = Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT)
 	# Kit left where the bigger spray bay stands now goes to the paint shop's walkway.
 	var bay := Workshop.booth_footprint()
 	var n := 0
@@ -2680,6 +2708,10 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown part."
 			if not delivery_room(str(action["part"])):
 				return "The delivery area outside is full, racking and all. Bring some boxes in first."
+			if action.has("look"):
+				var bad := PartColours.check(str(action["part"]), action["look"])
+				if bad != "":
+					return bad
 			var cost := Money.buy_price(str(action["part"]), peer)
 			if cost > garage_money:
 				return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
@@ -2840,6 +2872,18 @@ func check(peer: int, action: Dictionary) -> String:
 				return "You're not riding that bike."
 			if not BikeBuild.MODE_ORDER.has(str(action.get("mode", "?"))):
 				return "There's no such ride mode."
+		"aid":
+			# A rider aid set from the dash while riding (the dyno desk's "tune" does it in the shed).
+			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
+				return "You're not riding that bike."
+			var key := str(action.get("key", ""))
+			if not BikeBuild.AID_KEYS.values().has(key):
+				return "There's no such rider aid."
+			if not (action.get("value") is float or action.get("value") is int):
+				return "Pick a level."
+			var why := build_of(bike_id).tune_block(key)
+			if why != "":
+				return why
 		"beam":
 			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
 				return "You're not riding that bike."
@@ -3601,6 +3645,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var cost := Money.buy_price(part_id, peer)
 			charge_garage(cost, "Bought %s" % PartsDB.part_name(part_id))
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
+			# In the colours picked at the parts computer, as if the factory had painted it so.
+			PartColours.apply(items[item_id], action.get("look", {}))
 			items[item_id]["paid"] = cost   # for the cost of a bike it's fitted to (see Sales)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
@@ -3785,6 +3831,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["beam"] = int(action["beam"])   # the headlight switch stays where it's left
 		"ride_mode":
 			bikes[bike_id]["ride_mode"] = str(action["mode"])   # so is the dash's ride mode
+		"aid":
+			# Kept where the dyno desk keeps it (see TUNE_HOME), so the desk shows it too.
+			var key := str(action["key"])
+			var r := build_of(bike_id).tune_range(key)
+			if not bikes[bike_id].has("tune"):
+				bikes[bike_id]["tune"] = {}
+			bikes[bike_id]["tune"][str(TUNE_HOME[key][1])] = clampf(float(roundi(float(action["value"]))), r.x, r.y)
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			var fairing := item_on(ridden, "fairing")
@@ -4916,6 +4969,7 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 		"rider": 0, "bay": bay, "xf": Workshop.bay_transform(bay), "original": parts.duplicate(), "stand": "", "pusher": 0}
 	bikes[id] = bike
 	var cond := {}
+	var style := str(PartsDB.detect_style(parts).get("style", ""))
 	for slot in PartsDB.BIKE_SLOTS:
 		if parts[slot] == "none":
 			bike["slots"][slot] = 0
@@ -4934,6 +4988,10 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 		else:
 			var painted: bool = slot in ["tank", "fairing"] or bool(PartsDB.get_part(parts[slot]).get("paint_match", false))
 			item_id = _aged_item(parts[slot], age, paint_color if painted else null)
+		# Its colours, leaning to the bike's style and paint (its own roll, so the bike's other
+		# rolls come out as they always have).
+		var painted_too: bool = slot in ["tank", "fairing"] or bool(PartsDB.get_part(parts[slot]).get("paint_match", false))
+		PartColours.apply(items[item_id], PartColours.random_look(parts[slot], style, paint_color, painted_too, hash([id, slot, bike_name])))
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
 		bike["bolted"][slot] = true
@@ -5064,8 +5122,7 @@ func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: Stri
 	for slot in colors:
 		var it := item_on(id, str(slot))
 		if it != 0 and colors[slot] is Dictionary and colors[slot].get("color") is Color:
-			items[it]["color"] = colors[slot]["color"]
-			items[it]["finish"] = str(colors[slot].get("finish", ""))
+			PartColours.apply(items[it], colors[slot], true)
 	bike["geo"] = GeoGizmo.sanitize(plan.get("geo", {}))
 	bike["bay"] = bay
 	bike["xf"] = place["xf"]
@@ -5482,8 +5539,8 @@ func blueprint_of(bike_id: int) -> Dictionary:
 		var on := item_on(bike_id, slot)
 		if on != 0:
 			parts[slot] = str(items[on]["part"])
-			colors[slot] = {"color": items[on]["color"], "finish": str(items[on].get("finish", ""))}
-		elif PartsDB.is_optional(slot):
+			colors[slot] = PartColours.look_of(items[on])
+		elif PartsDB.may_be_empty(slot):
 			parts[slot] = "none"
 		else:
 			parts[slot] = str(bike.get("original", {}).get(slot, PartsDB.DEFAULT_BUILD.get(slot, "none")))
@@ -5531,6 +5588,7 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 		var look: Dictionary = colors.get(row["slot"], {})
 		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
 		items[item_id]["paid"] = cost
+		PartColours.apply(items[item_id], look)
 		items[item_id]["finish"] = str(look.get("finish", ""))
 		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
 		items[item_id]["by"] = orderer_name(peer)
@@ -5988,7 +6046,7 @@ func _deliver_on_order(delta: float) -> void:
 			i += 1
 			continue
 		on_order.remove_at(i)
-		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")), o.get("used", {}))
+		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")), o.get("used", {}), o)
 		sent += 1
 	if sent > 0:
 		_mark_dirty()
@@ -5997,8 +6055,9 @@ func _deliver_on_order(delta: float) -> void:
 
 ## Host: a new part, boxed (fluids as they are) and put in the delivery area, with what was paid
 ## for it and who ordered it on the note; with `used` ({rust, dirt, wear}, see used_cond) a used
-## one in that state, unboxed. Returns its id, or 0 when there's no room for it.
-func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", used = {}) -> int:
+## one in that state, unboxed; `look` its second colour and headers (see PartColours). Returns its
+## id, or 0 when there's no room for it.
+func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", used = {}, look = {}) -> int:
 	if not delivery_room(part):
 		return 0
 	var cond := used_cond(used)
@@ -6006,6 +6065,10 @@ func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", 
 		color if color is Color else null)
 	items[item_id]["paid"] = paid
 	items[item_id]["finish"] = finish
+	var extra := PartColours.clean(look)
+	for key in ["color2", "trim"]:
+		if extra.has(key):
+			items[item_id][key] = extra[key]
 	# Used parts come as they are, not boxed.
 	items[item_id]["boxed"] = not PartsDB.is_fluid(part) and cond.is_empty()
 	items[item_id]["by"] = by if by != "" else "the crew"
