@@ -989,6 +989,7 @@ func _run_all() -> void:
 	await _t(&"_test_bike_look_budgets")
 	await _t(&"_test_bike_look_parts_detail")
 	await _t(&"_test_bike_look_finishes")
+	await _t(&"_test_bike_look_wear")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -23982,6 +23983,10 @@ func _test_bike_look_parts_detail() -> void:
 
 func _test_bike_look_finishes() -> void:
 	_bike_look().test_finishes()
+
+
+func _test_bike_look_wear() -> void:
+	_bike_look().test_wear_and_wet()
 
 
 ## Not in the suite: records the Classic bikes again (see bike_look_tests.gd).
