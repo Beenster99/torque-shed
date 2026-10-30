@@ -366,16 +366,25 @@ func _add_slot(slot: String) -> void:
 	# A baked model's pieces on the same node, whatever they're painted: the pass over all of
 	# them is one more draw, not one each. Up close (the crew's bike riding beside you, or your
 	# own) that was a draw for nearly every piece of the bike.
+	var shapes := {}   # node -> the part's own shapes in the new look's meshes it shares with others
+	for shape in model._slot_shapes.get(slot, []):
+		if not shapes.has(shape[0]):
+			shapes[shape[0]] = []
+		shapes[shape[0]].append(shape[1])
+	for parent in shapes:
+		if not merged.has(parent):
+			merged[parent] = []
 	for parent in merged:
 		var over := MeshInstance3D.new()
 		over.name = "Dirt_" + slot
-		over.mesh = BikeModel.shape_mesh(merged[parent])
+		over.mesh = BikeModel.shape_mesh(merged[parent]) if shapes.get(parent, []).is_empty() \
+			else BikeLookNew.join_shapes(BikeModel.shape_mesh(merged[parent]) if not (merged[parent] as Array).is_empty() else null, shapes[parent])
 		over.material_override = m
 		over.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		over.visible = not _far
 		(parent as Node).add_child(over)
 		model.add_slot_extra(slot, over)
-		_overlays.append([over, (merged[parent] as Array).size()])
+		_overlays.append([over, (merged[parent] as Array).size() + shapes.get(parent, []).size()])
 	_xf_stale = true
 	_update_transform()
 

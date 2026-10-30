@@ -54,6 +54,7 @@ var weather_now := "clear"   # the weather when last played, so it carries on ne
 var snap_placement := true # equipment you carry snaps square and flush to walls and corners
 var money_graph_range := "day"   # the money graphs' time unit: minute, hour, day, week, month or year (see MoneyGraph)
 var free_rotate := false   # the rotate keys turn what you hold freely (5 degree taps, smooth held) rather than a quarter a press
+var bike_look := "new"     # how bikes are drawn: "classic" (the bikes as they were) or "new" (the overhaul), see BikeLook
 
 ## Emitted whenever a graphics setting (gfx_*) changes.
 signal graphics_changed
@@ -86,10 +87,12 @@ var gfx_driver := "vulkan"        # "vulkan" or "d3d12" (Windows; from the next 
 var gfx_fps_counter := false
 var gfx_avatar_shadows := true    # whether players', staff's and townsfolk's figures cast shadows
 var gfx_mirrors := "medium"       # the ridden bike's live mirrors: "off" (plain glass), "low".."ultra" (see BikeMirrors)
+var gfx_bike_detail := "high"     # how far bikes keep their small parts: "low".."ultra", others' a step lower (see BikeLook)
 const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monitor", "gfx_vsync", "gfx_fps_cap",
 	"gfx_fov", "gfx_brightness", "gfx_render_scale", "gfx_upscaler", "gfx_sharpness", "gfx_msaa", "gfx_taa",
 	"gfx_screen_aa", "gfx_detail", "gfx_draw_distance", "gfx_shadows", "gfx_gi", "gfx_volumetrics", "gfx_clouds",
-	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_bloom", "gfx_driver", "gfx_fps_counter", "gfx_avatar_shadows", "gfx_mirrors"]
+	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_bloom", "gfx_driver", "gfx_fps_counter", "gfx_avatar_shadows", "gfx_mirrors",
+	"gfx_bike_detail"]
 
 
 ## Every action a player can rebind, in the order the Key bindings tab lists them:
@@ -232,6 +235,9 @@ func load_settings() -> void:
 		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
 		free_rotate = bool(cfg.get_value("building", "free_rotate", free_rotate))
 		money_graph_range = str(cfg.get_value("display", "money_graph", money_graph_range))
+		bike_look = str(cfg.get_value("display", "bike_look", bike_look))
+		if not BikeLook.LOOKS.has(bike_look):
+			bike_look = BikeLook.NEW
 		if not MoneyGraph.RANGES.has(money_graph_range):
 			money_graph_range = MoneyGraph.DEFAULT_RANGE
 		_load_graphics(cfg)
@@ -276,6 +282,7 @@ func save_settings() -> void:
 	cfg.set_value("building", "snap", snap_placement)
 	cfg.set_value("building", "free_rotate", free_rotate)
 	cfg.set_value("display", "money_graph", money_graph_range)
+	cfg.set_value("display", "bike_look", bike_look)
 	for k in GFX_KEYS:
 		cfg.set_value("graphics", k, get(k))
 	cfg.save(PATH)
