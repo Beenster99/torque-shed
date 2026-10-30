@@ -14,9 +14,9 @@ const Postcards := preload("res://tests/postcards/postcards.gd")
 const PLACES := [
 	{"id": "mosel", "want": ["vine", "bush_vine"], "title": "The Mosel, Bernkastel to Wehlen", "from": [49.9160, 7.0700], "to": [49.9330, 7.0450]},
 	{"id": "almeria", "want": ["house_plastic", "house_glass", "house_tunnel"], "title": "El Ejido, Almería", "from": [36.7900, -2.8600], "to": [36.7800, -2.7800]},
-	{"id": "camargue", "want": ["pan_pink", "pan_white", "pan_brine"], "title": "Salin-de-Giraud, the Camargue", "from": [43.4300, 4.7000], "to": [43.4050, 4.7350]},
+	{"id": "camargue", "want": ["pan_pink", "pan_white", "pan_brine"], "title": "Salin-de-Giraud, the Camargue", "from": [43.4050, 4.7280], "to": [43.3700, 4.7180]},
 	{"id": "swaledale", "want": ["wall_gritstone"], "title": "Swaledale, Muker to Gunnerside", "from": [54.3750, -2.1400], "to": [54.3800, -2.0800]},
-	{"id": "bali", "want": ["paddy_water", "paddy_rice"], "title": "Jatiluwih, Bali", "from": [-8.3700, 115.1050], "to": [-8.3650, 115.1450]},
+	{"id": "bali", "want": ["paddy_water", "paddy_rice"], "title": "Bedugul, Bali", "from": [-8.2850, 115.1500], "to": [-8.2700, 115.1750]},
 	{"id": "shodoshima", "want": ["tree_citrus", "stone_haka"], "title": "Shodoshima, Kusakabe", "from": [34.4760, 134.2620], "to": [34.4780, 134.2900]},
 ]
 
@@ -100,49 +100,6 @@ func _place(place: Dictionary, cam: Camera3D) -> void:
 	await _settle(w)
 	eye = Postcards.view_xf(w, s, "road")   # (the world's origin may have moved under the camera while it settled)
 	cam.global_transform = eye
-	if OS.get_environment("FIELDS_TIMING") != "":
-		var key := RoadBlock.key_of(cam.global_position.x + w.origin.x, cam.global_position.z + w.origin.z)
-		var bb := Fields._Block.new(w.roads.net, key)
-		var c0 := Vector2(cam.global_position.x + w.origin.x, cam.global_position.z + w.origin.z)
-		for what in ["bare", "gap", "ground", "clear"]:
-			var t2 := Time.get_ticks_usec()
-			for q in 1000:
-				var pq := c0 + Vector2(q % 37, q / 37) * 5.0 + Vector2(1.3, 0.7) * float(what.length())
-				match what:
-					"bare": bb.bare(pq)
-					"gap": bb.gap(pq)
-					"ground": bb.ground(pq)
-					"clear": bb.clear(pq)
-			print("fields: 1000 %s: %.2f ms" % [what, (Time.get_ticks_usec() - t2) / 1000.0])
-		# The busiest block's rows by kind: how long each kind takes, and how many pieces.
-		var most := Vector2i.ZERO
-		var most_n := -1
-		for k: Vector2i in w.scenery._filed:
-			var n := 0
-			for part in ["lines", "areas"]:
-				n += ((w.scenery._filed[k] as Dictionary)[part] as PackedInt32Array).size()
-			if n > most_n:
-				most_n = n
-				most = k
-		var by_kind := {}
-		var feats: Dictionary = w.roads.net.region.features
-		for part in ["lines", "areas"]:
-			for i in (w.scenery._filed[most] as Dictionary)[part]:
-				var row: Array = feats[part][i]
-				var kk := SceneryStreamer.kit(str(row[0]), "western_europe")
-				if not str(kk.get("model", "")).begins_with("fields:"):
-					continue
-				var kind := str(row[0])
-				if not by_kind.has(kind):
-					by_kind[kind] = {"points": [], "lines": [], "areas": []}
-				(by_kind[kind][part] as Array).append([row, kk])
-		for kind: String in by_kind:
-			var t3 := Time.get_ticks_usec()
-			var got := Fields.lay_out(w.roads.net, most, by_kind[kind])
-			var pcs := 0
-			for m: String in got["items"]:
-				pcs += (got["items"][m] as Array).size()
-			print("fields: block %s %s: %d rows, %d pieces, %.1f ms" % [most, kind, (by_kind[kind]["lines"] as Array).size() + (by_kind[kind]["areas"] as Array).size(), pcs, (Time.get_ticks_usec() - t3) / 1000.0])
 	var target := _target(w, cam.global_position)
 	print("fields: %s: %d scenery blocks, %s, aiming at %s" % [place["id"], w.scenery.blocks.size(), w.scenery.stats, target])
 	for when in ["day", "night"]:
@@ -206,6 +163,8 @@ func _settle(w: AdventureWorld) -> void:
 ## between 60 m and 900 m off; ["", eye, 0] for none.
 func _target(w: AdventureWorld, eye: Vector3, want := []) -> Array:
 	var best := {}
+	var nearest := INF
+	var sample := Vector3.ZERO
 	for node: Node3D in w.scenery.blocks.values():
 		for mmi in node.get_children():
 			if not mmi is MultiMeshInstance3D:
@@ -217,6 +176,9 @@ func _target(w: AdventureWorld, eye: Vector3, want := []) -> Array:
 			for i in range(0, mm.instance_count, maxi(1, mm.instance_count / 400)):
 				var xf: Transform3D = (mmi as Node3D).global_transform * mm.get_instance_transform(i)
 				var d := xf.origin.distance_to(eye)
+				if d < nearest:
+					nearest = d
+					sample = xf.origin
 				if d < 60.0 or d > 4000.0:
 					continue
 				if best.is_empty() or d < float(best["d"]):
@@ -227,7 +189,7 @@ func _target(w: AdventureWorld, eye: Vector3, want := []) -> Array:
 			for mmi in node.get_children():
 				if not str(mmi.name) in names:
 					names.append(str(mmi.name))
-		print("fields: nothing of %s in view; the blocks have %s" % [want, names])
+		print("fields: nothing of %s in view (the nearest %.0f m off, at %s; the eye at %s); the blocks have %s" % [want, nearest, sample, eye, names])
 		return ["", eye, 0.0]
 	print("fields: aiming at %s %.0f m off" % [best["model"], float(best["d"])])
 	return [best["model"], best["at"], 2.0]

@@ -1064,9 +1064,9 @@ static func mesh(model: String) -> Mesh:
 		"house": _house(b, parts[1] if parts.size() > 1 else "glass")
 		"plot": _plot(b)
 		"shed": _shed(b)
-		"pan": _slab(b, {"pink": Color(0.88, 0.6, 0.62), "white": Color(0.95, 0.94, 0.9), "brine": Color(0.55, 0.62, 0.66)}.get(parts[1] if parts.size() > 1 else "", WHITE), Color(0.6, 0.55, 0.45), GLOSS if parts.size() > 1 and parts[1] == "brine" else MATTE)
+		"pan": _slab(b, {"pink": Color(0.86, 0.42, 0.5), "white": Color(0.95, 0.94, 0.9), "brine": Color(0.36, 0.5, 0.52)}.get(parts[1] if parts.size() > 1 else "", WHITE), Color(0.6, 0.55, 0.45), GLOSS if parts.size() > 1 and parts[1] == "brine" else MATTE)
 		"salt_heap": b.cone(Vector3.ZERO, 3.0, 2.6, 10, WHITE)
-		"paddy": _slab(b, Color(0.42, 0.5, 0.55) if parts.size() > 1 and parts[1] == "water" else Color(0.38, 0.58, 0.16), Color(0.33, 0.4, 0.2), GLOSS if parts.size() > 1 and parts[1] == "water" else MATTE)
+		"paddy": _slab(b, Color(0.52, 0.64, 0.72) if parts.size() > 1 and parts[1] == "water" else Color(0.46, 0.68, 0.2), Color(0.33, 0.4, 0.2), GLOSS if parts.size() > 1 and parts[1] == "water" else MATTE)
 		"pond": _slab(b, Color(0.28, 0.34, 0.26), Color(0.35, 0.36, 0.25), GLOSS)
 		"cage": _cage(b)
 		"raft": _raft(b)
@@ -1220,14 +1220,14 @@ static func _house(b: _Build, kind: String) -> void:
 	match kind:
 		"plastic":
 			var col := Color(0.86, 0.86, 0.83)
-			b.box(Vector3(0, 1.0, 0), Vector3(w, 4.0, l), Basis(), col * 0.92, GLOSS)
+			b.box(Vector3(0, 1.0, 0), Vector3(w, 4.0, l), Basis(), col * 0.92)
 			var bays := 6
 			for i in bays:
 				var x0 := -w * 0.5 + w * i / bays
 				var x1 := x0 + w / bays
 				var xm := (x0 + x1) * 0.5
-				b.quad(Vector3(x0, 3.0, -l * 0.5), Vector3(xm, 3.5, -l * 0.5), Vector3(xm, 3.5, l * 0.5), Vector3(x0, 3.0, l * 0.5), col, GLOSS)
-				b.quad(Vector3(xm, 3.5, -l * 0.5), Vector3(x1, 3.0, -l * 0.5), Vector3(x1, 3.0, l * 0.5), Vector3(xm, 3.5, l * 0.5), col * 0.97, GLOSS)
+				b.quad(Vector3(x0, 3.0, -l * 0.5), Vector3(xm, 3.5, -l * 0.5), Vector3(xm, 3.5, l * 0.5), Vector3(x0, 3.0, l * 0.5), col)
+				b.quad(Vector3(xm, 3.5, -l * 0.5), Vector3(x1, 3.0, -l * 0.5), Vector3(x1, 3.0, l * 0.5), Vector3(xm, 3.5, l * 0.5), col * 0.97)
 		"tunnel":
 			var col := Color(0.9, 0.91, 0.9)
 			var sides := 8
@@ -1236,9 +1236,9 @@ static func _house(b: _Build, kind: String) -> void:
 				var a1 := PI * (i + 1) / sides
 				var p0 := Vector3(cos(a0) * w * 0.5, sin(a0) * 3.4, 0)
 				var p1 := Vector3(cos(a1) * w * 0.5, sin(a1) * 3.4, 0)
-				b.quad(p0 + Vector3(0, 0, -l * 0.5), p1 + Vector3(0, 0, -l * 0.5), p1 + Vector3(0, 0, l * 0.5), p0 + Vector3(0, 0, l * 0.5), col * (0.9 + 0.1 * sin(a0)), GLOSS)
-				b.tri(Vector3(0, 0, -l * 0.5), p1 + Vector3(0, 0, -l * 0.5), p0 + Vector3(0, 0, -l * 0.5), col * 0.85, GLOSS)
-				b.tri(Vector3(0, 0, l * 0.5), p0 + Vector3(0, 0, l * 0.5), p1 + Vector3(0, 0, l * 0.5), col * 0.85, GLOSS)
+				b.quad(p0 + Vector3(0, 0, -l * 0.5), p1 + Vector3(0, 0, -l * 0.5), p1 + Vector3(0, 0, l * 0.5), p0 + Vector3(0, 0, l * 0.5), col * (0.9 + 0.1 * sin(a0)))
+				b.tri(Vector3(0, 0, -l * 0.5), p1 + Vector3(0, 0, -l * 0.5), p0 + Vector3(0, 0, -l * 0.5), col * 0.85)
+				b.tri(Vector3(0, 0, l * 0.5), p0 + Vector3(0, 0, l * 0.5), p1 + Vector3(0, 0, l * 0.5), col * 0.85)
 			b.box(Vector3(0, -0.6, 0), Vector3(w, 1.2, l), Basis(), MUD)
 		_:
 			var glass := Color(0.62, 0.72, 0.76)
@@ -1272,7 +1272,7 @@ static func _shed(b: _Build) -> void:
 ## A slab 1 square round its middle and 1 deep (stretched by its tile): `top` its surface, `side` its banks.
 static func _slab(b: _Build, top: Color, side: Color, flag: float) -> void:
 	b.quad(Vector3(-0.5, 0, -0.5), Vector3(-0.5, 0, 0.5), Vector3(0.5, 0, 0.5), Vector3(0.5, 0, -0.5), top, flag)
-	b.box(Vector3(0, -0.5, 0), Vector3(1.0, 1.0, 1.0), Basis(), side)
+	b.box(Vector3(0, -0.52, 0), Vector3(1.0, 0.96, 1.0), Basis(), side)
 	b.box(Vector3(0, 0.015, 0.49), Vector3(1.0, 0.03, 0.02), Basis(), side * 1.1)
 	b.box(Vector3(0.49, 0.015, 0), Vector3(0.02, 0.03, 1.0), Basis(), side * 1.1)
 
@@ -1280,7 +1280,7 @@ static func _slab(b: _Build, top: Color, side: Color, flag: float) -> void:
 ## A tile laid on the land (stretched and tilted by its transform), with a little skirt under its edges.
 static func _tile(b: _Build, col: Color) -> void:
 	b.quad(Vector3(-0.5, 0, -0.5), Vector3(-0.5, 0, 0.5), Vector3(0.5, 0, 0.5), Vector3(0.5, 0, -0.5), col)
-	b.box(Vector3(0, -0.2, 0), Vector3(1.0, 0.4, 1.0), Basis(), col * 0.8)
+	b.box(Vector3(0, -0.22, 0), Vector3(1.0, 0.4, 1.0), Basis(), col * 0.8)
 
 
 static func _cage(b: _Build) -> void:
@@ -1617,6 +1617,10 @@ void vertex() {
 }
 
 void fragment() {
+	// (the pieces are seen from both sides, and a sheet (a roof, a pan, a flag) is lit on the side it's seen from)
+	if (dot(NORMAL, VIEW) < 0.0) {
+		NORMAL = -NORMAL;
+	}
 	ALBEDO = COLOR.rgb;
 	if (flag > 0.5 && flag < 2.5) {
 		// Glass and water: smooth, the sky in it.
