@@ -6,6 +6,8 @@ class_name TextureKit
 ## any mesh, boxes included.
 
 const SIZE := 128
+## Every kind of texture set apply() makes.
+const KINDS: Array[String] = ["knurl", "quilt", "grain", "carbon", "brushed", "crinkle", "core"]
 
 static var _cache := {}
 

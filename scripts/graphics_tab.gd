@@ -99,6 +99,8 @@ func _build_quality(body: VBoxContainer) -> void:
 	var levels := [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["ultra", "Ultra"]]
 	_option(body, "gfx_shadows", "Shadows", levels)
 	_option(body, "gfx_detail", "Detail level (meshes, textures)", levels)
+	_steps(body, "gfx_bike_detail", "Bike detail", levels)
+	_note(body, "How far off bikes keep their small parts. Other riders' bikes are drawn a step below yours, so a group ride stays smooth. (New bike look.)")
 	_slider(body, "gfx_draw_distance", "Draw distance", 0.5, 2.0, 0.05, func(v): return "%d%%" % roundi(v * 100.0))
 	_option(body, "gfx_gi", "Global illumination", [["off", "Off"], ["ssil", "SSIL (screen-space bounce light)"],
 		["sdfgi", "SDFGI (real-time global illumination)"]])
