@@ -1,5 +1,5 @@
 extends Node3D
-## Close-ups of twins' top ends made in Blender (assets/bike_parts/head/twin) on whole bikes, each
+## Close-ups of engine top ends made in Blender (assets/bike_parts/head) on whole bikes, each
 ## beside the same bike with BikeModel's own code-built barrels and head, for the bike look
 ## overhaul's contact sheets:
 ##   xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots
@@ -14,6 +14,18 @@ const BIKES := [
 	["nickel_cradle", "twin_500", "one_valve_flathead", "classic"],
 	["bobber_rigid", "twin_1200", "big_valve_ported", "bobber"],
 	["cafe_lowboy_cradle", "twin_1000", "race_high_comp", "cafe"],
+	["mx_twin_loop", "single_450", "four_valve", "mx"],
+	["scrambler_desert_cradle", "single_250", "two_valve_stock", "scrambler"],
+	["adv_trellis", "parallel_800", "four_valve", "adventure"],
+	["roader_trellis_grey", "triple_850", "big_valve_ported", "roader"],
+	["sport_perimeter_red", "inline_1000", "race_high_comp", "sport"],
+	["mx_red_loop", "2stroke_125", "four_valve", "mx"],
+	["sport_spar_black", "2stroke_500", "four_valve", "sport"],
+	["softail_hardtail", "vtwin45_1450", "two_valve_stock", "cruiser"],
+	["chopper_raked", "vtwin60_1500", "hot_cam", "chopper"],
+	["steel_trestle", "vtwin_1000", "four_valve", "naked"],
+	["featherbed_cradle", "boxer_750", "two_valve_stock", "classic"],
+	["adv_rally_trellis", "boxer_1200", "four_valve", "adventure"],
 ]
 
 var out_dir := "/tmp/shots"
@@ -77,20 +89,31 @@ func _ready() -> void:
 	get_tree().quit()
 
 
-## Hides the code-built barrels (the engine's pieces above its cases) and head, and puts the
+## Hides the code-built barrels and head (the engine's pieces round a barrel's axis), and puts the
 ## Blender top end on in their place.
 func _swap_top_end(m: BikeModel, head: String) -> void:
-	var case_top := m._engine_c.y + 0.13 * m._eng_s
 	for slot in ["engine", "head"]:
 		for mi in m._slot_meshes.get(slot, []):
 			var g := mi as GeometryInstance3D
 			if g == null:
 				continue
 			var mid := m.to_local(g.global_transform * g.get_aabb().get_center())
-			if slot == "head" or mid.y > case_top:
+			if slot == "head" or _on_barrel(m, mid):
 				g.visible = false
-	var node := BlenderParts.instance(BlenderParts.path_for("head", head, "twin"), BlenderParts.top_end_xform(m._cyls, m._eng_s))
-	m.add_child(node)
+	for piece in BlenderParts.top_end_pieces(str(m._build.layout), head, m._cyls, m._eng_s, m._bore_r):
+		m.add_child(BlenderParts.instance(piece[0], piece[1]))
+
+
+## Whether `p` is on one of the barrels: within its fins' reach of the bore, between its foot and the head.
+static func _on_barrel(m: BikeModel, p: Vector3) -> bool:
+	for c in m._cyls:
+		var up: Vector3 = c["up"]
+		var a: Vector3 = c["base"] - up * 0.1
+		var along := (p - a).dot(up.normalized())
+		var from_axis := ((p - a) - up.normalized() * along).length()
+		if along > -0.005 and along < 0.2 * up.length() and from_axis < m._bore_r * 1.7:
+			return true
+	return false
 
 
 func _shot_from(from: Vector3, at: Vector3, name: String) -> void:

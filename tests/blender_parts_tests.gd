@@ -57,22 +57,28 @@ func test_glbs() -> void:
 	check(bad.is_empty(), "every glb has its three LODs, a surface tag on every surface and its mount points %s" % str(bad))
 
 
-## The twin's top ends fit every bike they can go in: for every twin engine in every frame that
-## suits one of its styles, each head's top end, scaled and placed by BlenderParts, sits inside the
-## room BikeModel keeps round the code-built barrels and head (the frame's tubes and the tank are
-## laid out clear of that), its second barrel lands on the engine's second cylinder, and its plugs
-## where BikeModel draws them.
+## The top ends fit every bike they can go in: for every engine whose layout has them, in every
+## frame that suits one of its styles, each head's top end, scaled and placed by BlenderParts, sits
+## inside the room BikeModel keeps round the code-built barrels and head (the frame's tubes and
+## the tank are laid out clear of that), its barrels land on the engine's cylinders, and its plugs
+## near where BikeModel draws them (on a leaning cylinder BikeModel's sit a little off the middle of
+## the head; the plugs go on the glb's own plug mounts. A two-stroke's sit on its head, which
+## BikeModel draws lower).
 func test_top_end_fit() -> void:
 	var heads: Array = PartsDB.by_kind["head"]
-	var engines: Array = PartsDB.by_kind["engine"].filter(func(id): return PartsDB.get_part(str(id)).get("layout") == "twin")
 	var frames: Array = PartsDB.by_kind["frame"]
+	var layouts := {}
 	var bikes := 0
 	var seen := {}
 	var local := {}    # path -> its lod0's points, each once
 	var out := []
 	var off := []
 	var missing := []
-	for e in engines:
+	for e in PartsDB.by_kind["engine"]:
+		var layout := str(PartsDB.get_part(str(e)).get("layout"))
+		if not DirAccess.dir_exists_absolute(BlenderParts.ROOT + "head/" + layout):
+			continue
+		layouts[layout] = true
 		var styles := PartsDB.styles_of(str(e))
 		for f in frames:
 			if not PartsDB.styles_of(str(f)).any(func(s): return styles.has(s)):
@@ -88,43 +94,54 @@ func test_top_end_fit() -> void:
 				m.free()
 				continue
 			seen[key] = true
+			# (The barrels' and heads' boxes first: most of a top end is in one of them.)
 			var room := _boxes(m._engine_corners())
-			var xform := BlenderParts.top_end_xform(m._cyls, m._eng_s)
+			room.reverse()
 			for h in heads:
-				var path := BlenderParts.path_for("head", str(h), "twin")
-				var p := BlenderParts.part(path)
-				if p.is_empty():
-					missing.append(h)
+				var pieces := BlenderParts.top_end_pieces(layout, str(h), m._cyls, m._eng_s, m._bore_r)
+				if pieces.is_empty():
+					missing.append("%s %s" % [layout, h])
 					continue
-				if not local.has(path):
-					var once := {}
-					for v in BlenderParts.points(path, Transform3D()):
-						once[v.snappedf(0.0002)] = true
-					local[path] = once.keys()
 				var worst := 0.0
-				for v in local[path]:
-					worst = maxf(worst, _outside(room, xform * v))
+				var at := []    # [base, plug] per cylinder, in BikeModel's space
+				for piece in pieces:
+					var path: String = piece[0]
+					var xform: Transform3D = piece[1]
+					if not local.has(path):
+						var once := {}
+						for v in BlenderParts.points(path, Transform3D()):
+							once[v.snappedf(0.0002)] = true
+						local[path] = once.keys()
+					for v in local[path]:
+						worst = maxf(worst, _outside(room, xform * v))
+					var mounts: Dictionary = BlenderParts.part(path)["mounts"]
+					var n := 1
+					while mounts.has("cyl_%d" % n):
+						at.append([xform * (mounts["cyl_%d" % n] as Transform3D).origin, xform * (mounts["plug_%d" % n] as Transform3D).origin])
+						n += 1
 				if worst > 0.003:
 					out.append("%s in %s, %s: %.1f mm out" % [e, f, h, worst * 1000.0])
-				var mounts: Dictionary = p["mounts"]
+				if at.size() != m._cyls.size():
+					off.append("%s, %s: %d barrels for %d cylinders" % [e, h, at.size(), m._cyls.size()])
+					continue
 				for i in m._cyls.size():
 					var c: Dictionary = m._cyls[i]
-					var base: Vector3 = xform * (mounts["cyl_%d" % (i + 1)] as Transform3D).origin
-					var plug: Vector3 = xform * (mounts["plug_%d" % (i + 1)] as Transform3D).origin
-					var code_plug: Vector3 = c["base"] + c["up"] * 0.2 + Vector3(0.0, 0.0, 0.02)
-					if base.distance_to(c["base"]) > 0.001 or plug.distance_to(code_plug) > 0.006:
-						off.append("%s in %s, %s cylinder %d: base %.1f mm, plug %.1f mm off" % [e, f, h, i + 1,
-							base.distance_to(c["base"]) * 1000.0, plug.distance_to(code_plug) * 1000.0])
+					var base_off := (at[i][0] as Vector3).distance_to(c["base"])
+					var plug_off := (at[i][1] as Vector3).distance_to(c["base"] + c["up"] * 0.2 + Vector3(0.0, 0.0, 0.02))
+					if layout == "2stroke":
+						plug_off = 0.0
+					if base_off > 0.001 or plug_off > 0.016:
+						off.append("%s in %s, %s cylinder %d: base %.1f mm, plug %.1f mm off" % [e, f, h, i + 1, base_off * 1000.0, plug_off * 1000.0])
 			m.free()
-	check(missing.is_empty(), "every head part has a twin top end made in Blender %s" % str(missing))
-	check(bikes >= 30 and out.is_empty(), "each twin top end fits every frame its engine suits (%d engine and frame pairs) %s" % [bikes, str(out.slice(0, 6))])
+	check(layouts.size() >= 6 and missing.is_empty(), "every head part has a top end made in Blender for each of %s %s" % [str(layouts.keys()), str(missing)])
+	check(bikes >= 300 and out.is_empty(), "each top end fits every frame its engine suits (%d engine and frame pairs) %s" % [bikes, str(out.slice(0, 6))])
 	check(off.is_empty(), "its barrels land on the engine's cylinders and its plugs where the plugs are drawn %s" % str(off.slice(0, 6)))
 
 
-## A part with no glb has none to load, so BikeModel keeps drawing it itself: the other engine
-## layouts' top ends, for now.
+## A part with no glb has none to load, so BikeModel keeps drawing it itself: an engine layout with no
+## top ends made yet.
 func test_fallback() -> void:
-	check(BlenderParts.instance(BlenderParts.path_for("head", "four_valve", "inline"), Transform3D()) == null
+	check(BlenderParts.instance(BlenderParts.path_for("head", "four_valve", "rotary"), Transform3D()) == null
 		and BlenderParts.part(BlenderParts.path_for("frame", "steel_cradle")).is_empty(),
 		"a part with no Blender glb is left to BikeModel's own drawing")
 	var node := BlenderParts.instance(BlenderParts.path_for("head", "two_valve_stock", "twin"), Transform3D())
@@ -161,5 +178,7 @@ static func _outside(boxes: Array, v: Vector3) -> float:
 			if half < 0.0001:
 				continue
 			worst = maxf(worst, absf(d.dot(ax / half)) - half)
-		best = minf(best, maxf(worst, 0.0))
+		if worst <= 0.0:
+			return 0.0
+		best = minf(best, worst)
 	return best
