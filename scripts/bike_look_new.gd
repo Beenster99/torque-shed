@@ -346,10 +346,46 @@ static func _set_mesh(mi: MeshInstance3D, arr: Array, flags: int) -> void:
 	var plain := ArrayMesh.new()
 	plain.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
 	mi.mesh = plain
-	var target: WeakRef = weakref(mi)
-	WorkerThreadPool.add_task(func():
-		var im := _simplified(arr, flags)
-		_swap.call_deferred(target, plain, im, arr))
+	var out := []   # filled with the simplified mesh by the worker
+	var task := WorkerThreadPool.add_task(func(): out.append(_simplified(arr, flags)))
+	_pending.append([task, weakref(mi), plain, out, arr])
+	_watch()
+
+
+## The levels of detail being worked out: [task, the mesh instance (weak), the mesh it had,
+## [the result], arrays]. Checked each frame, and finished off before the game closes, so
+## nothing is left holding a mesh once the renderer has gone.
+static var _pending: Array = []
+static var _watching := false
+
+
+static func _watch() -> void:
+	if _watching:
+		return
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	_watching = true
+	tree.process_frame.connect(_check_pending)
+	tree.root.tree_exiting.connect(finish_pending)
+
+
+static func _check_pending() -> void:
+	var left := []
+	for p in _pending:
+		if WorkerThreadPool.is_task_completed(p[0]):
+			WorkerThreadPool.wait_for_task_completion(p[0])
+			_swap(p[1], p[2], p[3][0], p[4])
+		else:
+			left.append(p)
+	_pending = left
+
+
+## Waits for the levels of detail still being worked out, and drops them (the game's closing).
+static func finish_pending() -> void:
+	for p in _pending:
+		WorkerThreadPool.wait_for_task_completion(p[0])
+	_pending.clear()
 
 
 static var lods_now := false
