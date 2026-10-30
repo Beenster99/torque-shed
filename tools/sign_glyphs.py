@@ -273,6 +273,11 @@ def main():
             # (Japanese shop words in kanji are drawn from the Japanese font, as Japan writes them)
             sc = "Jpan" if lang == "ja" else script_of(w)
             words_of.setdefault(sc, []).append(w)
+    # (the boards at a border, D8: each country's name and welcome, data/border_words.json from tools/border_words.py)
+    borders = json.load(open(os.path.join(ROOT, "data", "border_words.json"), encoding="utf-8"))
+    for b in borders["countries"].values():
+        for w in (b["name"], b["welcome"]):
+            words_of.setdefault(b["script"], []).append(w)
     for script, words in words_of.items():
         path = os.path.join(fonts, FONT_OF[script])
         for w in words:

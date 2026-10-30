@@ -132,7 +132,8 @@ static func for_route(route: AdventureRoute, i: int) -> Dictionary:
 
 
 ## The kit of the place at (x, z) in a frame whose origin is at (lat0, lon0), x east and z south (a region's, as
-## RealTerrain and RoadNet have them): its cell's profile's. Blocks the first time a cell is asked for, as for_route.
+## RealTerrain and RoadNet have them): its cell's profile's, or over a border the cell holds the country's there it's
+## in (Borders). Blocks the first time a cell is asked for, as for_route.
 static func at_frame(lat0: float, lon0: float, x: float, z: float) -> Dictionary:
 	var m := RealTerrain.metres_per_degree(lat0)
 	var cell := RealRegion.cell_of(lat0 - z / m.x, lon0 + x / m.y)
@@ -141,12 +142,35 @@ static func at_frame(lat0: float, lon0: float, x: float, z: float) -> Dictionary
 	var have = _cells.get(key)
 	_lock.unlock()
 	if have is Dictionary:
-		return have
+		return _across_border(have, key, cell, lat0 - z / m.x, lon0 + x / m.y)
 	var kit := choose(PlaceProfile.of_cell(cell))
 	_lock.lock()
 	_cells[key] = kit
 	_lock.unlock()
-	return kit
+	return _across_border(kit, key, cell, lat0 - z / m.x, lon0 + x / m.y)
+
+
+## `kit` (cell `key`'s), or where the point (lat, lon) is over a border the cell holds (Borders, D8), the kit of the
+## country it's in there: the kit, signs, paint and side of the road switch at the line, not the cell's edge.
+static func _across_border(kit: Dictionary, key: String, cell: Vector2i, lat: float, lon: float) -> Dictionary:
+	var code := Borders.country_in(key, cell, lat, lon)
+	if code == "" or code == str(kit.get("country", "")):
+		return kit
+	var k := key + "|" + code
+	_lock.lock()
+	var have = _cells.get(k)
+	_lock.unlock()
+	if have is Dictionary:
+		return have
+	var p := PlaceProfile.of_cell(cell).duplicate()
+	p["country"] = code
+	var other := choose(p)
+	if other.is_empty():
+		other = kit
+	_lock.lock()
+	_cells[k] = other
+	_lock.unlock()
+	return other
 
 
 ## Forgets the kits of the cells asked for (the tests change where profiles come from).
@@ -154,6 +178,7 @@ static func forget() -> void:
 	_lock.lock()
 	_cells = {}
 	_lock.unlock()
+	Borders.forget()
 
 
 ## One of `list` (of colours or anything), by `rng`.

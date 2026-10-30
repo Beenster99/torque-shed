@@ -1,0 +1,1155 @@
+{
+"countries": {
+"AD": {
+"name": "ANDORRA",
+"script": "Latn",
+"welcome": "BENVINGUTS"
+},
+"AE": {
+"name": "الإمارات العربية المتحدة",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"AF": {
+"name": "افغانستان",
+"script": "Arab",
+"welcome": "ښه راغلاست"
+},
+"AG": {
+"name": "ANTIGUA AND BARBUDA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"AI": {
+"name": "ANGUILLA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"AL": {
+"name": "SHQIPËRIA",
+"script": "Latn",
+"welcome": "MIRË SE VINI"
+},
+"AM": {
+"name": "ARMENIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"AO": {
+"name": "ANGOLA",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"AQ": {
+"name": "ANTARCTICA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"AR": {
+"name": "ARGENTINA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"AS": {
+"name": "AMERICAN SAMOA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"AT": {
+"name": "ÖSTERREICH",
+"script": "Latn",
+"welcome": "WILLKOMMEN"
+},
+"AU": {
+"name": "AUSTRALIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"AW": {
+"name": "ARUBA",
+"script": "Latn",
+"welcome": "WELKOM"
+},
+"AX": {
+"name": "ÅLAND",
+"script": "Latn",
+"welcome": "VÄLKOMMEN"
+},
+"AZ": {
+"name": "AZƏRBAYCAN",
+"script": "Latn",
+"welcome": "XOŞ GƏLMİSİNİZ"
+},
+"BA": {
+"name": "BOSNA I HERCEGOVINA",
+"script": "Latn",
+"welcome": "DOBRO DOŠLI"
+},
+"BB": {
+"name": "BARBADOS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"BD": {
+"name": "BANGLADESH",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"BE": {
+"name": "BELGIË",
+"script": "Latn",
+"welcome": "WELKOM"
+},
+"BF": {
+"name": "BURKINA FASO",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"BG": {
+"name": "БЪЛГАРИЯ",
+"script": "Cyrl",
+"welcome": "ДОБРЕ ДОШЛИ"
+},
+"BH": {
+"name": "البحرين",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"BI": {
+"name": "BURUNDI",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"BJ": {
+"name": "BÉNIN",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"BM": {
+"name": "BERMUDA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"BN": {
+"name": "BRUNEI",
+"script": "Latn",
+"welcome": "SELAMAT DATANG"
+},
+"BO": {
+"name": "BOLIVIA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"BR": {
+"name": "BRASIL",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"BS": {
+"name": "THE BAHAMAS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"BT": {
+"name": "BHUTAN",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"BW": {
+"name": "BOTSWANA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"BY": {
+"name": "БЕЛАРУСЬ",
+"script": "Cyrl",
+"welcome": "ЛАСКАВА ПРОСІМ"
+},
+"BZ": {
+"name": "BELIZE",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"CA": {
+"name": "CANADA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"CD": {
+"name": "RÉPUBLIQUE DÉMOCRATIQUE DU CONGO",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"CF": {
+"name": "RÉPUBLIQUE CENTRAFRICAINE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"CG": {
+"name": "RÉPUBLIQUE DU CONGO",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"CH": {
+"name": "SCHWEIZ",
+"script": "Latn",
+"welcome": "WILLKOMMEN"
+},
+"CI": {
+"name": "CÔTE D'IVOIRE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"CK": {
+"name": "COOK ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"CL": {
+"name": "CHILE",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"CM": {
+"name": "CAMEROUN",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"CN": {
+"name": "中国",
+"script": "Hans",
+"welcome": "欢迎"
+},
+"CO": {
+"name": "COLOMBIA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"CR": {
+"name": "COSTA RICA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"CU": {
+"name": "CUBA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"CV": {
+"name": "CABO VERDE",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"CW": {
+"name": "CURAÇAO",
+"script": "Latn",
+"welcome": "WELKOM"
+},
+"CY": {
+"name": "ΚΥΠΡΟΣ",
+"script": "Grek",
+"welcome": "ΚΑΛΩΣ ΗΡΘΑΤΕ"
+},
+"CZ": {
+"name": "ČESKO",
+"script": "Latn",
+"welcome": "VÍTEJTE"
+},
+"DE": {
+"name": "DEUTSCHLAND",
+"script": "Latn",
+"welcome": "WILLKOMMEN"
+},
+"DJ": {
+"name": "DJIBOUTI",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"DK": {
+"name": "DANMARK",
+"script": "Latn",
+"welcome": "VELKOMMEN"
+},
+"DM": {
+"name": "DOMINICA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"DO": {
+"name": "REPÚBLICA DOMINICANA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"DZ": {
+"name": "الجزائر",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"EC": {
+"name": "ECUADOR",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"EE": {
+"name": "EESTI",
+"script": "Latn",
+"welcome": "TERE TULEMAST"
+},
+"EG": {
+"name": "مصر",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"EH": {
+"name": "الصحراء الغربية",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"ER": {
+"name": "ERITREA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"ES": {
+"name": "ESPAÑA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"ET": {
+"name": "ETHIOPIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"FI": {
+"name": "SUOMI",
+"script": "Latn",
+"welcome": "TERVETULOA"
+},
+"FJ": {
+"name": "FIJI",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"FK": {
+"name": "FALKLAND ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"FM": {
+"name": "FEDERATED STATES OF MICRONESIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"FO": {
+"name": "FØROYAR",
+"script": "Latn",
+"welcome": "VÆLKOMIN"
+},
+"FR": {
+"name": "FRANCE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"GA": {
+"name": "GABON",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"GB": {
+"name": "UNITED KINGDOM",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GD": {
+"name": "GRENADA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GE": {
+"name": "GEORGIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GG": {
+"name": "GUERNSEY",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GH": {
+"name": "GHANA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GI": {
+"name": "GIBRALTAR",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GL": {
+"name": "KALAALLIT NUNAAT",
+"script": "Latn",
+"welcome": "TIKILLUARIT"
+},
+"GM": {
+"name": "THE GAMBIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GN": {
+"name": "GUINÉE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"GQ": {
+"name": "GUINEA ECUATORIAL",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"GR": {
+"name": "ΕΛΛΑΔΑ",
+"script": "Grek",
+"welcome": "ΚΑΛΩΣ ΗΡΘΑΤΕ"
+},
+"GS": {
+"name": "SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GT": {
+"name": "GUATEMALA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"GU": {
+"name": "GUAM",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"GW": {
+"name": "GUINÉ-BISSAU",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"GY": {
+"name": "GUYANA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"HK": {
+"name": "香港",
+"script": "Hant",
+"welcome": "歡迎"
+},
+"HN": {
+"name": "HONDURAS",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"HR": {
+"name": "HRVATSKA",
+"script": "Latn",
+"welcome": "DOBRO DOŠLI"
+},
+"HT": {
+"name": "HAÏTI",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"HU": {
+"name": "MAGYARORSZÁG",
+"script": "Latn",
+"welcome": "ÜDVÖZÖLJÜK"
+},
+"ID": {
+"name": "INDONESIA",
+"script": "Latn",
+"welcome": "SELAMAT DATANG"
+},
+"IE": {
+"name": "IRELAND",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"IL": {
+"name": "ISRAEL",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"IM": {
+"name": "ISLE OF MAN",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"IN": {
+"name": "INDIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"IQ": {
+"name": "العراق",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"IR": {
+"name": "ایران",
+"script": "Arab",
+"welcome": "خوش آمدید"
+},
+"IS": {
+"name": "ÍSLAND",
+"script": "Latn",
+"welcome": "VELKOMIN"
+},
+"IT": {
+"name": "ITALIA",
+"script": "Latn",
+"welcome": "BENVENUTI"
+},
+"JE": {
+"name": "JERSEY",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"JM": {
+"name": "JAMAICA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"JO": {
+"name": "الأردن",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"JP": {
+"name": "日本",
+"script": "Jpan",
+"welcome": "ようこそ"
+},
+"KE": {
+"name": "KENYA",
+"script": "Latn",
+"welcome": "KARIBU"
+},
+"KG": {
+"name": "КЫРГЫЗСТАН",
+"script": "Cyrl",
+"welcome": "КОШ КЕЛИҢИЗ"
+},
+"KH": {
+"name": "CAMBODIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"KI": {
+"name": "KIRIBATI",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"KM": {
+"name": "COMORES",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"KN": {
+"name": "SAINT KITTS AND NEVIS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"KP": {
+"name": "조선민주주의인민공화국",
+"script": "Kore",
+"welcome": "환영합니다"
+},
+"KR": {
+"name": "대한민국",
+"script": "Kore",
+"welcome": "환영합니다"
+},
+"KW": {
+"name": "الكويت",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"KY": {
+"name": "CAYMAN ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"KZ": {
+"name": "ҚАЗАҚСТАН",
+"script": "Cyrl",
+"welcome": "ҚОШ КЕЛДІҢІЗ"
+},
+"LA": {
+"name": "LAOS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"LB": {
+"name": "لبنان",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"LC": {
+"name": "SAINT LUCIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"LI": {
+"name": "LIECHTENSTEIN",
+"script": "Latn",
+"welcome": "WILLKOMMEN"
+},
+"LK": {
+"name": "SRI LANKA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"LR": {
+"name": "LIBERIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"LS": {
+"name": "LESOTHO",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"LT": {
+"name": "LIETUVA",
+"script": "Latn",
+"welcome": "SVEIKI ATVYKĘ"
+},
+"LU": {
+"name": "LUXEMBOURG",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"LV": {
+"name": "LATVIJA",
+"script": "Latn",
+"welcome": "LAIPNI LŪDZAM"
+},
+"LY": {
+"name": "ليبيا",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"MA": {
+"name": "المغرب",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"MC": {
+"name": "MONACO",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"MD": {
+"name": "MOLDOVA",
+"script": "Latn",
+"welcome": "BINE AȚI VENIT"
+},
+"ME": {
+"name": "CRNA GORA",
+"script": "Latn",
+"welcome": "DOBRO DOŠLI"
+},
+"MG": {
+"name": "MADAGASIKARA",
+"script": "Latn",
+"welcome": "TONGA SOA"
+},
+"MH": {
+"name": "MARSHALL ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"MK": {
+"name": "СЕВЕРНА МАКЕДОНИЈА",
+"script": "Cyrl",
+"welcome": "ДОБРЕДОЈДОВТЕ"
+},
+"ML": {
+"name": "MALI",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"MM": {
+"name": "MYANMAR",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"MN": {
+"name": "МОНГОЛ УЛС",
+"script": "Cyrl",
+"welcome": "ТАВТАЙ МОРИЛНО УУ"
+},
+"MO": {
+"name": "澳門",
+"script": "Hant",
+"welcome": "歡迎"
+},
+"MP": {
+"name": "NORTHERN MARIANA ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"MR": {
+"name": "موريتانيا",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"MS": {
+"name": "MONTSERRAT",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"MT": {
+"name": "MALTA",
+"script": "Latn",
+"welcome": "MERĦBA"
+},
+"MU": {
+"name": "MAURICE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"MV": {
+"name": "MALDIVES",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"MW": {
+"name": "MALAWI",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"MX": {
+"name": "MÉXICO",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"MY": {
+"name": "MALAYSIA",
+"script": "Latn",
+"welcome": "SELAMAT DATANG"
+},
+"MZ": {
+"name": "MOÇAMBIQUE",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"NA": {
+"name": "NAMIBIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"NC": {
+"name": "NOUVELLE-CALÉDONIE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"NE": {
+"name": "NIGER",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"NG": {
+"name": "NIGERIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"NI": {
+"name": "NICARAGUA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"NL": {
+"name": "NEDERLAND",
+"script": "Latn",
+"welcome": "WELKOM"
+},
+"NO": {
+"name": "NORGE",
+"script": "Latn",
+"welcome": "VELKOMMEN"
+},
+"NP": {
+"name": "NEPAL",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"NU": {
+"name": "NIUE",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"NZ": {
+"name": "NEW ZEALAND",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"OM": {
+"name": "سلطنة عمان",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"PA": {
+"name": "PANAMÁ",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"PE": {
+"name": "PERÚ",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"PF": {
+"name": "POLYNÉSIE FRANÇAISE",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"PG": {
+"name": "PAPUA NEW GUINEA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"PH": {
+"name": "PILIPINAS",
+"script": "Latn",
+"welcome": "MABUHAY"
+},
+"PK": {
+"name": "پاکستان",
+"script": "Arab",
+"welcome": "خوش آمدید"
+},
+"PL": {
+"name": "POLSKA",
+"script": "Latn",
+"welcome": "WITAMY"
+},
+"PR": {
+"name": "PUERTO RICO",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"PS": {
+"name": "فلسطين",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"PT": {
+"name": "PORTUGAL",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"PW": {
+"name": "PALAU",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"PY": {
+"name": "PARAGUAY",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"QA": {
+"name": "قطر",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"RO": {
+"name": "ROMÂNIA",
+"script": "Latn",
+"welcome": "BINE AȚI VENIT"
+},
+"RS": {
+"name": "СРБИЈА",
+"script": "Cyrl",
+"welcome": "ДОБРО ДОШЛИ"
+},
+"RU": {
+"name": "РОССИЯ",
+"script": "Cyrl",
+"welcome": "ДОБРО ПОЖАЛОВАТЬ"
+},
+"RW": {
+"name": "RWANDA",
+"script": "Latn",
+"welcome": "MURAKAZA NEZA"
+},
+"SA": {
+"name": "السعودية",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"SB": {
+"name": "SOLOMON ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"SC": {
+"name": "SEYCHELLES",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"SD": {
+"name": "السودان",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"SE": {
+"name": "SVERIGE",
+"script": "Latn",
+"welcome": "VÄLKOMMEN"
+},
+"SG": {
+"name": "SINGAPORE",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"SH": {
+"name": "SAINT HELENA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"SI": {
+"name": "SLOVENIJA",
+"script": "Latn",
+"welcome": "DOBRODOŠLI"
+},
+"SJ": {
+"name": "SVALBARD AND JAN MAYEN ISLANDS",
+"script": "Latn",
+"welcome": "VELKOMMEN"
+},
+"SK": {
+"name": "SLOVENSKO",
+"script": "Latn",
+"welcome": "VITAJTE"
+},
+"SL": {
+"name": "SIERRA LEONE",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"SM": {
+"name": "SAN MARINO",
+"script": "Latn",
+"welcome": "BENVENUTI"
+},
+"SN": {
+"name": "SÉNÉGAL",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"SO": {
+"name": "SOOMAALIYA",
+"script": "Latn",
+"welcome": "SOO DHAWOW"
+},
+"SR": {
+"name": "SURINAME",
+"script": "Latn",
+"welcome": "WELKOM"
+},
+"SS": {
+"name": "SOUTH SUDAN",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"ST": {
+"name": "SÃO TOMÉ E PRÍNCIPE",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"SV": {
+"name": "EL SALVADOR",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"SX": {
+"name": "SINT MAARTEN",
+"script": "Latn",
+"welcome": "WELKOM"
+},
+"SY": {
+"name": "سوريا",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"SZ": {
+"name": "ESWATINI",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"TC": {
+"name": "TURKS AND CAICOS ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"TD": {
+"name": "TCHAD",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"TG": {
+"name": "TOGO",
+"script": "Latn",
+"welcome": "BIENVENUE"
+},
+"TH": {
+"name": "ประเทศไทย",
+"script": "Thai",
+"welcome": "ยินดีต้อนรับ"
+},
+"TJ": {
+"name": "ТОҶИКИСТОН",
+"script": "Cyrl",
+"welcome": "ХУШ ОМАДЕД"
+},
+"TK": {
+"name": "TOKELAU",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"TL": {
+"name": "TIMOR-LESTE",
+"script": "Latn",
+"welcome": "BEM-VINDOS"
+},
+"TM": {
+"name": "TÜRKMENISTAN",
+"script": "Latn",
+"welcome": "HOŞ GELDIŇIZ"
+},
+"TN": {
+"name": "تونس",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"TO": {
+"name": "TONGA",
+"script": "Latn",
+"welcome": "TALITALI FIEFIA"
+},
+"TR": {
+"name": "TÜRKIYE",
+"script": "Latn",
+"welcome": "HOŞ GELDİNİZ"
+},
+"TT": {
+"name": "TRINIDAD AND TOBAGO",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"TV": {
+"name": "TUVALU",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"TW": {
+"name": "臺灣",
+"script": "Hant",
+"welcome": "歡迎"
+},
+"TZ": {
+"name": "TANZANIA",
+"script": "Latn",
+"welcome": "KARIBU"
+},
+"UA": {
+"name": "УКРАЇНА",
+"script": "Cyrl",
+"welcome": "ЛАСКАВО ПРОСИМО"
+},
+"UG": {
+"name": "UGANDA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"US": {
+"name": "UNITED STATES",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"UY": {
+"name": "URUGUAY",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"UZ": {
+"name": "OʻZBEKISTON",
+"script": "Latn",
+"welcome": "XUSH KELIBSIZ"
+},
+"VA": {
+"name": "CITTÀ DEL VATICANO",
+"script": "Latn",
+"welcome": "BENVENUTI"
+},
+"VC": {
+"name": "SAINT VINCENT AND THE GRENADINES",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"VE": {
+"name": "VENEZUELA",
+"script": "Latn",
+"welcome": "BIENVENIDOS"
+},
+"VG": {
+"name": "BRITISH VIRGIN ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"VI": {
+"name": "UNITED STATES VIRGIN ISLANDS",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"VN": {
+"name": "VIỆT NAM",
+"script": "Latn",
+"welcome": "CHÀO MỪNG"
+},
+"VU": {
+"name": "VANUATU",
+"script": "Latn",
+"welcome": "WELKAM"
+},
+"WS": {
+"name": "SAMOA",
+"script": "Latn",
+"welcome": "AFIO MAI"
+},
+"XK": {
+"name": "KOSOVA",
+"script": "Latn",
+"welcome": "MIRË SE VINI"
+},
+"YE": {
+"name": "اليمن",
+"script": "Arab",
+"welcome": "أهلا وسهلا"
+},
+"ZA": {
+"name": "SOUTH AFRICA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"ZM": {
+"name": "ZAMBIA",
+"script": "Latn",
+"welcome": "WELCOME"
+},
+"ZW": {
+"name": "ZIMBABWE",
+"script": "Latn",
+"welcome": "WELCOME"
+}
+},
+"format": 1
+}

@@ -186,6 +186,10 @@ BUILDING_CLASSES = ("cathedral", "chapel", "church", "mosque", "temple", "synago
                     "train_station", "transportation", "trullo", "ger", "stilt_house", "beach_hut", "boathouse",
                     "pavilion", "castle", "fort", "lighthouse", "windmill", "kiosk", "cabin", "hut",
                     "transformer_tower", "storage_tank", "slurry_tank", "grain_silo", "military", "guardhouse")
+# D8: a border line is named for the divisions either side of it, "LEFT|RIGHT" (facing along the line: Overture's
+# division_ids order), each a country's ISO code (a region's ISO 3166-2 code for a region's border; "" where the map
+# doesn't say), so the game switches kit and driving side at the line itself rather than by cell.
+BORDER_SIDES = 1
 # Kinds Overture carries only in a row's OpenStreetMap tags: {source key: {class: [(tag, value, kind), ...]}}, the
 # first that matches (a class here and not in CLASSES is fetched only for these). Its name is the tag NAME_TAGS says
 # where the row's own is the waterway's.
@@ -217,7 +221,7 @@ def classes_hash():
               for key, table in sorted(TAGGED.items())}
     text = json.dumps({"format": FORMAT, "classes": rows, "tagged": tagged, "name_tags": NAME_TAGS, "subtypes": SEGMENT_SUBTYPES, "generators": GENERATORS,
                        "tolerance": TOLERANCE, "near": NEAR_M, "place_confidence": PLACE_CONFIDENCE,
-                       "looks": LOOKS, "building_classes": BUILDING_CLASSES},
+                       "looks": LOOKS, "building_classes": BUILDING_CLASSES, "border_sides": BORDER_SIDES},
                       sort_keys=True)
     return hashlib.sha1(text.encode()).hexdigest()[:12]
 
@@ -492,7 +496,7 @@ def english_or_primary(names):
 # ---------------------------------------------------------------------------- fetching
 
 COLUMNS = ["id", "geometry", "subtype", "class", "names", "source_tags", "height", "elevation", "rail_flags", "bbox",
-           "taxonomy", "confidence"]
+           "taxonomy", "confidence", "division_ids"]
 
 
 def fetch(box, release, bucket=None, filesystem=None, log=print):
@@ -520,8 +524,37 @@ def fetch(box, release, bucket=None, filesystem=None, log=print):
         rows = d.to_table(columns=cols, filter=f).to_pylist()
         log("features: %s/%s %d rows" % (theme, kind, len(rows)))
         out += [(key, r) for r in rows if r.get("geometry")]
+    borders = [r for key, r in out if key[0] == "divisions"]
+    if borders:
+        codes = fetch_division_codes(box, release, bucket, s3, log)
+        for r in borders:
+            r["sides"] = border_sides(r, codes)
     out += fetch_buildings(box, release, bucket, s3, log)
     return out
+
+
+def fetch_division_codes(box, release, bucket=None, filesystem=None, log=print):
+    """The countries' and regions' codes by their division id, for the divisions whose areas touch box: {id: code}."""
+    import pyarrow.compute as pc
+    import pyarrow.dataset as ds
+    import route_bake as rb
+    south, west, north, east = box
+    d = ds.dataset("%s/release/%s/theme=divisions/type=division_area" % (bucket or rb.OVERTURE_BUCKET, release),
+                   filesystem=filesystem, format="parquet")
+    f = ((pc.field("bbox", "xmin") < east) & (pc.field("bbox", "xmax") > west)
+         & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south)
+         & pc.field("subtype").isin(["country", "region"]))
+    rows = d.to_table(columns=["division_id", "subtype", "country", "region"], filter=f).to_pylist()
+    log("features: divisions/division_area %d rows" % len(rows))
+    return {r["division_id"]: str((r["country"] if r["subtype"] == "country" else r["region"]) or "") for r in rows}
+
+
+def border_sides(r, codes):
+    """A border row's name: the codes of the divisions to its left and right, "LEFT|RIGHT" ("" if not known)."""
+    ids = list(r.get("division_ids") or [])
+    if len(ids) != 2:
+        return ""
+    return "%s|%s" % (codes.get(ids[0], ""), codes.get(ids[1], ""))
 
 
 BUILDINGS = ("buildings", "building", "class")
@@ -641,7 +674,7 @@ def cell_features(rows, grid, row, col, release=""):
         elevation = number(r.get("elevation"))
         if elevation is None:
             elevation = number(tags.get("ele"))
-        nm = english_or_primary(r.get("names"))
+        nm = r["sides"] if key[0] == "divisions" and r.get("sides") else english_or_primary(r.get("names"))
         for tag in NAME_TAGS.get(kind, ()):
             if tags.get(tag):
                 nm = str(tags[tag])

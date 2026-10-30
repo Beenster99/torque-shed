@@ -906,6 +906,13 @@ func _run_all() -> void:
 	await _t(&"_test_fields_paddies")
 	await _t(&"_test_fields_blocks_meet")
 	await _t(&"_test_fields_regions")
+	print("Ride Anywhere v2, phase D round 3: borders, tolls and airfields")
+	await _t(&"_test_journey_marks_kits")
+	await _t(&"_test_journey_marks_borders")
+	await _t(&"_test_journey_marks_crossing")
+	await _t(&"_test_journey_marks_toll")
+	await _t(&"_test_journey_marks_airfield")
+	await _t(&"_test_journey_marks_plane")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22880,6 +22887,34 @@ func _test_water_blocks_meet() -> void:
 
 func _test_water_regions() -> void:
 	_water().test_regions()
+
+
+func _journey_marks() -> RefCounted:
+	return load("res://tests/journey_marks_tests.gd").new(self)
+
+
+func _test_journey_marks_kits() -> void:
+	_journey_marks().test_kits()
+
+
+func _test_journey_marks_borders() -> void:
+	_journey_marks().test_borders()
+
+
+func _test_journey_marks_crossing() -> void:
+	_journey_marks().test_crossing()
+
+
+func _test_journey_marks_toll() -> void:
+	_journey_marks().test_toll()
+
+
+func _test_journey_marks_airfield() -> void:
+	_journey_marks().test_airfield()
+
+
+func _test_journey_marks_plane() -> void:
+	_journey_marks().test_plane()
 
 
 func _fields() -> RefCounted:
