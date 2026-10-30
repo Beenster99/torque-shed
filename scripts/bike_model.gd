@@ -1226,11 +1226,12 @@ func _rack_mat() -> StandardMaterial3D:
 
 
 ## Tanks are lofted along the frame's top tube: their underside sits on the line from the head
-## stock back to the front of the seat, they butt up against the seat, and each of the ten has its
-## own shape (its look's "shape"): a 50s teardrop, a long café tank with deep knee cut-outs, a
-## slim peanut, a square coffin, a big split fat bob, an angular sport tank, a low race tank cut
-## away at the back for tucking in, a broad touring tank, a tall creased adventure tank and a
-## narrow enduro tank. They come in one colour, the part's own, for spraying as you like.
+## stock back to the front of the seat, they butt up against the seat, and each has its own shape
+## (its look's "shape"): a 50s teardrop, a long café tank with deep knee cut-outs, a slim peanut,
+## a square coffin, a big split fat bob, an angular sport tank, a low race tank cut away at the
+## back for tucking in, a broad touring tank, a tall creased adventure tank, a narrow enduro tank,
+## and three sharp-edged ones folded from flat panels. They come in one colour, the part's own,
+## for spraying as you like.
 ## Profiles: [share of the length, half-width, rise above, drop below] from nose to tail.
 const TANK_SHAPES := {
 	"teardrop": {"len": 0.52, "n": 2.3, "bw": 0.8, "keys": [[0.0, 0.06, 0.05, 0.04], [0.15, 0.13, 0.11, 0.07], [0.35, 0.145, 0.12, 0.075],
@@ -1253,6 +1254,16 @@ const TANK_SHAPES := {
 		[0.75, 0.13, 0.065, 0.08], [1.0, 0.08, 0.03, 0.05]]},
 	"enduro": {"len": 0.5, "n": 2.4, "bw": 0.9, "keys": [[0.0, 0.06, 0.05, 0.05], [0.2, 0.12, 0.09, 0.08], [0.5, 0.13, 0.1, 0.08],
 		[0.8, 0.1, 0.07, 0.06], [1.0, 0.05, 0.03, 0.03]]},
+	# The angular ones, folded from flat panels with sharp creases (see _facet_tank): a high front
+	# shoulder sloping down to the seat, flat sides, and knee recesses cut in at the back
+	# ("knee": [from, to, how deep] along the length). A big sports-tourer's, a naked bike's
+	# and a sports bike's.
+	"gt": {"len": 0.6, "n": 4.0, "bw": 0.8, "facet": true, "knee": [0.55, 0.92, 0.2], "keys": [[0.0, 0.11, 0.1, 0.06],
+		[0.12, 0.19, 0.17, 0.1], [0.36, 0.2, 0.17, 0.11], [0.62, 0.16, 0.11, 0.1], [0.85, 0.12, 0.06, 0.08], [1.0, 0.085, 0.035, 0.05]]},
+	"streetfighter": {"len": 0.54, "n": 4.0, "bw": 0.78, "facet": true, "knee": [0.48, 0.9, 0.24], "keys": [[0.0, 0.1, 0.1, 0.06],
+		[0.12, 0.18, 0.19, 0.09], [0.3, 0.19, 0.17, 0.1], [0.56, 0.14, 0.1, 0.09], [0.82, 0.105, 0.05, 0.07], [1.0, 0.075, 0.03, 0.04]]},
+	"wedge": {"len": 0.56, "n": 4.0, "bw": 0.82, "facet": true, "knee": [0.55, 0.9, 0.2], "keys": [[0.0, 0.1, 0.09, 0.06],
+		[0.14, 0.18, 0.16, 0.09], [0.4, 0.19, 0.15, 0.1], [0.62, 0.15, 0.09, 0.09], [0.84, 0.11, 0.05, 0.07], [1.0, 0.08, 0.03, 0.04]]},
 }
 
 
@@ -1286,7 +1297,9 @@ func _draw_tank() -> void:
 	var front := back - length
 	var secs := []
 	var keys: Array = shape["keys"]
-	var steps := 14
+	var facet := bool(shape.get("facet", false))
+	# A faceted tank takes more sections, so its knee recesses cut in sharply.
+	var steps := 20 if facet else 14
 	for i in steps + 1:
 		var u := float(i) / steps
 		var k := _key_at(keys, u)
@@ -1295,7 +1308,7 @@ func _draw_tank() -> void:
 		var down: float = k[2] * size * sc.z
 		secs.append({"c": Vector3(0.0, base_y + down, z), "w": k[0] * size * sc.y, "up": k[1] * size * sc.z, "down": down,
 			"n": shape["n"], "bw": shape["bw"]})
-	var body := _shell(secs, mat)
+	var body := _facet_tank(secs, shape, mat) if facet else _shell(secs, mat)
 	body.name = "TankBody"
 	_tank_secs = secs
 	if look.get("panels", false):
@@ -1363,6 +1376,33 @@ func _draw_tank() -> void:
 				{"c": c + Vector3(0.16 * side, -0.06, 0.035), "w": 0.012, "up": 0.08, "down": 0.1, "n": 3.0},
 				{"c": c + Vector3(0.155 * side, -0.12, -0.01), "w": 0.012, "up": 0.06, "down": 0.1, "n": 3.0},
 				{"c": c + Vector3(0.13 * side, -0.16, -0.035), "w": 0.01, "up": 0.02, "down": 0.04, "n": 3.0}], mat)
+
+
+## An angular tank through the loft sections `secs` (as _draw_tank makes them), folded from flat
+## panels like a modern sports-tourer's: a flat underside either side of the frame tunnel, a
+## lower side panel pulled in at the knees (the shape's "knee"), a flat upright side, a sloping
+## shoulder, a flat top and a ridge down the middle, every fold a sharp crease. Capped at both ends.
+func _facet_tank(secs: Array, shape: Dictionary, mat: Material) -> MeshInstance3D:
+	var knee: Array = shape.get("knee", [])
+	var rows := []
+	for i in secs.size():
+		var s: Dictionary = secs[i]
+		var u := float(i) / maxf(secs.size() - 1, 1)
+		var k := 0.0
+		if knee.size() == 3:
+			k = float(knee[2]) * smoothstep(float(knee[0]), float(knee[0]) + 0.05, u) * (1.0 - smoothstep(float(knee[1]) - 0.05, float(knee[1]), u))
+		var c: Vector3 = s["c"]
+		var w := float(s["w"])
+		var bw := float(s.get("bw", 1.0))
+		var up := float(s["up"])
+		var down := float(s["down"])
+		rows.append(PackedVector3Array([c + Vector3(w * bw * 0.6, -down, 0.0), c + Vector3(w * bw * (1.0 - k), -down * 0.4, 0.0),
+			c + Vector3(w * (1.0 - k * 0.45), up * 0.18, 0.0), c + Vector3(w * 0.84, up * 0.7, 0.0), c + Vector3(w * 0.42, up * 0.96, 0.0),
+			c + Vector3(0.0, up, 0.0)]))
+	var body := _facets(rows, mat)
+	for end in [0, rows.size() - 1]:
+		_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO).name = "TankEnd"
+	return body
 
 
 ## Loft sections `from`..`to` (inclusive) made a little bigger all round, for paint laid over a shell.
@@ -3524,9 +3564,14 @@ func _draw_tail(build: BikeBuild) -> void:
 			var a := _tail + Vector3(0.0, -0.05, -0.12)
 			var b := _tail + Vector3(0.0, -0.02, 0.2)
 			var c := _tail + Vector3(0.0, 0.06, 0.46)
-			for plank in [_plank(a, b, w + 0.02, 0.012, mat), _plank(b, c, w, 0.012, mat)]:
+			var planks := [_plank(a, b, w + 0.02, 0.012, mat), _plank(b, c, w, 0.012, mat)]
+			for plank in planks:
 				_rear_guard.append(plank)
 				_lift_clear_of_tyre(plank)
+			# The fender's end rounded off rather than square-cut.
+			var tip := _plank_tip(planks[1], true, mat)
+			if tip:
+				_rear_guard.append(tip)
 			_number_plate(lamp + Vector3(0.0, -0.07, -0.01), Vector2(0.13, 0.08), -0.3, plate)
 		_:
 			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 2.0, mat, 10))
@@ -3679,7 +3724,109 @@ func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: 
 		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat, parent)
 		seg.rotation.x = a
 		out.append(seg)
+	# Both ends rounded off, carrying on round the wheel.
+	for end in [[a0, -1.0], [a1, 1.0]]:
+		var path := []
+		var ups := []
+		var reach := _tip_length(width) / radius
+		for i in GUARD_TIP_ROWS:
+			var a: float = end[0] + end[1] * reach * i / (GUARD_TIP_ROWS - 1.0)
+			ups.append(Vector3(0.0, cos(a), sin(a)))
+			path.append(c + ups[i] * radius)
+		out.append(_guard_tip(path, ups, width, 0.012, mat, parent))
 	return out
+
+
+## A rounded tip on the far end (`at_b`, the end _plank went to) or the near end of a flat
+## mudguard plank, carrying straight on from it, on the same parent. Null when the plank's gone.
+func _plank_tip(plank: MeshInstance3D, at_b: bool, mat: Material) -> MeshInstance3D:
+	if not is_instance_valid(plank) or not plank.mesh is BoxMesh:
+		return null
+	var size: Vector3 = (plank.mesh as BoxMesh).size
+	var b := plank.transform.basis.orthonormalized()
+	var dir: Vector3 = b.z * (1.0 if at_b else -1.0)
+	var start: Vector3 = plank.position + dir * size.z * 0.5
+	var reach := _tip_length(size.x)
+	var path := []
+	var ups := []
+	for i in GUARD_TIP_ROWS:
+		path.append(start + dir * reach * i / (GUARD_TIP_ROWS - 1.0))
+		ups.append(b.y)
+	return _guard_tip(path, ups, size.x, size.y, mat, plank.get_parent())
+
+
+## How many rows a mudguard's rounded tip is made of (see _guard_tip).
+const GUARD_TIP_ROWS := 6
+
+
+## How far a mudguard `width` wide reaches past its last plate into its rounded tip.
+static func _tip_length(width: float) -> float:
+	return clampf(width * 0.4, 0.035, 0.08)
+
+
+## A rounded tip on the end of a mudguard, so it finishes in a curve that follows the wheel
+## instead of a square cut: a plate `thick` thick carrying on along `path` (its middle line from
+## the end of the guard outwards, `ups` the guard's outward face at each point), narrowing from
+## the guard's full `width` to nothing in a half-ellipse. Built round a node at the middle of
+## the tip, so its bounding box hugs it (the rear guard's clearance checks use that box).
+func _guard_tip(path: Array, ups: Array, width: float, thick: float, mat: Material, parent: Node3D = self) -> MeshInstance3D:
+	var rows := path.size()
+	var mid := rows / 2
+	# The face's normal at each point, square to the path (which needn't run round a circle: the
+	# rear guard stands further out over the top, see _rear_guard_r).
+	var normals := []
+	for i in rows:
+		var d: Vector3 = path[mini(i + 1, rows - 1)] - path[maxi(i - 1, 0)]
+		var n: Vector3 = ups[i]
+		normals.append((n - d.normalized() * n.dot(d.normalized())).normalized())
+	# Local +Z runs out towards the tip, +Y out of the guard's face.
+	var along: Vector3 = (path[rows - 1] - path[0]).normalized()
+	var up: Vector3 = (normals[mid] - along * (normals[mid] as Vector3).dot(along)).normalized()
+	var xf := Transform3D(Basis(up.cross(along).normalized(), up, along), path[mid])
+	var inv := xf.affine_inverse()
+	var across := 6
+	# Each row's points across, on the upper and lower faces.
+	var top := []
+	var bottom := []
+	for i in rows:
+		var t := float(i) / (rows - 1)
+		var half := width * 0.5 * sqrt(maxf(1.0 - t * t, 0.0))
+		var p: Vector3 = path[i]
+		var n: Vector3 = normals[i]
+		var r_top := PackedVector3Array()
+		var r_bottom := PackedVector3Array()
+		for j in across + 1:
+			var x := lerpf(-half, half, float(j) / across)
+			r_top.append(inv * (p + Vector3.RIGHT * x + n * thick * 0.5))
+			r_bottom.append(inv * (p + Vector3.RIGHT * x - n * thick * 0.5))
+		top.append(r_top)
+		bottom.append(r_bottom)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Two triangles a quad, each wound to face `out` (Godot's front faces wind clockwise).
+	var quad := func(a: Vector3, b: Vector3, c: Vector3, d: Vector3, out: Vector3) -> void:
+		for corners: Array in [[a, b, c], [b, d, c]]:
+			var face: Vector3 = (corners[2] - corners[0]).cross(corners[1] - corners[0])
+			var nrm := face.normalized() if face.length() > 1e-9 else out
+			var tri := corners
+			if nrm.dot(out) < 0.0:
+				nrm = -nrm
+				tri = [corners[0], corners[2], corners[1]]
+			st.set_normal(nrm)
+			for v in tri:
+				st.add_vertex(v)
+	for i in rows - 1:
+		for j in across:
+			quad.call(top[i][j], top[i][j + 1], top[i + 1][j], top[i + 1][j + 1], Vector3.UP)
+			quad.call(bottom[i][j], bottom[i][j + 1], bottom[i + 1][j], bottom[i + 1][j + 1], Vector3.DOWN)
+		# The rounded edge either side, round to the point.
+		for j in [0, across]:
+			var out_x := signf((top[0][j] as Vector3).x - (top[0][across - j] as Vector3).x)
+			quad.call(top[i][j], bottom[i][j], top[i + 1][j], bottom[i + 1][j], Vector3(out_x, 0.0, 0.0))
+	var mi := _mesh_instance(st.commit(), mat, Vector3.ZERO, parent)
+	mi.transform = xf
+	mi.name = "GuardTip"
+	return mi
 
 
 ## How far from the rear axle (as drawn, at rest) the rear mudguard sits at angle `a` (as in
@@ -3704,6 +3851,8 @@ func _rear_guard_at(a: float, radius: float) -> Vector3:
 func _rear_arc(radius: float, width: float, a0: float, a1: float, mat: Material, segs: int) -> Array[MeshInstance3D]:
 	var step := (a1 - a0) / segs
 	var out: Array[MeshInstance3D] = []
+	var first := INF
+	var last := -INF
 	for i in segs:
 		var a := a0 + step * (i + 0.5)
 		var at := _rear_guard_at(a, radius)
@@ -3713,6 +3862,23 @@ func _rear_arc(radius: float, width: float, a0: float, a1: float, mat: Material,
 		var seg := _box(at, Vector3(width, 0.012, d.length() * 1.1), mat)
 		seg.rotation.x = atan2(-d.y, d.z)
 		out.append(seg)
+		first = minf(first, a - step * 0.5)
+		last = maxf(last, a + step * 0.5)
+	if out.is_empty():
+		return out
+	# Both ends rounded off, carrying on round the wheel, unless that would run up into the seat.
+	var axle := Vector3(0.0, 0.0, _build.wheelbase * 0.5)
+	for end in [[first, -1.0], [last, 1.0]]:
+		var path := []
+		var ups := []
+		var reach := _tip_length(width) / radius
+		for i in GUARD_TIP_ROWS:
+			var a: float = end[0] + end[1] * reach * i / (GUARD_TIP_ROWS - 1.0)
+			path.append(_rear_guard_at(a, radius))
+			ups.append((path[i] - axle).normalized())
+		if _in_seat(path[GUARD_TIP_ROWS - 1]):
+			continue
+		out.append(_guard_tip(path, ups, width, 0.012, mat))
 	return out
 
 
@@ -3821,11 +3987,14 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 		var back := base + Vector3(0.0, -0.04, 0.14 if long else 0.08)
 		var mid := base + Vector3(0.0, 0.0, -0.08)
 		var nose := base + Vector3(0.0, 0.06, -0.3 if long else -0.34)
-		_plank(back, base, w + 0.02, 0.012, mat, _steer_node)
+		var tail_plank := _plank(back, base, w + 0.02, 0.012, mat, _steer_node)
 		_plank(base, mid, w + 0.01, 0.012, mat, _steer_node)
-		_plank(mid, nose, w, 0.012, mat, _steer_node)
+		var beak := _plank(mid, nose, w, 0.012, mat, _steer_node)
 		if long:
-			_plank(nose, nose + Vector3(0.0, -0.05, -0.03), w * 0.8, 0.012, mat, _steer_node)
+			beak = _plank(nose, nose + Vector3(0.0, -0.05, -0.03), w * 0.8, 0.012, mat, _steer_node)
+		# Rounded ends, front and back, rather than square-cut ones.
+		_plank_tip(beak, true, mat)
+		_plank_tip(tail_plank, false, mat)
 		for side in [-1.0, 1.0]:
 			_tube(base + Vector3(0.05 * side, 0.0, 0.0), yoke + Vector3(0.05 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
 		return
@@ -5335,6 +5504,10 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	rubber.roughness = 0.88
 	rubber.metallic = 0.0
 	rubber.metallic_specular = 0.3
+	# Its tread: a road tyre's grooves are cut into its own surface (TextureKit.apply_tread), so
+	# they cost nothing to draw; knobs and blocks stand up off it (see below).
+	var tread := tread_pattern(_part())
+	TextureKit.apply_tread(rubber, tread)
 	var tyre_mi := _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
 	tyre_mi.rotation.z = PI * 0.5
 	tyre_mi.set_meta("hoop", Vector3(rim_r, radius, width))
@@ -5352,10 +5525,9 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 			band.scale = Vector3(1.0, 0.12, 1.0)
 			band.name = "WallBand"
 	_tyre_lettering(tyre_mi, rim_r, radius, width)
-	# The tread: knobs on an off-road tyre (bigger, flatter blocks on a 50/50 adventure one, studs
-	# in them on a studded one), fine sipes cut across a winter tyre; a road tyre is smooth.
-	var tread := str(_part().get("tread", "knobs" if style == "offroad" else ""))
-	if tread == "":
+	# The tread that stands off the tyre: knobs on an off-road tyre (bigger, flatter blocks on a
+	# 50/50 adventure one, studs in them on a studded one), fine sipes cut across a winter tyre.
+	if not tread in ["sipes", "knobs", "blocks", "studs"]:
 		return
 	if tread == "sipes":
 		_tread_ring(wheel, radius, Vector3(width * 0.72, 0.003, 0.004), 72, 0.0015, 0.0, _mat(Color(0.015, 0.015, 0.015), 0.0, 0.95))
@@ -5385,6 +5557,16 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 		smi.material_override = _mat(Color(0.7, 0.72, 0.75), 1.0, 0.25)
 		wheel.add_child(smi)
 		_slot_meshes[_current_slot].append(smi)
+
+
+## Tyre `p`'s tread pattern: its own "tread" (a road tyre's grooves, one of TextureKit.TREADS,
+## or "knobs", "blocks", "studs" or "sipes"), knobs on an off-road tyre that doesn't say, and
+## none ("") on a slick.
+static func tread_pattern(p: Dictionary) -> String:
+	var style := str(p.get("style", "road"))
+	if style == "slick":
+		return ""
+	return str(p.get("tread", "knobs" if style == "offroad" else "sport"))
 
 
 ## A ring of tread pieces (`size` each, `count` of them, staggered `stagger` either side of the
@@ -5537,6 +5719,8 @@ static func tyre_mesh(rim_r: float, radius: float, width: float, rim_w: float, s
 			st.add_index(a0 + 1)
 			st.add_index(b0)
 			st.add_index(b0 + 1)
+	# Tangents for the tread's normal map (see TextureKit.apply_tread).
+	st.generate_tangents()
 	return st.commit()
 
 

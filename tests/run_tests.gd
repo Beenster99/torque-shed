@@ -919,6 +919,11 @@ func _run_all() -> void:
 	await _t(&"_test_coop_positions")
 	await _t(&"_test_coop_call")
 	await _t(&"_test_coop_state")
+	print("Simon's v0.39.0 round: wheels by size, a tread on every tyre, angular tanks, rounded mudguard ends")
+	await _t(&"_test_wtt_wheel_order")
+	await _t(&"_test_wtt_treads")
+	await _t(&"_test_wtt_angular_tanks")
+	await _t(&"_test_wtt_mudguard_ends")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -24424,5 +24429,27 @@ func _test_road_markings_paint() -> void:
 
 func _test_road_signs() -> void:
 	_road_markings().test_signs()
+
+
+# ---------------------------------------------------------------------------- wheels, tyres, tanks and mudguards (tests/wheel_tyre_tank_tests.gd)
+
+func _wtt() -> RefCounted:
+	return load("res://tests/wheel_tyre_tank_tests.gd").new(self)
+
+
+func _test_wtt_wheel_order() -> void:
+	_wtt().test_wheel_order()
+
+
+func _test_wtt_treads() -> void:
+	_wtt().test_treads()
+
+
+func _test_wtt_angular_tanks() -> void:
+	_wtt().test_angular_tanks()
+
+
+func _test_wtt_mudguard_ends() -> void:
+	_wtt().test_mudguard_ends()
 
 

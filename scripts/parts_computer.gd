@@ -650,6 +650,10 @@ func _show_kind(k: String) -> void:
 			# Engines come in families: a heading over each layout's sizes.
 			group = str(PartsDB.get_part(id).get("type", ""))
 			_variants.add_child(UITheme.label(group.to_upper(), 14, UITheme.ACCENT))
+		if k == "wheel" and sort_key == "shop" and wheel_group(id) != group:
+			# Wheels by rim size, smallest first: a heading over each diameter.
+			group = wheel_group(id)
+			_variants.add_child(UITheme.label(group, 14, UITheme.ACCENT))
 		var title := str(Equipment.get_model(id)["name"]) if k.begins_with("eq:") else PartsDB.part_name(id)
 		var b := _row(id, title, price_text(k, id), key_spec(k, id))
 		b.pressed.connect(_pick_part.bind(id))
@@ -680,6 +684,11 @@ func _show_kind(k: String) -> void:
 		_show_nothing(kind_title(k))
 	else:
 		_show_part(ids[0] if not ids.has(_part) else _part)
+
+
+## The heading wheel `id` is listed under in shop order: its rim size, as "17\" WHEELS".
+static func wheel_group(id: String) -> String:
+	return "%s WHEELS" % PartsDB.inch_text(float(PartsDB.get_part(id).get("diameter", 17.0)))
 
 
 ## The models of a kind the list shows, filtered and in the order picked (see sort_key,
