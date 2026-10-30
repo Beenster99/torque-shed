@@ -929,6 +929,11 @@ func _run_all() -> void:
 	await _t(&"_test_ecu_safety_on_bike")
 	await _t(&"_test_ecu_safety_saves")
 	await _t(&"_test_ecu_safety_dash")
+	print("Simon's v0.39.0 menus: no Workshop tab, no Controls list, a compact Gameplay tab")
+	await _t(&"_test_menu_tidy_workshop")
+	await _t(&"_test_menu_tidy_controls")
+	await _t(&"_test_menu_tidy_gameplay")
+	await _t(&"_test_menu_tidy_leave")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -24489,3 +24494,25 @@ func _test_ecu_safety_saves() -> void:
 
 func _test_ecu_safety_dash() -> void:
 	await _ecu_safety().test_dash()
+
+
+# ---------------------------------------------------------------------------- the tidied menus (tests/menu_tidy_tests.gd)
+
+func _menu_tidy() -> RefCounted:
+	return load("res://tests/menu_tidy_tests.gd").new(self)
+
+
+func _test_menu_tidy_workshop() -> void:
+	await _menu_tidy().test_no_workshop()
+
+
+func _test_menu_tidy_controls() -> void:
+	await _menu_tidy().test_no_controls_list()
+
+
+func _test_menu_tidy_gameplay() -> void:
+	await _menu_tidy().test_gameplay_compact()
+
+
+func _test_menu_tidy_leave() -> void:
+	await _menu_tidy().test_leave()

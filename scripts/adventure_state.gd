@@ -14,12 +14,14 @@ extends RefCounted
 ## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived), network (whether it's
 ## ridden on the road network: the host's Esc > Debug toggle when they set off, the same for everyone), builds and
 ## ride_hash (the host's builder and ride hashes, see AdventureCrew: on the network every machine must match them),
-## route (the crew's agreed route and its "leave the route?" call, see AdventureCrew)}. Never
+## route (the crew's agreed route and its "leave the route?" call, see AdventureCrew), left (the guests who've
+## left the ride for the shed, see adventure_leave)}. Never
 ## carried over in a save: loading one finds everybody back at the shed.
 ##
 ## Actions (Shed.request): adventure_start {plan, seed, title} (the host, from the route planner:
 ## any shed TV tuned to the Route planner channel, see RouteTv) and adventure_end (the host: "Ride home"
-## once everyone's at the destination), adventure_join {bike: the one you'd like, or home: one of
+## once everyone's at the destination; it ends for everyone), adventure_leave (a guest: back to the shed on their
+## own, the rest riding on), adventure_join {bike: the one you'd like, or home: one of
 ## their own from their collection, or foot: true to walk} (each player, on loading it, from AdventureBikePicker) and adventure_arrive (the first there: everyone's brought to the destination, gets
 ## XP, and the photo goes in the diary on the bookshelf, not on the shed wall);
 ## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
@@ -63,6 +65,11 @@ static func sanitize(v) -> Dictionary:
 	out["builds"] = str(out.get("builds", ""))
 	out["ride_hash"] = str(out.get("ride_hash", ""))
 	out["route"] = AdventureCrew.sanitize_route(out.get("route"))
+	var left := []
+	if out.get("left") is Array:
+		for p in out["left"]:
+			left.append(int(p))
+	out["left"] = left
 	# Planned here too (the host's road if all is well; if not, what was said is kept, for AdventureTrip.real_mismatch
 	# to turn down).
 	var plan := AdventurePlans.clean(out["plan"])
@@ -100,6 +107,11 @@ static func route_version() -> int:
 ## The crew's open "leave the route?" call ({} when there's none): {id, by, kind, votes {peer: bool}, ends}.
 static func route_call() -> Dictionary:
 	return (Shed.adventure["route"] as Dictionary).get("call", {}) if Shed.adventure.get("route") is Dictionary else {}
+
+
+## Whether `peer` has left the ride on now for the shed (see adventure_leave): they stay at home till the next one.
+static func has_left(peer: int) -> bool:
+	return active() and Shed.adventure.get("left") is Array and (Shed.adventure["left"] as Array).has(peer)
 
 
 ## The peers out on the ride now (joined it and still in the crew).
@@ -141,9 +153,18 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Only the host can end the adventure."
 			if not active():
 				return "There's no adventure on."
+		"adventure_leave":
+			if not active():
+				return "There's no adventure on."
+			if _is_host(peer):
+				return "The host ends the adventure for everyone."
+			if has_left(peer):
+				return "You've left this adventure already."
 		"adventure_join", "adventure_arrive":
 			if not active():
 				return "There's no adventure on."
+			if has_left(peer):
+				return "You've left this adventure."
 		"adventure_highlight":
 			return AdventureDiary.check(peer, action)
 		"adventure_builds":
@@ -178,7 +199,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": int(action.get("seed", randi())), "km": km,
 				"theme": planned["theme"], "dest": dest, "title": title if title != "" else "Ride to %s" % dest,
 				"plan": planned["plan"], "real": planned["real"], "real_hash": planned["real_hash"],
-				"by": who, "riders": {}, "arrived": 0, "arrived_name": "", "network": AdventureWorld.network,
+				"by": who, "riders": {}, "left": [], "arrived": 0, "arrived_name": "", "network": AdventureWorld.network,
 				"builds": AdventureCrew.builds(), "ride_hash": "", "route": AdventureCrew.sanitize_route({})}
 			if AdventureWorld.network:
 				var plan: Dictionary = planned["plan"]
@@ -196,6 +217,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["arrived"] = 0
 			Shed.adventure["arrived_name"] = ""
 			Shed.adventure["by"] = who
+			Shed.adventure["left"] = []
 			Shed.adventure["route"] = AdventureCrew.sanitize_route(Shed.adventure.get("route"))
 			(Shed.adventure["route"] as Dictionary)["call"] = {}   # (a call left open overnight is forgotten)
 			Shed.adventure["resume"] = (save["at"] as Dictionary).duplicate()
@@ -208,6 +230,25 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"adventure_end":
 			Shed.adventure = {}
 			return "*The adventure's over: back to the shed."
+		"adventure_leave":
+			# Off the ride: their game takes them home (AdventureTrip.sync), parking the bike they're on in the shed. One
+			# of theirs left at the roadside comes home too.
+			var riders: Dictionary = Shed.adventure["riders"]
+			var bike := int(riders.get(peer, riders.get(str(peer), 0)))
+			riders.erase(peer)
+			riders.erase(str(peer))
+			if not (Shed.adventure.get("left") is Array):
+				Shed.adventure["left"] = []
+			(Shed.adventure["left"] as Array).append(peer)
+			if Shed.bikes.has(bike):
+				var b: Dictionary = Shed.bikes[bike]
+				b.erase("push")
+				b.erase("tow")
+				if b.has("roadside") and int(b.get("rider", 0)) == 0:
+					b.erase("roadside")
+					b["xf"] = Roadside.home_spot(bike)
+					b["stand"] = ""
+			return "*%s has left the adventure and gone back to the shed." % who
 		"adventure_join":
 			var riders: Dictionary = Shed.adventure["riders"]
 			var bike := Shed.riding(peer)
@@ -318,10 +359,10 @@ static func _bike_for(peer: int, preferred: int, riders: Dictionary) -> int:
 
 
 ## The Esc menu's adventure button: opens the route planner (JourneyMap, the same board as the TVs' Route planner channel) to plan
-## one, or the host ends the one on ("Ride home" once everyone's at the destination).
+## one, or the host ends the one on for everyone ("Ride home" once everyone's at the destination), or a guest leaves it.
 static func menu_action() -> void:
 	if active():
-		Shed.request({"a": "adventure_end"})
+		Shed.request({"a": "adventure_end" if Shed.is_authority() else "adventure_leave"})
 	elif AdventureTrip.current:
 		AdventureTrip.current.open_journey.call_deferred()
 
@@ -346,8 +387,11 @@ static func continue_text() -> Array:
 
 static func menu_text() -> Array:
 	var host := Shed.is_authority()
+	if active() and not host:
+		return ["Leave the adventure (just you back to the shed; the rest ride on)",
+			"You've left this adventure." if has_left(Shed.me()) else ""]
 	if active() and int(Shed.adventure.get("arrived", 0)) != 0:
-		return ["Ride home (everyone back to the shed)", "" if host else "The host rides everyone home."]
+		return ["Ride home (everyone back to the shed)", ""]
 	if active():
-		return ["End the adventure (everyone back to the shed)", "" if host else "The host ends the adventure."]
+		return ["End the adventure for everyone (everyone back to the shed)", ""]
 	return ["Adventure ride: plan one on any TV's Route planner channel, or here (the host starts it for everyone)", ""]

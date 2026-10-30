@@ -278,7 +278,7 @@ func test_toggle() -> void:
 	t.add_child(menu)
 	await t.get_tree().process_frame
 	var box := menu.look_corner
-	check(box != null and box.get_parent().get_parent() == menu._gameplay and box.button_pressed == Settings.look_into_corner,
+	check(box != null and menu._gameplay.is_ancestor_of(box) and box.button_pressed == Settings.look_into_corner,
 		"a check box for it on the Gameplay tab")
 	box.button_pressed = not was
 	check(Settings.look_into_corner == not was, "ticking it sets it")

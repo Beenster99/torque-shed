@@ -10,7 +10,8 @@ extends Node
 ## the road the other is (the host "4.0 km ahead", the client "4.0 km behind"), and with both
 ## menus up (the game doesn't pause in co-op) neither bike may move, on either screen. Then the
 ## client respawns: the host must see its bike drawn as a ghost, and solid again about 5 s on.
-## Finally the host ends the adventure and both must be back at the shed, off their bikes.
+## Then the client leaves the ride on its own (the Esc menu's Leave the adventure): it must be back at the shed, off
+## its bike, while the host rides on. Finally the host ends the adventure and both must be back at the shed, off their bikes.
 
 const Rides := preload("res://tests/rides.gd")
 
@@ -102,6 +103,9 @@ func _ready() -> void:
 			friends_ok = await _friends_check(trip, mine, expect, my_lat)
 			menu_ok = await _menu_check(trip, mine, my_lat)
 			ghost_ok = await _ghost_check(trip, mine, my_lat)
+	# The client leaves the ride on its own (the Esc menu's Leave the adventure): back at the shed, off its bike, while
+	# the host and the adventure carry on.
+	var leave_ok := await _leave_check(trip, mine, my_lat) if ok_start else false
 	# Home: the host ends it (once the client has had time to check, too).
 	var asked := [false]
 	var end_at := Time.get_ticks_msec() + 3000
@@ -110,19 +114,52 @@ func _ready() -> void:
 			asked[0] = true
 			Shed.request({"a": "adventure_end"})
 		return not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0 and not Adventure.active(), 25.0)
-	var ok := ok_start and start_seen and far_ok and traffic_ok and again_ok and friends_ok and menu_ok and ghost_ok and home_ok
+	var ok := ok_start and start_seen and far_ok and traffic_ok and again_ok and friends_ok and menu_ok and ghost_ok and leave_ok and home_ok
 	# The client stays until the host has gone, so the host's checks finish first.
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, seen 20 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, the client's respawn seen as a ghost then solid=%s, back at the shed=%s" % [
-		"PASS" if ok else "FAIL", role, ok_start, start_seen, far_ok, traffic_ok, again_ok, friends_ok, menu_ok, ghost_ok, home_ok])
+	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, seen 20 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, the client's respawn seen as a ghost then solid=%s, the client left on its own while the host rode on=%s, back at the shed=%s" % [
+		"PASS" if ok else "FAIL", role, ok_start, start_seen, far_ok, traffic_ok, again_ok, friends_ok, menu_ok, ghost_ok, leave_ok, home_ok])
 	get_tree().quit(0 if ok else 1)
 
 
 # ---------------------------------------------------------------------------- the crew, the menu
+
+## A guest leaves (Simon: "If a guest ends an adventure they leave, if the host ends an adventure everyone has to
+## leave"): the client presses the Esc menu's adventure button (Leave the adventure). It must be back at the shed,
+## off its bike, and stay there, while the adventure carries on; the host must still be out on it, on its bike, with
+## the client off the ride.
+func _leave_check(trip: AdventureTrip, s: float, lat: float) -> bool:
+	var client_peer := [0]
+	if role == "client":
+		check_leave_text = str(Adventure.menu_text()[0])
+		Adventure.menu_action()
+		var home := await _until(func():
+			return not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0 and Adventure.active() \
+				and Adventure.has_left(Shed.me()), 20.0)
+		# And it stays at home (not drawn back into the ride on the next change of the shed).
+		var stay := Time.get_ticks_msec() + 2000
+		await _until(func(): return Time.get_ticks_msec() > stay, 3.0)
+		var ok := home and not trip.on_trip() and Adventure.active() and check_leave_text.begins_with("Leave the adventure")
+		print("MP adv note %s: the button said '%s'; left on my own, back at the shed %s, the adventure still on %s" % [role,
+			check_leave_text, home, Adventure.active()])
+		return ok
+	var ok := await _until(func():
+		_hold(trip, s, lat)
+		for p in Shed.crew:
+			if int(p) != Shed.me():
+				client_peer[0] = int(p)
+		return client_peer[0] != 0 and Adventure.has_left(client_peer[0]) and Shed.riding(client_peer[0]) == 0, 30.0)
+	ok = ok and Adventure.active() and trip.on_trip() and main.bike != null and Adventure.riders_out() == [Shed.me()]
+	print("MP adv note %s: the client left the ride %s; still out on it myself %s, on my bike %s, riders out %s" % [role, ok,
+		trip.on_trip(), main.bike != null, Adventure.riders_out()])
+	return ok
+
+
+var check_leave_text := ""
 
 ## How far the other is along the road (AdventureTrip.friends): the client 4 km on from the
 ## host, so the host's HUD, sat nav and paper map say "Adv client 4.0 km ahead", the client's

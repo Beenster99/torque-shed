@@ -248,12 +248,6 @@ func _ready() -> void:
 	menu.save_renamed.connect(func(id, called):
 		if in_session and id == SaveGame.active_slot():
 			saver.save_name = called)
-	menu.order_bike.connect(func():
-		Shed.request({"a": "order"})
-		_close_menu())
-	menu.geometry_mode.connect(func():
-		_close_menu()
-		open_geometry())
 	saver = SaveGame.new()
 	saver.name = "SaveGame"
 	saver.main = self

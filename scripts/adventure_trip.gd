@@ -181,11 +181,13 @@ func sync() -> void:
 	if _busy:
 		return
 	var id := int(Shed.adventure.get("id", 0))
-	if id != 0 and id != trip_id:
+	# A guest who left the ride (Adventure.has_left) goes home and stays there while the rest ride on.
+	var gone := Adventure.has_left(Shed.me())
+	if id != 0 and id != trip_id and not gone:
 		if trip_id != 0:
 			reset()
 		enter()
-	elif trip_id != 0 and id != trip_id:
+	elif trip_id != 0 and (id != trip_id or gone):
 		leave()
 	if world != null and trip_id == id and int(Shed.adventure.get("arrived", 0)) != 0 and not moment_done:
 		arrive_moment()
@@ -982,7 +984,7 @@ func jump(metres: float) -> void:
 
 ## Why "Back to the garage" can't be used out here ("" if it can).
 func home_reason() -> String:
-	return "You're out on an adventure: %s." % ("end it from this menu to bring everyone home" if Shed.is_authority() else "the host ends it")
+	return "You're out on an adventure: %s." % ("end it from this menu to bring everyone home" if Shed.is_authority() else "leave it from this menu to go back on your own")
 
 
 # ---------------------------------------------------------------------------- arriving
@@ -1144,7 +1146,7 @@ func crew_waiting() -> Array[String]:
 		return out
 	var riders: Dictionary = Shed.adventure.get("riders", {})
 	for peer in Shed.crew:
-		if not riders.has(peer) and not riders.has(int(peer)):
+		if not riders.has(peer) and not riders.has(int(peer)) and not Adventure.has_left(int(peer)):
 			out.append(str(Shed.crew[peer].get("name", "a mate")))
 	return out
 

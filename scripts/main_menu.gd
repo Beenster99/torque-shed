@@ -1,12 +1,11 @@
 class_name MainMenu
 extends Control
-## Title screen and the Esc menu. The Esc menu is short: Continue, Settings, saving, Leave and
-## return to title, and Exit game. Settings opens its own tabs (Graphics, Sound, Gameplay,
-## Controller and Debug). The badge in the top left corner (the garage's name) opens the
-## garage's panel: Money, Staff, Contracts, the Recovery truck, Blueprints and the Workshop
-## (adventure rides, ordering a project bike, geometry mode). The profile picture in the top
-## right opens yours: your profile, your Character (level, tools, skills, goals) and the Shop
-## for rider gear.
+## Title screen and the Esc menu. The Esc menu is short: Continue, Settings, the adventure ride
+## buttons, saving, Leave and return to title, and Exit game. Settings opens its own tabs
+## (Graphics, Sound, Gameplay, Controller and Debug). The badge in the top left corner (the
+## garage's name) opens the garage's panel: Money, Staff, Contracts, the Recovery truck and
+## Blueprints. The profile picture in the top right opens yours: your profile, your Character
+## (level, tools, skills, goals) and the Shop for rider gear.
 
 signal ride_solo
 signal host_game
@@ -15,8 +14,6 @@ signal resume
 ## "Back to the garage": out in the world, home with the bike you're on (see Main.go_home).
 signal go_home
 signal leave_session
-signal order_bike
-signal geometry_mode
 signal save_requested
 ## A save game picked on the Load screen, to play solo or host (see SaveBrowser).
 signal load_game(id: String, as_host: bool)
@@ -24,35 +21,13 @@ signal save_as(called: String)
 signal save_renamed(id: String, called: String)
 signal quitting
 
-const CONTROLS_TEXT := """ON FOOT
-W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C / Ctrl / R3: crouch
-V / View: first or third person (spraying, washing, the sandblaster and the tyre changer are always first person)
-1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
-Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
-Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
-Spray can or gun: R / right mouse / X picks the colour, T / mouse back button / B the finish
-G / middle mouse / D-pad right: ping   (Key bindings tab: change any of these)
-F / Y: get on a finished bike (hold to wheel it about), use the parts computer, switch the
-  radio on or off, unpack a box, take hold of an engine stand or shelving unit (F again lets go)
-Carrying equipment: mouse wheel / LB RB pushes it further away or closer, R / X snaps to walls on or off
-Hands on a bolted-on stand: kick the side stand down or heave the bike onto the centre stand
-F2 at a bike: geometry mode (click a part, drag the handles; W move, E rotate, R scale, Ctrl snap, Z undo)
-
-RIDING
-I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
-Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
-E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
-Neutral (N) sits between 1st and 2nd: at a standstill E from 1st or Q from 2nd finds it; Q from N is 1st
-Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
-L / D-pad up: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
-, . / D-pad left, right: indicators (again to cancel; they cancel themselves after the turn)      H / L3: horn
-R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay
-' (apostrophe): flick your helmet visor or goggles up or down (on foot too; the crew see it)"""
-
 var _name: LineEdit
 var _home: Button
-## Starts an adventure ride for the crew, or ends the one on (the host; see Adventure.menu_action).
+## Starts an adventure ride for the crew, or ends the one on for everyone (the host) or leaves it
+## (a guest; see Adventure.menu_action). Ending or leaving asks first (_confirm).
 var _adventure: Button
+## "Are you sure?" before ending or leaving an adventure.
+var _confirm: ConfirmationDialog
 ## Carries on the adventure a night's sleep put away (the host; see Adventure.continue_text).
 var _continue_adventure: Button
 ## Out on an adventure: the paper map of the route (once you've stopped; see AdventureMap).
@@ -93,7 +68,7 @@ var _weather: OptionButton
 var _weather_now: Label
 var debug: DebugTab
 var _satnav_checks := []    # [CheckBox, Settings key] for the sat nav (see _build_satnav_settings)
-var _satnav_sliders := []   # [HSlider, Settings key]
+var _satnav_sliders := []   # [HSlider, Settings key, Callable showing its value]
 var money: MoneyTab
 var staff: StaffTab
 var shop: ShopTab
@@ -195,6 +170,7 @@ func _ready() -> void:
 	_pause_box.add_child(_resume)
 	_settings_button = _button("Settings", func(): toggle_panel(_tabs))
 	_pause_box.add_child(_settings_button)
+	_build_ride_buttons()
 	# Only out in the world, stranded: you and the bike you're on go home.
 	_home = _button("Respawn at the garage (stranded? you and the bike you're on go home)", func(): go_home.emit())
 	_pause_box.add_child(_home)
@@ -247,8 +223,8 @@ func _ready() -> void:
 	_show_panel(_tabs)
 
 
-## The Settings panel's tabs: Graphics, Sound, Gameplay, Controller (the controls list, key
-## bindings and a controller check) and Debug.
+## The Settings panel's tabs: Graphics, Sound, Gameplay, Controller (key bindings and a
+## controller check) and Debug.
 func _build_settings() -> void:
 	_tabs = _panel_tabs("Settings")
 	# Graphics: presets, display, upscaling, anti-aliasing, quality and the driver (see GraphicsTab).
@@ -256,60 +232,42 @@ func _build_settings() -> void:
 	_tabs.add_child(graphics)
 	var sound := _scroll_tab("Sound")
 	_build_sound_settings(sound)
-	# Gameplay: riding, the camera, units, placing things, and the time of day and weather.
+	# Gameplay, kept compact (Simon: "tidy up and make more compact the Gameplay settings tab"): short headings,
+	# toggles two to a row with their explanations in tooltips, each slider with its label and value on one line.
 	var settings := _scroll_tab("Gameplay")
 	_gameplay = settings.get_parent() as Control
+	settings.add_theme_constant_override("separation", 4)
 	_build_riding_settings(settings)
-	_auto = CheckBox.new()
-	_auto.text = "Automatic gearbox"
-	_auto.button_pressed = Settings.auto_shift
-	_auto.toggled.connect(func(v): Settings.auto_shift = v)
-	settings.add_child(_auto)
-	var recentre := CheckBox.new()
-	recentre.text = "Chase camera swings back behind the bike after you let go of the mouse or right stick"
-	recentre.button_pressed = Settings.camera_recentre
-	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
-	settings.add_child(recentre)
-	look_corner = CheckBox.new()
-	look_corner.name = "LookIntoCorner"
-	look_corner.text = "Riders look into the corner: the head turns towards the inside and the exit of a bend, and your view does in first person"
-	look_corner.button_pressed = Settings.look_into_corner
-	look_corner.toggled.connect(func(v): Settings.look_into_corner = v)
-	settings.add_child(look_corner)
-	_third_person = CheckBox.new()
-	_third_person.text = "Third person on foot: the camera behind your shoulder, your whole figure in view (V / View toggles it)"
-	_third_person.button_pressed = Settings.walk_third_person
-	_third_person.toggled.connect(func(v): Settings.walk_third_person = v)
-	settings.add_child(_third_person)
-	settings.add_child(UITheme.label("Units", 15))
+	settings.add_child(_heading("Camera"))
+	var cams := _toggle_grid(settings)
+	_toggle(cams, "Chase camera recentres", "The chase camera swings back behind the bike after you let go of the mouse or right stick.",
+		Settings.camera_recentre, func(v): Settings.camera_recentre = v)
+	_third_person = _toggle(cams, "Third person on foot", "The camera behind your shoulder, your whole figure in view. V / View toggles it.",
+		Settings.walk_third_person, func(v): Settings.walk_third_person = v)
+	_build_satnav_settings(settings)
+	settings.add_child(_heading("Units and placing"))
+	var units_row := HBoxContainer.new()
+	units_row.add_theme_constant_override("separation", 16)
+	units_row.add_child(_row_label("Units"))
 	var units := OptionButton.new()
 	units.add_item("Metric (km/h, km, kg, L/100 km)")
 	units.add_item("Imperial (mph, miles, lb, mpg)")
 	units.selected = 1 if Settings.units == "imperial" else 0
 	units.item_selected.connect(func(i): Settings.units = "imperial" if i == 1 else "metric")
-	settings.add_child(units)
-	_snap = CheckBox.new()
-	_snap.text = "Snap equipment to walls and corners when placing it (R toggles it while carrying)"
-	_snap.button_pressed = Settings.snap_placement
-	_snap.toggled.connect(func(v): Settings.snap_placement = v)
-	settings.add_child(_snap)
-	_free_rotate = CheckBox.new()
-	Controls.bind_text(_free_rotate, "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press ({rotate_free} toggles it)")
-	_free_rotate.button_pressed = Settings.free_rotate
-	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
-	settings.add_child(_free_rotate)
+	units_row.add_child(units)
+	settings.add_child(units_row)
+	var placing := _toggle_grid(settings)
+	_snap = _toggle(placing, "Snap to walls and corners", "Equipment you place snaps to walls and corners. R / X toggles it while carrying.",
+		Settings.snap_placement, func(v): Settings.snap_placement = v)
+	_free_rotate = _toggle(placing, "Free rotate ({rotate_free})", "The rotate keys turn what you hold to any angle, not a quarter a press.",
+		Settings.free_rotate, func(v): Settings.free_rotate = v)
+	settings.add_child(_heading("Time and weather"))
 	_build_time_settings(settings)
-	# Controller: the controls list, key bindings and a check that the pad's sticks read true.
+	# Controller: the key bindings (every action and its key: the list of controls) and a check that the pad's sticks
+	# read true. (Simon: "remove the controls sub tab under controller in settings": its fixed list said the same.)
 	_controller = TabContainer.new()
 	_controller.name = "Controller"
 	_tabs.add_child(_controller)
-	var controls_scroll := ScrollContainer.new()
-	controls_scroll.name = "Controls"
-	controls_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_controller.add_child(controls_scroll)
-	var controls := UITheme.label(CONTROLS_TEXT, 15)
-	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controls_scroll.add_child(controls)
 	keybinds = KeybindTab.new()
 	_controller.add_child(keybinds)
 	var pad := VBoxContainer.new()
@@ -326,7 +284,7 @@ func _build_settings() -> void:
 
 
 ## The garage's panel (its badge, top left): the money, the staff, contracts under way, the
-## recovery truck (with the bikes left out on the road), blueprints, and the Workshop.
+## recovery truck (with the bikes left out on the road) and blueprints.
 func _build_garage() -> void:
 	_garage_tabs = _panel_tabs("Garage")
 	# The cash, the business's account, sending money, loans and the ledger (see Money).
@@ -349,26 +307,41 @@ func _build_garage() -> void:
 	truck.add_child(jobs)
 	blueprints = BlueprintTab.new()
 	_garage_tabs.add_child(blueprints)
-	# The Workshop: adventure rides, a project bike to order and geometry mode.
-	var shop_floor := _scroll_tab("Workshop", _garage_tabs)
-	shop_floor.add_child(UITheme.label("Adventure rides", 15, UITheme.ACCENT))
+	# (Simon: "remove Workshop menu on company page". Its adventure buttons are on the Esc menu itself (see
+	# _build_ride_buttons); a project bike is ordered on the parts computer, a blueprint built on the Blueprints tab,
+	# and geometry mode has its key.)
+
+
+## The Esc menu's adventure buttons, under Settings: plan or start a ride, end it (the host, for
+## everyone) or leave it (a guest), carry on one put away overnight, and the paper map out there.
+## Each says what it does in a few words, the rest in its tooltip (see _refresh_adventure).
+func _build_ride_buttons() -> void:
 	_adventure = _button("Adventure ride", func():
-		Adventure.menu_action()
-		resume.emit())
-	shop_floor.add_child(_adventure)
+		if not Adventure.active():
+			Adventure.menu_action()
+			resume.emit()
+			return
+		_confirm.dialog_text = "End the adventure for everyone? The whole crew goes back to the shed." if Shed.is_authority() \
+			else "Leave the adventure? You go back to the shed on your own; the rest ride on."
+		_confirm.ok_button_text = "End it" if Shed.is_authority() else "Leave"
+		_confirm.popup_centered())
+	_pause_box.add_child(_adventure)
 	_continue_adventure = _button("Continue adventure", func():
 		Shed.request({"a": "adventure_resume"})
 		resume.emit())
-	shop_floor.add_child(_continue_adventure)
+	_pause_box.add_child(_continue_adventure)
 	_paper_map = _button("Paper map of the route", func():
 		resume.emit()
 		if AdventureTrip.current:
 			AdventureTrip.current.open_map())
-	shop_floor.add_child(_paper_map)
-	shop_floor.add_child(UITheme.label("Bikes", 15, UITheme.ACCENT))
-	shop_floor.add_child(_button("Order a project bike", func(): order_bike.emit()))
-	shop_floor.add_child(_button("Build from blueprint", show_blueprints))
-	shop_floor.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
+	_pause_box.add_child(_paper_map)
+	_confirm = ConfirmationDialog.new()
+	_confirm.title = "Adventure ride"
+	_confirm.confirmed.connect(func():
+		if Adventure.active():
+			Adventure.menu_action()
+		resume.emit())
+	add_child(_confirm)
 
 
 ## Your panel (the profile picture, top right): who you are, your Character, the Shop and the Bike shop.
@@ -448,7 +421,7 @@ func _build_badges() -> void:
 	_garage_badge = MenuBadge.new("garage")
 	_garage_badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_garage_badge.position = Vector2(16, 16)
-	_garage_badge.tooltip_text = "The garage: money, staff, contracts, the recovery truck and the workshop"
+	_garage_badge.tooltip_text = "The garage: money, staff, contracts, the recovery truck and blueprints"
 	_garage_badge.pressed.connect(func(): toggle_panel(_garage_tabs))
 	add_child(_garage_badge)
 	_profile_badge = MenuBadge.new("profile")
@@ -533,76 +506,91 @@ func _build_sound_settings(settings: VBoxContainer) -> void:
 	settings.add_child(_volume_slider("RadioVolume", Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 
 
-## The riding rows at the top of the Gameplay tab: the Riding realism slider (what each end means shows
-## under it) and the telemetry overlay.
+## The Riding rows at the top of the Gameplay tab: the Riding realism slider (its value and a word
+## for it beside it, what it means in its tooltip), then the gearbox, direct bars, the telemetry
+## overlay and looking into corners, two to a row.
 func _build_riding_settings(settings: VBoxContainer) -> void:
-	settings.add_child(UITheme.label("Riding realism (0 = full sim, 1 = easy)", 15))
+	settings.add_child(_heading("Riding"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var label := _row_label("Riding realism")
+	label.tooltip_text = "0 = full sim, 1 = easy."
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.custom_minimum_size.x = 150.0
+	row.add_child(label)
 	_assist = HSlider.new()
 	_assist.min_value = 0.0
 	_assist.max_value = 1.0
 	_assist.step = 0.05
-	var value := UITheme.label("", 14, UITheme.ACCENT)
+	_assist.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_assist.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(_assist)
+	var value := _row_label("")
+	value.add_theme_color_override("font_color", UITheme.ACCENT)
+	value.custom_minimum_size.x = 140.0
+	value.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.add_child(value)
 	var show := func(v: float) -> void:
-		value.text = "%.2f: %s" % [v, realism_text(v)]
+		value.text = "%.2f  %s" % [v, realism_word(v)]
+		_assist.tooltip_text = realism_text(v)
+		value.tooltip_text = realism_text(v)
 	_assist.value_changed.connect(func(v):
 		Settings.assist = v
 		show.call(v))
 	_assist.value = Settings.assist
 	show.call(Settings.assist)
-	settings.add_child(_assist)
-	settings.add_child(value)
-	var bars := CheckBox.new()
-	bars.text = "Direct bars: steering pushes on the handlebars (push right to lean right)"
-	bars.button_pressed = Settings.direct_bars
-	bars.toggled.connect(func(v): Settings.direct_bars = v)
-	settings.add_child(bars)
-	var tele := CheckBox.new()
-	Controls.bind_text(tele, "Telemetry overlay while riding ({telemetry})")
-	tele.button_pressed = Settings.telemetry_overlay
-	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
-	settings.add_child(tele)
-	var nav := CheckBox.new()
-	Controls.bind_text(nav, "Sat nav map on the HUD, on a bike with one fitted ({satnav_hud})")
-	nav.button_pressed = Settings.satnav_hud
-	nav.toggled.connect(func(v): Settings.satnav_hud = v)
-	settings.add_child(nav)
-	_build_satnav_settings(settings)
+	settings.add_child(row)
+	var grid := _toggle_grid(settings)
+	_auto = _toggle(grid, "Automatic gearbox", "The gears change themselves ({toggle_auto_shift} while riding).",
+		Settings.auto_shift, func(v): Settings.auto_shift = v)
+	_toggle(grid, "Direct bars", "Steering pushes on the handlebars: push right to lean right.",
+		Settings.direct_bars, func(v): Settings.direct_bars = v)
+	_toggle(grid, "Telemetry overlay ({telemetry})", "Live strips of what the bike is doing, while riding.",
+		Settings.telemetry_overlay, func(v): Settings.telemetry_overlay = v)
+	look_corner = _toggle(grid, "Look into corners", "Riders' heads turn towards the inside and the exit of a bend, and your view does in first person.",
+		Settings.look_into_corner, func(v): Settings.look_into_corner = v)
+	look_corner.name = "LookIntoCorner"
 
 
-## The sat nav as you like it: the satellite view, portrait or landscape, and the HUD's copy's
-## size, place and zoom (each with its key while riding too).
+## The Sat nav rows: on the HUD or not, the satellite view and portrait or landscape (two to a
+## row), then the HUD copy's size, zoom and place, two sliders to a row, each with its label and
+## value (the keys change them while riding too, see _refresh_satnav_settings).
 func _build_satnav_settings(settings: VBoxContainer) -> void:
-	var sat := CheckBox.new()
-	Controls.bind_text(sat, "Sat nav satellite view: the map over a live picture from above ({satnav_satellite})")
-	sat.button_pressed = Settings.satnav_satellite
-	sat.toggled.connect(func(v): Settings.satnav_satellite = v)
-	settings.add_child(sat)
-	_satnav_checks.append([sat, "satnav_satellite"])
-	var tall := CheckBox.new()
-	Controls.bind_text(tall, "Sat nav on the HUD stands tall (portrait), not wide ({satnav_portrait})")
-	tall.button_pressed = Settings.satnav_portrait
-	tall.toggled.connect(func(v): Settings.satnav_portrait = v)
-	settings.add_child(tall)
-	_satnav_checks.append([tall, "satnav_portrait"])
-	for row in [["satnav_scale", "Sat nav on the HUD: size", Settings.SATNAV_SCALE[0], Settings.SATNAV_SCALE[1], 0.05, "%d%%", 100.0],
-			["satnav_x", "Sat nav on the HUD: left to right", 0.0, 1.0, 0.01, "%d%%", 100.0],
-			["satnav_y", "Sat nav on the HUD: top to bottom", 0.0, 1.0, 0.01, "%d%%", 100.0],
-			["satnav_zoom", "Sat nav zoom (further out to the right; {satnav_zoom_in} / {satnav_zoom_out} riding)", Settings.SATNAV_ZOOM[0], Settings.SATNAV_ZOOM[1], 0.05, "x%.2f", 1.0]]:
+	settings.add_child(_heading("Sat nav"))
+	var grid := _toggle_grid(settings)
+	for c in [["satnav_hud", "Sat nav on the HUD ({satnav_hud})", "The sat nav's map on the HUD, on a bike with one fitted."],
+			["satnav_satellite", "Satellite view ({satnav_satellite})", "The map over a live picture from above."],
+			["satnav_portrait", "Portrait ({satnav_portrait})", "The sat nav on the HUD stands tall, not wide."]]:
+		var key: String = c[0]
+		var box := _toggle(grid, str(c[1]), str(c[2]), bool(Settings.get(key)), func(v): Settings.set(key, v))
+		_satnav_checks.append([box, key])
+	var sliders := GridContainer.new()
+	sliders.columns = 6
+	sliders.add_theme_constant_override("h_separation", 10)
+	sliders.add_theme_constant_override("v_separation", 4)
+	settings.add_child(sliders)
+	for row in [["satnav_scale", "Size", "How big the sat nav is on the HUD.", Settings.SATNAV_SCALE[0], Settings.SATNAV_SCALE[1], 0.05, "%d%%", 100.0],
+			["satnav_zoom", "Zoom", "Further out to the right; {satnav_zoom_in} / {satnav_zoom_out} while riding.", Settings.SATNAV_ZOOM[0], Settings.SATNAV_ZOOM[1], 0.05, "x%.2f", 1.0],
+			["satnav_x", "Left to right", "Where the sat nav sits across the HUD.", 0.0, 1.0, 0.01, "%d%%", 100.0],
+			["satnav_y", "Top to bottom", "Where the sat nav sits down the HUD.", 0.0, 1.0, 0.01, "%d%%", 100.0]]:
 		var key: String = row[0]
-		var label := UITheme.label("", 15)
-		Controls.bind_text(label, str(row[1]))
-		settings.add_child(label)
-		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 10)
+		var label := _row_label(str(row[1]))
+		Controls.bind_text(label, str(row[2]), "tooltip_text")
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		label.custom_minimum_size.x = 110.0
+		sliders.add_child(label)
 		var s := HSlider.new()
-		s.min_value = float(row[2])
-		s.max_value = float(row[3])
-		s.step = float(row[4])
-		s.custom_minimum_size.x = 320.0
+		s.min_value = float(row[3])
+		s.max_value = float(row[4])
+		s.step = float(row[5])
+		s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		var shown := UITheme.label("", 14, UITheme.ACCENT)
-		var fmt: String = row[5]
-		var mult: float = row[6]
+		Controls.bind_text(s, str(row[2]), "tooltip_text")
+		var shown := _row_label("")
+		shown.add_theme_color_override("font_color", UITheme.ACCENT)
+		shown.custom_minimum_size.x = 50.0
+		var fmt: String = row[6]
+		var mult: float = row[7]
 		var put := func(v: float) -> void:
 			shown.text = fmt % (roundi(v * mult) if fmt.begins_with("%d") else v)
 		s.value = float(Settings.get(key))
@@ -610,10 +598,39 @@ func _build_satnav_settings(settings: VBoxContainer) -> void:
 		s.value_changed.connect(func(v):
 			Settings.set(key, v)
 			put.call(v))
-		line.add_child(s)
-		line.add_child(shown)
-		settings.add_child(line)
-		_satnav_sliders.append([s, key])
+		sliders.add_child(s)
+		sliders.add_child(shown)
+		_satnav_sliders.append([s, key, put])
+
+
+## A short heading over a group of settings.
+func _heading(text: String) -> Label:
+	var l := UITheme.label(text, 15, UITheme.ACCENT)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+
+## Two columns of toggles, under `parent`.
+func _toggle_grid(parent: Control) -> GridContainer:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 0)
+	parent.add_child(grid)
+	return grid
+
+
+## A toggle in `grid`: a few words (any {action} shows its key), the rest in its tooltip, set
+## from `on` and calling `cb` when it changes.
+func _toggle(grid: GridContainer, text: String, tip: String, on: bool, cb: Callable) -> CheckBox:
+	var box := CheckBox.new()
+	Controls.bind_text(box, text)
+	Controls.bind_text(box, tip, "tooltip_text")
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.button_pressed = on
+	box.toggled.connect(cb)
+	grid.add_child(box)
+	return box
 
 
 ## Puts the sat nav controls back in step with Settings (its keys change them while riding).
@@ -622,6 +639,18 @@ func _refresh_satnav_settings() -> void:
 		(c[0] as CheckBox).set_pressed_no_signal(bool(Settings.get(str(c[1]))))
 	for c in _satnav_sliders:
 		(c[0] as HSlider).set_value_no_signal(float(Settings.get(str(c[1]))))
+		(c[2] as Callable).call((c[0] as HSlider).value)   # (and the value beside it)
+
+
+## A Riding realism setting in a word or two, beside its slider.
+static func realism_word(v: float) -> String:
+	if v < 0.15:
+		return "full sim"
+	if v < 0.45:
+		return "mostly sim"
+	if v < 0.8:
+		return "assisted"
+	return "easy"
 
 
 ## What a Riding realism setting does, in a few words.
@@ -659,6 +688,7 @@ func _process_body(_delta: float) -> void:
 		_saves_button.visible = not client
 		if Shed.abandoned_bikes() != _retrieve_shown:
 			refresh_retrieve()
+		_refresh_adventure()   # (an adventure starting, ending or carried on while the menu's up)
 
 
 func show_title(status := "") -> void:
@@ -723,18 +753,20 @@ func _refresh_home() -> void:
 	_home.tooltip_text = Controls.hint(why) if why != "home" else ""
 
 
-## The adventure button: start one or end it, greyed out (saying why) for anyone but the host.
+## The adventure buttons: start one, end it (the host) or leave it (a guest), or carry one on,
+## greyed out (saying why) when they can't be used. The button says the first few words (up to
+## a colon or a bracket), its tooltip the whole of it, so the Esc menu stays narrow.
 func _refresh_adventure() -> void:
 	var t := Adventure.menu_text()
-	_adventure.text = str(t[0])
+	_adventure.text = str(t[0]).get_slice(" (", 0).get_slice(": ", 0)
 	_adventure.disabled = str(t[1]) != ""
-	_adventure.tooltip_text = str(t[1])
+	_adventure.tooltip_text = str(t[1]) if str(t[1]) != "" else str(t[0])
 	var c := Adventure.continue_text()
 	_continue_adventure.visible = not c.is_empty()
 	if not c.is_empty():
-		_continue_adventure.text = str(c[0])
+		_continue_adventure.text = str(c[0]).get_slice(" (", 0)
 		_continue_adventure.disabled = str(c[1]) != ""
-		_continue_adventure.tooltip_text = str(c[1])
+		_continue_adventure.tooltip_text = str(c[1]) if str(c[1]) != "" else str(c[0])
 	var trip := AdventureTrip.current
 	_paper_map.visible = trip != null and trip.on_trip()
 	var why := trip.map_reason() if _paper_map.visible else ""
