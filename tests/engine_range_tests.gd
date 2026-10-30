@@ -27,8 +27,11 @@ func check(cond: bool, what: String) -> void:
 	t.check(cond, what)
 
 
+## A bike of `parts` drawn with the code-built shapes (as the Classic look keeps them; the new
+## look's Blender-made ones are checked in tests/blender_parts_tests.gd).
 func _model(parts: Dictionary) -> BikeModel:
 	var m := BikeModel.new()
+	m.look = BikeLook.CLASSIC
 	t.add_child(m)
 	m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
 	return m

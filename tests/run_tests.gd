@@ -14021,11 +14021,14 @@ func _test_filler_parts() -> void:
 	check(BikeBuild.new({"guards": "adv_cage"}).bike_mass > BikeBuild.new().bike_mass + 5.0, "a crash cage weighs what it should")
 
 
-## Step 4 of the style work: the small details that make a bike read as real at a glance.
+## Step 4 of the style work: the small details that make a bike read as real at a glance. (The
+## code-built shapes, as the Classic look keeps them: the new look's Blender-made parts are
+## checked in tests/blender_parts_tests.gd.)
 func _test_detail_pass() -> void:
 	var made := []
 	var bike := func(parts: Dictionary) -> BikeModel:
 		var m := BikeModel.new()
+		m.look = BikeLook.CLASSIC
 		add_child(m)
 		m.build_from(BikeBuild.new(parts))
 		made.append(m)
@@ -16240,6 +16243,7 @@ func _test_style_packs() -> void:
 		"cafe_visor_lamp": ["headlight", "Visor"], "cruiser_hard_bags": ["panniers", "Case"], "cruiser_leather_saddlebags": ["panniers", "Saddlebag"]}
 	for id in shapes:
 		var m := BikeModel.new()
+		m.look = BikeLook.CLASSIC   # (the code-built shapes: the new look's are made in Blender)
 		add_child(m)
 		m.build_from(BikeBuild.new({shapes[id][0]: id}))
 		check(m.find_children(shapes[id][1] + "*", "", true, false).size() > 0, "%s draws its own shape (%s)" % [PartsDB.part_name(id), shapes[id][1]])
