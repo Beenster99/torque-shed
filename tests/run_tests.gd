@@ -886,6 +886,12 @@ func _run_all() -> void:
 	await _t(&"_test_skyline_lines")
 	await _t(&"_test_skyline_block")
 	await _t(&"_test_skyline_regions")
+	print("Ride Anywhere v2, phase D round 2: history (walled towns, gates, monuments, viewpoints, buildings' real looks)")
+	await _t(&"_test_history_models")
+	await _t(&"_test_history_walls")
+	await _t(&"_test_history_points")
+	await _t(&"_test_history_looks")
+	await _t(&"_test_history_features")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22880,6 +22886,30 @@ func _test_skyline_block() -> void:
 
 func _test_skyline_regions() -> void:
 	_skyline().test_regions()
+
+
+func _history() -> RefCounted:
+	return load("res://tests/history_tests.gd").new(self)
+
+
+func _test_history_models() -> void:
+	_history().test_models()
+
+
+func _test_history_walls() -> void:
+	_history().test_walls()
+
+
+func _test_history_points() -> void:
+	await _history().test_points()
+
+
+func _test_history_looks() -> void:
+	_history().test_looks()
+
+
+func _test_history_features() -> void:
+	_history().test_features()
 
 
 func _coop() -> RefCounted:
