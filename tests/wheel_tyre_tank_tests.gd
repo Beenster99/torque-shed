@@ -17,9 +17,12 @@ func check(cond: bool, what: String) -> void:
 	t.check(cond, what)
 
 
-## A model of `parts` (sorted out like a real build), in the runner's tree.
+## A model of `parts` (sorted out like a real build), in the runner's tree, with the code-built
+## wheels and tyres the Classic look keeps (the new look's Blender-made ones are checked in
+## tests/blender_parts_tests.gd).
 func _model(parts: Dictionary) -> BikeModel:
 	var m := BikeModel.new()
+	m.look = BikeLook.CLASSIC
 	t.add_child(m)
 	m.build_from(BikeBuild.new(PartsDB.sanitize_build(BikeBuild.sensible_fork(parts, 7))))
 	return m
