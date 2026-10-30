@@ -19,8 +19,6 @@ var _pending := Callable()
 var _diary_note: Label
 var _perf_toggle: CheckButton
 var _perf_note: Label
-var _adv_seed: SpinBox
-var _adv_km: SpinBox
 var _adv_note: Label
 
 
@@ -129,28 +127,9 @@ func _ready() -> void:
 	for b in staff_row.get_children():
 		_host_only.append(b)
 
-	# Adventure rides (see Adventure): start a tour of a bundled region about a chosen length, end it, or skip along.
-	box.add_child(UITheme.label("Adventure (host)", 15, UITheme.ACCENT))
-	_adv_seed = SpinBox.new()
-	_adv_seed.min_value = 1
-	_adv_seed.max_value = 999999
-	_adv_seed.value = 1
-	_adv_seed.prefix = "Seed"
-	_adv_km = SpinBox.new()
-	_adv_km.min_value = Adventure.MIN_KM
-	_adv_km.max_value = Adventure.MAX_KM
-	_adv_km.value = 40.0
-	_adv_km.suffix = "km"
-	var adv_start := _button("Start adventure", func(): Adventure.start(AdventurePlans.sample(_adv_km.value), int(_adv_seed.value)))
-	var adv_end := _button("End adventure", func(): Shed.request({"a": "adventure_end"}))
-	box.add_child(_row([_adv_seed, _adv_km, adv_start, adv_end]))
-	_host_only.append(adv_start)
-	_host_only.append(adv_end)
-	box.add_child(_row([
-		_button("Skip 1 km ahead", func(): if AdventureTrip.current: AdventureTrip.current.jump(1000.0)),
-		_button("Skip 10 km ahead", func(): if AdventureTrip.current: AdventureTrip.current.jump(10000.0)),
-	]))
-	# Ride Anywhere v2's road network (see AdventureWorld.network): this machine's next ride streams every road round you.
+	# (Simon: "Remove the Adventure (host) section of the Debug menu": ending or leaving an adventure is on the Esc
+	# menu itself, for everyone.) Ride Anywhere v2's road network (see AdventureWorld.network): this machine's next ride streams every road round you.
+	box.add_child(UITheme.label("Ride Anywhere", 15, UITheme.ACCENT))
 	var net_toggle := CheckButton.new()
 	net_toggle.name = "RoadNetworkToggle"
 	net_toggle.text = "Road network: my next ride builds every road and junction round me (off: the single planned road)"

@@ -36,7 +36,7 @@ static func _tab_names(tabs: TabContainer) -> Array:
 	return out
 
 
-## Esc: Continue, Settings, saving, Leave and return to title and Exit game, and nothing else;
+## Esc: Continue, Settings, the adventure ride, saving, Leave and return to title and Exit game, and nothing else;
 ## Settings opens Graphics, Sound, Gameplay, Controller and Debug; the garage's badge (top left)
 ## opens Money, Staff, Contracts and the Recovery truck; the profile picture (top right) opens
 ## your profile, Character and the Shop.
@@ -49,16 +49,16 @@ func test_layout() -> void:
 	await _frames(2)
 	var col := menu._pause_box.get_parent() as Control
 	var shown := _shown_buttons(col)
-	check(shown == ["Continue", "Settings", "Save now", "Save as...", "Save games...", "Leave and return to title", "Exit game"],
+	check(shown == ["Continue", "Settings", "Adventure ride", "Save now", "Save as...", "Save games...", "Leave and return to title", "Exit game"],
 		"the Esc menu is short: %s" % ", ".join(shown))
-	for gone in ["Back to the shed", "Adventure ride", "Order a project bike", "Build from blueprint"]:
+	for gone in ["Back to the shed", "Order a project bike", "Build from blueprint"]:
 		check(not shown.has(gone), "no %s button in the Esc menu" % gone)
 	check(menu.open_panel() == null, "it opens with no panel beside it")
 	menu._settings_button.pressed.emit()
 	check(menu.open_panel() == menu._tabs and _tab_names(menu._tabs) == ["Graphics", "Sound", "Gameplay", "Controller", "Debug"],
 		"Settings opens its tabs: %s" % ", ".join(_tab_names(menu._tabs)))
-	check(_tab_names(menu._controller) == ["Controls", "Key bindings", "Controller check"], "the Controller tab has the controls, key bindings and the pad check")
-	check(menu._auto.get_parent().get_parent() == menu._gameplay and menu.debug.get_parent() == menu._tabs,
+	check(_tab_names(menu._controller) == ["Key bindings", "Controller check"], "the Controller tab has the key bindings and the pad check")
+	check(menu._gameplay.is_ancestor_of(menu._auto) and menu.debug.get_parent() == menu._tabs,
 		"riding settings under Gameplay, the testing helpers under Debug")
 	var screen := t.get_viewport().get_visible_rect()
 	var g := menu._garage_badge.get_global_rect()
@@ -74,8 +74,8 @@ func test_layout() -> void:
 	check(menu.open_panel() == menu._garage_tabs and not menu._tabs.visible, "the garage's badge opens its panel in place of Settings")
 	for want in ["Money", "Staff", "Contracts", "Recovery truck"]:
 		check(garage.has(want), "the garage's panel has %s (%s)" % [want, ", ".join(garage)])
-	check(menu._adventure.get_parent().get_parent().name == "Workshop" and menu.blueprints.get_parent() == menu._garage_tabs,
-		"adventures, project bikes and blueprints moved to the garage's panel")
+	check(menu._pause_box.is_ancestor_of(menu._adventure) and menu.blueprints.get_parent() == menu._garage_tabs,
+		"adventures on the Esc menu, blueprints on the garage's panel")
 	menu._profile_badge.pressed.emit()
 	await _frames(1)
 	check(menu.open_panel() == menu._profile_tabs and _tab_names(menu._profile_tabs) == ["Profile", "Character", "Shop", "Bike shop"],
