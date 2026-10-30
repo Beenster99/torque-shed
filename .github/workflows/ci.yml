@@ -59,6 +59,36 @@ jobs:
       - name: Multiplayer test
         run: tests/mp_test.sh ${{ matrix.pairs }}
 
+  # The Blender bike parts (blender/, bike look overhaul): every family script rebuilt and its glbs
+  # matching the committed ones in assets/bike_parts, the parts agreement's checks (triangle budgets,
+  # surface tags, mount points, UVs), and a contact sheet of them kept with the run.
+  blender-parts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: blender/requirements.txt
+      - name: Install Blender as a Python module
+        run: pip install -r blender/requirements.txt
+      - name: Rebuild the parts and check they match the committed glbs
+        run: |
+          python3 blender/build.py
+          git status --short assets/bike_parts
+          test -z "$(git status --porcelain assets/bike_parts)"
+      - name: Check the parts against the parts agreement
+        run: python3 blender/check.py
+      - name: Contact sheet
+        run: SHEET_SAMPLES=24 python3 blender/contact_sheet.py "$PWD/contact-sheet.png" > /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blender-contact-sheet
+          path: contact-sheet.png
+          retention-days: 14
+
   # The Windows build alongside the tests rather than after them (a build of a red head is just not used).
   windows-build:
     runs-on: ubuntu-latest
