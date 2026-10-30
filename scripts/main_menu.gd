@@ -257,7 +257,7 @@ func _build_settings() -> void:
 	units_row.add_child(units)
 	settings.add_child(units_row)
 	var placing := _toggle_grid(settings)
-	_snap = _toggle(placing, "Snap to walls and corners", "Equipment you place snaps to walls and corners. R / X toggles it while carrying.",
+	_snap = _toggle(placing, "Snap to walls and corners", "Equipment you place snaps to walls and corners. {alt_act} toggles it while carrying.",
 		Settings.snap_placement, func(v): Settings.snap_placement = v)
 	_free_rotate = _toggle(placing, "Free rotate ({rotate_free})", "The rotate keys turn what you hold to any angle, not a quarter a press.",
 		Settings.free_rotate, func(v): Settings.free_rotate = v)
