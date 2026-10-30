@@ -198,7 +198,7 @@ func _refresh() -> void:
 	var b: Dictionary = src["build"]
 	var cond := {}
 	for slot in b["colors"]:
-		cond[slot] = {"color": b["colors"][slot]["color"]}
+		cond[slot] = PartColours.clean(b["colors"][slot])
 	_preview.show_bike("shop|%s|%s|%s" % [mode, str(b["parts"].hash()), str(b["colors"].hash())], b["parts"], b["paint"], cond)
 	var hp := roundi(BikeBuild.new(b["parts"], {}).hp())
 	var lines := []

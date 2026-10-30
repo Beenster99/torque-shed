@@ -71,7 +71,8 @@ static func plan_of(src) -> Dictionary:
 	var given: Dictionary = b.get("colors", {}) if b.get("colors") is Dictionary else {}
 	for slot in given:
 		if parts.has(slot) and given[slot] is Dictionary and given[slot].get("color") is Color:
-			colors[slot] = {"color": given[slot]["color"], "finish": str(given[slot].get("finish", "")).left(16)}
+			colors[slot] = PartColours.clean(given[slot])
+			colors[slot]["finish"] = str(given[slot].get("finish", "")).left(16)
 	var n := clean_name(str(b.get("name", "")))
 	return {"name": n if n != "" else default_name(parts), "parts": parts, "colors": colors, "paint": paint, "geo": {}, "from": n}
 
@@ -83,7 +84,8 @@ static func build_src(bike_name: String, parts: Dictionary, paint: Color, cond :
 	for slot in PartsDB.SLOTS:
 		var c = cond.get(slot, {})
 		if c is Dictionary and c.get("color") is Color:
-			colors[slot] = {"color": c["color"], "finish": ""}
+			colors[slot] = PartColours.clean(c)   # with its second colour, in the factory finish
+			colors[slot]["finish"] = ""
 		elif painted and slot in PAINTED and str(parts.get(slot, "none")) != "none":
 			colors[slot] = {"color": paint, "finish": ""}
 	return {"build": {"name": clean_name(bike_name), "parts": parts.duplicate(), "colors": colors, "paint": paint}}
@@ -271,10 +273,11 @@ static func apply(peer: int, action: Dictionary) -> String:
 			for r in rows:
 				var look: Dictionary = colors.get(r["slot"], {})
 				var cond := {} if PartsDB.is_fluid(str(r["part"])) else used
-				if Shed.deliver_new(str(r["part"]), look.get("color"), str(look.get("finish", "")), int(r["price"]), by, cond) != 0:
+				if Shed.deliver_new(str(r["part"]), look.get("color"), str(look.get("finish", "")), int(r["price"]), by, cond, look) != 0:
 					boxed += 1
 				else:
 					var o := {"part": str(r["part"]), "color": look.get("color"), "finish": str(look.get("finish", "")), "paid": int(r["price"]), "by": by}
+					o.merge(PartColours.clean(look))   # its second colour and headers too
 					if not cond.is_empty():
 						o["used"] = cond
 					Shed.on_order.append(o)

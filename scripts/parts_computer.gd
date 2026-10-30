@@ -85,6 +85,15 @@ var preview: PartPreview
 ## The style of project bike to order ("" for any old project bike), and its picker.
 var bike_style := ""
 var _bike_style_pick: OptionButton
+## The colours the part picked is ordered in (see PartColours): {color, finish, color2, trim},
+## empty for the factory's own. Set again for each part looked at.
+var look := {}
+var _look_box: VBoxContainer
+var _colour_row: HBoxContainer
+var _second_row: HBoxContainer
+var _second_label: Label
+var _finish_pick: OptionButton
+var _trim_pick: OptionButton
 
 
 func _ready() -> void:
@@ -236,6 +245,7 @@ func _ready() -> void:
 	info.add_child(_desc)
 	_spec = UITheme.label("", 16, UITheme.ACCENT)
 	info.add_child(_spec)
+	_build_look_box(info)
 	_sizes = HBoxContainer.new()
 	_sizes.add_theme_constant_override("separation", 6)
 	_sizes.add_child(UITheme.label("Size:", 16))
@@ -254,19 +264,7 @@ func _ready() -> void:
 	_order = Button.new()
 	_order.text = "Order it"
 	_order.custom_minimum_size = Vector2(0, 48)
-	_order.pressed.connect(func():
-		if _kind.begins_with("sell:"):
-			sell(_part)
-		elif _kind.begins_with("paint:"):
-			Shed.request({"a": "paint_buy", "code": _part, "n": 1})
-		elif design_of(_part) != 0:
-			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
-		elif Equipment.kind_of(_part) == "poster":
-			Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
-		elif _kind.begins_with("eq:"):
-			Shed.request({"a": "order_furniture", "model": _part})
-		else:
-			Shed.request({"a": "order_part", "part": _part}))
+	_order.pressed.connect(order)
 	detail.add_child(_order)
 
 	Shed.feedback.connect(func(text, _ok): if visible: _status.text = Controls.hint(text))
@@ -852,6 +850,7 @@ func _fill_part(id: String) -> void:
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
 	_order.disabled = false
+	_fill_look(id)
 	if _kind.begins_with("sell:"):
 		_sizes.visible = false
 		_show_sale(id)
@@ -943,6 +942,164 @@ static func needed_text(k: String) -> String:
 	if slots.all(func(s): return PartsDB.FRAME_OWN_SLOTS.has(str(s))):
 		return "Without one, a bike uses its frame's own."
 	return "Needed: a bike can't be ridden without one."
+
+
+## Orders what's picked: the part (in the colours picked for it), the equipment, the paint, or
+## sells it in the Sell aisle.
+func order() -> void:
+	if _kind.begins_with("sell:"):
+		sell(_part)
+	elif _kind.begins_with("paint:"):
+		Shed.request({"a": "paint_buy", "code": _part, "n": 1})
+	elif design_of(_part) != 0:
+		Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
+	elif Equipment.kind_of(_part) == "poster":
+		Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
+	elif _kind.begins_with("eq:"):
+		Shed.request({"a": "order_furniture", "model": _part})
+	elif not look.is_empty() and PartColours.pickable(_part):
+		Shed.request({"a": "order_part", "part": _part, "look": look.duplicate()})
+	else:
+		Shed.request({"a": "order_part", "part": _part})
+
+
+# ---------------------------------------------------------------------------- the colour picker
+
+## The colour picker under a part's spec: a row of the paint shop's colours for the part, its
+## finish, and a row for its second colour (or a list of finishes for an exhaust's headers).
+func _build_look_box(parent: Control) -> void:
+	_look_box = VBoxContainer.new()
+	_look_box.add_theme_constant_override("separation", 6)
+	parent.add_child(_look_box)
+	_look_box.add_child(UITheme.label("Colour:", 16))
+	_colour_row = HBoxContainer.new()
+	_colour_row.add_theme_constant_override("separation", 3)
+	_look_box.add_child(_colour_row)
+	var finish_row := HBoxContainer.new()
+	finish_row.add_theme_constant_override("separation", 8)
+	finish_row.add_child(UITheme.label("Finish:", 16))
+	_finish_pick = OptionButton.new()
+	_finish_pick.add_item("As it comes")
+	for f in Shed.FINISHES:
+		_finish_pick.add_item(str(Shed.FINISH_NAMES.get(f, f.capitalize())))
+	_finish_pick.item_selected.connect(func(i): pick_finish("" if i == 0 else Shed.FINISHES[i - 1]))
+	finish_row.add_child(_finish_pick)
+	_look_box.add_child(finish_row)
+	_second_label = UITheme.label("", 16)
+	_look_box.add_child(_second_label)
+	_second_row = HBoxContainer.new()
+	_second_row.add_theme_constant_override("separation", 3)
+	_look_box.add_child(_second_row)
+	_trim_pick = OptionButton.new()
+	_trim_pick.add_item("As it comes")
+	for h in PartColours.HEADERS:
+		_trim_pick.add_item(str(PartColours.HEADER_NAMES[h]))
+	_trim_pick.item_selected.connect(func(i): pick_trim("" if i == 0 else PartColours.HEADERS[i - 1]))
+	_look_box.add_child(_trim_pick)
+	_look_box.visible = false
+
+
+## A part looked at: the picker set back to how the factory makes it, shown if it has colours to pick.
+func _fill_look(id: String) -> void:
+	look = {}
+	var on := not _kind.begins_with("eq:") and not _kind.begins_with("sell:") and not _kind.begins_with("paint:") \
+		and PartColours.pickable(id)
+	_look_box.visible = on
+	if not on:
+		return
+	_finish_pick.select(0)
+	_trim_pick.select(0)
+	_fill_swatches(_colour_row, PartsDB.default_color(id), "As it comes", pick_colour)
+	var second := PartColours.second_of(id)
+	_second_label.visible = second != ""
+	_second_label.text = "%s:" % str(PartColours.SECOND_NAMES.get(second, ""))
+	_second_row.visible = second != "" and second != "header"
+	_trim_pick.visible = second == "header"
+	if _second_row.visible:
+		var factory = PartColours.factory_second(id)
+		_fill_swatches(_second_row, factory if factory is Color else Color(0.3, 0.3, 0.3, 0.4),
+			"As it comes" if factory is Color else "None", pick_second)
+	_relook()
+
+
+## A row of swatches: the factory's own (`first`, named `first_name`) and then each paint colour;
+## pressing one calls `picked` with its colour (null for the factory's).
+func _fill_swatches(row: HBoxContainer, first: Color, first_name: String, picked: Callable) -> void:
+	for c in row.get_children():
+		c.queue_free()
+	var group := ButtonGroup.new()
+	row.add_child(_swatch(first, first_name, group, picked.bind(null), true))
+	for i in Shed.PAINTS.size():
+		row.add_child(_swatch(Shed.PAINTS[i], str(Shed.PAINT_NAMES[i]).capitalize(), group, picked.bind(Shed.PAINTS[i]), false))
+
+
+func _swatch(c: Color, tip: String, group: ButtonGroup, on_press: Callable, pressed: bool) -> Button:
+	var b := Button.new()
+	b.toggle_mode = true
+	b.button_group = group
+	b.button_pressed = pressed
+	b.tooltip_text = tip
+	b.custom_minimum_size = Vector2(22, 22)
+	b.focus_mode = Control.FOCUS_ALL
+	for state in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = c
+		var lit: bool = state in ["pressed", "hover_pressed", "focus"]
+		sb.set_border_width_all(3 if lit else 1)
+		sb.border_color = Color.WHITE if lit else Color(0, 0, 0, 0.6)
+		sb.set_corner_radius_all(4)
+		b.add_theme_stylebox_override(state, sb)
+	b.pressed.connect(on_press)
+	return b
+
+
+## The part's colour picked (null: as the factory makes it).
+func pick_colour(c) -> void:
+	if c is Color:
+		look["color"] = c
+	else:
+		look.erase("color")
+	_relook()
+
+
+## Its second colour picked (null: as the factory makes it, or no stripe).
+func pick_second(c) -> void:
+	if c is Color:
+		look["color2"] = c
+	else:
+		look.erase("color2")
+	_relook()
+
+
+## Its finish picked ("": as it comes).
+func pick_finish(f: String) -> void:
+	if f != "":
+		look["finish"] = f
+	else:
+		look.erase("finish")
+	_relook()
+
+
+## An exhaust's headers picked ("": as they come).
+func pick_trim(t: String) -> void:
+	if t != "":
+		look["trim"] = t
+	else:
+		look.erase("trim")
+	_relook()
+
+
+## The turntable and the words under the part show the colours picked.
+func _relook() -> void:
+	if _part == "" or not PartColours.pickable(_part):
+		return
+	var cond := PartColours.clean(look)
+	if not cond.has("color"):
+		cond["color"] = PartsDB.default_color(_part)
+	if preview:
+		preview.show_part(_part, {} if look.is_empty() else cond)
+	if not look.is_empty():
+		_status.text = "In %s." % PartColours.text(cond, _part).to_lower()
 
 
 ## A kind picked (A on a pad, or a click): its parts list, with the pad's focus on the first.
