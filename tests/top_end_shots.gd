@@ -1,8 +1,8 @@
 extends Node3D
-## Close-ups of twins' top ends made in Blender (assets/bike_parts/head/twin) on whole bikes, each
+## Close-ups of engine top ends made in Blender (assets/bike_parts/head) on whole bikes, each
 ## beside the same bike with BikeModel's own code-built barrels and head, for the bike look
 ## overhaul's contact sheets:
-##   xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots
+##   xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots [--cases]
 ## (Until the loader hooks into the New look, this puts the Blender top end on by hand: it hides
 ## the code-built barrels and head and adds BlenderParts' node where BikeModel lays them out.)
 
@@ -14,16 +14,31 @@ const BIKES := [
 	["nickel_cradle", "twin_500", "one_valve_flathead", "classic"],
 	["bobber_rigid", "twin_1200", "big_valve_ported", "bobber"],
 	["cafe_lowboy_cradle", "twin_1000", "race_high_comp", "cafe"],
+	["mx_twin_loop", "single_450", "four_valve", "mx"],
+	["scrambler_desert_cradle", "single_250", "two_valve_stock", "scrambler"],
+	["adv_trellis", "parallel_800", "four_valve", "adventure"],
+	["roader_trellis_grey", "triple_850", "big_valve_ported", "roader"],
+	["sport_perimeter_red", "inline_1000", "race_high_comp", "sport"],
+	["mx_red_loop", "2stroke_125", "four_valve", "mx"],
+	["sport_spar_black", "2stroke_500", "four_valve", "sport"],
+	["softail_hardtail", "vtwin45_1450", "two_valve_stock", "cruiser"],
+	["chopper_raked", "vtwin60_1500", "hot_cam", "chopper"],
+	["steel_trestle", "vtwin_1000", "four_valve", "naked"],
+	["featherbed_cradle", "boxer_750", "two_valve_stock", "classic"],
+	["adv_rally_trellis", "boxer_1200", "four_valve", "adventure"],
 ]
 
 var out_dir := "/tmp/shots"
 var cam := Camera3D.new()
+var cases := false   # --cases: the Blender crankcase on as well
 
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out_dir = a.trim_prefix("--out=")
+		elif a == "--cases":
+			cases = true
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -68,7 +83,7 @@ func _ready() -> void:
 			m.build_from(build, Color(0.12, 0.2, 0.42), {}, null, false)
 			m.position.y = build.rear_radius
 			if blender:
-				_swap_top_end(m, str(b[2]))
+				_swap_top_end(m, str(b[2]), cases)
 			var e: Vector3 = m.to_global(m._engine_c)
 			var name := "%s_%s_%s_%s" % [b[0], b[1], b[2], "blender" if blender else "code"]
 			await _shot_from(e + Vector3(1.25, 0.55, -0.95), e + Vector3(0.0, 0.14, 0.0), name)
@@ -77,20 +92,54 @@ func _ready() -> void:
 	get_tree().quit()
 
 
-## Hides the code-built barrels (the engine's pieces above its cases) and head, and puts the
-## Blender top end on in their place.
-func _swap_top_end(m: BikeModel, head: String) -> void:
-	var case_top := m._engine_c.y + 0.13 * m._eng_s
+## Hides the code-built barrels and head (the engine's pieces round a barrel's axis), and puts the
+## Blender top end on in their place; with `cases`, the code-built crankcase too, for the Blender one.
+func _swap_top_end(m: BikeModel, head: String, cases := false) -> void:
+	# (Under a full fairing BikeModel leaves the engine undrawn, and so does the loader.)
+	if not m._slot_meshes.get("engine", []).any(func(g): return g is GeometryInstance3D and (g as GeometryInstance3D).is_visible_in_tree()):
+		return
+	# The cast surfaces in the engine's and the head's own colours, as the bike shader will have
+	# them, from the code-built case and head (the rest keep Blender's preview colours).
+	var cast := {}
 	for slot in ["engine", "head"]:
 		for mi in m._slot_meshes.get(slot, []):
 			var g := mi as GeometryInstance3D
 			if g == null:
 				continue
+			if not cast.has(slot) and g.material_override != null:
+				cast[slot] = g.material_override
 			var mid := m.to_local(g.global_transform * g.get_aabb().get_center())
-			if slot == "head" or mid.y > case_top:
+			if slot == "head" or cases or _on_barrel(m, mid):
 				g.visible = false
-	var node := BlenderParts.instance(BlenderParts.path_for("head", head, "twin"), BlenderParts.top_end_xform(m._cyls, m._eng_s))
-	m.add_child(node)
+	var nodes := []
+	for piece in BlenderParts.top_end_pieces(str(m._build.layout), head, m._cyls, m._eng_s, m._bore_r):
+		nodes.append([BlenderParts.instance(piece[0], piece[1]), "head"])
+	if cases:
+		var path := BlenderParts.path_for("engine", str(m._build.parts.get("engine", "")))
+		var node := BlenderParts.instance(path, BlenderParts.engine_xform(m._engine_c, m._eng_s))
+		if node != null:
+			nodes.append([node, "engine"])
+	for n in nodes:
+		m.add_child(n[0])
+		for mi in (n[0] as Node).find_children("lod*", "MeshInstance3D", false, false):
+			var mesh := (mi as MeshInstance3D).mesh
+			for s in mesh.get_surface_count():
+				var mat := mesh.surface_get_material(s)
+				var slot: String = BlenderParts.colour_slot(mat) if BlenderParts.colour_slot(mat) != "" else str(n[1])
+				if BlenderParts.tag_of(mat) == "cast_alloy" and cast.has(slot):
+					(mi as MeshInstance3D).set_surface_override_material(s, cast[slot])
+
+
+## Whether `p` is on one of the barrels: within its fins' reach of the bore, between its foot and the head.
+static func _on_barrel(m: BikeModel, p: Vector3) -> bool:
+	for c in m._cyls:
+		var up: Vector3 = c["up"]
+		var a: Vector3 = c["base"] - up * 0.1
+		var along := (p - a).dot(up.normalized())
+		var from_axis := ((p - a) - up.normalized() * along).length()
+		if along > -0.005 and along < 0.2 * up.length() and from_axis < m._bore_r * 1.7:
+			return true
+	return false
 
 
 func _shot_from(from: Vector3, at: Vector3, name: String) -> void:

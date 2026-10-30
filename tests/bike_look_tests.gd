@@ -166,6 +166,9 @@ const BUDGET := {"draws": 40, "shadow_draws": 45, "tris_near": 26000, "tris_far"
 
 func test_new_budgets() -> void:
 	BikeLookNew.lods_now = true
+	# (The bake on the code-built shapes alone: the Blender-made parts have their own budget, see
+	# tests/blender_parts_tests.gd.)
+	BlenderParts.on = false
 	var over := []
 	var worst := {}
 	for style in PartsDB.STYLES:
@@ -184,6 +187,7 @@ func test_new_budgets() -> void:
 		classic.free()
 		m.free()
 	BikeLookNew.lods_now = false
+	BlenderParts.on = true
 	check(over.is_empty(), "every style's bike is inside the new look's budgets, at most a third of Classic's draws and all its detail close up %s %s" % [worst, over])
 
 
@@ -192,6 +196,7 @@ func test_new_budgets() -> void:
 ## everyone else's a step lower.
 func test_new_parts_and_detail() -> void:
 	BikeLookNew.lods_now = true
+	BlenderParts.on = false
 	var parts := Contracts.style_build("scrambler")
 	var classic := _model(parts, BikeLook.CLASSIC, true)
 	var m := _model(parts, BikeLook.NEW, true)
@@ -203,6 +208,7 @@ func test_new_parts_and_detail() -> void:
 		if a.position.distance_to(b.position) > 0.004 or a.end.distance_to(b.end) > 0.004:
 			off.append("%s %s / %s" % [slot, a, b])
 	check(off.is_empty() and not m._shared.is_empty(), "every part is the same size and in the same place as in Classic %s" % [off])
+	BlenderParts.on = true
 	var was := Settings.gfx_bike_detail
 	Settings.gfx_bike_detail = "high"
 	var mine := _model(parts, BikeLook.NEW, true)

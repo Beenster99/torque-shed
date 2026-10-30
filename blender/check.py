@@ -21,7 +21,8 @@ import kit  # noqa: E402
 def check_part(path):
     """What's wrong with one glb, and its LODs' triangle counts."""
     bad = []
-    kind = os.path.relpath(path, ASSETS).split(os.sep)[0]
+    rel = os.path.relpath(path, ASSETS).replace(os.sep, "/")
+    kind = rel.split("/")[0]
     kit.reset()
     bpy.ops.import_scene.gltf(filepath=path)
     cap = kit.budget(kind)
@@ -36,14 +37,15 @@ def check_part(path):
         if n > cap[lod]:
             bad.append("lod%d has %d triangles, over the %s cap of %d" % (lod, n, kind, cap[lod]))
         # (Blender names a second "cast_alloy" it meets "cast_alloy.001": the tag is the name before the dot.)
-        tags = [s.material.name.split(".")[0] if s.material else "" for s in ob.material_slots]
+        # (A "__<slot>" ending names the part the colour comes from: the tag is before it.)
+        tags = [s.material.name.split(".")[0].split("__")[0] if s.material else "" for s in ob.material_slots]
         untagged = sum(1 for p in ob.data.polygons if p.material_index >= len(tags) or tags[p.material_index] not in kit.TAGS)
         if untagged:
             bad.append("lod%d has %d faces without a surface tag (materials %s)" % (lod, untagged, tags))
         if lod < 2 and not ob.data.uv_layers:
             bad.append("lod%d has no UVs" % lod)
     mounts = {o.name.split(".")[0][len("mount_"):] for o in bpy.data.objects if o.type == "EMPTY" and o.name.startswith("mount_")}
-    for need in kit.MOUNTS.get(kind, []):
+    for need in kit.mounts_for(rel):
         if need.endswith("_N"):
             stem = need[:-1]
             n = len([m for m in mounts if re.fullmatch(stem + r"\d+", m)])

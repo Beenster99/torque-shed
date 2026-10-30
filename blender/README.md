@@ -21,6 +21,7 @@ python3 blender/build.py [family ...]           # rebuild the glbs
 python3 blender/check.py                        # the agreement's checks
 python3 blender/contact_sheet.py out.png [head/twin]
 xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots   # in-game close-ups
+xvfb-run -a godot --path . res://tests/exhaust_shots.tscn -- --out=/tmp/shots    # the exhausts, the same
 ```
 
 After a rebuild, run `godot --headless --path . --import` and commit the glbs with their `.import` files
