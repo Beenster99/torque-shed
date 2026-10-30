@@ -590,7 +590,8 @@ const BAY_POST_R := 0.026     # m: the seat post's radius
 const BAY_CLEAR := 0.012      # m: daylight kept between the engine and a tube
 const BAY_RAIL_X := 0.1       # m: the cradle rails either side of the middle
 const BAY_RISE := 0.11        # m: how far ahead of the swingarm pivot the cradle rails start up to it
-const BAY_DROP_LEAN := 0.36   # how far back the backbone's drop to the seat leans, per m it falls (about 20 degrees)
+const BAY_SQUAT := 0.72       # how short a 60 degree twin's barrels and heads go in a bay before the engine shrinks
+const BAY_DROP_LEAN := 0.36  # how far back the backbone's drop to the seat leans, per m it falls (about 20 degrees)
 
 
 ## A softail, chopper or cruiser frame is built round its engine, the way a real one is: the
@@ -606,7 +607,7 @@ func _fit_bay(build: BikeBuild) -> void:
 		return
 	var want_z := _engine_c.z
 	var front_limit := _bay_front_limit(build)
-	for attempt in 16:
+	for attempt in 24:   # (16 shrinks, and the squatter top end of a 60 degree twin first)
 		var pts := _engine_corners()
 		var e := _engine_c
 		var low := _bay_low(pts)
@@ -645,8 +646,13 @@ func _fit_bay(build: BikeBuild) -> void:
 					_spine_kink = kink
 				return
 			ez += 0.01
-		_eng_s *= 0.96
-		_head_k *= 0.96
+		# A 60 degree twin's wider V is made to fit the way the real ones are, with shorter,
+		# squatter barrels and heads (a Scout's short-stroke top end) before the engine shrinks.
+		if build.v_angle > 50.0 and build.v_angle < 90.0 and _head_k > BAY_SQUAT:
+			_head_k *= 0.96
+		else:
+			_eng_s *= 0.96
+			_head_k *= 0.96
 		_place_cylinders(build)
 
 
