@@ -345,6 +345,136 @@ func test_fallback() -> void:
 		node.free()
 
 
+## Whether `mi` is a piece of a Blender-made part: its mesh's surface still carries the glb's
+## material, named for a surface tag.
+static func _blender_made(mi) -> bool:
+	if not (mi is MeshInstance3D) or (mi as MeshInstance3D).mesh == null:
+		return false
+	var mesh := (mi as MeshInstance3D).mesh
+	return mesh.get_surface_count() > 0 and BlenderParts.TAGS.has(BlenderParts.tag_of(mesh.surface_get_material(0)))
+
+
+## The slots the loader draws in their Blender-made shapes (this wave's).
+const LOADED: Array[String] = ["engine", "head", "exhaust"]
+## How far (m) a Blender-made part's box may be from the code-built one's, any side.
+const LOADED_GIVE := 0.035
+## The most triangles a new-look bike may draw close up with its Blender-made parts on, and how
+## many more than with the code-built shapes alone (the parts agreement's budgets per part,
+## added up for the parts loaded so far).
+const LOADED_TRIS := 150000
+const LOADED_MORE := 60000
+
+
+## The loader: a bike in the new look wears its Blender-made engine, top end and exhaust where
+## the code-built ones were, each surface in its finish on that bike, with the headers' ports
+## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
+func test_new_look() -> void:
+	var off := []
+	var classic_blender := []
+	var missing := []
+	var worst := {}
+	BikeLookNew.lods_now = true
+	for style in PartsDB.STYLES:
+		var parts := Contracts.style_build(style)
+		var models := {}
+		for k in ["classic", "code", "blender"]:
+			var m := BikeModel.new()
+			m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+			BlenderParts.on = k != "code"
+			t.add_child(m)
+			m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+			models[k] = m
+		BlenderParts.on = true
+		var m: BikeModel = models["blender"]
+		for slot in m._slot_meshes:
+			var mine := (m._slot_meshes[slot] as Array).filter(_blender_made)
+			if slot in LOADED and mine.is_empty() and not (models["code"] as BikeModel)._slot_meshes[slot].is_empty():
+				missing.append("%s %s" % [style, slot])
+			if (models["classic"] as BikeModel)._slot_meshes[slot].any(_blender_made):
+				classic_blender.append("%s %s" % [style, slot])
+		for slot in LOADED:
+			var a := (models["code"] as BikeModel).slot_bounds(slot)
+			var b := m.slot_bounds(slot)
+			if slot == "head":
+				# (A pushrod twin's head brings its pushrod tubes, down the barrels to the cases.)
+				a = AABB(Vector3(a.position.x, b.position.y, a.position.z), Vector3(a.size.x, a.end.y - b.position.y, a.size.z))
+			var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
+				(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
+			worst[slot] = maxf(float(worst.get(slot, 0.0)), d)
+			if d > LOADED_GIVE:
+				off.append("%s %s %.3f" % [style, slot, d])
+		if m._exhaust_ports.size() != (models["code"] as BikeModel)._exhaust_ports.size() or m._exhaust_ports.is_empty():
+			off.append("%s ports" % style)
+		var tris_code := BikeLook.stats(models["code"])["tris"] as int
+		var tris := BikeLook.stats(m)["tris"] as int
+		worst["tris"] = maxi(int(worst.get("tris", 0)), tris)
+		worst["more"] = maxi(int(worst.get("more", 0)), tris - tris_code)
+		if tris > LOADED_TRIS or tris - tris_code > LOADED_MORE:
+			off.append("%s %d triangles (%d with the code's shapes)" % [style, tris, tris_code])
+		for k in models:
+			(models[k] as Node).free()
+	# Every engine, head and exhaust in the catalogue, on a bike in the new look, is drawn.
+	var by_slot := {}
+	var most := 0
+	for id in PartsDB.parts:
+		var slots := PartsDB.slots_for_kind(PartsDB.kind_of(id))
+		if not slots.is_empty() and str(slots[0]) in LOADED:
+			if not by_slot.has(slots[0]):
+				by_slot[slots[0]] = []
+			by_slot[slots[0]].append(id)
+			most = maxi(most, (by_slot[slots[0]] as Array).size())
+	var base := Contracts.style_build("classic")
+	for i in most:
+		var parts := base.duplicate()
+		for slot in by_slot:
+			parts[slot] = by_slot[slot][i % (by_slot[slot] as Array).size()]
+		var m := BikeModel.new()
+		m.look = BikeLook.NEW
+		t.add_child(m)
+		m.build_from(BikeBuild.new(parts))
+		for slot in by_slot:
+			if str(m._build.parts.get(slot, "")) == str(parts[slot]) and (m._slot_meshes[slot] as Array).is_empty():
+				missing.append(str(parts[slot]))
+		m.free()
+	BikeLookNew.lods_now = false
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end and exhaust, and every one in the catalogue is drawn %s" % [missing])
+	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
+	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
+	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.
+	var bake := BikeModel.new()
+	bake.look = BikeLook.NEW
+	bake.baked = true
+	t.add_child(bake)
+	BikeLookNew.lods_now = true
+	bake.build_from(BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build("classic"))))
+	BikeLookNew.lods_now = false
+	var hot := false
+	var left := 0
+	for mi in bake.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (mi as MeshInstance3D).mesh
+		if _blender_made(mi):
+			left += 1
+		if mesh == null or (mi as MeshInstance3D).material_override != BikeShader.material():
+			continue
+		var c3 = mesh.surface_get_arrays(0)[Mesh.ARRAY_CUSTOM3]
+		if c3 is PackedFloat32Array:
+			for i in range(1, (c3 as PackedFloat32Array).size(), 4):
+				hot = hot or (c3 as PackedFloat32Array)[i] > 0.1
+	var s: Dictionary = BikeLook.stats(bake)
+	check(hot and left == 0 and s["draws"] - s["rider_draws"] <= 40,
+		"baked, the Blender-made pieces merge with the rest (%d left, %d draws) and the headers colour with heat" % [left, s["draws"] - s["rider_draws"]])
+	bake.free()
+	# A can on the left is the right-hand one mirrored, its triangles still facing out.
+	var path := BlenderParts.can_path("turnout")
+	var at := BlenderParts.placed(path, BlenderParts.can_xform(Vector3(-0.15, 0.3, 0.2), Vector3(-0.16, 0.25, 0.7), 0.05, "turnout"))
+	var right := BlenderParts.can_xform(Vector3(0.15, 0.3, 0.2), Vector3(0.16, 0.25, 0.7), 0.05, "turnout")
+	var flip: Mesh = at[0][0][0]
+	var a: Vector3 = (at[1] as Transform3D) * flip.get_aabb().get_center()
+	var b: Vector3 = right * (BlenderParts.surfaces(path)[0][0] as Mesh).get_aabb().get_center()
+	check((at[1] as Transform3D).basis.determinant() > 0.0 and absf(a.x + b.x) < 0.002 and absf(a.z - b.z) < 0.002,
+		"a can on the left is the right one mirrored, drawn the right way out")
+
+
 ## The boxes BikeModel's _engine_corners lists (eight corners each), as [middle, half x, half y, half z].
 static func _boxes(corners: Array) -> Array:
 	var out := []

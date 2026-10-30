@@ -146,6 +146,7 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_tyres")
 	await _t(&"_test_blender_parts_wheels")
 	await _t(&"_test_blender_parts_fallback")
+	await _t(&"_test_blender_parts_new_look")
 	print("The shed")
 	await _t(&"_test_shed_rules")
 	await _t(&"_test_garage_life")
@@ -24847,6 +24848,10 @@ func _test_blender_parts_wheels() -> void:
 
 func _test_blender_parts_fallback() -> void:
 	_blender_parts().test_fallback()
+
+
+func _test_blender_parts_new_look() -> void:
+	_blender_parts().test_new_look()
 
 
 func _ferry() -> RefCounted:

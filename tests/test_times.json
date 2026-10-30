@@ -288,6 +288,7 @@
 	"_test_blender_parts_tyres": 400,
 	"_test_blender_parts_wheels": 600,
 	"_test_blender_parts_fallback": 60,
+	"_test_blender_parts_new_look": 8000,
 	"_test_lighting_clouds": 102,
 	"_test_lighting_lamps_and_gi": 1,
 	"_test_lighting_profile": 14,
