@@ -866,6 +866,14 @@ func _run_all() -> void:
 	await _t(&"_test_scenery_filing")
 	await _t(&"_test_scenery_postcards_sheet")
 	await _t(&"_test_scenery_ride")
+	print("Ride Anywhere v2, phase D: railways (lines, stations, level crossings, viaducts and their trains)")
+	await _t(&"_test_rail_runs")
+	await _t(&"_test_rail_lay_out")
+	await _t(&"_test_rail_seams")
+	await _t(&"_test_rail_timetable")
+	await _t(&"_test_rail_regions")
+	await _t(&"_test_rail_viaduct")
+	await _t(&"_test_rail_ride")
 	print("Ride Anywhere v2, phase D: water and coast (dams, falls, locks, harbours)")
 	await _t(&"_test_water_kits")
 	await _t(&"_test_water_lay_out")
@@ -22796,6 +22804,36 @@ func _test_scenery_ride() -> void:
 	await _scenery().test_ride()
 
 
+func _rail() -> RefCounted:
+	return load("res://tests/rail_tests.gd").new(self)
+
+
+func _test_rail_runs() -> void:
+	_rail().test_runs()
+
+
+func _test_rail_lay_out() -> void:
+	_rail().test_lay_out()
+
+
+func _test_rail_seams() -> void:
+	_rail().test_seams()
+
+
+func _test_rail_timetable() -> void:
+	_rail().test_timetable()
+
+
+func _test_rail_regions() -> void:
+	_rail().test_regions()
+
+
+func _test_rail_viaduct() -> void:
+	_rail().test_viaduct()
+
+
+func _test_rail_ride() -> void:
+	await _rail().test_ride()
 func _water() -> RefCounted:
 	return load("res://tests/water_works_tests.gd").new(self)
 
