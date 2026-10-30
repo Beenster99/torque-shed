@@ -3823,6 +3823,8 @@ func _guard_tip(path: Array, ups: Array, width: float, thick: float, mat: Materi
 		for j in [0, across]:
 			var out_x := signf((top[0][j] as Vector3).x - (top[0][across - j] as Vector3).x)
 			quad.call(top[i][j], bottom[i][j], top[i + 1][j], bottom[i + 1][j], Vector3(out_x, 0.0, 0.0))
+	# Indexed like the plates beside it, so a baked model can merge it in with them.
+	st.index()
 	var mi := _mesh_instance(st.commit(), mat, Vector3.ZERO, parent)
 	mi.transform = xf
 	mi.name = "GuardTip"
