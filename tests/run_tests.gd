@@ -141,6 +141,8 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_glbs")
 	await _t(&"_test_blender_parts_fit")
 	await _t(&"_test_blender_parts_cases")
+	await _t(&"_test_blender_parts_cans")
+	await _t(&"_test_blender_parts_pipes")
 	await _t(&"_test_blender_parts_fallback")
 	print("The shed")
 	await _t(&"_test_shed_rules")
@@ -24775,6 +24777,14 @@ func _test_blender_parts_fit() -> void:
 
 func _test_blender_parts_cases() -> void:
 	_blender_parts().test_cases_fit()
+
+
+func _test_blender_parts_cans() -> void:
+	_blender_parts().test_cans_fit()
+
+
+func _test_blender_parts_pipes() -> void:
+	_blender_parts().test_pipe_sweep()
 
 
 func _test_blender_parts_fallback() -> void:

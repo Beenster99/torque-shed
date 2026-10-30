@@ -21,7 +21,8 @@ import kit  # noqa: E402
 def check_part(path):
     """What's wrong with one glb, and its LODs' triangle counts."""
     bad = []
-    kind = os.path.relpath(path, ASSETS).split(os.sep)[0]
+    rel = os.path.relpath(path, ASSETS).replace(os.sep, "/")
+    kind = rel.split("/")[0]
     kit.reset()
     bpy.ops.import_scene.gltf(filepath=path)
     cap = kit.budget(kind)
@@ -44,7 +45,7 @@ def check_part(path):
         if lod < 2 and not ob.data.uv_layers:
             bad.append("lod%d has no UVs" % lod)
     mounts = {o.name.split(".")[0][len("mount_"):] for o in bpy.data.objects if o.type == "EMPTY" and o.name.startswith("mount_")}
-    for need in kit.MOUNTS.get(kind, []):
+    for need in kit.mounts_for(rel):
         if need.endswith("_N"):
             stem = need[:-1]
             n = len([m for m in mounts if re.fullmatch(stem + r"\d+", m)])

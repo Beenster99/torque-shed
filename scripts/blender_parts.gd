@@ -164,3 +164,147 @@ static func points(path: String, xform: Transform3D, lod := 0) -> PackedVector3A
 		for v in mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
 			out.append(xform * v)
 	return out
+
+
+## The reference exhaust can every can glb is drawn at (m): its length, inlet to end, and its
+## biggest radius.
+const CAN_LENGTH := 0.5
+const CAN_RADIUS := 0.05
+
+
+## The glb for an exhaust can of `shape` (the part's "can"), as BikeModel's _can draws it: a
+## shape with no glb of its own is the round can, as BikeModel draws an unknown one.
+static func can_path(shape: String) -> String:
+	var path := ROOT + "exhaust/can/%s.glb" % shape
+	return path if not part(path).is_empty() else ROOT + "exhaust/can/round.glb"
+
+
+## The cans BikeModel draws one size whatever the radius it's asked for (a slash-cut pipe and an
+## open one): drawn here at that size on the reference can, so they're never scaled across.
+const FIXED_SIZE_CANS: Array[String] = ["slash", "open"]
+
+
+## Where a can of `shape` goes: its inlet on `a`, stretched back to `b`, and scaled across by its
+## biggest radius `r`, the reference can's "up" kept as near the bike's up as it'll go (BikeModel's
+## _can takes the same). A can on the left is mirrored, so a turnout turns out to its own side.
+static func can_xform(a: Vector3, b: Vector3, r: float, shape := "") -> Transform3D:
+	if shape in FIXED_SIZE_CANS:
+		r = CAN_RADIUS
+	var dir := (b - a).normalized()
+	var up := Vector3.UP - dir * dir.dot(Vector3.UP)
+	if up.length() < 0.001:
+		up = Vector3.BACK - dir * dir.dot(Vector3.BACK)
+	up = up.normalized()
+	var side := up.cross(dir) * (r / CAN_RADIUS)
+	if a.x < 0.0:
+		side = -side
+	return Transform3D(Basis(side, up * (r / CAN_RADIUS), dir * (a.distance_to(b) / CAN_LENGTH)), a)
+
+
+## Where the gas leaves a can at `xform` (BikeModel's _can returns it, for the exhaust's tip).
+static func can_outlet(path: String, xform: Transform3D) -> Vector3:
+	var p := part(path)
+	return xform * (p["mounts"]["outlet"] as Transform3D).origin if not p.is_empty() else xform.origin
+
+
+## A pipe (a header) along `route`, as BikeModel's _bend sweeps its own along ShapeKit.sweep's
+## curve: copies of a Blender pipe section (`path`, drawn at radius 1 running along +Z) laid end to
+## end, each stretched a little so a whole number of them fill the curve, and every ring bent onto
+## it, turned with the curve's own frames (so the pipe doesn't twist round the bends) and scaled by
+## `radius` (one number, or one per route point as _bend takes). One ArrayMesh per LOD; [] when
+## there's no such glb.
+static func sweep_section(path: String, route: Array, radius, per_seg := 6) -> Array:
+	var p := part(path)
+	var pts := ShapeKit.smooth(route, per_seg)
+	if p.is_empty() or pts.size() < 2:
+		return []
+	var radii: Array = ShapeKit.smooth_floats(radius, per_seg) if radius is Array else [float(radius)]
+	# The curve's frames, as ShapeKit.sweep turns them, and how far along it each point is.
+	var count := pts.size()
+	var tangents := []
+	var sides := []
+	var arc := [0.0]
+	var t0: Vector3 = (pts[1] - pts[0]).normalized()
+	var side := t0.cross(Vector3.UP)
+	if side.length() < 0.01:
+		side = t0.cross(Vector3.RIGHT)
+	side = side.normalized()
+	for i in count:
+		var t: Vector3 = (pts[mini(i + 1, count - 1)] - pts[maxi(i - 1, 0)]).normalized()
+		if i > 0:
+			var prev_t: Vector3 = tangents[i - 1]
+			var axis := prev_t.cross(t)
+			if axis.length() > 0.00001:
+				side = side.rotated(axis.normalized(), prev_t.angle_to(t))
+			arc.append(float(arc[i - 1]) + (pts[i] as Vector3).distance_to(pts[i - 1]))
+		side = (side - t * side.dot(t)).normalized()
+		tangents.append(t)
+		sides.append(side)
+	var total: float = arc[count - 1]
+	var out := []
+	for lod in 3:
+		var mesh: Mesh = p["lods"][lod]
+		var am := ArrayMesh.new()
+		for s in mesh.get_surface_count():
+			var src := mesh.surface_get_arrays(s)
+			var verts: PackedVector3Array = src[Mesh.ARRAY_VERTEX]
+			var normals: PackedVector3Array = src[Mesh.ARRAY_NORMAL]
+			var idx: PackedInt32Array = src[Mesh.ARRAY_INDEX]
+			var length := 0.0
+			for v in verts:
+				length = maxf(length, v.z)
+			var copies := maxi(1, roundi(total / length))
+			var stretch := total / (copies * length)
+			var nv := PackedVector3Array()
+			var nn := PackedVector3Array()
+			var nuv := PackedVector2Array()
+			var ni := PackedInt32Array()
+			for c in copies:
+				for j in verts.size():
+					var v := verts[j]
+					var d := (c * length + v.z) * stretch
+					# The curve's point at d along, its frame lerped between the points either side.
+					var i := arc.bsearch(d)
+					i = clampi(i - 1, 0, count - 2)
+					var f := clampf((d - float(arc[i])) / maxf(float(arc[i + 1]) - float(arc[i]), 0.000001), 0.0, 1.0)
+					var at: Vector3 = (pts[i] as Vector3).lerp(pts[i + 1], f)
+					var tan: Vector3 = (tangents[i] as Vector3).lerp(tangents[i + 1], f).normalized()
+					var sd: Vector3 = (sides[i] as Vector3).lerp(sides[i + 1], f)
+					sd = (sd - tan * sd.dot(tan)).normalized()
+					var up := tan.cross(sd).normalized()
+					var r := float(radii[0])
+					if radii.size() > 1:
+						var k := (i + f) / (count - 1) * (radii.size() - 1)
+						r = lerpf(float(radii[floori(k)]), float(radii[mini(floori(k) + 1, radii.size() - 1)]), k - floorf(k))
+					nv.append(at + sd * (v.x * r) + up * (v.y * r))
+					var n := normals[j]
+					nn.append((sd * n.x + up * n.y + tan * n.z).normalized())
+					# (1 UV unit = 1 m, round the pipe and along it.)
+					nuv.append(Vector2(atan2(v.y, v.x) * r, d))
+				for k in idx:
+					ni.append(k + c * verts.size())
+			var arrays := []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = nv
+			arrays[Mesh.ARRAY_NORMAL] = nn
+			arrays[Mesh.ARRAY_TEX_UV] = nuv
+			arrays[Mesh.ARRAY_INDEX] = ni
+			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			am.surface_set_material(am.get_surface_count() - 1, mesh.surface_get_material(s))
+		out.append(am)
+	return out
+
+
+## A node showing a mesh per LOD (sweep_section's), each over its own distances, like instance's.
+static func lod_node(lods: Array, name := "BlenderPipe") -> Node3D:
+	var root := Node3D.new()
+	root.name = name
+	var ranges := [[0.0, LOD1_AT], [LOD1_AT, LOD2_AT], [LOD2_AT, 0.0]]
+	for k in lods.size():
+		var mi := MeshInstance3D.new()
+		mi.name = "lod%d" % k
+		mi.mesh = lods[k]
+		mi.visibility_range_begin = ranges[k][0]
+		mi.visibility_range_end = ranges[k][1]
+		root.add_child(mi)
+	return root

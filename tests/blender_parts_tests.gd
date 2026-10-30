@@ -189,6 +189,96 @@ func test_cases_fit() -> void:
 	check(pairs >= 300 and out.is_empty(), "each fits every frame its engine suits (%d pairs) %s" % [pairs, str(out.slice(0, 6))])
 
 
+## The can shapes BikeModel's _can draws.
+const CAN_SHAPES: Array[String] = ["round", "oval", "megaphone", "hex", "short", "peashooter", "slash", "open", "fishtail",
+	"turnout", "baloney", "trumpet", "reverse", "tri", "stubby"]
+
+
+## Every can shape is made in Blender and takes the code-built can's place: stretched between the
+## same two points at the same radius, it keeps inside the code-built can's pieces, and lets the
+## gas out where BikeModel's does (the exhaust's tip, for the smoke and the sound).
+func test_cans_fit() -> void:
+	var out := []
+	var a := Vector3(0.15, 0.3, 0.2)
+	var build := BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build("classic")))
+	for shape in CAN_SHAPES:
+		var path := BlenderParts.ROOT + "exhaust/can/%s.glb" % shape
+		if BlenderParts.part(path).is_empty():
+			out.append("%s: no glb" % shape)
+			continue
+		for r in [0.04, 0.05, 0.06]:
+			for length in [0.3, 0.5]:
+				var b := a + Vector3(0.0, 0.0, length)
+				var m := BikeModel.new()
+				m.build_from(build, m.paint, {}, null, false)
+				m._current_slot = "exhaust"
+				var before := m.get_child_count()
+				var tip := m._can(a, b, shape, StandardMaterial3D.new(), r)
+				var corners := []
+				for c in m.get_children().slice(before):
+					var g := c as GeometryInstance3D
+					if g != null:
+						var box := g.transform * g.get_aabb()
+						BikeModel._add_box_corners(corners, box.get_center(), Basis(), box.size * 0.5)
+				m.free()
+				var room := _boxes(corners)
+				var xform := BlenderParts.can_xform(a, b, r, shape)
+				var worst := 0.0
+				for v in BlenderParts.points(path, xform):
+					worst = maxf(worst, _outside(room, v))
+				var miss := BlenderParts.can_outlet(path, xform).distance_to(tip)
+				# (A can's end fittings stretch with it here, where BikeModel's stay their own size, so
+				# off the reference can its outlet can move a little.)
+				# (A turnout's end pipe is BikeModel's one size on every can, where here it scales with the
+				# can, so off the reference can it's only kept near.)
+				var off_ref: bool = length != BlenderParts.CAN_LENGTH or r != BlenderParts.CAN_RADIUS
+				var room_tol: float = 0.02 if shape == "turnout" and off_ref else 0.003
+				if worst > room_tol or miss > (0.03 if off_ref else 0.005):
+					out.append("%s (r %.2f, %.1f m): %.1f mm out, its outlet %.1f mm off" % [shape, r, length, worst * 1000.0, miss * 1000.0])
+	check(out.is_empty(), "every exhaust can is made in Blender and fits where BikeModel draws its own %s" % str(out.slice(0, 6)))
+	# On the left a can is mirrored, so a turnout turns out to the left.
+	var left := BlenderParts.can_xform(Vector3(-0.15, 0.3, 0.2), Vector3(-0.15, 0.3, 0.7), 0.05)
+	check(BlenderParts.can_outlet(BlenderParts.can_path("turnout"), left).x < -0.17 and BlenderParts.can_path("no_such_can").ends_with("/round.glb"),
+		"a can on the left turns out to the left, and an unknown shape is the round can")
+
+
+## A header made of Blender pipe sections follows BikeModel's own: along a bent route its every
+## ring sits round the same curve at the header's radius (a tapering one too, as a two-stroke's
+## expansion chamber), from end to end.
+func test_pipe_sweep() -> void:
+	var route := [Vector3(0.05, 0.5, -0.3), Vector3(0.05, 0.38, -0.36), Vector3(0.1, 0.24, -0.22), Vector3(0.15, 0.24, 0.1), Vector3(0.16, 0.3, 0.35)]
+	var curve := ShapeKit.smooth(route, 6)
+	for finish in ["plain", "wrap"]:
+		var path := BlenderParts.ROOT + "exhaust/pipe/%s.glb" % finish
+		var lods := BlenderParts.sweep_section(path, route, 0.022)
+		var bulge := 1.08 if finish == "wrap" else 1.001
+		var worst := 0.0
+		var ends := [INF, INF]
+		for v in (lods[0] as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+			var d := _to_curve(curve, v)
+			worst = maxf(worst, maxf(d - 0.022 * bulge, 0.022 * 0.97 - d))
+			ends[0] = minf(ends[0], v.distance_to(route[0]))
+			ends[1] = minf(ends[1], v.distance_to(route[route.size() - 1]))
+		check(lods.size() == 3 and worst < 0.0015 and ends[0] < 0.025 and ends[1] < 0.025,
+			"a %s header follows BikeModel's curve at its radius (%.1f mm off at worst), end to end" % [finish, worst * 1000.0])
+	var chamber := BlenderParts.sweep_section(BlenderParts.ROOT + "exhaust/pipe/plain.glb", route, [0.022, 0.03, 0.055, 0.06, 0.024])
+	var fattest := 0.0
+	for v in (chamber[0] as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+		fattest = maxf(fattest, _to_curve(curve, v))
+	check(fattest > 0.055 and fattest < 0.062, "a tapering pipe swells as BikeModel's expansion chamber does (%.3f m at its fattest)" % fattest)
+
+
+## How far `v` is from the polyline `curve`.
+static func _to_curve(curve: Array, v: Vector3) -> float:
+	var best := INF
+	for i in curve.size() - 1:
+		var a: Vector3 = curve[i]
+		var ab: Vector3 = (curve[i + 1] as Vector3) - a
+		var f := clampf((v - a).dot(ab) / maxf(ab.length_squared(), 1e-12), 0.0, 1.0)
+		best = minf(best, v.distance_to(a + ab * f))
+	return best
+
+
 ## A part with no glb has none to load, so BikeModel keeps drawing it itself: an engine layout with no
 ## top ends made yet.
 func test_fallback() -> void:

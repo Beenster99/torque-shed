@@ -58,11 +58,23 @@ BUDGETS = {
 }
 SMALL_BUDGET = [1500, 400, 0]
 
-# The mount points every glb of a kind must carry (agreement 4, and N = 1 .. the cylinders).
+# The mount points every glb of a kind must carry (agreement 4, and N = 1 .. the cylinders), by
+# the folder under assets/bike_parts (the longest that matches).
 MOUNTS = {
     "head": ["cyl_N", "exhaust_port_N", "plug_N", "intake_N"],
     "engine": ["engine"],
+    "exhaust/can": ["inlet", "outlet"],
+    "exhaust/fitting": ["exhaust_port"],
 }
+
+
+def mounts_for(rel):
+    """The mounts a glb at `rel` (under assets/bike_parts, with "/") must carry."""
+    best = ""
+    for folder in MOUNTS:
+        if (rel + "/").startswith(folder + "/") and len(folder) > len(best):
+            best = folder
+    return MOUNTS.get(best, [])
 
 
 def budget(kind):
@@ -240,9 +252,10 @@ def superellipse(hw, up, down, n, segs):
     return pts
 
 
-def loft(name, sections, segs, tag, at=(0.0, 0.0, 0.0)):
+def loft(name, sections, segs, tag, at=(0.0, 0.0, 0.0), caps=True):
     """A closed solid lofted through cross-sections along Y: each (y, half width, up, down, n), as
-    BikeModel's _shell draws its crankcases."""
+    BikeModel's _shell draws its crankcases. Without `caps` its ends are left open (a section of
+    pipe the game lays end to end)."""
     bm = bmesh.new()
     rings = []
     for y, hw, up, down, n in sections:
@@ -251,8 +264,33 @@ def loft(name, sections, segs, tag, at=(0.0, 0.0, 0.0)):
         for i in range(segs):
             j = (i + 1) % segs
             bm.faces.new((a[i], a[j], b[j], b[i]))
-    bm.faces.new(rings[0])
-    bm.faces.new(list(reversed(rings[-1])))
+    if caps:
+        bm.faces.new(rings[0])
+        bm.faces.new(list(reversed(rings[-1])))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    else:
+        # (No caps to tell the inside from: the faces point out from the axis.)
+        for f in bm.faces:
+            c = f.calc_center_median()
+            if f.normal.dot(Vector((c.x - at[0], 0.0, c.z - at[2]))) < 0.0:
+                f.normal_flip()
+    return _new_object(name, bm, tag)
+
+
+def ring(name, y, r, thick, segs, tag, minor=6):
+    """A torus round the Y axis at `y` (a clamp band or an end cap's rolled edge): `r` to the
+    middle of its tube, `thick` the tube's radius."""
+    bm = bmesh.new()
+    rows = []
+    for i in range(segs):
+        t = 2.0 * math.pi * i / segs
+        rows.append([bm.verts.new(((r + thick * math.cos(u)) * math.cos(t), y + thick * math.sin(u), (r + thick * math.cos(u)) * math.sin(t)))
+            for u in (2.0 * math.pi * j / minor for j in range(minor))])
+    for i in range(segs):
+        a, b = rows[i], rows[(i + 1) % segs]
+        for j in range(minor):
+            k = (j + 1) % minor
+            bm.faces.new((a[j], a[k], b[k], b[j]))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return _new_object(name, bm, tag)
 

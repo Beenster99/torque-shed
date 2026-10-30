@@ -58,16 +58,31 @@ def main():
     kit.reset()
     sc = bpy.context.scene
     n = len(paths)
-    for c, path in enumerate(paths):
-        x = ((n - 1) * 0.5 - c) * GAP_X   # (seen from the front, so the first on the left)
-        for k, ob in load(path).items():
+    parts = []
+    for path in paths:
+        lods = load(path)
+        # A pipe section is drawn at radius 1 for the game to scale: shown here at a header's 3 cm.
+        size = 0.03 if os.sep + "pipe" + os.sep in path else 1.0
+        ys = [v.co.y * size for v in lods[0].data.vertices] if 0 in lods else [0.0]
+        parts.append((path, lods, size, ys))
+    # A long part (an exhaust can) lies side on across its column, the columns spread to fit.
+    longest = max(max(ys) - min(ys) for _, _, _, ys in parts)
+    gap = max(GAP_X, longest + 0.08)
+    for c, (path, lods, size, ys) in enumerate(parts):
+        x = ((n - 1) * 0.5 - c) * gap   # (seen from the front, so the first on the left)
+        long = max(ys) - min(ys) > 0.3
+        turn = math.radians(90 if long else 32)
+        mid = Vector((0.0, (max(ys) + min(ys)) * 0.5, 0.0)) if long else Vector()
+        for k, ob in lods.items():
             ob.parent = None
             ob.rotation_mode = "XYZ"
-            ob.rotation_euler = (0.0, 0.0, math.radians(32))
-            ob.location = (x + 0.05, -0.03, -k * GAP_Z)
+            ob.rotation_euler = (0.0, 0.0, turn)
+            ob.scale = (size, size, size)
+            shift = ob.rotation_euler.to_matrix() @ mid
+            ob.location = Vector((x + (0.0 if long else 0.05), -0.03, -k * GAP_Z)) - shift
         label(os.path.splitext(os.path.relpath(path, ASSETS))[0].split(os.sep)[-1].replace("_", " "), (x, 0.12, 0.3))
     for k, text in enumerate(["lod0 near", "lod1 at 30 m", "lod2 far"]):
-        label(text, ((n * 0.5) * GAP_X + 0.04, 0.12, 0.05 - k * GAP_Z), 0.018)
+        label(text, ((n * 0.5) * gap + 0.04, 0.12, 0.05 - k * GAP_Z), 0.018)
     # A floor, a big soft key light and a fill, and a camera a little above and ahead (the
     # bike's front is +Y); each part turned to show its front and right side.
     bpy.ops.mesh.primitive_plane_add(size=12, location=(0.0, 0.0, -2 * GAP_Z - 0.12))
@@ -77,7 +92,7 @@ def main():
     cam = bpy.context.object
     aim(cam, target)
     cam.data.type = "ORTHO"
-    cam.data.ortho_scale = max(n * GAP_X + 0.3, 3 * GAP_Z * 1.5) * 1.02
+    cam.data.ortho_scale = max(n * gap + 0.3, 3 * GAP_Z * 1.5) * 1.02
     sc.camera = cam
     for at, energy, size in (((1.2, 1.6, 1.4), 90, 1.6), ((-1.5, 0.6, 0.8), 25, 2.0)):
         bpy.ops.object.light_add(type="AREA", location=at)
