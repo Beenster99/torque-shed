@@ -3724,8 +3724,9 @@ func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: 
 		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat, parent)
 		seg.rotation.x = a
 		out.append(seg)
-	# Both ends rounded off, carrying on round the wheel.
-	for end in [[a0, -1.0], [a1, 1.0]]:
+	# The leading end rounded off, carrying on round the wheel. (The back end stays tucked in
+	# behind the fork, clear of the engine and what's on its front.)
+	for end in [[a0, -1.0]]:
 		var path := []
 		var ups := []
 		var reach := _tip_length(width) / radius
