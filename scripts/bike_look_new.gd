@@ -9,6 +9,13 @@ class_name BikeLookNew
 ## what the shader doesn't draw (glass, lamps, mirrors, tyre treads, painted-on effects) stays as
 ## Classic merges it.
 
+## How sharp a crease the simplified levels of detail keep (degrees), as Godot's importer.
+const LOD_ANGLE := 25.0
+## Where the Bike detail setting's levels are measured (see BikeLook.stats): a mate's bike a few
+## car lengths off and one far down the road, in metres at 1080p.
+const NEAR := 30.0
+const FAR := 120.0
+
 ## Per-vertex channels, all four floats wide (see BikeShader).
 const CUSTOM_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) \
 	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT) \
@@ -61,14 +68,16 @@ static func bake(model: BikeModel) -> int:
 		var merged := MeshInstance3D.new()
 		merged.name = "Baked_shared" if shared else "Baked_" + str(g["slot"])
 		if g["shader"]:
-			merged.mesh = _shaded_mesh(g["pieces"])
+			_set_mesh(merged, _shaded_arrays(g["pieces"]), CUSTOM_FORMAT)
 			merged.material_override = BikeShader.material()
+			merged.lod_bias = BikeLook.lod_bias(model)
 		else:
 			var st := SurfaceTool.new()
 			for piece in g["pieces"]:
 				st.append_from(piece[0], piece[1], piece[2])
-			merged.mesh = st.commit()
+			_set_mesh(merged, st.commit_to_arrays(), 0)
 			merged.material_override = g["mat"]
+			merged.lod_bias = BikeLook.lod_bias(model)
 		merged.cast_shadow = key[3]
 		if merged.mesh.get_aabb().get_longest_axis_size() < BikeModel.SHADOW_MIN:
 			merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -118,6 +127,17 @@ static func bake(model: BikeModel) -> int:
 		else:
 			model.add_slot_extra(str(sk[2]), sh)
 	return gone
+
+
+## Puts the Bike detail setting into effect on `model`'s merged meshes (see BikeLook.lod_bias).
+static func set_detail(model: BikeModel) -> void:
+	var bias := BikeLook.lod_bias(model)
+	for mi in model._shared:
+		(mi as GeometryInstance3D).lod_bias = bias
+	for slot in model._slot_meshes:
+		for mi in model._slot_meshes[slot]:
+			if model.baked_piece(mi):
+				(mi as GeometryInstance3D).lod_bias = bias
 
 
 ## Whether drawing `geo` (a bike's fit, see BikeModel.apply_geometry) would move a part whose
@@ -266,8 +286,9 @@ static func _look_of(mat: Material, lamps: Dictionary, kits: Dictionary) -> Dict
 		"depth": m.normal_scale if m.normal_enabled else 0.0, "rust": rust}
 
 
-## One mesh of `pieces` ([mesh, surface, transform, look]), each piece's look on its vertices.
-static func _shaded_mesh(pieces: Array) -> ArrayMesh:
+## The arrays of one mesh of `pieces` ([mesh, surface, transform, look]), each piece's look on
+## its vertices.
+static func _shaded_arrays(pieces: Array) -> Array:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var c0 := PackedFloat32Array()
@@ -310,6 +331,50 @@ static func _shaded_mesh(pieces: Array) -> ArrayMesh:
 	arr[Mesh.ARRAY_CUSTOM1] = c1
 	arr[Mesh.ARRAY_CUSTOM2] = c2
 	arr[Mesh.ARRAY_INDEX] = index
-	var out := ArrayMesh.new()
-	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, CUSTOM_FORMAT)
+	return arr
+
+
+## Gives `mi` a mesh of `arr` (a surface's arrays, `flags` its format), and then its lighter
+## levels of detail, simplified the way Godot simplifies an imported model (Godot picks one by
+## how big the bike is on screen): the small pieces go first, then the shapes thin out, down to
+## the bike's outline far off. Working those out takes a while, so it's done off the main
+## thread and the mesh swapped when it's ready (at once with `lods_now`, for the tests).
+static func _set_mesh(mi: MeshInstance3D, arr: Array, flags: int) -> void:
+	if lods_now:
+		mi.mesh = _with_lods(_simplified(arr, flags), arr)
+		return
+	var plain := ArrayMesh.new()
+	plain.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
+	mi.mesh = plain
+	var target: WeakRef = weakref(mi)
+	WorkerThreadPool.add_task(func():
+		var im := _simplified(arr, flags)
+		_swap.call_deferred(target, plain, im, arr))
+
+
+static var lods_now := false
+
+
+static func _simplified(arr: Array, flags: int) -> ImporterMesh:
+	var im := ImporterMesh.new()
+	im.add_surface(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, null, "", flags)
+	im.generate_lods(LOD_ANGLE, 60.0, [])
+	return im
+
+
+static func _swap(target: WeakRef, was: Mesh, im: ImporterMesh, arr: Array) -> void:
+	var mi := target.get_ref() as MeshInstance3D
+	if mi != null and mi.mesh == was:
+		mi.mesh = _with_lods(im, arr)
+
+
+static func _with_lods(im: ImporterMesh, arr: Array) -> ArrayMesh:
+	var out := im.get_mesh()
+	var index = arr[Mesh.ARRAY_INDEX]
+	var tris := [(index as PackedInt32Array).size() / 3 if index is PackedInt32Array and not (index as PackedInt32Array).is_empty() \
+		else (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3]
+	for i in im.get_surface_lod_count(0):
+		tris.append([im.get_surface_lod_size(0, i), im.get_surface_lod_indices(0, i).size() / 3])
+	# The triangles at each level, for the budgets (see BikeLook.stats).
+	out.set_meta(&"lod_tris", tris)
 	return out

@@ -87,10 +87,12 @@ var gfx_driver := "vulkan"        # "vulkan" or "d3d12" (Windows; from the next 
 var gfx_fps_counter := false
 var gfx_avatar_shadows := true    # whether players', staff's and townsfolk's figures cast shadows
 var gfx_mirrors := "medium"       # the ridden bike's live mirrors: "off" (plain glass), "low".."ultra" (see BikeMirrors)
+var gfx_bike_detail := "high"     # how far bikes keep their small parts: "low".."ultra", others' a step lower (see BikeLook)
 const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monitor", "gfx_vsync", "gfx_fps_cap",
 	"gfx_fov", "gfx_brightness", "gfx_render_scale", "gfx_upscaler", "gfx_sharpness", "gfx_msaa", "gfx_taa",
 	"gfx_screen_aa", "gfx_detail", "gfx_draw_distance", "gfx_shadows", "gfx_gi", "gfx_volumetrics", "gfx_clouds",
-	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_bloom", "gfx_driver", "gfx_fps_counter", "gfx_avatar_shadows", "gfx_mirrors"]
+	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_bloom", "gfx_driver", "gfx_fps_counter", "gfx_avatar_shadows", "gfx_mirrors",
+	"gfx_bike_detail"]
 
 
 ## Every action a player can rebind, in the order the Key bindings tab lists them:

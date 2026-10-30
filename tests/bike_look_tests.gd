@@ -156,3 +156,71 @@ func test_switch() -> void:
 	pinned.free()
 	loose.free()
 	BikeLook.choose(was)
+
+
+## The new look's budgets, per stock bike of each style ridden past (see BikeLookNew): draws
+## for the bike itself (the rider's aside, out of this overhaul), shadow draws, and the
+## triangles drawn a mate's bike's distance off (30 m) and far down the road (120 m).
+const BUDGET := {"draws": 40, "shadow_draws": 45, "tris_near": 26000, "tris_far": 22000}
+
+
+func test_new_budgets() -> void:
+	BikeLookNew.lods_now = true
+	var over := []
+	var worst := {}
+	for style in PartsDB.STYLES:
+		var parts := Contracts.style_build(style)
+		var classic := _model(parts, BikeLook.CLASSIC, true)
+		var m := _model(parts, BikeLook.NEW, true)
+		var c := BikeLook.stats(classic)
+		var s := BikeLook.stats(m)
+		var got := {"draws": s["draws"] - s["rider_draws"], "shadow_draws": s["shadow_draws"], "tris_near": s["tris_lod1"], "tris_far": s["tris_lod2"]}
+		for k in BUDGET:
+			worst[k] = maxi(int(worst.get(k, 0)), int(got[k]))
+			if got[k] > BUDGET[k]:
+				over.append("%s %s %d" % [style, k, got[k]])
+		if got["draws"] * 3 > c["draws"] - c["rider_draws"] or s["tris"] != c["tris"]:
+			over.append("%s: %d draws, Classic %d; %d triangles close up, Classic %d" % [style, got["draws"], c["draws"] - c["rider_draws"], s["tris"], c["tris"]])
+		classic.free()
+		m.free()
+	BikeLookNew.lods_now = false
+	check(over.is_empty(), "every style's bike is inside the new look's budgets, at most a third of Classic's draws and all its detail close up %s %s" % [worst, over])
+
+
+## Every part of a new-look bike is just where it is in Classic, merged or not, and the Bike
+## detail setting moves where its levels of detail change: the rider's own bike at the setting,
+## everyone else's a step lower.
+func test_new_parts_and_detail() -> void:
+	BikeLookNew.lods_now = true
+	var parts := Contracts.style_build("scrambler")
+	var classic := _model(parts, BikeLook.CLASSIC, true)
+	var m := _model(parts, BikeLook.NEW, true)
+	var off := []
+	for slot in classic._slot_meshes:
+		var a := classic.slot_bounds(slot)
+		var b := m.slot_bounds(slot)
+		# A bent tube's own box is a touch looser than round its corners: a few mm either way.
+		if a.position.distance_to(b.position) > 0.004 or a.end.distance_to(b.end) > 0.004:
+			off.append("%s %s / %s" % [slot, a, b])
+	check(off.is_empty() and not m._shared.is_empty(), "every part is the same size and in the same place as in Classic %s" % [off])
+	var was := Settings.gfx_bike_detail
+	Settings.gfx_bike_detail = "high"
+	var mine := _model(parts, BikeLook.NEW, true)
+	mine.own_rider = true
+	BikeLook.apply_detail(t.get_tree())
+	var bias := func(model: BikeModel) -> float:
+		return (model._shared[0] as GeometryInstance3D).lod_bias
+	check(BikeLook.detail_of(mine) == "high" and BikeLook.detail_of(m) == "medium" and bias.call(mine) > bias.call(m),
+		"your bike is drawn at the Bike detail setting, everyone else's a step lower")
+	Settings.gfx_bike_detail = "low"
+	BikeLook.apply_detail(t.get_tree())
+	var lods = (m._shared[0] as MeshInstance3D).mesh.get_meta(&"lod_tris")
+	check(BikeLook.detail_of(mine) == "low" and BikeLook.detail_of(m) == "low"
+		and BikeLook.lod_tris(lods, 15.0, bias.call(m)) < BikeLook.lod_tris(lods, 15.0, BikeLook.LOD_BIAS["ultra"]),
+		"Low thins bikes out nearer than Ultra, and nobody's drops below Low")
+	Settings.gfx_bike_detail = was
+	BikeLook.apply_detail(t.get_tree())
+	BikeLookNew.lods_now = false
+	classic.free()
+	m.free()
+	mine.free()
