@@ -1525,6 +1525,6 @@ func _on_emote(peer: int, d: Dictionary) -> void:
 	hud.flash("%s %s" % [d.get("name", "Someone"), Emotes.VERBS[e]], 1.5)
 
 
-func _on_state(id: int, state: PackedFloat32Array) -> void:
+func _on_state(id: int, state: PackedFloat32Array, sent := -1.0) -> void:
 	if remotes.has(id):
-		remotes[id].push_state(trip.untag_state(state))
+		remotes[id].push_state(trip.untag_state(state), sent)

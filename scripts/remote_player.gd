@@ -145,7 +145,7 @@ func _animate_emote(delta: float) -> void:
 
 
 ## Feeds a network snapshot: [0, x, y, z, yaw, pitch] on foot, or [1, bike id, bike state...] riding.
-func push_state(state: PackedFloat32Array) -> void:
+func push_state(state: PackedFloat32Array, sent := -1.0) -> void:
 	if state.is_empty():
 		return
 	if state[0] > 1.5:
@@ -166,7 +166,7 @@ func push_state(state: PackedFloat32Array) -> void:
 		if bike_id != riding_bike or bike == null:
 			_start_riding(bike_id)
 		if bike:
-			bike.push_state(state.slice(2))
+			bike.push_state(state.slice(2), sent)
 		return
 	var was_riding := riding_bike != 0
 	if was_riding:

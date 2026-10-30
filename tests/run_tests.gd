@@ -24046,6 +24046,20 @@ func _test_filter_in_shed() -> void:
 	await _filters().test_in_shed()
 
 
+# ---------------------------------------------------------------------------- other riders drawn smoothly (tests/net_timeline_tests.gd)
+
+func _net_timeline() -> RefCounted:
+	return load("res://tests/net_timeline_tests.gd").new(self)
+
+
+func _test_net_timeline_bunched() -> void:
+	_net_timeline().test_bunched()
+
+
+func _test_net_timeline_late() -> void:
+	_net_timeline().test_late()
+
+
 # ---------------------------------------------------------------------------- smooth adventure roads (tests/smooth_tests.gd)
 
 func _smooth() -> RefCounted:

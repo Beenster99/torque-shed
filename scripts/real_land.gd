@@ -91,6 +91,7 @@ var _queue: Array = [] # [{key, lod}] to lay out, nearest first
 var _done := {}        # Vector2i -> {lod, arrays}
 var _lock := Mutex.new()
 var _material: StandardMaterial3D
+var _pieces := StreamPieces.new()   # the near blocks' ground going in a piece at a time
 var _water_material: StandardMaterial3D
 var _at := Vector2(INF, INF)
 var _epoch := 0        # changes when the roads do (set_roads): older work is thrown away
@@ -154,6 +155,7 @@ func _exit_tree() -> void:
 	for key in _tasks:
 		JobPool.drop(_tasks[key]["id"])
 	_tasks.clear()
+	_pieces.clear()
 
 
 ## Everything is laid out again (the roads changed under it: see set_roads).
@@ -166,6 +168,7 @@ func reset() -> void:
 	_done.clear()
 	_lock.unlock()
 	_queue.clear()
+	_pieces.clear()
 	for key: Vector2i in _blocks.keys():
 		var mi: MeshInstance3D = _blocks[key]["mi"]
 		if mi != null:
@@ -307,6 +310,13 @@ static func _centre(key: Vector2i) -> Vector2:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("land_stream", pt)
+
+
+func _process_body(_delta: float) -> void:
+	_pieces.pump()
 	while not hold and _tasks.size() < AT_ONCE and not _queue.is_empty():
 		var item: Dictionary = _queue.pop_front()
 		var key: Vector2i = item["key"]
@@ -317,7 +327,7 @@ func _process(_delta: float) -> void:
 		_tasks[key] = {"lod": lod, "id": JobPool.add(func():
 			var arrays = _block_arrays(key, lod)
 			var water = _water_arrays(key, lod) if arrays != null else null
-			var shape = _ground_shape(arrays) if arrays != null and lod == 0 else null
+			var shape = _ground_shapes(arrays) if arrays != null and lod == 0 else null
 			_lock.lock()
 			if epoch == _epoch:
 				_done[key] = {"lod": lod, "arrays": arrays, "water": water, "shape": shape}
@@ -340,17 +350,25 @@ func _process(_delta: float) -> void:
 		var mi: MeshInstance3D = null
 		if got["arrays"] != null:
 			mi = _make_mesh(key, got["arrays"], got.get("water"))
-			if got.get("shape") != null:
+			add_child(mi)
+			_place(key, mi)
+			# Its ground solid a piece at a time over the next frames, unless it's ground that was solid already being
+			# laid again, or you're on it or nearly.
+			var at_once := (old != null and int(_blocks[key]["lod"]) == 0) \
+				or Rect2(Vector2(key) * BLOCK, Vector2.ONE * BLOCK).grow(64.0).has_point(_at)
+			var shapes: Array = got["shape"] if got.get("shape") != null else []
+			for i in shapes.size():
 				var body := StaticBody3D.new()
-				body.name = "Ground"
+				body.name = "Ground" if i == 0 else "Ground_%d" % i
 				body.collision_layer = 1
 				body.set_meta("surface", "grass")
 				var cs := CollisionShape3D.new()
-				cs.shape = got["shape"]
+				cs.shape = shapes[i]
 				body.add_child(cs)
-				mi.add_child(body)
-			add_child(mi)
-			_place(key, mi)
+				if at_once:
+					mi.add_child(body)
+				else:
+					_pieces.add(mi, body)
 			put += 1
 		if old != null:
 			old.queue_free()
@@ -410,7 +428,7 @@ func _make_mesh(key: Vector2i, arrays: Array, water = null) -> MeshInstance3D:
 # ---------------------------------------------------------------------------- laying a block out
 
 ## The collision of a near block's land: its ground's triangles (not the skirts), as the mesh has them. Any thread.
-static func _ground_shape(arrays: Array) -> ConcavePolygonShape3D:
+static func _ground_shapes(arrays: Array) -> Array[ConcavePolygonShape3D]:
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	var faces := PackedVector3Array()
@@ -421,12 +439,8 @@ static func _ground_shape(arrays: Array) -> ConcavePolygonShape3D:
 		# (not the skirts: a skirt's triangles stand on end, two of their corners one over the other)
 		if _apart(a, b) and _apart(b, c) and _apart(a, c):
 			faces.append_array([a, b, c])
-	if faces.is_empty():
-		return null
-	var shape := ConcavePolygonShape3D.new()
-	shape.backface_collision = true
-	shape.set_faces(faces)
-	return shape
+	# (in pieces that go in a few a frame: see StreamPieces)
+	return StreamPieces.shapes(StreamPieces.split(faces, BLOCK))
 
 
 ## Whether `a` and `b` aren't one over the other.

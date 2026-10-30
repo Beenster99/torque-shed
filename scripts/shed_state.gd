@@ -5141,6 +5141,7 @@ func owned_name(who: String, parts: Dictionary, style := "", except := 0) -> Str
 
 ## How many goes _style_parts has at a build, keeping the one most true to the style.
 const STYLE_TRIES := 6
+var _style_memo := {}   # (see _style_options)
 
 
 ## A project bike of one style (see PartsDB.STYLES), found to order: as worn as any project
@@ -5170,13 +5171,13 @@ func style_parts(style: String) -> Dictionary:
 			var k: String = PartsDB.SLOT_KIND[slot]
 			if k == "tyre" or PartsDB.FILLER_SLOTS.has(slot) or str(parts.get(slot, "none")) == "none":
 				continue
-			var options: Array = PartsDB.by_kind.get(k, []).filter(func(id): return PartsDB.styles_of(str(id)).has(style))
+			var options: Array = _style_options(k, style)
 			if options.is_empty():
 				continue
 			var suits := PartsDB.styles_of(str(parts[slot])).has(style)
 			if suits and _rng.randf() > 0.4:
 				continue
-			var pack: Array = options.filter(func(id): return str(PartsDB.get_part(str(id)).get("pack", "")) == style)
+			var pack: Array = _style_options(k, style, true)
 			var from: Array = pack if not pack.is_empty() and _rng.randf() < 0.6 else options
 			parts[slot] = from[_rng.randi() % from.size()]
 		# Tyres that go on the rims, made for the style where there are any.
@@ -5204,6 +5205,19 @@ func style_parts(style: String) -> Dictionary:
 			best = parts
 			best_fit = fit
 	return best
+
+
+## The parts of kind `kind` that suit `style` (only its own style pack's with `pack`), worked out once: a group of
+## bikers riding in to the cafe (CoffeeShop._make_bike) went over the whole catalogue a dozen times a bike, a hitch
+## of tens of milliseconds out on a ride.
+func _style_options(kind: String, style: String, pack := false) -> Array:
+	var key := "%s|%s|%s" % [kind, style, pack]
+	if not _style_memo.has(key):
+		var out: Array = PartsDB.by_kind.get(kind, []).filter(func(id): return PartsDB.styles_of(str(id)).has(style))
+		if pack:
+			out = out.filter(func(id): return str(PartsDB.get_part(str(id)).get("pack", "")) == style)
+		_style_memo[key] = out
+	return _style_memo[key]
 
 
 func _add_crew(peer: int, player_name: String) -> void:

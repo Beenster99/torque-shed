@@ -1,15 +1,16 @@
 class_name RemoteBike
 extends AnimatableBody3D
 ## Another player's bike: drawn from their streamed state, smoothed by interpolating
-## slightly in the past, and solid so bikes can bump into each other.
-
-const DELAY := 0.1
+## slightly in the past on their own clock (see NetTimeline), and solid so bikes can bump into each other.
+## It's placed each drawn frame, not each physics tick, so it glides beside you rather than judders.
 
 var player_name := ""
 var model: BikeModel
 var audio: EngineSound
 var _build: BikeBuild
-var _snapshots: Array = []   # [{t, state}]
+## Their snapshots on their clock.
+var timeline := NetTimeline.new()
+var _last_arrival := -INF     # (our clock, s)
 var _label: Label3D
 var _last := PackedFloat32Array()
 var _effects: BikeEffects
@@ -88,20 +89,21 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 		_build.headlight_lumens)
 
 
-func push_state(state: PackedFloat32Array) -> void:
+## Feeds their snapshot `state`, taken at `sent` on their clock (Net.send_state; below 0 when it isn't known, and
+## then it's taken as when it arrived).
+func push_state(state: PackedFloat32Array, sent := -1.0) -> void:
 	if state.size() < 19:
 		return
-	var now := Time.get_ticks_msec() / 1000.0
-	_snapshots.append({"t": now, "s": state})
-	while _snapshots.size() > 30:
-		_snapshots.pop_front()
+	var now := Time.get_ticks_usec() / 1000000.0
+	_last_arrival = now
+	timeline.push(state, sent if sent >= 0.0 else now, now)
 	# Their ghost's time left [27]; drawn here a moment behind, like the rest of their snapshot.
-	_ghost_until = now + DELAY + state[27] if state.size() > 27 and state[27] > 0.0 else 0.0
+	_ghost_until = now + timeline.delay + state[27] if state.size() > 27 and state[27] > 0.0 else 0.0
 
 
 ## Seconds left of their respawn's ghost, as you see it (0 once they're solid).
 func ghost_left() -> float:
-	return maxf(0.0, _ghost_until - Time.get_ticks_msec() / 1000.0)
+	return maxf(0.0, _ghost_until - Time.get_ticks_usec() / 1000000.0)
 
 
 ## Whether they're a ghost now, just respawned: your bike passes through theirs (see Bike._update_passing).
@@ -109,30 +111,23 @@ func is_ghost() -> bool:
 	return ghost_left() > 0.0
 
 
-func _physics_process(delta: float) -> void:
+func _process(delta: float) -> void:
 	var pt := Perf.t0()
-	_physics_process_body(delta)
+	_process_body(delta)
 	Perf.add("remote_bikes", pt)
 
 
-func _physics_process_body(delta: float) -> void:
-	if _snapshots.is_empty():
+func _process_body(delta: float) -> void:
+	if timeline.snaps.is_empty():
 		return
-	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY
-	var a: Dictionary = _snapshots[0]
-	var b: Dictionary = _snapshots[-1]
-	for i in range(_snapshots.size() - 1):
-		if _snapshots[i]["t"] <= render_t and _snapshots[i + 1]["t"] >= render_t:
-			a = _snapshots[i]
-			b = _snapshots[i + 1]
-			break
-	var sa: PackedFloat32Array = a["s"]
-	var sb: PackedFloat32Array = b["s"]
-	var span: float = b["t"] - a["t"]
-	var f := 1.0 if span <= 0.0 else clampf((render_t - a["t"]) / span, 0.0, 1.0)
-	var pos := Vector3(sa[0], sa[1], sa[2]).lerp(Vector3(sb[0], sb[1], sb[2]), f)
-	var rot := Quaternion(sa[3], sa[4], sa[5], sa[6]).slerp(Quaternion(sb[3], sb[4], sb[5], sb[6]), f)
-	global_transform = Transform3D(Basis(rot), pos)
+	var now := Time.get_ticks_usec() / 1000000.0
+	timeline.step(delta)
+	var at := timeline.place(now, delta)
+	var sa: PackedFloat32Array = at["a"]
+	var sb: PackedFloat32Array = at["b"]
+	var f: float = at["f"]
+	var pos: Vector3 = at["pos"]
+	global_transform = Transform3D(Basis(at["rot"]), pos)
 	if collision_layer == 0:
 		collision_layer = 2   # where they are: solid now, so bikes can bump into each other
 	_last = sb
@@ -160,7 +155,7 @@ func _physics_process_body(delta: float) -> void:
 	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
 	_effects.set_screech(sb[20] if sb.size() > 20 else 0.0)
 	# Their horn, while held; it stops if their snapshots stop coming (a dropped connection).
-	_horn.pressed = sb.size() > 21 and sb[21] > 0.5 and render_t + DELAY - float(_snapshots[-1]["t"]) < 0.5
+	_horn.pressed = sb.size() > 21 and sb[21] > 0.5 and now - _last_arrival < 0.5
 	if sb.size() > 24:
 		_effects.beam_mode = int(sb[24])
 	if sb.size() > 22:
@@ -222,12 +217,7 @@ func _show_ragdoll(sa: PackedFloat32Array, sb: PackedFloat32Array, f: float, at:
 
 ## The world's origin moved by `d` (see AdventureWorld): the bike and its snapshots move with it.
 func shift_origin(d: Vector3) -> void:
-	for snap in _snapshots:
-		var st: PackedFloat32Array = snap["s"]
-		st[0] -= d.x
-		st[1] -= d.y
-		st[2] -= d.z
-		snap["s"] = st
+	timeline.shift(d)
 	global_position -= d
 
 

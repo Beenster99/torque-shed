@@ -89,6 +89,9 @@ var _villages: Array = []     # [s of the middle, s of its bus stop, the way its
 var _sites_ref: Array = []    # the route's sites the tables were made from
 var _buses_done := {}         # village s -> true once its waiting bus has been decided on
 var _send_timer := 0.0
+## Crew: the host's clock mapped onto ours by its quickest packets lately (see NetTimeline), so a packet that comes late
+## (bunched up behind a hitch) moves each vehicle on to where it is by now, not back to where it was.
+var _host_clock := NetTimeline.new()
 var _town_timer := 0.0
 var _rng := RandomNumberGenerator.new()
 var _left := PackedByteArray()   # per SIDE_BIN: 1 where they drive on the left, 0 on the right
@@ -362,11 +365,11 @@ func _physics_process(delta: float) -> void:
 			_pull_out()
 	AdventureJunctions.clock += delta
 	var bt := Perf.t0()
-	bikers.step(delta)
+	bikers.step(delta, false)
 	Perf.add("adv_bikers", bt)
 	var st := Perf.t0()
-	stream.step(delta)
-	Perf.add("traffic", st)   # the driving and drawing, inside adv_traffic
+	stream.step(delta, false)
+	Perf.add("traffic", st)   # the driving, inside adv_traffic
 	if host:
 		_send_timer -= delta
 		if _send_timer <= 0.0:
@@ -376,6 +379,17 @@ func _physics_process(delta: float) -> void:
 			pack.append_array([AdventureJunctions.clock, CLOCK_TAG])
 			Net.send_adv_traffic(pack)
 	Perf.add("adv_traffic", pt)
+
+
+## Everything put where it's got to once a drawn frame, not on every physics tick: at 120 ticks a second that was two
+## or three times a frame on most machines, and five or six in the frames catching up after a slow one.
+func _process(delta: float) -> void:
+	if world == null or world.route == null or stream == null:
+		return
+	var pt := Perf.t0()
+	bikers.draw_all(delta)
+	stream.draw_all(delta)
+	Perf.add("adv_traffic_draw", pt)
 
 
 ## Where the riders (and anyone on foot) are along the road: the stream's foci, one for each
@@ -463,13 +477,20 @@ func _on_bike_hit(body: Node, b: Bike) -> void:
 		b.crash()
 
 
-func _on_net(state: PackedFloat32Array) -> void:
+func _on_net(state: PackedFloat32Array, sent := -1.0) -> void:
 	if host:
 		return
+	# How much later than the quickest lately this one came (s): its vehicles have driven on that far since.
+	var late := 0.0
+	if sent >= 0.0:
+		var now := Time.get_ticks_usec() / 1000000.0
+		_host_clock.push(null, sent, now)
+		_host_clock.snaps.clear()
+		late = clampf(now - sent - _host_clock.offset, 0.0, 1.0)
 	if state.size() >= 2 and state[state.size() - 1] == CLOCK_TAG:
 		# The host's lights clock: taken as it is when it's well out, else eased onto.
 		var theirs := state[state.size() - 2]
 		var off := theirs - AdventureJunctions.clock
 		AdventureJunctions.clock += off if absf(off) > 1.0 else off * 0.3
 		state = state.slice(0, state.size() - 2)
-	stream.unpack(bikers.unpack_tail(state))
+	stream.unpack(bikers.unpack_tail(state, late), late)
