@@ -184,6 +184,19 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertEqual(a["names"], ["", "B", "A"])   # (numbered in the order the rows are: west to east here)
 
+    def test_a_border_is_named_for_its_sides(self):
+        key = ("divisions", "division_boundary", "subtype")
+        r = row("x", wkb_line([(W + 0.1, S + 0.05), (W + 0.1, S + 0.2)]), subtype="country", division_ids=["a", "b"])
+        r["sides"] = fb.border_sides(r, {"a": "FR", "b": "ES"})
+        got = self.bake([(key, r)])
+        self.assertEqual(self.kinds(got, "lines"), ["country_border"])
+        self.assertEqual(got["names"][got["lines"][0][4]], "FR|ES")
+        # (the line keeps its way: left and right are as the map has them)
+        pts = points(got["lines"][0], 6)
+        self.assertLess(pts[0][0], pts[-1][0])
+        self.assertEqual(fb.border_sides({"division_ids": ["a", "z"]}, {"a": "FR"}), "FR|")
+        self.assertEqual(fb.border_sides({}, {"a": "FR"}), "")
+
     def test_the_classes_hash_changes_with_the_classes(self):
         h = fb.classes_hash()
         self.assertEqual(len(h), 12)

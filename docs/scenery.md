@@ -44,6 +44,10 @@ classes in its `CLASSES` table (all nine rounds' kinds, 141 of them, named for t
 - The small things (`CLASSES` rows marked near) are kept within about `NEAR_M` (80 m) of a road a ride can take;
   everything else wherever it is in the cell.
 - A generator is a `wind_turbine` or `solar` where OpenStreetMap says what drives it.
+- A `country_border` or `region_border` line is named `"LEFT|RIGHT"` (D8): the codes of the divisions to its left and
+  right facing along it (Overture's `division_ids` order), a country's ISO 3166-1 code or a region's ISO 3166-2 code, ""
+  where the map doesn't say (`BORDER_SIDES`, in the classes hash). `Borders` reads a cell's, and `RegionKit.at_frame`
+  answers by the side of the line a point is on, so the kit, signs, road paint and side of the road switch at the line.
 - Places (Overture's `places/place`, its taxonomy's primary category, only those it is `PLACE_CONFIDENCE` sure of) give
   named `monument` and `castle` points (D6).
 - **Building looks** (D6): where the map says how a building looks (`LOOKS`: roof shape, roof colour and material,

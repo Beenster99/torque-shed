@@ -25,21 +25,21 @@
   "airfield": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
+    "model": "journey_marks:windsock",
     "reach": 1500
    }
   },
   "airport": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
+    "model": "journey_marks:windsock",
     "reach": 1500
    }
   },
   "airstrip": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
+    "model": "journey_marks:windsock",
     "reach": 1500
    }
   },
@@ -53,8 +53,8 @@
   "apron": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:tile",
+    "reach": 2500
    }
   },
   "aquaculture": {
@@ -166,8 +166,26 @@
   "border_control": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:booth",
+    "reach": 1500,
+    "style": "modern"
+   },
+   "regions": {
+    "british_isles": {
+     "style": "old"
+    },
+    "western_europe": {
+     "style": "old"
+    },
+    "nordic": {
+     "style": "old"
+    },
+    "mediterranean": {
+     "style": "old"
+    },
+    "eastern_europe": {
+     "style": "old"
+    }
    }
   },
   "breakwater": {
@@ -556,8 +574,40 @@
   "country_border": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:board",
+    "reach": 1500,
+    "board": "blue",
+    "post": true,
+    "style": "modern"
+   },
+   "regions": {
+    "british_isles": {
+     "style": "old"
+    },
+    "western_europe": {
+     "style": "old"
+    },
+    "nordic": {
+     "style": "old"
+    },
+    "mediterranean": {
+     "style": "old"
+    },
+    "eastern_europe": {
+     "style": "old"
+    },
+    "north_america": {
+     "board": "green"
+    },
+    "latin_america": {
+     "board": "green"
+    },
+    "australia_nz": {
+     "board": "green"
+    },
+    "sub_saharan_africa": {
+     "board": "green"
+    }
    }
   },
   "crater": {
@@ -1151,8 +1201,8 @@
   "helipad": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:helipad",
+    "reach": 1200
    }
   },
   "hot_spring": {
@@ -2222,8 +2272,8 @@
   "runway": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:tarmac",
+    "reach": 6000
    }
   },
   "saddle": {
@@ -2442,8 +2492,8 @@
   "taxiway": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:taxi",
+    "reach": 2500
    }
   },
   "theme_park": {
@@ -2456,8 +2506,32 @@
   "toll_booth": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "journey_marks:toll_booth",
+    "reach": 1500,
+    "roof": "white"
+   },
+   "regions": {
+    "eastern_europe": {
+     "roof": "blue"
+    },
+    "east_asia": {
+     "roof": "green"
+    },
+    "south_asia": {
+     "roof": "red"
+    },
+    "north_america": {
+     "roof": "grey"
+    },
+    "latin_america": {
+     "roof": "grey"
+    },
+    "south_east_asia": {
+     "roof": "blue"
+    },
+    "north_africa_middle_east": {
+     "roof": "green"
+    }
    }
   },
   "tram": {
