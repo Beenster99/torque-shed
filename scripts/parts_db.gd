@@ -285,7 +285,7 @@ const RETIRED_COLOURS := {
 }
 
 var parts := {}    # part id -> Dictionary of stats (with "id" and "kind" added)
-var by_kind := {}  # kind -> Array of part ids, in catalogue order
+var by_kind := {}  # kind -> Array of part ids, in catalogue order (wheels by size: see wheel_before)
 ## Parts taken out of the catalogue (data/retired_parts.json): old id -> the part that a save's
 ## copy of it becomes (see current_id and migrate).
 var retired := {}
@@ -392,6 +392,24 @@ func load_catalogue(path: String) -> void:
 			part["kind"] = k
 			parts[id] = part
 			by_kind[k].append(id)
+	# Wheels are listed by size everywhere they're picked from: smallest rim first.
+	by_kind["wheel"].sort_custom(wheel_before)
+
+
+## Whether wheel `a` comes before wheel `b` in a list: the smaller rim diameter first, then the
+## narrower rim, then by name.
+func wheel_before(a, b) -> bool:
+	var pa := get_part(str(a))
+	var pb := get_part(str(b))
+	var da := float(pa.get("diameter", 17.0))
+	var db := float(pb.get("diameter", 17.0))
+	if not is_equal_approx(da, db):
+		return da < db
+	var wa := float(pa.get("rim_width", 0.0))
+	var wb := float(pb.get("rim_width", 0.0))
+	if not is_equal_approx(wa, wb):
+		return wa < wb
+	return part_name(str(a)).naturalnocasecmp_to(part_name(str(b))) < 0
 
 
 func get_part(id: String) -> Dictionary:

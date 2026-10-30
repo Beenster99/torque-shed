@@ -952,6 +952,11 @@ func _run_all() -> void:
 	await _t(&"_test_engine_range_catalogue")
 	await _t(&"_test_engine_range_retired")
 	await _t(&"_test_engine_range_drawn_and_heard")
+	print("Simon's v0.39.0 round: wheels by size, a tread on every tyre, angular tanks, rounded mudguard ends")
+	await _t(&"_test_wtt_wheel_order")
+	await _t(&"_test_wtt_treads")
+	await _t(&"_test_wtt_angular_tanks")
+	await _t(&"_test_wtt_mudguard_ends")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -21958,10 +21963,13 @@ func _test_detail_session() -> void:
 	var gb := 0.0
 	for i in front:
 		gf += job.e_g[i]
-	for i in side.slice(side.size() / 2):
+	# The other half: past the reach of the pad from the polished half's last points.
+	var reach_z: float = job.e_pos[front[front.size() - 1]].z + DetailJob.PAD if not front.is_empty() else 0.0
+	var back: Array = side.slice(side.size() / 2).filter(func(i): return job.e_pos[i].z > reach_z)
+	for i in back:
 		gb += job.e_g[i]
 	gf /= maxf(front.size(), 1)
-	gb /= maxf(side.size() - front.size(), 1)
+	gb /= maxf(back.size(), 1)
 	check(gf > 0.85 and gb < g0 + 0.05 and float(job.panel(ti)["gloss"]) > g0 and job.e_b.count(1) == 0,
 		"polished half of the tank comes up to a deep gloss and the other half's as it was (%.2f / %.2f, from %.2f), no burn" % [gf, gb, g0])
 	check(job.cues.any(func(c): return str(c["kind"]) == "gloss") or float(job.panel(ti)["gloss"]) < Detail.GLOSS_GOOD, "a panel brought up to a gloss dings")
@@ -24620,3 +24628,27 @@ func _test_part_colour_model() -> void:
 
 func _test_part_colour_random() -> void:
 	_part_colours().test_random_bikes()
+
+
+# ---------------------------------------------------------------------------- wheels, tyres, tanks and mudguards (tests/wheel_tyre_tank_tests.gd)
+
+func _wtt() -> RefCounted:
+	return load("res://tests/wheel_tyre_tank_tests.gd").new(self)
+
+
+func _test_wtt_wheel_order() -> void:
+	_wtt().test_wheel_order()
+
+
+func _test_wtt_treads() -> void:
+	_wtt().test_treads()
+
+
+func _test_wtt_angular_tanks() -> void:
+	_wtt().test_angular_tanks()
+
+
+func _test_wtt_mudguard_ends() -> void:
+	_wtt().test_mudguard_ends()
+
+
