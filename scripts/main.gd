@@ -825,6 +825,12 @@ func _ignition() -> void:
 
 ## Moves an adjustable screen `by` (a share of its travel) up or down its rails while riding:
 ## at once on this bike, and the shed is told so it stays where it's set (Shed "screen").
+## A rider aid's name with a capital, for the dash's messages: "Traction control", "ABS".
+static func _aid_title(aid: String) -> String:
+	var n := str(PartsDB.ECU_AID_NAMES.get(aid, aid))
+	return n.left(1).to_upper() + n.substr(1)
+
+
 func _move_screen(by: float) -> void:
 	var build := bike.build
 	if build.screen_adjust <= 0.0:
@@ -968,6 +974,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("headlight"):
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
 		Shed.request({"a": "beam", "bike": riding_id, "beam": bike.beam})   # kept with the bike
+	elif event.is_action_pressed("rider_aids"):
+		var why := bike.next_menu_aid()
+		if why != "":
+			hud.flash(why, 1.5, true)
+		elif bike.aids_menu != "":
+			hud.flash("%s: %s  ·  {ride_mode} to change" % [_aid_title(bike.aids_menu),
+				BikeBuild.aid_level_text(bike.aids_menu, bike.build.aid_level(bike.aids_menu))], 2.0)
+	elif event.is_action_pressed("ride_mode") and bike.aids_menu_open():
+		# With the rider aids menu up, the ride mode key steps the aid picked on it.
+		var mode_was := bike.build.ride_mode
+		var changed := bike.step_aid()
+		for key in changed:
+			Shed.request({"a": "aid", "bike": riding_id, "key": key, "value": int(changed[key])})   # kept with the bike
+		var to_custom := bike.build.ride_mode != mode_was
+		if to_custom:
+			Shed.request({"a": "ride_mode", "bike": riding_id, "mode": bike.build.ride_mode})
+		hud.flash("%s: %s%s" % [_aid_title(bike.aids_menu), BikeBuild.aid_level_text(bike.aids_menu, bike.build.aid_level(bike.aids_menu)),
+			"  ·  ride mode Custom" if to_custom else ""], 1.5)
 	elif event.is_action_pressed("ride_mode"):
 		var why := bike.next_ride_mode()
 		hud.flash(why if why != "" else "Ride mode: %s" % BikeBuild.mode_name(bike.build.ride_mode), 1.5, why != "")

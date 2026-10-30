@@ -150,6 +150,11 @@ var throttle := 0.0
 ## brakes, the clutch, a crash or the engine stopping cancel it; opening the throttle further than
 ## it holds rides faster for as long as you hold it open, then it settles back.
 var cruise_speed := 0.0
+## The rider aids menu on the dash (see next_menu_aid): the aid picked on it, "" with it shut,
+## and when it shuts by itself (ticks, ms).
+var aids_menu := ""
+var _aids_menu_until := 0
+const AIDS_MENU_TIME := 5.0
 var _cruise_i := 0.0   # the throttle it's found holds the speed (the controller's integral)
 ## The slowest cruise control will hold (m/s): 30 km/h.
 const CRUISE_MIN := 8.33
@@ -1233,6 +1238,14 @@ func _update_engine(delta: float) -> void:
 		var kp_rear := float(build.tyre_rear.get("kappa_peak", 0.11))
 		tc_from = kp_rear
 		tc_gain = RIDER_SPIN_FEEL / kp_rear
+	if build.aid_on("lean_traction"):
+		# Lean-angle traction control: the further over the bike is, the less spin it allows
+		# before it cuts the power, as a slide at full lean is the one that throws you off.
+		var lean_from := build.lean_slip_allowance(lean_angle)
+		if lean_from < tc_from:
+			tc_from = lean_from
+			tc_gain = maxf(tc_gain, 4.0)
+		tc = maxf(tc, build.aid_strength("lean_traction"))
 	if tc > 0.05 and spin_ratio > tc_from and rear["contact"] and burnout <= 0.0:
 		tc_target = clampf(1.0 - (spin_ratio - tc_from) * tc_gain * tc, 0.15, 1.0)
 	# In a wheelie the rider feathers the throttle to hold the front up at the balance angle
@@ -2002,6 +2015,46 @@ func next_ride_mode() -> String:
 		return "Ride modes need an ECU with rider aids (ABS, traction control...)."
 	build.ride_mode = BikeBuild.MODE_ORDER[(BikeBuild.MODE_ORDER.find(build.ride_mode) + 1) % BikeBuild.MODE_ORDER.size()]
 	return ""
+
+
+## The rider aids menu on the dash: each press of its key picks the next aid the ECU has, and
+## shuts it after the last; while it's open the ride mode key steps that aid's level instead
+## (see step_aid). It shuts by itself after AIDS_MENU_TIME untouched. "" or why it can't.
+func next_menu_aid() -> String:
+	var aids: Array[String] = build.rider_aids() if build else ([] as Array[String])
+	if aids.is_empty():
+		aids_menu = ""
+		return "This ECU has no rider aids to set." if build and build.has_part("ecu") else "No ECU fitted, so no rider aids."
+	var at := aids.find(aids_menu) if aids_menu_open() else -1
+	aids_menu = aids[at + 1] if at + 1 < aids.size() else ""
+	_aids_menu_until = Time.get_ticks_msec() + int(AIDS_MENU_TIME * 1000.0)
+	return ""
+
+
+## Whether the rider aids menu is up on the dash.
+func aids_menu_open() -> bool:
+	return aids_menu != "" and Time.get_ticks_msec() < _aids_menu_until
+
+
+## Steps the aid picked on the dash's menu to its next level (off, gentle .. firm, round again;
+## ABS on and off), straight away on this bike. A ride mode that sets that aid gives way to
+## Custom, the levels the rider sets. Returns the tune settings changed (key -> level) for the
+## shed to keep, empty when nothing was.
+func step_aid() -> Dictionary:
+	if not aids_menu_open() or not build.has_aid(aids_menu):
+		return {}
+	var changed := {}
+	var level := build.next_aid_level(aids_menu)
+	if BikeBuild.RIDE_MODES.get(build.ride_mode, {}).has(aids_menu):
+		# The other aids stay where the mode had them, now as the rider's own.
+		for aid in build.rider_aids():
+			changed[str(BikeBuild.AID_KEYS[aid])] = build.aid_level(aid)
+		build.ride_mode = ""
+	changed[str(BikeBuild.AID_KEYS[aids_menu])] = level
+	for key in changed:
+		build.tune[key] = float(changed[key])
+	_aids_menu_until = Time.get_ticks_msec() + int(AIDS_MENU_TIME * 1000.0)
+	return changed
 
 
 ## Cruise control on at the speed you're doing now, or off again. "" or why it can't.

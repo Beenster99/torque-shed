@@ -131,7 +131,8 @@ const ACTIONS := [
 	["indicate_left", "Indicate left (again to cancel)", ["ride"]], ["indicate_right", "Indicate right (again to cancel)", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["look_back", "Reverse view: hold to look behind", ["ride"]],
-	["ride_mode", "Ride mode: Custom, Sport, Tour, Wet (dashes with ride modes)", ["ride"]],
+	["ride_mode", "Ride mode: Custom, Sport, Tour, Wet (dashes with ride modes); with the rider aids menu up, the aid's next level", ["ride"]],
+	["rider_aids", "Rider aids menu on the dash: the next aid the ECU has (ABS, traction control...), then shut", ["ride"]],
 	["cruise", "Cruise control on / off (dashes with it; the brakes or clutch cancel it)", ["ride"]],
 	["nod", "Nod to a biker (hold: wave)", ["ride"]], ["ride_ping", "Ping (riding or driving)", ["ride"]],
 	["tow", "Adventure: ask a mate for a tow, or let the strap go", ["ride"]],
@@ -370,6 +371,8 @@ func _setup_inputs() -> void:
 	_bind("look_back", [KEY_X], [JOY_BUTTON_RIGHT_SHOULDER])
 	# The dash's ride mode and cruise control (no pad buttons spare).
 	_bind("ride_mode", [KEY_B], [])
+	# The rider aids menu (B then steps the aid picked on it).
+	_bind("rider_aids", [KEY_Y], [])
 	_bind("cruise", [KEY_O], [])
 	# A nod to another biker (held, a wave with the left hand).
 	_bind("nod", [KEY_N], [JOY_BUTTON_RIGHT_STICK])

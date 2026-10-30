@@ -12,7 +12,7 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Wheels | Front and rear wheel (spoked, wire, cast, carbon; 17" to 21"), front and rear tyre (type, compound, width) |
 | Brakes, front and rear | Disc (type, diameter), caliper (pistons), pads (compound), master cylinder (axial or radial) |
 | Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (17 types, from a disc horn or a courtesy pip to a truck air horn, a police yelp, a ship's foghorn or a musical one), fog lights |
-| Electronics | ECU (stock, remap, ABS, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, stability and anti-wheelie |
+| Electronics | ECU (optional: remap, Performance 2 remap with 10% more power, ECU Safety, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, lean-angle traction control, stability and anti-wheelie, set on the dyno desk or from the dash as you ride |
 | Tail and front | Tail unit (6 kinds: long classic mudguard, café racer hump, scrambler loop, sport tail tidy, bobber chopped fender, enduro high fender), which carries the rear light, mudguard and number plate; fairing (headlight flyscreen, bikini, half, touring with a tall screen, full race in fibreglass or carbon), which cuts drag for a higher top speed but adds weight; mirrors (round chrome, bar-end, sport stalk, wide touring, fairing-mount); front mudguard (road hugger, MX high, enduro, bobbed steel, alloy café, chrome classic, carbon hugger) |
 | Luggage | Panniers (canvas throw-overs, roll-top dry bags, leather saddlebags, rounded plastic cases, riveted aluminium boxes) and top boxes (30 L and 45 L plastic cases, an aluminium case, a wooden crate, a leather trunk, a waterproof roll bag strapped across the rack); they add drag |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
@@ -491,6 +491,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Hold the clutch in: the throttle blips the revs in any gear, at any speed, without driving the back wheel (let go and it takes up smoothly) | Hold Z | Hold LB |
 | Reverse view: tap to look behind until the next tap, or hold to look behind while held | X | RB |
 | Ride mode: Custom (the dyno desk's aid levels), Sport, Tour, Wet (a dash with ride modes, on an ECU with rider aids) | B | |
+| Rider aids menu on the dash: Y picks the next aid the ECU has (then shuts); with it up, B steps that aid off, level 1 to 5 (ABS on or off). Kept with the bike, like the dyno desk's | Y | |
 | Cruise control on / off at the speed you're doing (a dash with it; the brakes or clutch cancel it) | O | |
 | Nod to a biker you pass; hold it to raise your left hand off the bar in a wave (the crew see both; a biker in the traffic nods back) | N (hold: wave) | Right stick click (hold: wave) |
 | Toggle auto-shift | U | |

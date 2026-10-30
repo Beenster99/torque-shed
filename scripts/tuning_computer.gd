@@ -19,7 +19,8 @@ const TABS := {
 		["damper", "Steering damper", 0.1]],
 	"Tyres & chain": [["psi_f", "Front tyre pressure", 0.05], ["psi_r", "Rear tyre pressure", 0.05], ["chain", "Chain slack", 1.0]],
 	"Gearing": [["sprocket_f", "Front sprocket", 1.0], ["sprocket_r", "Rear sprocket", 1.0], ["spread", "Ratio spacing", 0.1]],
-	"Rider aids": [["aid_traction", "Traction control", 1.0], ["aid_stability", "Stability control", 1.0],
+	"Rider aids": [["aid_abs", "ABS", 1.0], ["aid_traction", "Traction control", 1.0],
+		["aid_lean_traction", "Lean-angle traction control", 1.0], ["aid_stability", "Stability control", 1.0],
 		["aid_anti_wheelie", "Anti-wheelie", 1.0]],
 }
 ## What each of the ECU's rider aids does, under its slider.
@@ -27,6 +28,8 @@ const AID_HELP := {
 	"aid_traction": "Cuts the power when the back tyre spins up. Higher steps in sooner and harder; off lets it slide.",
 	"aid_stability": "Damps a weave, a tank-slapper or a twitchy slide. Higher holds the bike steadier.",
 	"aid_anti_wheelie": "Trims the power to keep the front wheel down. Lower lets it lift further; off for wheelies.",
+	"aid_lean_traction": "Traction control that tightens as the bike leans: cuts the power sooner the further over you are.",
+	"aid_abs": "Stops the wheels locking under hard braking. Off lets them lock.",
 }
 
 var bike_id := 0
@@ -392,9 +395,9 @@ static func aids_note(build: BikeBuild) -> String:
 		if build.has_aid(aid):
 			names.append(str(PartsDB.ECU_AID_NAMES.get(aid, aid)))
 	if names.is_empty():
-		return ("%s: no rider aids to set. A sport or race ECU brings traction control, anti-wheelie and stability control." % ecu) \
-			if ecu != "" else "No ECU fitted, so no rider aids. A sport or race ECU brings traction control, anti-wheelie and stability control."
-	return "%s: set its %s here. Each goes from off to level %d; level %d is how it comes from the factory. Riding uses them." % [
+		return ("%s: no rider aids to set. ECU Safety, or a sport or race ECU, brings rider aids such as traction control and anti-wheelie." % ecu) \
+			if ecu != "" else "No ECU fitted, so no rider aids. ECU Safety, or a sport or race ECU, brings rider aids such as traction control and anti-wheelie."
+	return "%s: set its %s here, or on the bike's dash as you ride. Each goes from off to level %d (ABS just on or off); level %d is how it comes from the factory." % [
 		ecu, " and ".join(names) if names.size() <= 2 else ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1],
 		BikeBuild.AID_LEVELS, BikeBuild.AID_STOCK]
 
@@ -435,11 +438,8 @@ static func value_text(key: String, v: float, build: BikeBuild) -> String:
 			return "%d teeth (%.2f:1)" % [roundi(v), r / f]
 		"spread":
 			return "Stock" if absf(v) < 0.01 else "%s %d%%" % ["Wider" if v > 0.0 else "Closer", roundi(absf(v) * 100.0)]
-		"aid_traction", "aid_stability", "aid_anti_wheelie":
-			var level := roundi(v)
-			if level <= 0:
-				return "Off"
-			return "Level %d of %d%s" % [level, BikeBuild.AID_LEVELS, " (factory)" if level == BikeBuild.AID_STOCK else ""]
+		"aid_traction", "aid_stability", "aid_anti_wheelie", "aid_lean_traction", "aid_abs":
+			return BikeBuild.aid_level_text(key.trim_prefix("aid_"), roundi(v))
 	var clicks := roundi(v * 10.0)
 	return "Stock" if clicks == 0 else "%+d clicks (%s)" % [clicks, "firmer" if clicks > 0 else "softer"]
 

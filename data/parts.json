@@ -13781,23 +13781,6 @@
 		}
 	},
 	"ecu": {
-		"stock_ecu": {
-			"name": "Stock ECU",
-			"description": "Basic engine control: fuel and ignition maps, nothing else. No rider aids.",
-			"mass": 0.4,
-			"type": "Engine control only",
-			"features": [],
-			"power": 1.0,
-			"rev_add": 0,
-			"aid_level": 0.0,
-			"color": [
-				0.1,
-				0.1,
-				0.11
-			],
-			"tune_range": 0.35,
-			"limiter_add": 0
-		},
 		"remap_ecu": {
 			"name": "Performance remap ECU",
 			"description": "Hotter maps and a higher rev limit. More power, still no aids.",
@@ -13817,17 +13800,39 @@
 			"tune_range": 1.0,
 			"limiter_add": 800
 		},
-		"abs_ecu": {
-			"name": "ABS controller",
-			"description": "Adds anti-lock brakes front and rear. Stamp on the brakes without locking a wheel.",
-			"mass": 0.9,
-			"type": "ABS",
+		"remap2_ecu": {
+			"name": "Performance 2 remap ECU",
+			"description": "The stage-two map: hotter still, with more room at the top. Ten per cent more power, no aids.",
+			"mass": 0.4,
+			"type": "Remapped, stage two",
 			"features": [
-				"abs"
+				"remap"
+			],
+			"power": 1.1,
+			"rev_add": 600,
+			"aid_level": 0.0,
+			"color": [
+				0.55,
+				0.05,
+				0.05
+			],
+			"tune_range": 1.0,
+			"limiter_add": 1000
+		},
+		"ecu_safety": {
+			"name": "ECU Safety",
+			"description": "ABS, traction control, anti-wheelie and lean-angle traction control in one box. Every aid can be switched and set from the bike's dash as well as on the dyno desk.",
+			"mass": 0.9,
+			"type": "ABS, traction, anti-wheelie, lean-angle traction",
+			"features": [
+				"abs",
+				"traction",
+				"anti_wheelie",
+				"lean_traction"
 			],
 			"power": 1.0,
 			"rev_add": 0,
-			"aid_level": 0.6,
+			"aid_level": 0.75,
 			"color": [
 				0.15,
 				0.15,
