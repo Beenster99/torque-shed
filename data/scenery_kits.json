@@ -379,7 +379,7 @@
      "stone": "sandstone"
     },
     "western_europe": {
-     "stone": "limestone"
+     "stone": "schist"
     },
     "nordic": {
      "stone": "granite"
@@ -1907,7 +1907,7 @@
    "regions": {
     "british_isles": {
      "sign": "cairn",
-     "cairn": "gritstone"
+     "cairn": "schist"
     },
     "east_asia": {
      "sign": "toge"

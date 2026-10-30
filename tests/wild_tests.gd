@@ -140,7 +140,7 @@ func test_pass() -> void:
 	r.features = {"points": [
 		["saddle", 130.0, 110.0, null, 1234.0, null, "Col du Test", "col"],    # 30 m off the road
 		["saddle", 105.0, -100.0, null, null, null, null, "unnamed"],             # on the road, beside the named one
-		["saddle", 420.0, -250.0, null, 1300.0, null, "Hourquette", "away"],    # nowhere near a road
+		["saddle", 800.0, -250.0, null, 1300.0, null, "Hourquette", "away"],    # nowhere near a road
 	], "lines": [], "areas": []}
 	var net := RoadNet.new(r, land)
 	var t0 := Time.get_ticks_usec()
@@ -178,7 +178,7 @@ func test_pass() -> void:
 	# The sign stands at the top: where the road is highest near the saddle.
 	var sign: Transform3D = items["sign:col"][0]
 	check(absf(sign.origin.z - 100.0) < 30.0, "the sign is at the top of the pass (z %.0f)" % sign.origin.z)
-	var away: Dictionary = Wild.lay_out(net, Vector2i(0, -1), rows_of({"points": [r.features["points"][2]]}))["items"]
+	var away: Dictionary = Wild.lay_out(net, Vector2i(1, -1), rows_of({"points": [r.features["points"][2]]}))["items"]
 	check(count(away, "cairn:") == 1 and count(away, "sign:") == 0, "a saddle off every road has a cairn and no sign (%s)" % str(away.keys()))
 	check(count(b1["items"], "sign:") == 0, "the unnamed saddle beside the named one has no sign of its own (%s)" % str((b1["items"] as Dictionary).keys()))
 	# Styles: a Passhöhe board, a Scottish cairn, a tōge marker, and heights in feet in the States.

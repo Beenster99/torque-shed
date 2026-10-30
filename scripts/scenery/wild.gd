@@ -26,10 +26,13 @@ const VERSION := 1
 const STEP := 8.0
 ## How far past a road's verge a piece's footprint must be (m: SceneryStreamer.CLEAR's).
 const CLEAR := 1.5
-## A road within this of a saddle (m) crosses it: the pass is dressed where the road is highest within PASS_ALONG of
-## the point nearest the saddle.
-const PASS_REACH := 220.0
-const PASS_ALONG := 160.0
+## A road within this of a saddle (m) crosses it where the road is highest within PASS_ALONG of the point nearest the
+## saddle (the map's saddle is the land's lowest point between the tops, often off the road's own summit), as long as
+## that is a top of the road's (not where it's still climbing out of the stretch looked at) and within PASS_RISE of the
+## saddle's mapped height.
+const PASS_REACH := 500.0
+const PASS_ALONG := 400.0
+const PASS_RISE := 120.0
 ## An unnamed saddle this near a named one (m) is the same pass: it gets no sign of its own.
 const SAME_PASS := 1200.0
 ## A pass's lay-by: this long (m), from just past the verge out this far.
@@ -81,9 +84,9 @@ const SKINS := {
 	"ice": {"a": Color(0.8, 0.9, 0.97), "b": Color(0.52, 0.7, 0.84), "pattern": 1, "grain": 0.05, "rough": 0.3, "reach": 4000.0},
 	"scree": {"a": Color(0.56, 0.54, 0.51), "b": Color(0.36, 0.35, 0.33), "pattern": 2, "grain": 1.1, "rough": 0.95, "reach": 3000.0},
 	"sand": {"a": Color(0.87, 0.78, 0.58), "b": Color(0.76, 0.65, 0.46), "pattern": 3, "grain": 0.25, "rough": 0.9, "reach": 3000.0},
-	"shingle": {"a": Color(0.62, 0.59, 0.54), "b": Color(0.43, 0.41, 0.37), "pattern": 2, "grain": 2.6, "rough": 0.8, "reach": 2500.0},
+	"shingle": {"a": Color(0.62, 0.59, 0.54), "b": Color(0.43, 0.41, 0.37), "pattern": 2, "grain": 2.6, "rough": 0.8, "reach": 2500.0, "contrast": 0.7},
 	"ash": {"a": Color(0.27, 0.25, 0.24), "b": Color(0.15, 0.14, 0.14), "pattern": 2, "grain": 0.7, "rough": 0.95, "reach": 3000.0},
-	"gravel": {"a": Color(0.55, 0.52, 0.48), "b": Color(0.4, 0.38, 0.35), "pattern": 2, "grain": 3.0, "rough": 0.95, "reach": 900.0}}
+	"gravel": {"a": Color(0.56, 0.54, 0.5), "b": Color(0.47, 0.45, 0.42), "pattern": 2, "grain": 3.0, "rough": 0.95, "reach": 900.0, "contrast": 0.35}}
 ## The sands a dune can be (a kit's "sand"): its two colours.
 const SANDS := {"pale": [Color(0.87, 0.78, 0.58), Color(0.76, 0.65, 0.46)], "gold": [Color(0.86, 0.68, 0.42), Color(0.74, 0.55, 0.32)],
 	"red": [Color(0.8, 0.5, 0.3), Color(0.66, 0.38, 0.22)], "white": [Color(0.94, 0.92, 0.86), Color(0.84, 0.82, 0.75)],
@@ -587,7 +590,7 @@ static func forget() -> void:
 ## name and height (the map's elevation, else the road's own there) in the country's style, a cairn, a lay-by of gravel
 ## and a panorama board facing out over the drop; away from every road, a cairn on the saddle.
 static func _pass(b: _Block, p: Vector2, elevation, name: String, k: Dictionary, id: String, info: Dictionary) -> void:
-	var cross := _crossing(b, p)
+	var cross := _crossing(b, p, elevation)
 	var stone := _stone(k, "cairn", "granite")
 	if cross.is_empty():
 		var at := SceneryStreamer.stand(b.n, p, b.memo)
@@ -638,11 +641,9 @@ static func _pass(b: _Block, p: Vector2, elevation, name: String, k: Dictionary,
 
 ## Where a road crosses near saddle `p`: {edge, s, dir (its way there), side (1 the right of it, -1 the left: the
 ## flatter for the lay-by), y (the road's height)}, or {} where no road comes within PASS_REACH.
-static func _crossing(b: _Block, p: Vector2) -> Dictionary:
+static func _crossing(b: _Block, p: Vector2, elevation = null) -> Dictionary:
 	var n := b.n
-	var best := -1
-	var best_d := PASS_REACH
-	var best_s := 0.0
+	var near := []   # [distance, edge, s along it] of the roads within PASS_REACH, nearest first
 	var seen := {}
 	var k0 := RoadBlock.key_of(p.x - PASS_REACH, p.y - PASS_REACH)
 	var k1 := RoadBlock.key_of(p.x + PASS_REACH, p.y + PASS_REACH)
@@ -653,25 +654,39 @@ static func _crossing(b: _Block, p: Vector2) -> Dictionary:
 					continue
 				seen[e] = true
 				var pr: Array = n._project(e, p)
-				if float(pr[2]) < best_d:
-					best_d = float(pr[2])
-					best = e
-					best_s = float(pr[0])
-	if best < 0:
-		return {}
-	# (the top: the highest of the road within PASS_ALONG either way)
-	var l := n.length_of(best)
-	var top := best_s
+				if float(pr[2]) < PASS_REACH:
+					near.append([float(pr[2]), e, float(pr[0])])
+	near.sort_custom(func(x, y): return x[0] < y[0])
+	# (the first whose highest within PASS_ALONG either way is a top of its own, near the saddle's height)
+	var best := -1
+	var top := 0.0
 	var top_y := -INF
 	var step := 10.0
-	var t := maxf(0.0, best_s - PASS_ALONG)
-	while t <= minf(l, best_s + PASS_ALONG):
-		var y := n.road_y(best, t)
-		if not is_nan(y) and y > top_y:
-			top_y = y
-			top = t
-		t += step
-	if top_y == -INF:
+	for cand: Array in near.slice(0, 6):
+		var e: int = cand[1]
+		var l := n.length_of(e)
+		var lo := maxf(0.0, float(cand[2]) - PASS_ALONG)
+		var hi := minf(l, float(cand[2]) + PASS_ALONG)
+		var at := lo
+		var y_top := -INF
+		var t := lo
+		while t <= hi + 0.01:
+			var y := n.road_y(e, minf(t, hi))
+			if not is_nan(y) and y > y_top:
+				y_top = y
+				at = minf(t, hi)
+			t += step
+		if y_top == -INF:
+			continue
+		if (lo > 0.0 and at - lo < step * 1.5) or (hi < l and hi - at < step * 1.5):
+			continue   # (still climbing out of the stretch: no top of its own near the saddle)
+		if elevation != null and absf(y_top - float(elevation)) > PASS_RISE:
+			continue
+		best = e
+		top = at
+		top_y = y_top
+		break
+	if best < 0:
 		return {}
 	var hd := n.heading_at(best, top)
 	var f := Vector2(sin(hd), -cos(hd))
@@ -848,6 +863,7 @@ static func _downhill(b: _Block, q: Vector2) -> Vector2:
 ## ground and up past the top, as thick into the high ground as its height asks.
 static func _cliff(b: _Block, line: PackedVector2Array, _mapped, k: Dictionary, id: String) -> void:
 	var stone := _stone(k, "stone", "granite")
+	var sides := {}   # a piece's end -> [the land below it, above it] (pieces share their ends)
 	var i := 0
 	for piece: Array in _steps(b, line, STEP):
 		i += 1
@@ -856,19 +872,20 @@ static func _cliff(b: _Block, line: PackedVector2Array, _mapped, k: Dictionary, 
 		var m := (a + c) * 0.5
 		var f := (c - a).normalized()
 		var right := Vector2(-f.y, f.x)
-		var hi := b.bare(m - right * 7.0)
-		var lo := b.bare(m + right * 7.0)
-		if is_nan(hi) or is_nan(lo):
+		var ends := []
+		for q: Vector2 in [a, c]:
+			if not sides.has(q):
+				var hi := b.bare(q - right * 7.0)
+				var lo := b.bare(q + right * 7.0)
+				sides[q] = [minf(hi, lo), maxf(hi, lo)]
+			ends.append(sides[q])
+		if is_nan(ends[0][0]) or is_nan(ends[1][0]) or is_nan(ends[0][1]) or is_nan(ends[1][1]):
 			continue
-		if hi < lo:
-			var swap := hi
-			hi = lo
-			lo = swap
-		lo = maxf(lo, SEA - 1.5)
-		var base := lo - 1.0
-		var top := maxf(hi + 0.5, base + CLIFF_LEAST)
-		top = minf(top, base + CLIFF_MOST)
-		var tall := top - base
+		# (the foot follows the low ground end to end, so pieces down a slope meet as one face, not steps)
+		var base_a := maxf(float(ends[0][0]), SEA - 1.5) - 1.0
+		var base_c := maxf(float(ends[1][0]), SEA - 1.5) - 1.0
+		var tall := maxf(float(ends[0][1]) - base_a, float(ends[1][1]) - base_c) + 0.5
+		tall = clampf(tall * (0.9 + _roll(id + "t" + str(i)) * 0.25), CLIFF_LEAST, CLIFF_MOST)
 		var thick := clampf(tall * 0.4, CLIFF_THICK.x, CLIFF_THICK.y)
 		var left := -right
 		# (one look at the roads does where none is near: the footprint is within `thick` of its middle)
@@ -877,10 +894,11 @@ static func _cliff(b: _Block, line: PackedVector2Array, _mapped, k: Dictionary, 
 			b.skipped += 1
 			continue
 		var r := _roll(id + str(i))
-		var len := a.distance_to(c) * (1.12 + r * 0.15)
+		var stretch := 1.1 + r * 0.12
+		var along := Vector3(c.x - a.x, base_c - base_a, c.y - a.y) * stretch
 		var lean := Vector3(right.x, 0, right.y) * (r - 0.5) * 0.06 * tall   # (a little out of true, piece to piece)
-		var xf := Transform3D(Basis(Vector3(left.x, 0, left.y) * thick, Vector3.UP * tall + lean, Vector3(f.x, 0, f.y) * len),
-			b.local(m, base))
+		var xf := Transform3D(Basis(Vector3(left.x, 0, left.y) * thick, Vector3.UP * tall + lean, along),
+			b.local(m, (base_a + base_c) * 0.5))
 		b.put("crag:%s:%d" % [stone, int(r * 3.0) % 3], xf)
 
 
@@ -1178,13 +1196,15 @@ static func _crag(a: Dictionary, col: Color, v: int) -> void:
 			var z := -0.5 + float(i) / nu
 			var y := float(j) / nv
 			var x := 0.0
+			# (pushed in and out a little: the piece is stretched across by its thickness, up to 12 m)
 			if i > 0 and i < nu:
-				x = 0.06 + _jit(i, j, v) * 0.07 + (0.06 * sin(z * 9.0 + v * 2.0))
+				# (ribs and gullies down it, a few broken corners)
+				x = 0.02 + 0.05 * absf(sin(z * PI * 2.0 + v * 1.3)) + _jit(i, j, v) * 0.015
 			else:
-				x = 0.03 + _jit(i, j, v) * 0.02
+				x = 0.02 + _jit(i, j, v) * 0.01
 			if j == nv:
 				y = 1.0 - absf(_jit(i, j + 7, v)) * 0.08
-				x += 0.12
+				x += 0.05
 			row.append(Vector3(x, y, z))
 		face.append(row)
 	for j in nv:
@@ -1193,12 +1213,13 @@ static func _crag(a: Dictionary, col: Color, v: int) -> void:
 			var p1: Vector3 = face[j][i + 1]
 			var p2: Vector3 = face[j + 1][i + 1]
 			var p3: Vector3 = face[j + 1][i]
-			var shade := col.darkened(0.12 * absf(_jit(i, j, v + 11))).lightened(0.06 * float(j) / nv)
+			# (streaked down the face by column, paler up top where it weathers)
+			var shade := col.darkened(0.05 * absf(_jit(i, j, v + 11)) + 0.12 * absf(_jit(i, 99, v + 5))).lightened(0.07 * float(j) / nv)
 			# (the face looks -x: wound so its front is out there)
-			AdventureProps._quad(a, p0, p3, p2, p1, shade)
-			if (i + j + v) % 4 == 0:
+			AdventureProps._quad(a, p0, p1, p2, p3, shade)
+			if (i * 3 + j + v) % 7 == 0:
 				# (a darker crack)
-				AdventureProps._tri(a, p0 + Vector3(-0.004, 0, 0), p3 + Vector3(-0.004, 0, 0), p1 + Vector3(-0.004, 0, 0), shade.darkened(0.25))
+				AdventureProps._tri(a, p0 + Vector3(-0.004, 0, 0), p1 + Vector3(-0.004, 0, 0), p3 + Vector3(-0.004, 0, 0), shade.darkened(0.14))
 	# The top, the back and the ends.
 	for i in nu:
 		var p0: Vector3 = face[nv][i]
@@ -1211,9 +1232,9 @@ static func _crag(a: Dictionary, col: Color, v: int) -> void:
 			var p0: Vector3 = face[j][e]
 			var p1: Vector3 = face[j + 1][e]
 			if e == 0:
-				AdventureProps._quad(a, p0, Vector3(1, p0.y, zs), Vector3(1, p1.y, zs), p1, col.darkened(0.08))
-			else:
 				AdventureProps._quad(a, p0, p1, Vector3(1, p1.y, zs), Vector3(1, p0.y, zs), col.darkened(0.08))
+			else:
+				AdventureProps._quad(a, p0, Vector3(1, p0.y, zs), Vector3(1, p1.y, zs), p1, col.darkened(0.08))
 
 
 ## A boulder: a lumpy ball `r` (x, y, z half sizes) round (0, r.y, 0) of variant `v`, flat-ish underneath.
@@ -1241,12 +1262,13 @@ static func _boulder(a: Dictionary, col: Color, v: int, r: Vector3, at := Vector
 			var p2: Vector3 = pts[j + 1][(i + 1) % nl]
 			var p3: Vector3 = pts[j + 1][i]
 			var shade := col.darkened(0.15 * float(j) / nr + 0.06 * absf(_jit(i, j, v)))
-			AdventureProps._quad(a, p0, p3, p2, p1, shade)
+			AdventureProps._quad(a, p0, p1, p2, p3, shade)
 
 
 ## A cairn: a pile of stones `scale` times a summit's (1.7 m).
 static func _cairn(a: Dictionary, col: Color, scale := 1.0) -> void:
 	var layers := [[0.9, 0.0, 0.45], [0.72, 0.38, 0.42], [0.52, 0.75, 0.38], [0.34, 1.08, 0.34], [0.18, 1.38, 0.3]]
+	col = col.lightened(0.15)   # (piled stones catch the light: a little paler than the face they came from)
 	var k := 0
 	for l: Array in layers:
 		var r := float(l[0]) * scale
@@ -1305,7 +1327,7 @@ static func _panorama(a: Dictionary) -> void:
 	for i in peaks.size() - 1:
 		var x0 := -w / 2 + 0.05 + (w - 0.1) * i / (peaks.size() - 1.0)
 		var x1 := -w / 2 + 0.05 + (w - 0.1) * (i + 1) / (peaks.size() - 1.0)
-		AdventureProps._quad(a, corner.call(x0, 0.0) + up * 2.0, corner.call(x0, -float(peaks[i])) + up * 2.0, corner.call(x1, -float(peaks[i + 1])) + up * 2.0, corner.call(x1, 0.0) + up * 2.0, hill)
+		AdventureProps._quad(a, corner.call(x0, 0.0) + up * 2.0, corner.call(x1, 0.0) + up * 2.0, corner.call(x1, -float(peaks[i + 1])) + up * 2.0, corner.call(x0, -float(peaks[i])) + up * 2.0, hill)
 	AdventureProps._quad(a, corner.call(-w / 2, d / 2), corner.call(-w / 2, -d / 2), corner.call(-w / 2, -d / 2) - Vector3(0, 0.05, 0), corner.call(-w / 2, d / 2) - Vector3(0, 0.05, 0), legs)
 
 
@@ -1377,6 +1399,7 @@ static func skin_material(skin: String) -> ShaderMaterial:
 	m.set_shader_parameter("pattern", int(s["pattern"]))
 	m.set_shader_parameter("grain", float(s["grain"]))
 	m.set_shader_parameter("rough", float(s["rough"]))
+	m.set_shader_parameter("contrast", float(s.get("contrast", 1.0)))
 	_lock.lock()
 	_skin_mats[skin] = m
 	_lock.unlock()
@@ -1395,6 +1418,7 @@ uniform int pattern = 0;
 uniform float grain = 1.0;
 uniform float rough = 0.9;
 uniform float pull = 0.004;
+uniform float contrast = 1.0;
 varying vec2 wp;
 varying float share;
 
@@ -1438,7 +1462,7 @@ void fragment() {
 	} else if (pattern == 2) {
 		float k3 = 1.0 - smoothstep(0.3, 1.0, fw * grain * 2.3);
 		float st = mix(0.5, noise(wp * grain * 2.3 + 7.0), k3);
-		c *= 0.72 + 0.5 * smoothstep(0.25, 0.75, st);
+		c *= 1.0 + contrast * (0.5 * smoothstep(0.25, 0.75, st) - 0.28);
 	} else if (pattern == 3) {
 		float r = sin(wp.x * 1.4 + wp.y * 0.55 + noise(wp * 0.15) * 6.0);
 		c *= 0.93 + 0.07 * r * (1.0 - smoothstep(0.3, 1.0, fw * 0.5));
