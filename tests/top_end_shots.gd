@@ -2,7 +2,7 @@ extends Node3D
 ## Close-ups of engine top ends made in Blender (assets/bike_parts/head) on whole bikes, each
 ## beside the same bike with BikeModel's own code-built barrels and head, for the bike look
 ## overhaul's contact sheets:
-##   xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots
+##   xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots [--cases]
 ## (Until the loader hooks into the New look, this puts the Blender top end on by hand: it hides
 ## the code-built barrels and head and adds BlenderParts' node where BikeModel lays them out.)
 
@@ -30,12 +30,15 @@ const BIKES := [
 
 var out_dir := "/tmp/shots"
 var cam := Camera3D.new()
+var cases := false   # --cases: the Blender crankcase on as well
 
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out_dir = a.trim_prefix("--out=")
+		elif a == "--cases":
+			cases = true
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -80,7 +83,7 @@ func _ready() -> void:
 			m.build_from(build, Color(0.12, 0.2, 0.42), {}, null, false)
 			m.position.y = build.rear_radius
 			if blender:
-				_swap_top_end(m, str(b[2]))
+				_swap_top_end(m, str(b[2]), cases)
 			var e: Vector3 = m.to_global(m._engine_c)
 			var name := "%s_%s_%s_%s" % [b[0], b[1], b[2], "blender" if blender else "code"]
 			await _shot_from(e + Vector3(1.25, 0.55, -0.95), e + Vector3(0.0, 0.14, 0.0), name)
@@ -90,18 +93,41 @@ func _ready() -> void:
 
 
 ## Hides the code-built barrels and head (the engine's pieces round a barrel's axis), and puts the
-## Blender top end on in their place.
-func _swap_top_end(m: BikeModel, head: String) -> void:
+## Blender top end on in their place; with `cases`, the code-built crankcase too, for the Blender one.
+func _swap_top_end(m: BikeModel, head: String, cases := false) -> void:
+	# (Under a full fairing BikeModel leaves the engine undrawn, and so does the loader.)
+	if not m._slot_meshes.get("engine", []).any(func(g): return g is GeometryInstance3D and (g as GeometryInstance3D).is_visible_in_tree()):
+		return
+	# The cast surfaces in the engine's and the head's own colours, as the bike shader will have
+	# them, from the code-built case and head (the rest keep Blender's preview colours).
+	var cast := {}
 	for slot in ["engine", "head"]:
 		for mi in m._slot_meshes.get(slot, []):
 			var g := mi as GeometryInstance3D
 			if g == null:
 				continue
+			if not cast.has(slot) and g.material_override != null:
+				cast[slot] = g.material_override
 			var mid := m.to_local(g.global_transform * g.get_aabb().get_center())
-			if slot == "head" or _on_barrel(m, mid):
+			if slot == "head" or cases or _on_barrel(m, mid):
 				g.visible = false
+	var nodes := []
 	for piece in BlenderParts.top_end_pieces(str(m._build.layout), head, m._cyls, m._eng_s, m._bore_r):
-		m.add_child(BlenderParts.instance(piece[0], piece[1]))
+		nodes.append([BlenderParts.instance(piece[0], piece[1]), "head"])
+	if cases:
+		var path := BlenderParts.path_for("engine", str(m._build.parts.get("engine", "")))
+		var node := BlenderParts.instance(path, BlenderParts.engine_xform(m._engine_c, m._eng_s))
+		if node != null:
+			nodes.append([node, "engine"])
+	for n in nodes:
+		m.add_child(n[0])
+		for mi in (n[0] as Node).find_children("lod*", "MeshInstance3D", false, false):
+			var mesh := (mi as MeshInstance3D).mesh
+			for s in mesh.get_surface_count():
+				var mat := mesh.surface_get_material(s)
+				var slot: String = BlenderParts.colour_slot(mat) if BlenderParts.colour_slot(mat) != "" else str(n[1])
+				if BlenderParts.tag_of(mat) == "cast_alloy" and cast.has(slot):
+					(mi as MeshInstance3D).set_surface_override_material(s, cast[slot])
 
 
 ## Whether `p` is on one of the barrels: within its fins' reach of the bore, between its foot and the head.
