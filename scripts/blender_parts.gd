@@ -308,3 +308,77 @@ static func lod_node(lods: Array, name := "BlenderPipe") -> Node3D:
 		mi.visibility_range_end = ranges[k][1]
 		root.add_child(mi)
 	return root
+
+
+## How many sections a tyre is made of, round the hoop (the parts agreement's 6b).
+const TYRE_SECTIONS := 32
+## How far up a tyre section its sidewalls bulge to the full width (blender/parts/tyre/treads.py).
+const TYRE_BULGE := 0.434
+
+
+## The glb for a tyre's tread pattern (BikeModel.tread_pattern's: "" is a slick).
+static func tyre_path(tread: String) -> String:
+	return ROOT + "tyre/%s.glb" % (tread if tread != "" else "slick")
+
+
+## A whole tyre on a wheel's node, as BikeModel's tyre_mesh draws it to its size: the tread
+## pattern's Blender section (`path`, drawn in the tyre's own units: across -1 to 1, bead 0 to
+## crown 1, and 1/32 of the way round along +Z) bent round the hoop 32 times, from the bead just
+## inside the rim (`rim_r`) to the crown at `radius`, `width` across, the axle along X. Its
+## sidewalls run out from the beads, inside a rim `rim_w` wide, to the full width at the bulge, as
+## BikeModel's do. One ArrayMesh per LOD; [] when there's no such glb.
+static func tyre_hoop(path: String, rim_r: float, radius: float, width: float, rim_w: float) -> Array:
+	var p := part(path)
+	if p.is_empty():
+		return []
+	var half := width * 0.5
+	var bead := minf(rim_w * 0.5 - 0.004, half * 0.9)
+	var base := rim_r - 0.006
+	var span := maxf(radius - rim_r, 0.02) + 0.006
+	var step := TAU / TYRE_SECTIONS
+	var out := []
+	for lod in 3:
+		var mesh: Mesh = p["lods"][lod]
+		var am := ArrayMesh.new()
+		for s in mesh.get_surface_count():
+			var src := mesh.surface_get_arrays(s)
+			var verts: PackedVector3Array = src[Mesh.ARRAY_VERTEX]
+			var normals: PackedVector3Array = src[Mesh.ARRAY_NORMAL]
+			var idx: PackedInt32Array = src[Mesh.ARRAY_INDEX]
+			var nv := PackedVector3Array()
+			var nn := PackedVector3Array()
+			var nuv := PackedVector2Array()
+			var ni := PackedInt32Array()
+			for k in TYRE_SECTIONS:
+				for j in verts.size():
+					var v := verts[j]
+					var a := (k + v.z) * step
+					var r := base + v.y * span
+					var out_dir := Vector3(0.0, cos(a), sin(a))
+					var round_dir := Vector3(0.0, -sin(a), cos(a))
+					# (Below the bulge, the wall's 0.9 to 1 across runs from the bead to the full width.)
+					var x := v.x * half
+					if v.y < TYRE_BULGE and absf(v.x) >= 0.9:
+						x = signf(v.x) * lerpf(bead, half, clampf((absf(v.x) - 0.9) / 0.1, 0.0, 1.0))
+					nv.append(Vector3(x, 0.0, 0.0) + out_dir * r)
+					# (The section's stretched to the tyre, so its normals are squeezed the other way. Where
+					# one section meets the next, the normal runs square round the tyre, as both sides
+					# of the join would have it, so the joins don't show.)
+					var n := normals[j]
+					if v.z < 0.001 or v.z > 0.999:
+						n.z = 0.0
+					nn.append((Vector3.RIGHT * (n.x / half) + out_dir * (n.y / span) + round_dir * (n.z / (step * r))).normalized())
+					# (1 UV unit = 1 m, round the tyre and across it.)
+					nuv.append(Vector2(a * r, v.x * half))
+				for i in idx:
+					ni.append(i + k * verts.size())
+			var arrays := []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = nv
+			arrays[Mesh.ARRAY_NORMAL] = nn
+			arrays[Mesh.ARRAY_TEX_UV] = nuv
+			arrays[Mesh.ARRAY_INDEX] = ni
+			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			am.surface_set_material(am.get_surface_count() - 1, mesh.surface_get_material(s))
+		out.append(am)
+	return out

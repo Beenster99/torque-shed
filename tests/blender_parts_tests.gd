@@ -268,6 +268,58 @@ func test_pipe_sweep() -> void:
 	check(fattest > 0.055 and fattest < 0.062, "a tapering pipe swells as BikeModel's expansion chamber does (%.3f m at its fattest)" % fattest)
 
 
+## Every wheel in the catalogue is made in Blender at its own size: its rim no bigger than
+## BikeModel's (the flanges the tyre's beads sit in), no wider than the rim and the hub between
+## them, and on the axle.
+func test_wheels() -> void:
+	var out := []
+	for w in PartsDB.by_kind["wheel"]:
+		var path := BlenderParts.path_for("wheel", str(w))
+		var p := BlenderParts.part(path)
+		if p.is_empty() or not p["mounts"].has("axle"):
+			out.append("%s: no glb, or no axle" % w)
+			continue
+		var part: Dictionary = PartsDB.get_part(str(w))
+		var rim_r := float(part["diameter"]) * 0.0127
+		var hw := BikeModel.rim_width_of(part) * 0.5
+		var big := 0.0
+		var wide := 0.0
+		for v in BlenderParts.points(path, Transform3D()):
+			big = maxf(big, Vector2(v.y, v.z).length())
+			wide = maxf(wide, absf(v.x))
+		if big > rim_r + 0.0095 or wide > maxf(hw + 0.006, 0.085):
+			out.append("%s: %.3f m round (rim %.3f), %.3f m across" % [w, big, rim_r, wide])
+	check(out.is_empty(), "every wheel is made in Blender, its own size %s" % str(out.slice(0, 6)))
+
+
+## Every tread pattern is made in Blender, and bent round the hoop it makes a tyre the size
+## BikeModel's is: between the bead in the rim and the crown, no wider than the tyre, its crown
+## (or its knobs' tops) where BikeModel's tread is, on a skinny trail tyre and a fat rear alike.
+func test_tyres() -> void:
+	var out := []
+	for tread in ["slick", "rib", "touring", "sport", "cruiser", "trail", "sipes", "knobs", "blocks", "studs"]:
+		var path := BlenderParts.tyre_path(tread)
+		for size in [[0.2667, 0.36, 0.09, 0.04], [0.2159, 0.31, 0.18, 0.14]]:
+			var lods := BlenderParts.tyre_hoop(path, size[0], size[1], size[2], size[3])
+			if lods.size() != 3:
+				out.append("%s: no glb" % tread)
+				break
+			var lo := INF
+			var hi := 0.0
+			var wide := 0.0
+			for v in (lods[0] as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+				var r := Vector2(v.y, v.z).length()
+				lo = minf(lo, r)
+				hi = maxf(hi, r)
+				wide = maxf(wide, absf(v.x))
+			for s in (lods[0] as ArrayMesh).get_surface_count():
+				for v in (lods[0] as ArrayMesh).surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+					hi = maxf(hi, Vector2(v.y, v.z).length())
+			if lo < float(size[0]) - 0.0075 or absf(hi - float(size[1])) > 0.004 or wide > float(size[2]) * 0.5 + 0.002:
+				out.append("%s on %.2f m: %.3f to %.3f m round, %.3f across" % [tread, size[1], lo, hi, wide * 2.0])
+	check(out.is_empty(), "every tread pattern makes a tyre BikeModel's size round the hoop %s" % str(out.slice(0, 6)))
+
+
 ## How far `v` is from the polyline `curve`.
 static func _to_curve(curve: Array, v: Vector3) -> float:
 	var best := INF
