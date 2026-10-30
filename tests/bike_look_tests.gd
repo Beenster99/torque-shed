@@ -224,3 +224,43 @@ func test_new_parts_and_detail() -> void:
 	classic.free()
 	m.free()
 	mine.free()
+
+
+## M1: each finish is told apart for the shader's close-up detail, and an exhaust colours with
+## heat by its head, more the more it's been used.
+func test_finishes() -> void:
+	var F := BikeLookNew.Finish
+	var red := Color(0.7, 0.1, 0.08)
+	var black := Color(0.05, 0.05, 0.05)
+	var got := [BikeLookNew.finish_of(red, 0.0, 0.3, 0.7, ""), BikeLookNew.finish_of(red, 0.5, 0.35, 0.8, ""),
+		BikeLookNew.finish_of(Color.WHITE, 1.0, 0.1, 0.0, ""), BikeLookNew.finish_of(Color.WHITE, 1.0, 0.25, 0.0, ""),
+		BikeLookNew.finish_of(black, 0.0, 0.9, 0.0, ""), BikeLookNew.finish_of(red, 0.0, 0.6, 0.0, "grain"),
+		BikeLookNew.finish_of(black, 0.25, 0.3, 1.0, "carbon"), BikeLookNew.finish_of(Color.WHITE, 1.0, 0.38, 0.0, "brushed"),
+		BikeLookNew.finish_of(red, 0.6, 0.45, 0.0, "")]
+	var want := [F.PAINT, F.METAL_FLAKE, F.CHROME, F.ALLOY, F.RUBBER, F.LEATHER, F.CARBON, F.BRUSHED, F.PLAIN]
+	check(got == want, "paint, metallic paint, chrome, alloy, rubber, leather, carbon and brushed are told apart %s" % [got])
+	var hottest := {}
+	for wear in [0.0, 0.9]:
+		var cond := {}
+		for s in PartsDB.SLOTS:
+			cond[s] = {"wear": wear}
+		var parts := Contracts.style_build("classic")
+		var m := BikeModel.new()
+		m.look = BikeLook.NEW
+		m.baked = true
+		t.add_child(m)
+		m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)), Color(0.7, 0.12, 0.1), {}, cond)
+		var hot := 0.0
+		for mi in m.find_children("*", "MeshInstance3D", true, false):
+			var mesh := (mi as MeshInstance3D).mesh
+			if (mi as MeshInstance3D).material_override != BikeShader.material() or mesh == null:
+				continue
+			var c3 = mesh.surface_get_arrays(0)[Mesh.ARRAY_CUSTOM3]
+			if c3 is PackedFloat32Array:
+				for i in range(1, (c3 as PackedFloat32Array).size(), 4):
+					hot = maxf(hot, c3[i])
+		hottest[wear] = hot
+		check(not m._exhaust_ports.is_empty(), "the exhaust's ports are known (wear %.1f)" % wear)
+		m.free()
+	check(hottest[0.0] > 0.1 and hottest[0.9] > hottest[0.0] * 2.0 and hottest[0.9] <= 1.0,
+		"a new exhaust shows a little heat colour by the head, a well-used one much more %s" % [hottest])

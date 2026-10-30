@@ -19,7 +19,15 @@ const FAR := 120.0
 ## Per-vertex channels, all four floats wide (see BikeShader).
 const CUSTOM_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) \
 	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT) \
-	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT)
+	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT) \
+	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT)
+
+## The finishes the bike shader adds its own detail to (see finish_of), as CUSTOM3.x.
+enum Finish { PLAIN, PAINT, METAL_FLAKE, CHROME, ALLOY, BRUSHED, RUBBER, LEATHER, CARBON }
+## How far from the head an exhaust header colours with heat, in metres, and how much heat a
+## brand-new pipe shows (a worn one shows it all).
+const HEAT_REACH := 0.3
+const HEAT_NEW := 0.35
 
 
 ## Merges `model`'s still pieces (see BikeModel._bake_static for which). Returns how many
@@ -49,6 +57,11 @@ static func bake(model: BikeModel) -> int:
 			for s in m.mesh.get_surface_count():
 				var mat := m.get_active_material(s)
 				var look := _look_of(mat, lamps, kits)
+				if slot == "exhaust" and not look.is_empty() and m.get_parent() == model and not model._exhaust_ports.is_empty() \
+						and look["finish"] in [Finish.CHROME, Finish.ALLOY, Finish.BRUSHED]:
+					look = look.duplicate()
+					look["ports"] = model._exhaust_ports
+					look["heat"] = lerpf(HEAT_NEW, 1.0, clampf(float((model.condition.get(slot, {}) as Dictionary).get("wear", 0.0)) if model.condition.get(slot) is Dictionary else 0.0, 0.0, 1.0))
 				var key: Array
 				if look.is_empty():
 					key = [slot, m.get_parent(), mat, m.cast_shadow, m.layers, model._stock_pieces.has(mi)]
@@ -230,7 +243,7 @@ static func _kit_textures() -> Dictionary:
 
 
 ## What a surface's material looks like, for the bike shader to draw it just the same:
-## {albedo, metallic, roughness, clearcoat, clearcoat_roughness, kit, scale, depth, rust}.
+## {albedo, metallic, roughness, clearcoat, clearcoat_roughness, kit, scale, depth, rust, finish}.
 ## Empty for a material the shader doesn't draw (it stays as it is).
 static func _look_of(mat: Material, lamps: Dictionary, kits: Dictionary) -> Dictionary:
 	if not (mat is StandardMaterial3D) or lamps.has(mat):
@@ -280,10 +293,35 @@ static func _look_of(mat: Material, lamps: Dictionary, kits: Dictionary) -> Dict
 			rust = -float(level)
 		else:
 			return {}
+	var clearcoat := m.clearcoat if m.clearcoat_enabled else 0.0
 	return {"albedo": m.albedo_color, "metallic": m.metallic, "roughness": m.roughness,
-		"clearcoat": m.clearcoat if m.clearcoat_enabled else 0.0, "clearcoat_roughness": m.clearcoat_roughness,
+		"clearcoat": clearcoat, "clearcoat_roughness": m.clearcoat_roughness,
 		"kit": float(BikeShader.kit_layer(kit)) if kit != "" else -1.0, "scale": m.uv1_scale.x,
-		"depth": m.normal_scale if m.normal_enabled else 0.0, "rust": rust}
+		"depth": m.normal_scale if m.normal_enabled else 0.0, "rust": rust,
+		"finish": finish_of(m.albedo_color, m.metallic, m.roughness, clearcoat, kit)}
+
+
+## Which finish a surface is, from what its material is made of: the bike shader adds each its
+## own close-up detail (see BikeShader).
+static func finish_of(albedo: Color, metallic: float, roughness: float, clearcoat: float, kit: String) -> int:
+	match kit:
+		"carbon":
+			return Finish.CARBON
+		"grain", "quilt":
+			return Finish.LEATHER
+		"brushed":
+			return Finish.BRUSHED
+		"":
+			pass
+		_:
+			return Finish.PLAIN
+	if clearcoat > 0.0 and metallic < 0.9:
+		return Finish.METAL_FLAKE if metallic >= 0.2 else Finish.PAINT
+	if metallic >= 0.95:
+		return Finish.CHROME if roughness <= 0.16 else (Finish.ALLOY if roughness <= 0.45 else Finish.PLAIN)
+	if metallic <= 0.1 and roughness >= 0.8 and albedo.get_luminance() < 0.15:
+		return Finish.RUBBER
+	return Finish.PLAIN
 
 
 ## The arrays of one mesh of `pieces` ([mesh, surface, transform, look]), each piece's look on
@@ -294,6 +332,7 @@ static func _shaded_arrays(pieces: Array) -> Array:
 	var c0 := PackedFloat32Array()
 	var c1 := PackedFloat32Array()
 	var c2 := PackedFloat32Array()
+	var c3 := PackedFloat32Array()
 	var index := PackedInt32Array()
 	for piece in pieces:
 		var mesh: Mesh = piece[0]
@@ -310,12 +349,21 @@ static func _shaded_arrays(pieces: Array) -> Array:
 		var l0 := [a.r, a.g, a.b, float(look["metallic"])]
 		var l1 := [float(look["roughness"]), float(look["clearcoat"]), float(look["clearcoat_roughness"]), float(look["depth"])]
 		var l2 := [float(look["kit"]), float(look["scale"]), float(look["rust"]), 0.0]
+		var finish := float(look.get("finish", Finish.PLAIN))
+		var ports: Array = look.get("ports", [])
+		var heat := float(look.get("heat", 0.0))
 		for i in v.size():
-			verts.append(xf * v[i])
+			var at := xf * v[i]
+			verts.append(at)
 			normals.append((nb * (n[i] as Vector3)).normalized() if has_n else Vector3.UP)
 			c0.append_array(l0)
 			c1.append_array(l1)
 			c2.append_array(l2)
+			# How hot this bit of pipe runs: hottest where it leaves the head.
+			var hot := 0.0
+			for port in ports:
+				hot = maxf(hot, 1.0 - at.distance_to(port) / HEAT_REACH)
+			c3.append_array([finish, clampf(hot, 0.0, 1.0) * heat, 0.0, 0.0])
 		var idx = arrays[Mesh.ARRAY_INDEX]
 		if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
 			for i in idx:
@@ -330,6 +378,7 @@ static func _shaded_arrays(pieces: Array) -> Array:
 	arr[Mesh.ARRAY_CUSTOM0] = c0
 	arr[Mesh.ARRAY_CUSTOM1] = c1
 	arr[Mesh.ARRAY_CUSTOM2] = c2
+	arr[Mesh.ARRAY_CUSTOM3] = c3
 	arr[Mesh.ARRAY_INDEX] = index
 	return arr
 

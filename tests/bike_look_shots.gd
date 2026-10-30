@@ -2,11 +2,14 @@ extends Node
 ## Classic and New side by side (see BikeLook): each style's stock bike, ridden-past (baked),
 ## drawn in both looks from the same spot, plus a rusty, a patina-painted and a carbon and
 ## brushed-alloy bike, with how far apart the two pictures are:
-##   xvfb-run -a godot --path . res://tests/bike_look_shots.tscn -- --out=/tmp/look [--styles=cafe,sport]
+##   xvfb-run -a godot --path . res://tests/bike_look_shots.tscn -- --out=/tmp/look [--styles=cafe,sport] [--close]
+## --close takes them close up on the engine and exhaust, for the finishes; a well-worn bike
+## (hot-coloured headers) comes too.
 ## Writes <style>_classic.png, <style>_new.png and diff.json (mean and worst pixel difference, 0..255).
 var out_dir := "/tmp/look"
 var styles: Array = []
 var cam: Camera3D
+var close := false
 
 
 func _ready() -> void:
@@ -16,6 +19,8 @@ func _ready() -> void:
 			out_dir = a.trim_prefix("--out=")
 		elif a.begins_with("--styles="):
 			styles = Array(a.trim_prefix("--styles=").split(","))
+		elif a == "--close":
+			close = true
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(960, 600)
 	var env := WorldEnvironment.new()
@@ -48,6 +53,9 @@ func _ready() -> void:
 	cam.make_current()
 	cam.global_position = Vector3(2.9, 1.25, -2.3)
 	cam.look_at(Vector3(0.0, 0.55, 0.0), Vector3.UP)
+	if close:
+		cam.global_position = Vector3(1.15, 0.85, -0.95)
+		cam.look_at(Vector3(0.1, 0.5, -0.15), Vector3.UP)
 	var diffs := {}
 	var cases := []
 	for style in styles:
@@ -58,6 +66,11 @@ func _ready() -> void:
 		rusty[s] = {"rust": 0.6, "wear": 0.3}
 	for s in ["tank", "frame", "front_mudguard", "tail", "side_panels"]:
 		patina[s] = {"color": Color(0.2, 0.45, 0.3), "finish": "patina"}
+	if close:
+		var worn := {}
+		for s in PartsDB.SLOTS:
+			worn[s] = {"wear": 0.9}
+		cases.append(["worn", Contracts.style_build("classic"), worn])
 	if styles.size() == PartsDB.STYLES.size():
 		cases.append(["rusty", Contracts.style_build("classic"), rusty])
 		cases.append(["patina", Contracts.style_build("cafe"), patina])

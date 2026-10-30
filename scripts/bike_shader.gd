@@ -10,7 +10,14 @@ class_name BikeShader
 ## Per vertex: CUSTOM0 = albedo (sRGB) and metallic; CUSTOM1 = roughness, clear coat, clear
 ## coat roughness and the surface texture's depth; CUSTOM2 = the surface texture (a layer of
 ## the kit arrays, or -1), its repeats per metre, and the rust: its level 1..10 for rust mixed
-## in, minus 5 for patina multiplied in, 0 for none.
+## in, minus 5 for patina multiplied in, 0 for none; CUSTOM3 = the finish (BikeLookNew.Finish)
+## and how hot an exhaust header runs there, 0..1.
+##
+## Each finish gets the close-up detail its StandardMaterial3D never had: the orange peel in a
+## clear coat, the flakes glinting under a metallic one, chrome's faint polishing waves, a cast
+## or polished alloy's grain, rubber's and leather's uneven sheen, and the straw-to-blue heat
+## colours where an exhaust leaves the head. It's all small next to the part's own colour, so a
+## bike reads the same from across the road.
 
 const SHADER := "
 shader_type spatial;
@@ -27,12 +34,16 @@ uniform sampler2D patina_albedo : source_color, filter_linear_mipmap, repeat_ena
 uniform vec4 srgb_probe : source_color = vec4(0.5, 0.5, 0.5, 1.0);
 uniform float min_roughness = 0.08;
 uniform float min_clearcoat_roughness = 0.1;
+uniform float grain_layer = -1.0;
 
 varying vec3 tri_w;
 varying vec3 tri_pos;
 varying flat vec4 c0;
 varying flat vec4 c1;
 varying flat vec4 c2;
+varying flat float finish;
+varying vec3 obj_pos;
+varying float heat;
 
 vec3 to_linear(vec3 c) {
 	if (srgb_probe.r > 0.4) {
@@ -57,6 +68,38 @@ vec4 tri2(sampler2D s) {
 	return o;
 }
 
+// The rust noise, as a smooth 0..1 pattern over the part, with `k` repeats a metre (about five
+// blotches in each).
+float noise(float k) {
+	float n = texture(rust_noise, obj_pos.xy * k).r * tri_w.z;
+	n += texture(rust_noise, obj_pos.xz * k).r * tri_w.y;
+	n += texture(rust_noise, obj_pos.zy * k).r * tri_w.x;
+	return n;
+}
+
+vec4 tri_at(sampler2DArray s, float layer, float k) {
+	vec3 p = obj_pos * k * vec3(1.0, -1.0, 1.0);
+	vec4 o = vec4(0.0);
+	o += texture(s, vec3(p.xy, layer)) * tri_w.z;
+	o += texture(s, vec3(p.xz, layer)) * tri_w.y;
+	o += texture(s, vec3(p.zy * vec2(-1.0, 1.0), layer)) * tri_w.x;
+	return o;
+}
+
+vec3 hash3(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+// Steel's temper colours as it runs hotter: straw, bronze, purple, blue, then a dull grey-blue.
+vec3 heat_tint(float t) {
+	vec3 c = mix(vec3(0.85, 0.66, 0.32), vec3(0.62, 0.34, 0.12), smoothstep(0.25, 0.45, t));
+	c = mix(c, vec3(0.38, 0.16, 0.4), smoothstep(0.45, 0.6, t));
+	c = mix(c, vec3(0.12, 0.22, 0.6), smoothstep(0.6, 0.78, t));
+	return mix(c, vec3(0.4, 0.42, 0.5), smoothstep(0.85, 1.0, t));
+}
+
 // BikeModel._rust_mask's ramp over the noise, in each of the three projections before they're
 // blended, as the ramped texture is.
 float ramp(float n, float lo, float hi) {
@@ -76,6 +119,9 @@ void vertex() {
 	c0 = CUSTOM0;
 	c1 = CUSTOM1;
 	c2 = CUSTOM2;
+	finish = CUSTOM3.x;
+	heat = CUSTOM3.y;
+	obj_pos = VERTEX;
 	// As Godot's own triplanar material: the texture's axes from the face's facing.
 	TANGENT = normalize(vec3(0.0, 0.0, -1.0) * abs(NORMAL.x) + vec3(1.0, 0.0, 0.0) * abs(NORMAL.y) + vec3(1.0, 0.0, 0.0) * abs(NORMAL.z));
 	BINORMAL = normalize(vec3(0.0, 1.0, 0.0) * abs(NORMAL.x) + vec3(0.0, 0.0, -1.0) * abs(NORMAL.y) + vec3(0.0, 1.0, 0.0) * abs(NORMAL.z));
@@ -87,12 +133,56 @@ void vertex() {
 void fragment() {
 	vec3 albedo = to_linear(c0.rgb);
 	float rough = c1.x;
+	float metal = c0.a;
 	float layer = c2.x;
 	if (layer >= 0.0) {
 		albedo *= tri(kit_albedo, layer).rgb;
 		rough *= tri(kit_rough, layer).r;
 		NORMAL_MAP = tri(kit_normal, layer).rgb;
 		NORMAL_MAP_DEPTH = c1.w;
+	}
+	int f = int(round(finish));
+	if (f == 1 && layer < 0.0 && grain_layer >= 0.0) {
+		// Paint under a clear coat: a faint orange peel.
+		NORMAL_MAP = tri_at(kit_normal, grain_layer, 25.0).rgb;
+		NORMAL_MAP_DEPTH = 0.08;
+	} else if (f == 2 && layer < 0.0) {
+		// Metallic paint: some of the flakes are shinier than the paint round them, so they
+		// glint in the light, fading out where they're smaller than a pixel.
+		vec3 fp = obj_pos * 1100.0;
+		vec3 r = hash3(floor(fp));
+		float flake = step(0.8, r.z) * (1.0 - smoothstep(0.3, 0.8, length(fwidth(fp))));
+		rough *= mix(1.0, 0.25 + r.x * 0.3, flake);
+		metal = mix(metal, 1.0, flake * 0.6);
+		albedo *= 1.0 + flake * (0.15 + r.y * 0.3);
+	} else if (f == 3) {
+		// Chrome: long faint waves left by the polishing.
+		rough *= mix(0.8, 1.2, noise(1.5));
+	} else if (f == 4) {
+		// Cast or polished alloy: a fine uneven grain, a little patchy.
+		rough *= mix(0.75, 1.3, noise(30.0));
+		albedo *= mix(0.93, 1.05, noise(4.0));
+	} else if (f == 5) {
+		rough *= mix(0.9, 1.1, noise(2.0));
+	} else if (f == 6) {
+		// Rubber: blotchy, with a fine grain where it's been moulded.
+		albedo *= mix(0.72, 1.2, noise(6.0));
+		rough = mix(rough, 1.0, noise(20.0) * 0.5);
+		if (grain_layer >= 0.0) {
+			NORMAL_MAP = tri_at(kit_normal, grain_layer, 40.0).rgb;
+			NORMAL_MAP_DEPTH = 0.25;
+		}
+	} else if (f == 7) {
+		// Leather and vinyl: darker in the creases, shinier where it's been sat on.
+		albedo *= mix(0.66, 1.1, noise(3.0));
+		rough *= mix(0.7, 1.1, noise(9.0));
+	}
+	if (heat > 0.001) {
+		// The temper colours where an exhaust leaves the head, blotchy at the edges.
+		float t = clamp(heat + (noise(12.0) - 0.5) * 0.25, 0.0, 1.0);
+		float k = smoothstep(0.05, 0.25, t);
+		albedo = mix(albedo, heat_tint(t) * max(max(albedo.r, albedo.g), albedo.b), k * 0.85);
+		rough = mix(rough, rough + 0.12, k);
 	}
 	if (c2.z != 0.0) {
 		// Rust creeping in as patches (BikeModel._rust_mask's ramp over the same noise), or
@@ -109,7 +199,7 @@ void fragment() {
 		}
 	}
 	ALBEDO = albedo;
-	METALLIC = c0.a;
+	METALLIC = metal;
 	SPECULAR = 0.5;
 	ROUGHNESS = max(rough, min_roughness);
 	CLEARCOAT = c1.y;
@@ -150,6 +240,7 @@ static func material() -> ShaderMaterial:
 	_material.set_shader_parameter("patina_albedo", BikeModel._patina_texture())
 	_material.set_shader_parameter("min_roughness", BikeModel.MIN_ROUGHNESS)
 	_material.set_shader_parameter("min_clearcoat_roughness", BikeModel.MIN_CLEARCOAT_ROUGHNESS)
+	_material.set_shader_parameter("grain_layer", float(_kits.find("grain")))
 	return _material
 
 
