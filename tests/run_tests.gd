@@ -138,6 +138,9 @@ func _run_all() -> void:
 	print("Models")
 	await _t(&"_test_models")
 	await _t(&"_test_lever_guards")
+	await _t(&"_test_blender_parts_glbs")
+	await _t(&"_test_blender_parts_fit")
+	await _t(&"_test_blender_parts_fallback")
 	print("The shed")
 	await _t(&"_test_shed_rules")
 	await _t(&"_test_garage_life")
@@ -24755,6 +24758,22 @@ func _test_ride_fb_respawn() -> void:
 
 func _test_ride_fb_map() -> void:
 	await _ride_fb().test_map()
+
+
+func _blender_parts() -> RefCounted:
+	return load("res://tests/blender_parts_tests.gd").new(self)
+
+
+func _test_blender_parts_glbs() -> void:
+	_blender_parts().test_glbs()
+
+
+func _test_blender_parts_fit() -> void:
+	_blender_parts().test_top_end_fit()
+
+
+func _test_blender_parts_fallback() -> void:
+	_blender_parts().test_fallback()
 
 
 func _ferry() -> RefCounted:
