@@ -31,7 +31,9 @@ classes in its `CLASSES` table (all nine rounds' kinds, 141 of them, named for t
 {"format": 1, "cell": "ROW_COL", "release": R, "classes": CLASSES_HASH, "kinds": [...], "names": ["", ...],
  "points": [[kind, lat, lon, height, elevation, heading, name, id], ...],
  "lines":  [[kind, height, width, flags, name, id, lat, lon, dlat, dlon, ...], ...],
- "areas":  [[kind, height, elevation, name, id, lat, lon, dlat, dlon, ...], ...]}
+ "areas":  [[kind, height, elevation, name, id, lat, lon, dlat, dlon, ...], ...],
+ "words": ["", ...], "buildings": [[dlat, dlon, class, roof_shape, roof_color, roof_material, facade_material,
+                                    facade_color], ...]}   (the last two only where a building's look is mapped)
 ```
 
 - lat/lon in 1e-5 degrees; after a line's or area's first point each is the step from the one before.
@@ -42,6 +44,17 @@ classes in its `CLASSES` table (all nine rounds' kinds, 141 of them, named for t
 - The small things (`CLASSES` rows marked near) are kept within about `NEAR_M` (80 m) of a road a ride can take;
   everything else wherever it is in the cell.
 - A generator is a `wind_turbine` or `solar` where OpenStreetMap says what drives it.
+- Places (Overture's `places/place`, its taxonomy's primary category, only those it is `PLACE_CONFIDENCE` sure of) give
+  named `monument` and `castle` points (D6).
+- **Building looks** (D6): where the map says how a building looks (`LOOKS`: roof shape, roof colour and material,
+  facade material and colour) or what it is (`BUILDING_CLASSES`: a church, a mosque, a hangar, a trullo), the file also
+  has `"words": ["", word, ...]` and `"buildings": [[dlat, dlon, class, roof_shape, roof_color, roof_material,
+  facade_material, facade_color], ...]` (each building's outline's middle, a step from the one before, the rest
+  indexes into `words`, 0 for nothing said). The format stays 1: a game that doesn't read them reads the rest as
+  before. `RealRegion.add_features` puts them in `features["buildings"]` as `[x, z, class, roof_shape, roof_color,
+  roof_material, facade_material, facade_color]` (strings, "" for nothing said), and `BuildingLooks` matches each to the
+  `RealRegion.buildings` row it stands in, so a town's roofs are its own without a cell being baked again or a road
+  block's seeds moving.
 
 Where the files live:
 

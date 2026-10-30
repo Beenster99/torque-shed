@@ -90,8 +90,9 @@
   "artwork": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "history:sculpture",
+    "reach": 500,
+    "named": true
    }
   },
   "bell_tower": {
@@ -278,6 +279,13 @@
     }
    }
   },
+  "castle": {
+   "round": "D6",
+   "default": {
+    "model": "history:none",
+    "reach": 0
+   }
+  },
   "catenary_mast": {
    "round": "D2",
    "default": {
@@ -351,8 +359,76 @@
   "city_wall": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "history:wall",
+    "reach": 4000,
+    "stone": "grey",
+    "h": 8.0,
+    "thick": 2.4,
+    "tower": "round",
+    "tower_every": 55.0,
+    "floodlit": true
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "grey",
+     "h": 7.0
+    },
+    "western_europe": {
+     "stone": "grey",
+     "h": 9.0
+    },
+    "nordic": {
+     "stone": "dark",
+     "h": 6.0
+    },
+    "eastern_europe": {
+     "stone": "brick",
+     "h": 8.0,
+     "tower": "square"
+    },
+    "mediterranean": {
+     "stone": "sand",
+     "h": 10.0
+    },
+    "north_africa_middle_east": {
+     "stone": "earth",
+     "h": 9.0,
+     "tower": "square",
+     "thick": 3.0
+    },
+    "south_asia": {
+     "stone": "red",
+     "h": 9.0
+    },
+    "east_asia": {
+     "stone": "dark",
+     "h": 10.0,
+     "tower": "square",
+     "thick": 4.0,
+     "tower_every": 80.0
+    },
+    "south_east_asia": {
+     "stone": "red",
+     "h": 6.0,
+     "tower": "square"
+    },
+    "latin_america": {
+     "stone": "sand",
+     "h": 7.0
+    },
+    "sub_saharan_africa": {
+     "stone": "earth",
+     "h": 6.0,
+     "tower": "square"
+    },
+    "north_america": {
+     "stone": "grey",
+     "h": 6.0
+    },
+    "australia_nz": {
+     "stone": "sand",
+     "h": 5.0
+    }
    }
   },
   "cliff": {
@@ -670,8 +746,9 @@
   "fountain": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "history:fountain",
+    "reach": 500,
+    "named": true
    }
   },
   "funicular": {
@@ -873,8 +950,8 @@
   "information": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "history:board",
+    "reach": 300
    }
   },
   "kissing_gate": {
@@ -980,8 +1057,8 @@
   "milestone": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "history:milestone",
+    "reach": 250
    }
   },
   "military": {
@@ -1118,6 +1195,14 @@
     "speed": 20,
     "headway": 420,
     "electrified": false
+   }
+  },
+  "monument": {
+   "round": "D6",
+   "default": {
+    "model": "history:monument",
+    "reach": 900,
+    "named": true
    }
   },
   "narrow_gauge": {
@@ -1926,8 +2011,26 @@
   "sally_port": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "history:sally",
+    "reach": 600,
+    "stone": "grey",
+    "h": 8.0
+   },
+   "regions": {
+    "mediterranean": {
+     "stone": "sand"
+    },
+    "north_africa_middle_east": {
+     "stone": "earth",
+     "h": 9.0
+    },
+    "eastern_europe": {
+     "stone": "brick"
+    },
+    "east_asia": {
+     "stone": "dark",
+     "h": 10.0
+    }
    }
   },
   "salt_pond": {
@@ -2093,8 +2196,8 @@
   "viewpoint": {
    "round": "D6",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "history:viewpoint",
+    "reach": 700
    }
   },
   "vineyard": {

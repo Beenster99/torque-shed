@@ -648,5 +648,11 @@
 	"_test_skyline_models": 500,
 	"_test_skyline_lines": 100,
 	"_test_skyline_block": 400,
-	"_test_skyline_regions": 12000
+	"_test_skyline_regions": 12000,
+	"_test_history_models": 400,
+	"_test_history_walls": 2000,
+	"_test_history_points": 600,
+	"_test_history_looks": 1500,
+	"_test_history_features": 50,
+	"_test_history_regions": 12000
 }
