@@ -477,7 +477,7 @@ func _tick_camera(_delta: float) -> void:
 		world.add_child(_cam)
 	_cam.current = true
 	var b: Dictionary = FerryScenery.BOATS[_size()]
-	var k := float(b["len"]) / 58.0
+	var k := float(b["len"]) / 24.0
 	var basis := _boat.global_transform.basis
 	var fwd := -basis.z
 	var side := basis.x

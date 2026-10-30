@@ -236,8 +236,18 @@ func test_kits() -> void:
 	check(bad.is_empty() and RegionKit.regions().size() == 13, "a ferry kit for each of the 13 regions and a default (%s)" % str(bad))
 	check(FerryScenery.mesh("ramp").get_surface_count() > 0 and FerryScenery.mesh("gantry").get_surface_count() > 0
 		and FerryScenery.mesh("hut_d8d2c4").get_surface_count() > 0, "the ramp, its gantry and the office have meshes")
-	check(FerryScenery.slot_at("chain", 0) != FerryScenery.slot_at("chain", 1) and FerryScenery.slot_at("ship", 0).y == float(FerryScenery.BOATS["ship"]["deck"]),
+	check(FerryScenery.slot_at("chain", 0) != FerryScenery.slot_at("chain", 1) and is_equal_approx(FerryScenery.slot_at("ship", 0).y, float(FerryScenery.BOATS["ship"]["deck"])),
 		"a bike's slot each, on the deck")
+	var fits := true
+	for size: String in FerryScenery.BOATS:
+		var b: Dictionary = FerryScenery.BOATS[size]
+		var seen := {}
+		for slot in 4:
+			var at := FerryScenery.slot_at(size, slot)
+			seen[at] = true
+			fits = fits and absf(at.z) < float(b["len"]) * 0.5 and absf(at.x) < float(b["beam"]) * 0.5
+		fits = fits and seen.size() == 4 and float(b["len"]) <= 32.0
+	check(fits, "every boat's small (two to four cars) and takes the crew's four bikes")
 
 
 ## A block at the mainland's terminal: its ramp at the road's end out over the water, its office off the road, the

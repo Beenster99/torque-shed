@@ -4,9 +4,10 @@ extends RefCounted
 ## and at each terminal the ramp (a linkspan) where the road meets the water and the ticket office. The routes and
 ## which roads they join are FerryLinks'; the crew's own crossing is FerryCrossing's, on a boat made here (boat_mesh).
 ##
-## Three sizes of boat, by the route (FerryLinks.size_of): a chain ferry (a floating bridge, ramps at both ends, its
-## wheelhouse to one side) on the short ones, a roll-on roll-off car ferry (an open car deck, the bridge over the bow)
-## on most, and a big car ferry (decks of cabins, two funnels, an open vehicle deck aft) on the long ones. Their
+## Three sizes of boat, by the route (FerryLinks.size_of), all small (two to four cars: Simon's crew is four bikes at
+## most): a chain ferry (a floating bridge, ramps at both ends, its wheelhouse to one side) on the short ones, a
+## roll-on roll-off car ferry (an open car deck, a little bridge over the bow) on most, and an island ferry (a cabin
+## and wheelhouse forward, an open vehicle deck aft) on the long ones. Their
 ## colours are their region's (the kit library's ferry rows), with a default for anywhere a region has none.
 ##
 ## Every boat sails its route from the start, back and forth on a timetable from the route alone (its length and its
@@ -20,16 +21,16 @@ extends RefCounted
 const Clock := preload("res://scripts/scenery/rail_train.gd")
 
 ## Part of what a block lays out: bump it with the look (SceneryStreamer folds the scripts' versions into its own).
-const VERSION := 1
+const VERSION := 2
 ## How fast the scenery's boats sail (m/s) and how long each waits at either end (s).
 const SPEED := 9.0
 const DWELL := 90.0
 ## Each size's boat: its length, beam, deck height above the water (m) and where on its deck bikes stand (z from the
 ## middle, bow at -z, and how wide).
 const BOATS := {
-	"chain": {"len": 36.0, "beam": 14.0, "deck": 0.9, "slots": Vector3(-12.0, 12.0, 9.0)},
-	"roro": {"len": 58.0, "beam": 15.0, "deck": 1.6, "slots": Vector3(-14.0, 24.0, 10.0)},
-	"ship": {"len": 130.0, "beam": 24.0, "deck": 7.0, "slots": Vector3(24.0, 58.0, 16.0)},
+	"chain": {"len": 20.0, "beam": 9.0, "deck": 0.7, "slots": Vector3(-6.0, 6.0, 6.6)},
+	"roro": {"len": 24.0, "beam": 8.5, "deck": 1.0, "slots": Vector3(-4.0, 10.0, 6.6)},
+	"ship": {"len": 32.0, "beam": 10.0, "deck": 1.6, "slots": Vector3(-2.0, 14.0, 6.6)},
 }
 ## The linkspan's size (m) and how far it drops to the water over its length.
 const RAMP_LEN := 14.0
@@ -306,48 +307,45 @@ static func boat_mesh(size: String, kit: Dictionary) -> Mesh:
 	var D := float(b["deck"])
 	match size:
 		"chain":
-			_box(st, Vector3(0, (D - 1.1) * 0.5, 0), Vector3(B, D + 1.1, L - 8.0), hull)
-			_box(st, Vector3(0, D + 0.02, 0), Vector3(B - 1.0, 0.04, L - 8.0), deck)
+			_box(st, Vector3(0, (D - 0.9) * 0.5, 0), Vector3(B, D + 0.9, L - 4.0), hull)
+			_box(st, Vector3(0, D + 0.02, 0), Vector3(B - 0.8, 0.04, L - 4.0), deck)
 			for e: float in [-1.0, 1.0]:
 				# (the ramps at either end, hinged half up)
 				var r := Basis(Vector3.RIGHT, e * deg_to_rad(18.0))
-				_box(st, Vector3(0, D + 0.9, e * (L * 0.5 - 2.0)), Vector3(B - 3.0, 0.3, 4.6), deck, r)
+				_box(st, Vector3(0, D + 0.6, e * (L * 0.5 - 1.0)), Vector3(B - 2.0, 0.25, 3.0), deck, r)
 			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * (B * 0.5 - 0.15), D + 0.55, 0), Vector3(0.2, 1.1, L - 8.0), stripe)
-			_box(st, Vector3(B * 0.5 - 1.6, D + 2.6, 0), Vector3(2.6, 5.2, 4.0), upper)
-			_box(lit, Vector3(B * 0.5 - 1.6, D + 4.2, 0), Vector3(2.7, 0.9, 4.1), Color.WHITE)
-			_box(st, Vector3(B * 0.5 - 1.6, D + 5.35, 0), Vector3(3.0, 0.3, 4.6), funnel)
+				_box(st, Vector3(side * (B * 0.5 - 0.1), D + 0.45, 0), Vector3(0.15, 0.9, L - 4.0), stripe)
+			_box(st, Vector3(B * 0.5 - 0.9, D + 1.5, 0), Vector3(1.6, 3.0, 2.4), upper)
+			_box(lit, Vector3(B * 0.5 - 0.9, D + 2.4, 0), Vector3(1.7, 0.6, 2.5), Color.WHITE)
+			_box(st, Vector3(B * 0.5 - 0.9, D + 3.1, 0), Vector3(2.0, 0.2, 2.8), funnel)
 		"roro":
-			_box(st, Vector3(0, (D - 2.2) * 0.5, 4.0), Vector3(B, D + 2.2, L - 8.0), hull)
-			_wedge(st, Vector3(0, (D - 2.2) * 0.5, -L * 0.5 + 4.0), Vector3(B, D + 2.2, 8.0), hull)
-			_box(st, Vector3(0, D - 0.4, 4.0), Vector3(B, 0.25, L - 8.0), stripe)
-			_box(st, Vector3(0, D + 0.02, 6.0), Vector3(B - 1.2, 0.04, L - 14.0), deck)
+			_box(st, Vector3(0, (D - 1.5) * 0.5, 2.0), Vector3(B, D + 1.5, L - 4.0), hull)
+			_wedge(st, Vector3(0, (D - 1.5) * 0.5, -L * 0.5 + 2.0), Vector3(B, D + 1.5, 4.0), hull)
+			_box(st, Vector3(0, D - 0.3, 2.0), Vector3(B + 0.02, 0.2, L - 4.0), stripe)
+			_box(st, Vector3(0, D + 0.02, 3.0), Vector3(B - 0.8, 0.04, L - 8.0), deck)
 			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * (B * 0.5 - 0.25), D + 1.3, 10.0), Vector3(0.4, 2.6, L - 24.0), hull)
-			# (the bridge over the bow, its windows; the funnel and the mast)
-			_box(st, Vector3(0, D + 3.4, -L * 0.5 + 9.0), Vector3(B - 1.0, 6.8, 9.0), upper)
-			_box(lit, Vector3(0, D + 5.4, -L * 0.5 + 9.0), Vector3(B - 0.9, 1.0, 9.1), Color.WHITE)
-			_box(st, Vector3(0, D + 2.2, -L * 0.5 + 9.0), Vector3(B - 0.9, 0.5, 9.1), stripe)
-			_box(st, Vector3(B * 0.5 - 3.0, D + 8.3, -L * 0.5 + 12.0), Vector3(2.0, 3.2, 2.6), funnel)
-			_box(st, Vector3(0, D + 9.5, -L * 0.5 + 7.0), Vector3(0.25, 5.4, 0.25), upper)
-			_box(lit, Vector3(0, D + 12.3, -L * 0.5 + 7.0), Vector3(0.5, 0.4, 0.5), Color.WHITE)
+				_box(st, Vector3(side * (B * 0.5 - 0.15), D + 0.6, 4.0), Vector3(0.3, 1.2, L - 10.0), hull)
+			# (the little bridge over the bow, its windows; the funnel and the mast)
+			_box(st, Vector3(0, D + 1.3, -L * 0.5 + 4.0), Vector3(B - 1.0, 2.6, 3.0), upper)
+			_box(lit, Vector3(0, D + 1.9, -L * 0.5 + 4.0), Vector3(B - 0.9, 0.7, 3.1), Color.WHITE)
+			_box(st, Vector3(B * 0.5 - 1.5, D + 3.3, -L * 0.5 + 4.5), Vector3(1.0, 1.4, 1.2), funnel)
+			_box(st, Vector3(0, D + 3.8, -L * 0.5 + 3.5), Vector3(0.15, 2.4, 0.15), upper)
+			_box(lit, Vector3(0, D + 5.1, -L * 0.5 + 3.5), Vector3(0.35, 0.3, 0.35), Color.WHITE)
 		_:
-			_box(st, Vector3(0, (D - 5.0) * 0.5, 8.0), Vector3(B, D + 5.0, L - 16.0), hull)
-			_wedge(st, Vector3(0, (D - 5.0) * 0.5, -L * 0.5 + 8.0), Vector3(B, D + 5.0, 16.0), hull)
-			_box(st, Vector3(0, D - 1.0, 8.0), Vector3(B + 0.05, 0.6, L - 16.0), stripe)
-			_box(st, Vector3(0, D + 0.02, 41.0), Vector3(B - 2.0, 0.04, 36.0), deck)
+			_box(st, Vector3(0, (D - 2.0) * 0.5, 3.0), Vector3(B, D + 2.0, L - 6.0), hull)
+			_wedge(st, Vector3(0, (D - 2.0) * 0.5, -L * 0.5 + 3.0), Vector3(B, D + 2.0, 6.0), hull)
+			_box(st, Vector3(0, D - 0.5, 3.0), Vector3(B + 0.05, 0.35, L - 6.0), stripe)
+			_box(st, Vector3(0, D + 0.02, 6.0), Vector3(B - 1.2, 0.04, 18.0), deck)
 			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * (B * 0.5 - 0.3), D + 1.0, 41.0), Vector3(0.5, 2.0, 36.0), hull)
-			# (the cabins, deck on deck, their windows in bands; two funnels)
-			_box(st, Vector3(0, D + 6.0, -18.0), Vector3(B - 2.0, 12.0, 74.0), upper)
-			for k in 3:
-				_box(lit, Vector3(0, D + 1.8 + k * 3.6, -18.0), Vector3(B - 1.9, 1.0, 74.1), Color.WHITE)
-			_box(st, Vector3(0, D + 12.4, -40.0), Vector3(B - 6.0, 2.8, 14.0), upper)
-			_box(lit, Vector3(0, D + 12.6, -40.0), Vector3(B - 5.9, 1.0, 14.1), Color.WHITE)
-			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * 4.5, D + 15.0, 4.0), Vector3(3.2, 6.0, 5.0), funnel)
-			_box(st, Vector3(0, D + 19.0, -36.0), Vector3(0.3, 7.0, 0.3), upper)
-			_box(lit, Vector3(0, D + 22.6, -36.0), Vector3(0.6, 0.5, 0.6), Color.WHITE)
+				_box(st, Vector3(side * (B * 0.5 - 0.2), D + 0.6, 6.0), Vector3(0.4, 1.2, 18.0), hull)
+			# (the cabin forward, its windows in a band, the wheelhouse on top; one funnel)
+			_box(st, Vector3(0, D + 1.5, -8.0), Vector3(B - 1.2, 3.0, 12.0), upper)
+			_box(lit, Vector3(0, D + 1.8, -8.0), Vector3(B - 1.1, 0.8, 12.1), Color.WHITE)
+			_box(st, Vector3(0, D + 4.0, -10.0), Vector3(B - 4.0, 2.0, 4.0), upper)
+			_box(lit, Vector3(0, D + 4.2, -10.0), Vector3(B - 3.9, 0.7, 4.1), Color.WHITE)
+			_box(st, Vector3(0, D + 4.0, -5.0), Vector3(1.4, 2.0, 1.8), funnel)
+			_box(st, Vector3(0, D + 6.0, -11.0), Vector3(0.2, 3.0, 0.2), upper)
+			_box(lit, Vector3(0, D + 7.6, -11.0), Vector3(0.4, 0.35, 0.4), Color.WHITE)
 	var out := _finish(st, lit)
 	_lock.lock()
 	_meshes[key] = out
