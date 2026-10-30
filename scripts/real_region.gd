@@ -75,8 +75,9 @@ var streams: Array = []
 ## Its things worth stopping for (tools/feature_bake.py: interfaces/scenery.md), in the region's frame: {points: [[kind,
 ## x, z, height, elevation, heading, name, id], ...], lines: [[kind, PackedVector2Array, height, width, flags, name,
 ## id], ...], areas: [[kind, PackedVector2Array (the outer ring), height, elevation, name, id], ...]}, kind and name as
-## Strings, the numbers null where the map says nothing. A bundled region's from its features.json, an area's from its
-## cells' own files (CellStore.features). Empty where none are baked.
+## Strings, the numbers null where the map says nothing; where the map says how buildings look, "buildings" too
+## (add_features, BuildingLooks). A bundled region's from its features.json, an area's from its cells' own files
+## (CellStore.features). Empty where none are baked.
 var features := {"points": [], "lines": [], "areas": []}
 ## The hash of the features read ("" for none): part of the ride hash (AdventureCrew.ride_hash), never of `hash` (a road
 ## block's seeds), so scenery never moves a road.
@@ -628,6 +629,25 @@ static func add_features(into: Dictionary, rows: Dictionary, frame: Vector2) -> 
 				(into["lines"] as Array).append([str(kinds[int(row[0])]), pts, row[1], row[2], int(row[3]), nm, row[5]])
 			else:
 				(into["areas"] as Array).append([str(kinds[int(row[0])]), pts, row[1], row[2], nm, row[4]])
+	# What the map says its buildings look like (D6: scripts/building_looks.gd matches them to `buildings`):
+	# [x, z, class, roof_shape, roof_color, roof_material, facade_material, facade_color], "" where it says nothing.
+	var words: Array = rows.get("words", [""])
+	var looks = rows.get("buildings", [])
+	if looks is Array and not (looks as Array).is_empty():
+		if not into.has("buildings"):
+			into["buildings"] = []
+		var lat := 0
+		var lon := 0
+		for row in looks:
+			if not row is Array or (row as Array).size() < 8:
+				continue
+			lat += int(row[0])
+			lon += int(row[1])
+			var p := to_frame(frame, lat * 1e-5, lon * 1e-5)
+			var said := [p.x, p.y]
+			for k in range(2, 8):
+				said.append(str(words[int(row[k])]) if int(row[k]) < words.size() else "")
+			(into["buildings"] as Array).append(said)
 
 
 ## The trees of `cells` (their own files, CellStore.trees, fetched if this game hasn't the ones the world's index names)

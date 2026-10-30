@@ -653,5 +653,11 @@
 	"_test_fields_lay_out": 1500,
 	"_test_fields_paddies": 500,
 	"_test_fields_blocks_meet": 500,
-	"_test_fields_regions": 22000
+	"_test_fields_regions": 22000,
+	"_test_history_models": 400,
+	"_test_history_walls": 2000,
+	"_test_history_points": 600,
+	"_test_history_looks": 1500,
+	"_test_history_features": 50,
+	"_test_history_regions": 12000
 }

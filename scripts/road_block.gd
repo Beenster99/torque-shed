@@ -700,14 +700,16 @@ func _lay_out() -> void:
 			arrays["faces"]["tarmac"].append_array(marks["faces"])
 		# (place names and the like, stood up as text by the streamer)
 		arrays["labels"] = marks.get("labels", [])
-	# In the place's region kit, else as the single-line ride's plain buildings.
+	# In the place's region kit (with what the map says each looks like: BuildingLooks), else as the single-line ride's
+	# plain buildings.
 	for row: Array in buildings:
 		var at := Vector3(float(row[0]), float(row[row.size() - 1]), float(row[1])) - o
 		var kind := RealPack.BUILDING_KINDS[clampi(int(row[6]), 0, RealPack.BUILDING_KINDS.size() - 1)]
 		if kit.is_empty():
 			AdventureProps.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind)
 		else:
-			RegionBuildings.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind, kit)
+			RegionBuildings.real_building(houses, at, float(row[2]), float(row[3]), float(row[4]), float(row[5]), kind, kit,
+				BuildingLooks.of(net.region, row))
 	arrays["buildings"] = houses
 	for surf in arrays["deck"]:
 		_finish_grid(arrays["deck"][surf])

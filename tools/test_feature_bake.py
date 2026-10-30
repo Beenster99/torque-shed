@@ -16,6 +16,8 @@ INFRA = ("base", "infrastructure", "class")
 LAND = ("base", "land", "class")
 RAIL = ("transportation", "segment", "class")
 USE = ("base", "land_use", "class")
+PLACE = ("places", "place", "taxonomy")
+BLD = fb.BUILDINGS
 
 
 def wkb_point(lon, lat):
@@ -205,6 +207,49 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(len(got["points"]), 2)
         self.assertEqual(got["cells"], ["%d_%d" % (ROW, COL), "x"])
         self.assertEqual(got["names"], ["", "A"])
+
+
+    def square(self, lon, lat, d=0.0001):
+        return wkb_polygon([(lon, lat), (lon + d, lat), (lon + d, lat + d), (lon, lat + d), (lon, lat)])
+
+    def test_a_building_keeps_its_mapped_look(self):
+        got = self.bake([(BLD, {"geometry": self.square(W + 0.1, S + 0.1), "class": "house", "roof_shape": "Gabled",
+                                "roof_color": "#778899", "roof_material": "slate"}),
+                         (BLD, {"geometry": self.square(W + 0.1002, S + 0.1), "class": "church"})])
+        rows = fb.undelta_rows(got["buildings"])
+        self.assertEqual(len(rows), 2)
+        first = [got["words"][i] for i in rows[0][2:]]
+        self.assertEqual(first, ["", "gabled", "#778899", "slate", "", ""])   # (a house is no class of its own)
+        self.assertEqual(got["words"][rows[1][2]], "church")
+        self.assertAlmostEqual(rows[0][0] / 1e5, S + 0.10005, places=4)
+        self.assertAlmostEqual(rows[0][1] / 1e5, W + 0.10005, places=4)
+
+    def test_a_building_the_map_says_nothing_of_is_left_out(self):
+        got = self.bake([(BLD, {"geometry": self.square(W + 0.1, S + 0.1), "class": "house"})])
+        self.assertNotIn("buildings", got)
+        self.assertEqual(got["points"], [])
+
+    def test_a_building_is_in_the_cell_its_middle_is_in(self):
+        got = self.bake([(BLD, {"geometry": self.square(W - 0.00005, S + 0.1), "class": "chapel"})])
+        self.assertNotIn("buildings", got)
+
+    def test_a_monument_place_is_a_named_point(self):
+        got = self.bake([(PLACE, {"id": "p1", "geometry": wkb_point(W + 0.2, S + 0.2), "confidence": 0.9,
+                                  "taxonomy": {"primary": "castle"}, "names": {"primary": "Conwy Castle"}}),
+                         (PLACE, {"id": "p2", "geometry": wkb_point(W + 0.2, S + 0.21), "confidence": 0.3,
+                                  "taxonomy": {"primary": "monument"}, "names": {"primary": "Unsure"}}),
+                         (PLACE, {"id": "p3", "geometry": wkb_point(W + 0.2, S + 0.22), "confidence": 0.9,
+                                  "taxonomy": {"primary": "historic_site"}, "names": {"primary": "Holiday let"}})])
+        self.assertEqual(self.kinds(got, "points"), ["castle"])
+        self.assertEqual(got["names"][got["points"][0][6]], "Conwy Castle")
+
+    def test_merge_keeps_the_building_looks(self):
+        a = self.bake([(BLD, {"geometry": self.square(W + 0.1, S + 0.1), "roof_shape": "flat"})])
+        b = self.bake([(BLD, {"geometry": self.square(W + 0.2, S + 0.1), "roof_color": "#FF0000"})])
+        got = fb.merge([a, b])
+        rows = fb.undelta_rows(got["buildings"])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(sorted(got["words"]), ["", "#FF0000", "flat"])
 
 
 if __name__ == "__main__":

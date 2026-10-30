@@ -15,7 +15,15 @@ A cell's features (FORMAT 1):
      "kinds": [kind, ...], "names": ["", name, ...],
      "points": [[kind, lat, lon, height, elevation, heading, name, id], ...],
      "lines":  [[kind, height, width, flags, name, id, lat, lon, dlat, dlon, ...], ...],
-     "areas":  [[kind, height, elevation, name, id, lat, lon, dlat, dlon, ...], ...]}
+     "areas":  [[kind, height, elevation, name, id, lat, lon, dlat, dlon, ...], ...],
+     "words": ["", word, ...], "buildings": [[dlat, dlon, class, roof_shape, roof_color, roof_material,
+                                              facade_material, facade_color], ...]}
+
+"words" and "buildings" are there only where a building's look is mapped (a game that doesn't read them reads the rest
+as before): each building the map says something about (LOOKS, BUILDING_CLASSES), at its outline's middle, each of
+lat and lon the step from the building before (the first from 0), the rest indexes into "words" (0: the map says
+nothing). The game matches them to the cell's buildings.json by where they stand (scripts/building_looks.gd), so a
+town's roofs are its own without a cell being baked again.
 
 kind is an index into "kinds" (the names CLASSES gives, the same every cell bakes them), name an index into "names" (0
 none). lat and lon are in 1e-5 degrees, each point of a line or an area after its first the step from the one before
@@ -160,7 +168,24 @@ CLASSES = {
         # D8: borders between countries and between regions.
         "country": ("country_border", False), "region": ("region_border", False),
     },
+    ("places", "place", "taxonomy"): {
+        # D6 history: the named places worth a board (their taxonomy's primary category; only those the map is fairly
+        # sure of, PLACE_CONFIDENCE). "historic_site" is left out: it names holiday lets as often as ruins.
+        "monument": ("monument", False), "sculpture_statue": ("monument", False), "memorial_site": ("monument", False),
+        "castle": ("castle", False), "palace": ("castle", False), "fort": ("castle", False),
+    },
 }
+# A place (Overture's places theme) is kept only when the map is at least this sure of it.
+PLACE_CONFIDENCE = 0.6
+# D6: what the map says a building looks like, beside the cell's own buildings.json (which the game matches them to
+# by where they stand: BuildingLooks). A building is kept when it has any of LOOKS or a class in BUILDING_CLASSES (the
+# classes the game draws as their own: a church, a hangar, a trullo), as its middle and the words for each.
+LOOKS = ("roof_shape", "roof_color", "roof_material", "facade_material", "facade_color")
+BUILDING_CLASSES = ("cathedral", "chapel", "church", "mosque", "temple", "synagogue", "shrine", "monastery", "religious",
+                    "presbytery", "hangar", "silo", "stadium", "grandstand", "greenhouse", "glasshouse", "bunker",
+                    "train_station", "transportation", "trullo", "ger", "stilt_house", "beach_hut", "boathouse",
+                    "pavilion", "castle", "fort", "lighthouse", "windmill", "kiosk", "cabin", "hut",
+                    "transformer_tower", "storage_tank", "slurry_tank", "grain_silo", "military", "guardhouse")
 # Kinds Overture carries only in a row's OpenStreetMap tags: {source key: {class: [(tag, value, kind), ...]}}, the
 # first that matches (a class here and not in CLASSES is fetched only for these). Its name is the tag NAME_TAGS says
 # where the row's own is the waterway's.
@@ -191,7 +216,8 @@ def classes_hash():
     tagged = {"%s/%s/%s" % key: {c: [list(t) for t in v] for c, v in sorted(table.items())}
               for key, table in sorted(TAGGED.items())}
     text = json.dumps({"format": FORMAT, "classes": rows, "tagged": tagged, "name_tags": NAME_TAGS, "subtypes": SEGMENT_SUBTYPES, "generators": GENERATORS,
-                       "tolerance": TOLERANCE, "near": NEAR_M},
+                       "tolerance": TOLERANCE, "near": NEAR_M, "place_confidence": PLACE_CONFIDENCE,
+                       "looks": LOOKS, "building_classes": BUILDING_CLASSES},
                       sort_keys=True)
     return hashlib.sha1(text.encode()).hexdigest()[:12]
 
@@ -425,7 +451,9 @@ def kind_of(key, row):
             return None, False
         if row.get("subtype") == "water":
             return table["ferry"]
-    cls = str(row.get(key[2]))
+    cls = place_class(row) if key[0] == "places" else str(row.get(key[2]))
+    if key[0] == "places" and float(row.get("confidence") or 0.0) < PLACE_CONFIDENCE:
+        return None, False
     if cls in TAGGED.get(key, {}):
         tags = dict(row.get("source_tags") or [])
         for tag, value, kind in TAGGED[key][cls]:
@@ -445,6 +473,12 @@ def kind_of(key, row):
     return kind, near
 
 
+def place_class(row):
+    """A place's class: its taxonomy's primary category ("" for none)."""
+    tax = row.get("taxonomy") or {}
+    return str(tax.get("primary") or "") if isinstance(tax, dict) else ""
+
+
 def english_or_primary(names):
     """A feature's name: English where there's one, else its own (any script: the game's signs can print it)."""
     if not names:
@@ -457,7 +491,8 @@ def english_or_primary(names):
 
 # ---------------------------------------------------------------------------- fetching
 
-COLUMNS = ["id", "geometry", "subtype", "class", "names", "source_tags", "height", "elevation", "rail_flags", "bbox"]
+COLUMNS = ["id", "geometry", "subtype", "class", "names", "source_tags", "height", "elevation", "rail_flags", "bbox",
+           "taxonomy", "confidence"]
 
 
 def fetch(box, release, bucket=None, filesystem=None, log=print):
@@ -477,13 +512,38 @@ def fetch(box, release, bucket=None, filesystem=None, log=print):
              & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south))
         if kind == "segment":
             f = f & pc.field("subtype").isin(list(SEGMENT_SUBTYPES))
+        elif theme == "places":
+            f = f & pc.field("taxonomy", "primary").isin(sorted(CLASSES[key])) & (pc.field("confidence") >= PLACE_CONFIDENCE)
         else:
             f = f & pc.field(column).isin(sorted(set(CLASSES[key]) | set(TAGGED.get(key, {}))))
         cols = [c for c in COLUMNS if c in d.schema.names]
         rows = d.to_table(columns=cols, filter=f).to_pylist()
         log("features: %s/%s %d rows" % (theme, kind, len(rows)))
         out += [(key, r) for r in rows if r.get("geometry")]
+    out += fetch_buildings(box, release, bucket, s3, log)
     return out
+
+
+BUILDINGS = ("buildings", "building", "class")
+
+
+def fetch_buildings(box, release, bucket=None, filesystem=None, log=print):
+    """The buildings touching box that the map says something about (LOOKS, BUILDING_CLASSES): [(BUILDINGS, row)]."""
+    import pyarrow.compute as pc
+    import pyarrow.dataset as ds
+    import route_bake as rb
+    south, west, north, east = box
+    d = ds.dataset("%s/release/%s/theme=buildings/type=building" % (bucket or rb.OVERTURE_BUCKET, release),
+                   filesystem=filesystem, format="parquet")
+    f = ((pc.field("bbox", "xmin") < east) & (pc.field("bbox", "xmax") > west)
+         & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south))
+    said = pc.field("class").isin(list(BUILDING_CLASSES))
+    for col in LOOKS:
+        said = said | pc.field(col).is_valid()
+    cols = [c for c in ["geometry", "class"] + list(LOOKS) if c in d.schema.names]
+    rows = d.to_table(columns=cols, filter=f & said).to_pylist()
+    log("features: buildings/building %d rows" % len(rows))
+    return [(BUILDINGS, r) for r in rows if r.get("geometry")]
 
 
 class NearGrid:
@@ -548,7 +608,25 @@ def cell_features(rows, grid, row, col, release=""):
     def near(pts):
         return grid is not None and any(grid.near(lon, lat) for lon, lat in pts)
 
+    looks = []
+    words = [""]
+    word_ids = {"": 0}
+
+    def word(v):
+        if v is None or v == "":
+            return 0
+        v = str(v)
+        if v not in word_ids:
+            word_ids[v] = len(words)
+            words.append(v)
+        return word_ids[v]
+
     for key, r in rows:
+        if key == BUILDINGS:
+            got = building_look(r, box)
+            if got is not None:
+                looks.append(got)
+            continue
         kind, only_near = kind_of(key, r)
         if kind is None:
             continue
@@ -605,8 +683,82 @@ def cell_features(rows, grid, row, col, release=""):
     for rows_, at in ((points, 6), (lines, 4), (areas, 3)):
         for row_ in rows_:
             row_[at] = order.get(names[row_[at]], 0)
-    return {"format": FORMAT, "cell": "%d_%d" % (row, col), "release": release, "classes": classes_hash(),
-            "kinds": KINDS, "names": new_names, "points": points, "lines": lines, "areas": areas}
+    out = {"format": FORMAT, "cell": "%d_%d" % (row, col), "release": release, "classes": classes_hash(),
+           "kinds": KINDS, "names": new_names, "points": points, "lines": lines, "areas": areas}
+    if looks:
+        looks.sort()
+        for b in looks:
+            b[2:] = [word(v) for v in b[2:]]
+        out["words"] = words
+        out["buildings"] = delta_rows(looks)
+    return out
+
+
+def building_look(r, box):
+    """What the map says building row `r` looks like, if it stands in `box`: [lat, lon (1e-5 degrees, its outline's
+    middle), class, roof_shape, roof_color, roof_material, facade_material, facade_color] (the words as the map has
+    them, None where it says nothing; a class only when it's one of BUILDING_CLASSES), else None."""
+    try:
+        pts, lns, rings = parse_any(r["geometry"])
+    except (ValueError, struct.error):
+        return None
+    if not rings:
+        return None
+    ring = max(rings, key=lambda q: abs(_ring_area(q)))
+    lon, lat = _ring_middle(ring)
+    if not inside(lon, lat, box):
+        return None
+    cls = r.get("class") if r.get("class") in BUILDING_CLASSES else None
+    said = [cls] + [_look_word(c, r.get(c)) for c in LOOKS]
+    if all(v is None for v in said):
+        return None
+    return [round(lat * SCALE), round(lon * SCALE)] + said
+
+
+def _look_word(col, v):
+    if v is None or v == "":
+        return None
+    v = str(v).strip()
+    return v.upper() if col.endswith("_color") and v.startswith("#") else v.lower()
+
+
+def _ring_area(ring):
+    return sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(ring, ring[1:] + ring[:1])) * 0.5
+
+
+def _ring_middle(ring):
+    """A ring's centroid (lon, lat), or its points' mean where it has no area."""
+    a = _ring_area(ring)
+    if abs(a) < 1e-14:
+        return (sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring))
+    x0, y0 = ring[0]
+    cx = cy = 0.0
+    for p, q in zip(ring, ring[1:] + ring[:1]):
+        cr = (p[0] - x0) * (q[1] - y0) - (q[0] - x0) * (p[1] - y0)
+        cx += (p[0] + q[0] - 2 * x0) * cr
+        cy += (p[1] + q[1] - 2 * y0) * cr
+    return (x0 + cx / (6.0 * a), y0 + cy / (6.0 * a))
+
+
+def delta_rows(looks):
+    """Building looks [[lat, lon, ...], ...] (sorted) with each lat and lon after the first the step from the one
+    before."""
+    out = []
+    last = (0, 0)
+    for b in looks:
+        out.append([b[0] - last[0], b[1] - last[1]] + b[2:])
+        last = (b[0], b[1])
+    return out
+
+
+def undelta_rows(rows):
+    out = []
+    lat = lon = 0
+    for b in rows:
+        lat += b[0]
+        lon += b[1]
+        out.append([lat, lon] + list(b[2:]))
+    return out
 
 
 def cell_features_of(fetched, row, col, release=""):
@@ -621,6 +773,8 @@ def counts(got):
         for row in got[part]:
             k = got["kinds"][row[0]]
             out[k] = out.get(k, 0) + 1
+    if got.get("buildings"):
+        out["building looks"] = len(got["buildings"])
     return dict(sorted(out.items()))
 
 
@@ -683,7 +837,8 @@ def main(argv=None):
 
 def merge(cells, box=None):
     """Several cells' features as one (a bundled region's), only those touching `box` (south, west, north, east) if
-    given: {"format", "release", "classes", "cells": [ROW_COL, ...], "kinds", "names", "points", "lines", "areas"}."""
+    given: {"format", "release", "classes", "cells": [ROW_COL, ...], "kinds", "names", "points", "lines", "areas",
+    and "words" and "buildings" where any building's look is mapped}."""
     names = [""]
     ids = {"": 0}
     out = {"format": FORMAT, "release": cells[0]["release"] if cells else "", "classes": classes_hash(), "cells": [],
@@ -702,6 +857,26 @@ def merge(cells, box=None):
                 row[0] = KINDS.index(got["kinds"][row[0]])
                 row[at] = ids[n]
                 out[part].append(row)
+    # The buildings' looks, their words in one list.
+    words = [""]
+    wids = {"": 0}
+    looks = []
+    for got in cells:
+        for b in undelta_rows(got.get("buildings", [])):
+            if box is not None and not (box[0] * SCALE <= b[0] <= box[2] * SCALE and box[1] * SCALE <= b[1] <= box[3] * SCALE):
+                continue
+            row = b[:2]
+            for i in b[2:]:
+                w = got["words"][i]
+                if w not in wids:
+                    wids[w] = len(words)
+                    words.append(w)
+                row.append(wids[w])
+            looks.append(row)
+    if looks:
+        looks.sort()
+        out["words"] = words
+        out["buildings"] = delta_rows(looks)
     return out
 
 
