@@ -17,7 +17,11 @@ const LOD2_AT := 120.0
 ## The reference top end's spacing between bores (m): a 700 cc's, as BikeModel lays it out.
 const TOP_END_SPACING := 0.12
 
+## Whether bikes in the new look are drawn with these (see BikeModel._blender_on): the tests turn
+## it off to check the new look's bake on the code-built shapes alone.
+static var on := true
 static var _loaded := {}    # path -> {"lods": [Mesh x3], "mounts": {name: Transform3D}}, or {} when there's no glb
+static var _split := {}     # [path, mirrored] -> its lod0 a surface at a time (see surfaces)
 
 
 ## Where the glb for a part of `kind` lives. A top end (kind "head") depends on the engine's
@@ -153,6 +157,55 @@ static func instance(path: String, xform: Transform3D) -> Node3D:
 	return root
 
 
+## A part's lod0 a surface at a time, [[Mesh, Material], ...] with each surface's own material, so
+## BikeModel can put each on in the material its tag takes on that bike; `mirrored`, turned inside
+## out across X (for a part on the left: see placed). Made once; empty when there's no glb.
+static func surfaces(path: String, mirrored := false) -> Array:
+	var key := [path, mirrored]
+	if not _split.has(key):
+		var p := part(path)
+		_split[key] = [] if p.is_empty() else split(p["lods"][0], mirrored)
+	return _split[key]
+
+
+## `mesh` a surface at a time ([[Mesh, Material], ...]), `mirrored` across X with its triangles
+## turned the other way round, so they still face out.
+static func split(mesh: Mesh, mirrored := false) -> Array:
+	var out := []
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		if mirrored:
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			for i in v.size():
+				v[i].x = -v[i].x
+			for i in n.size():
+				n[i].x = -n[i].x
+			var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			for i in range(0, idx.size() - 2, 3):
+				var t := idx[i + 1]
+				idx[i + 1] = idx[i + 2]
+				idx[i + 2] = t
+			arrays[Mesh.ARRAY_VERTEX] = v
+			arrays[Mesh.ARRAY_NORMAL] = n
+			arrays[Mesh.ARRAY_INDEX] = idx
+			arrays[Mesh.ARRAY_TANGENT] = null
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		am.surface_set_material(0, mesh.surface_get_material(s))
+		out.append([am, mesh.surface_get_material(s)])
+	return out
+
+
+## A part's surfaces (see surfaces) and the transform to draw them with for it to sit at `xform`:
+## [surfaces, Transform3D]. A mirroring `xform` (a can on the left) gets the mirrored surfaces and
+## a transform that doesn't mirror, as a bike's merged meshes keep every triangle the way it faces.
+static func placed(path: String, xform: Transform3D) -> Array:
+	if xform.basis.determinant() >= 0.0:
+		return [surfaces(path), xform]
+	return [surfaces(path, true), Transform3D(xform.basis * Basis.from_scale(Vector3(-1.0, 1.0, 1.0)), xform.origin)]
+
+
 ## Every vertex of a part's `lod` mesh, in the space `xform` puts it in.
 static func points(path: String, xform: Transform3D, lod := 0) -> PackedVector3Array:
 	var out := PackedVector3Array()
@@ -211,9 +264,9 @@ static func can_outlet(path: String, xform: Transform3D) -> Vector3:
 ## curve: copies of a Blender pipe section (`path`, drawn at radius 1 running along +Z) laid end to
 ## end, each stretched a little so a whole number of them fill the curve, and every ring bent onto
 ## it, turned with the curve's own frames (so the pipe doesn't twist round the bends) and scaled by
-## `radius` (one number, or one per route point as _bend takes). One ArrayMesh per LOD; [] when
-## there's no such glb.
-static func sweep_section(path: String, route: Array, radius, per_seg := 6) -> Array:
+## `radius` (one number, or one per route point as _bend takes). One ArrayMesh per LOD, for the
+## first `lods` of them; [] when there's no such glb.
+static func sweep_section(path: String, route: Array, radius, per_seg := 6, lods := 3) -> Array:
 	var p := part(path)
 	var pts := ShapeKit.smooth(route, per_seg)
 	if p.is_empty() or pts.size() < 2:
@@ -242,7 +295,7 @@ static func sweep_section(path: String, route: Array, radius, per_seg := 6) -> A
 		sides.append(side)
 	var total: float = arc[count - 1]
 	var out := []
-	for lod in 3:
+	for lod in lods:
 		var mesh: Mesh = p["lods"][lod]
 		var am := ArrayMesh.new()
 		for s in mesh.get_surface_count():

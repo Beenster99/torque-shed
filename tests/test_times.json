@@ -286,6 +286,7 @@
 	"_test_blender_parts_cans": 7000,
 	"_test_blender_parts_pipes": 100,
 	"_test_blender_parts_fallback": 60,
+	"_test_blender_parts_new_look": 8000,
 	"_test_lighting_clouds": 102,
 	"_test_lighting_lamps_and_gi": 1,
 	"_test_lighting_profile": 14,

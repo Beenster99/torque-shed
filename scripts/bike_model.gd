@@ -219,6 +219,9 @@ var _bends := {}
 ## Where the exhaust headers leave the head, for the new look's heat colouring (see
 ## BikeLookNew.bake).
 var _exhaust_ports: Array = []
+## The new look's Blender-made shapes (see _blender_pieces): slot -> {surface tag: the material
+## that kind of surface takes on this bike's part}, filled as they're met.
+var _blender_mats := {}
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -239,6 +242,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_slot_shapes.clear()
 	_bends.clear()
 	_exhaust_ports.clear()
+	_blender_mats.clear()
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -280,6 +284,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_saddle()
 	_draw_engine()
 	_draw_head()
+	if _blender_on():
+		_blender_top_end()
 	_draw_spark_plugs()
 	_draw_fuel()
 	_draw_air_filter()
@@ -1702,6 +1708,9 @@ func _draw_engine() -> void:
 		secs.append({"c": e + Vector3(0.0, 0.0, lerpf(-0.17, 0.17, f) * s), "w": half * g, "up": 0.13 * s * g, "down": 0.13 * s * g, "n": 3.6})
 	var crank := _shell(secs, case_mat)
 	crank.name = "Crankcase"
+	# (The barrels, which come with the head's Blender shape, in the engine's own finish.)
+	_blender_mats["engine"] = {"": case_mat, "cast_alloy": case_mat}
+	_blender_mats["head"] = {"cast_alloy__engine": mat}
 	var fins := _build.layout in ["boxer", "twin", "2stroke"]
 	for c in _cyls:
 		_tube(c["base"] - c["up"] * 0.1, c["base"] + c["up"] * 0.09, _bore_r, mat)
@@ -1775,6 +1784,9 @@ func _draw_head() -> void:
 	# Rocker and cam covers: crinkle black, or polished when they're bright.
 	var cover_mat := _tex(_mat(col, 0.85, 0.3), "crinkle") if col.get_luminance() < 0.3 else _mat(col, 0.95, 0.18)
 	var bolt := _mat(Color(0.62, 0.63, 0.66), 1.0, 0.3)
+	var head_mats: Dictionary = _blender_mats.get("head", {})
+	head_mats.merge({"": mat, "cast_alloy": mat, "paint": cover_mat, "raw_steel": bolt})
+	_blender_mats["head"] = head_mats
 	var valves := int(_part().get("valves", 4))
 	if valves <= 1 and _build.layout != "2stroke":
 		# A one-valve flathead: the valve sits down beside the bore, so the head is just a flat
@@ -2169,8 +2181,12 @@ func _draw_exhaust(zr: float) -> void:
 			port = c["base"] + c["up"] * 0.1 + Vector3(0.07, 0.0, 0.0)
 		ports.append(port)
 		# The header flange bolted to the port.
-		var flange := _mesh_instance(_cylinder(0.03, 0.01), _mat(Color(0.55, 0.56, 0.58), 1.0, 0.3), port)
-		flange.basis = _basis_up(Vector3(0.0, -0.05, -0.05).normalized() if not (_build.layout == "vtwin" and i == 1) else Vector3.RIGHT)
+		var out := Vector3(0.0, -0.05, -0.05).normalized() if not (_build.layout == "vtwin" and i == 1) else Vector3.RIGHT
+		var steel := _mat(Color(0.55, 0.56, 0.58), 1.0, 0.3)
+		if not _blender_on() or _blender_pieces(BlenderParts.ROOT + "exhaust/fitting/flange.glb",
+				Transform3D(_basis_up(out), port - out * 0.005), {"raw_steel": steel}).is_empty():
+			var flange := _mesh_instance(_cylinder(0.03, 0.01), steel, port)
+			flange.basis = _basis_up(out)
 	_exhaust_ports = ports.duplicate()
 	var e := _engine_c
 	var s := _eng_s
@@ -2263,6 +2279,12 @@ func _draw_exhaust(zr: float) -> void:
 func _can(a: Vector3, b: Vector3, shape: String, mat: Material, r: float) -> Vector3:
 	var dir := (b - a).normalized()
 	var dark := _mat(Color(0.05, 0.05, 0.05), 0.4, 0.5)
+	if _blender_on():
+		# The new look's Blender-made can, its body in the can's own finish.
+		var path := BlenderParts.can_path(shape)
+		var xform := BlenderParts.can_xform(a, b, r, shape)
+		if not _blender_pieces(path, xform, {"chrome": mat, "black_metal": dark, "brushed_steel": _mat(Color(0.8, 0.81, 0.83), 1.0, 0.2)}).is_empty():
+			return BlenderParts.can_outlet(path, xform)
 	match shape:
 		"open":
 			_bend([a, b], 0.028, mat)
@@ -8371,6 +8393,125 @@ static func _rust_texture() -> NoiseTexture2D:
 	return _rust_albedo
 
 
+# ---------------------------------------------------------------------------- Blender-made parts (new look)
+
+## Whether this bike's parts are drawn in their Blender-made shapes where they have them: in
+## the new look (and while BlenderParts.on, which the tests turn off to see the rest alone).
+func _blender_on() -> bool:
+	return BlenderParts.on and BikeLook.is_new(self)
+
+
+## New look: the engine's crankcase and its top end (the barrels and the head) in their
+## Blender-made shapes (see BlenderParts), in place of the ones _draw_engine and _draw_head built,
+## where there are glbs for them. Whatever has no glb stays as the code drew it.
+func _blender_top_end() -> void:
+	var case_path := BlenderParts.path_for("engine", str(_build.parts.get("engine", "")))
+	var case: bool = not _slot_meshes["engine"].is_empty() and not BlenderParts.part(case_path).is_empty()
+	var tops: Array = [] if _slot_meshes["head"].is_empty() else \
+		BlenderParts.top_end_pieces(str(_build.layout), str(_build.parts.get("head", "")), _cyls, _eng_s, _bore_r)
+	if not case and tops.is_empty():
+		return
+	for slot in ["engine", "head"]:
+		var keep := []
+		for mi in _slot_meshes[slot]:
+			var mid := _model_aabb(mi as VisualInstance3D).get_center()
+			var barrel: bool = slot == "head" or _on_barrel(mid)
+			if (not tops.is_empty()) if barrel else case:
+				(mi as Node).free()
+			else:
+				keep.append(mi)
+		_slot_meshes[slot] = keep
+	if case:
+		_current_slot = "engine"
+		var cast: Material = _blender_mats["engine"]["cast_alloy"]
+		for mi in _blender_pieces(case_path, BlenderParts.engine_xform(_engine_c, _eng_s)):
+			# (The fairing is sized round the crankcase: see _draw_fairing.)
+			if (mi as MeshInstance3D).material_override == cast:
+				(mi as Node).name = "Crankcase"
+	_current_slot = "head"
+	for piece in tops:
+		_blender_pieces(piece[0], piece[1])
+
+
+## Whether `p` (in the model's space) is on one of the barrels: within its fins' reach of the
+## bore, between its foot and the head.
+func _on_barrel(p: Vector3) -> bool:
+	for c in _cyls:
+		var up: Vector3 = c["up"]
+		var a: Vector3 = c["base"] - up * 0.1
+		var along := (p - a).dot(up.normalized())
+		var from_axis := ((p - a) - up.normalized() * along).length()
+		if along > -0.005 and along < 0.2 * up.length() and from_axis < _bore_r * 1.7:
+			return true
+	return false
+
+
+## A Blender-made part (its glb at `path`, see BlenderParts) put on at `xform` as the part being
+## drawn, a mesh for each of its surfaces in the material that surface's tag takes on this bike
+## (`over`'s for its tag, else _blender_mat's). Returns the meshes: none when there's no glb.
+func _blender_pieces(path: String, xform: Transform3D, over := {}, parent: Node3D = self) -> Array:
+	var at := BlenderParts.placed(path, xform)
+	return _blender_meshes(at[0], at[1], over, parent)
+
+
+## The meshes of `surfaces` ([[Mesh, the glb's Material], ...]) at `xform`, as _blender_pieces.
+## `over` can give "" for every surface it doesn't name. A surface coloured as another part's
+## (a top end's barrels, the engine's) is that part's piece, so it goes and comes with it.
+func _blender_meshes(surfaces: Array, xform: Transform3D, over := {}, parent: Node3D = self) -> Array:
+	var out := []
+	var own := _current_slot
+	for s in surfaces:
+		var m: Material = s[1]
+		var tag := BlenderParts.tag_of(m)
+		var from := BlenderParts.colour_slot(m)
+		var mat: Material = over[tag] if over.has(tag) else (over[""] if over.has("") else _blender_mat(own, tag, from))
+		_current_slot = from if _slot_meshes.has(from) else own
+		var mi := _mesh_instance(s[0], mat, Vector3.ZERO, parent)
+		mi.transform = xform
+		out.append(mi)
+	_current_slot = own
+	return out
+
+
+## The material a Blender-made surface tagged `tag` takes on `slot`'s part (one coloured as
+## `from`'s part, when it's given): what drawing the part set out for it in _blender_mats, else
+## the code's usual one for that kind of surface, else the part's own ("").
+func _blender_mat(slot: String, tag: String, from := "") -> Material:
+	var mats: Dictionary = _blender_mats.get(slot, {})
+	var key := tag if from == "" else tag + "__" + from
+	if mats.has(key):
+		return mats[key]
+	if from != "" and from != slot:
+		return _blender_mat(from, tag)
+	var m: Material
+	match tag:
+		"chrome":
+			m = _mat(Color(0.86, 0.87, 0.89), 1.0, 0.12)
+		"polished_alloy":
+			m = _mat(Color(0.8, 0.8, 0.82), 1.0, 0.18)
+		"brushed_steel":
+			m = _tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.38), "brushed")
+		"raw_steel":
+			m = _mat(Color(0.62, 0.63, 0.66), 1.0, 0.3)
+		"black_metal":
+			m = _mat(Color(0.05, 0.05, 0.05), 0.6, 0.45)
+		"titanium", "carbon":
+			m = _look_finish(tag, null)
+		"anodised":
+			m = _mat(_col(), 0.9, 0.3)
+		"rubber":
+			m = _mat(Color(0.04, 0.04, 0.04), 0.0, 0.9)
+		"plastic":
+			m = _mat(Color(0.06, 0.06, 0.06), 0.0, 0.6)
+		_:
+			m = mats.get("", null)
+			if m == null:
+				m = _mat(_col(), 0.8, 0.4)
+	mats[key] = m
+	_blender_mats[slot] = mats
+	return m
+
+
 # ---------------------------------------------------------------------------- mesh helpers
 
 func _mesh_instance(mesh: Mesh, mat: Material, pos: Vector3, parent: Node3D = self) -> MeshInstance3D:
@@ -8459,7 +8600,15 @@ func _shell(sections: Array, mat: Material, open := false, a0 := 0.0, a1 := TAU,
 
 ## A round tube bent smoothly through `path` (see ShapeKit.sweep): `radius` a float, or one per point.
 func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 12) -> MeshInstance3D:
-	var mi := _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
+	var mi: MeshInstance3D = null
+	if _current_slot == "exhaust" and parent == self and _blender_on():
+		# The new look's headers: the Blender pipe section (plain, or heat wrapped) swept along it.
+		var section := BlenderParts.ROOT + "exhaust/pipe/%s.glb" % ("wrap" if _look_trim("header").contains("wrap") else "plain")
+		var lods := BlenderParts.sweep_section(section, path, radius, 6, 1)
+		if not lods.is_empty():
+			mi = _blender_meshes(BlenderParts.split(lods[0]), Transform3D.IDENTITY, {"": mat})[0]
+	if mi == null:
+		mi = _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
 	if _current_slot == "frame" and parent == self:
 		_rails.append({"pts": ShapeKit.smooth(path, 6), "r": (radius as Array).max() if radius is Array else float(radius)})
 	# Its line and thickness, so its click target follows the tube (see build_pickers) rather
