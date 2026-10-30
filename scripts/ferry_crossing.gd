@@ -486,8 +486,8 @@ func _tick_camera(_delta: float) -> void:
 	var swing := clampf(t / maxf(total_of(sailing), 1.0), 0.0, 1.0)
 	var bike: Bike = trip.main.bike if trip.main != null else null
 	var at := bike.global_position if bike != null else _boat.global_position
-	var from := at - fwd * 14.0 + side * 10.0 * (1.0 - swing) + Vector3.UP * (6.0 + 3.0 * k)
-	var look := at + fwd * (30.0 * k + 60.0 * swing) + Vector3.UP * 1.0
+	var from := at - fwd * 16.0 + side * 10.0 * (1.0 - swing) + Vector3.UP * (5.0 + 2.0 * k)
+	var look := at + fwd * (20.0 + 40.0 * swing) + Vector3.UP * 1.0   # (near enough that the bikes stay in view)
 	_cam.global_position = from
 	if from.distance_to(look) > 0.1:
 		_cam.look_at(look, Vector3.UP)
