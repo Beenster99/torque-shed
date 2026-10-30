@@ -719,7 +719,8 @@ def cell_features(rows, grid, row, col, release=""):
     out = {"format": FORMAT, "cell": "%d_%d" % (row, col), "release": release, "classes": classes_hash(),
            "kinds": KINDS, "names": new_names, "points": points, "lines": lines, "areas": areas}
     if looks:
-        looks.sort()
+        # (a look says nothing of some things, None, and None and a word don't compare: they sort as "")
+        looks.sort(key=lambda b: ["" if v is None else v for v in b])
         for b in looks:
             b[2:] = [word(v) for v in b[2:]]
         out["words"] = words
