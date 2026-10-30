@@ -15,16 +15,14 @@ const PLACES := [
 	{"id": "conwy", "want": ["arch_", "tower_round_", "wall_"], "title": "Conwy's walls, Wales", "from": [53.2797, -3.8372], "to": [53.2817, -3.8290]},
 	{"id": "york", "want": ["arch_", "tower_round_", "wall_"], "title": "York's walls, Micklegate Bar", "from": [53.9530, -1.0925], "to": [53.9578, -1.0852]},
 	{"id": "bavaria", "want": ["church"], "title": "Oberammergau to Ettal, Bavaria", "from": [47.5975, 11.0665], "to": [47.5690, 11.0940]},
-	{"id": "carcassonne", "want": ["tower_round_", "wall_", "arch_"], "title": "Carcassonne from the approach", "from": [43.2125, 2.3555], "to": [43.2068, 2.3690]},
-	{"id": "marrakech", "want": ["arch_", "tower_square_", "wall_"], "title": "Marrakech's medina walls", "from": [31.6175, -7.9925], "to": [31.6232, -7.9893]},
-	{"id": "xian", "want": ["arch_", "tower_square_", "wall_"], "title": "Xi'an's city wall, China", "from": [34.2485, 108.9468], "to": [34.2572, 108.9472]},
-	{"id": "cartagena", "want": ["tower_round_", "wall_", "arch_", "stones", "cross", "statue"], "title": "Cartagena's walls, Colombia", "from": [10.4200, -75.5475], "to": [10.4250, -75.5510]},
+	{"id": "chester", "want": ["arch_", "tower_round_", "wall_"], "title": "Chester's walls, the Eastgate", "from": [53.1928, -2.8822], "to": [53.1902, -2.8930]},
 ]
 
 var out_dir := "/tmp/history"
 var only: Array = []
 var features_dir := ""
 var before := false
+var looks: Array = []   # (the place's building looks, kept for aiming even when --before leaves them out)
 
 
 func _ready() -> void:
@@ -66,12 +64,16 @@ func _place(place: Dictionary, cam: Camera3D) -> void:
 		print("history: %s: %s" % [place["id"], fetched])
 		return
 	var region := RealRegion.get_region(str(plan["region"]))
+	if region == null:
+		print("history: %s: no region (its cells aren't in the world's store)" % place["id"])
+		return
 	var path := features_dir.path_join("%s.json" % place["id"])
 	if region != null and features_dir != "" and FileAccess.file_exists(path):
 		var rows = JSON.parse_string(FileAccess.get_file_as_string(path))
 		if rows is Dictionary:
 			region.features = {"points": [], "lines": [], "areas": []}
 			RealRegion.add_features(region.features, rows, Vector2(region.frame_lat, region.frame_lon))
+	looks = region.features.get("buildings", [])
 	if before:
 		region.features.erase("buildings")
 	print("history: %s: %d building looks, %d lines" % [place["id"], (region.features.get("buildings", []) as Array).size(),
@@ -96,21 +98,31 @@ func _place(place: Dictionary, cam: Camera3D) -> void:
 	cam.global_transform = Postcards.view_xf(w, s, "road")
 	w.follow(cam.global_position)
 	await _settle(w)
-	# Along the ride, the spot nearest the place's own thing; the camera 60 m back from it on the road.
-	var best := [INF, s, Vector3.ZERO, ""]
+	# Along the ride, where it passes nearest the place's own thing (under a gate's arch, past a wall, by a church):
+	# the camera 70 m back from there on the road.
+	var things := _things(w, place["want"])
+	var best := INF
 	var step := 0.0
 	while step < w.route.length:
 		var eye := Postcards.view_xf(w, step, "road").origin
-		var got := _target(w, eye, place["want"])
-		if got[0] != "" and eye.distance_to(got[1]) < float(best[0]):
-			best = [eye.distance_to(got[1]), step, got[1], got[0]]
-		step += 25.0
-	s = maxf(0.0, float(best[1]) - 60.0)
+		for th: Array in things:
+			var d := Vector2(eye.x, eye.z).distance_to(Vector2((th[1] as Vector3).x, (th[1] as Vector3).z)) + float(th[0]) * 40.0
+			if d < best:
+				best = d
+				# (a building from closer: it's smaller than a town's walls)
+				s = maxf(0.0, step - (35.0 if str(place["want"][int(th[0])]) in ["church", "temple", "shrine", "mosque"] else 70.0))
+		step += 5.0
 	cam.global_transform = Postcards.view_xf(w, s, "road")
 	w.follow(cam.global_position)
 	await _settle(w)
 	var target := _target(w, Postcards.view_xf(w, s, "road").origin, place["want"])
 	print("history: %s: %d scenery blocks, %s, aiming at %s" % [place["id"], w.scenery.blocks.size(), w.scenery.stats, target])
+	var counts := {}
+	for node: Node3D in w.scenery.blocks.values():
+		for mmi in node.get_children():
+			if mmi is MultiMeshInstance3D and str(mmi.name).begins_with("history_"):
+				counts[str(mmi.name)] = int(counts.get(str(mmi.name), 0)) + (mmi as MultiMeshInstance3D).multimesh.instance_count
+	print("history: %s: %s" % [place["id"], counts])
 	for when in ["day", "night"]:
 		if Daylight.current:
 			Daylight.current.set_time(11.0 if when == "day" else 22.5)
@@ -121,7 +133,12 @@ func _place(place: Dictionary, cam: Camera3D) -> void:
 			var aim: Vector3 = target[1] if target[0] != "" else eye.origin - eye.basis.z * 50.0
 			if view == "above":
 				cam.global_position = eye.origin + Vector3(0, 55.0, 0) - (aim - eye.origin).normalized() * 90.0
-			cam.look_at(aim + Vector3.UP * 4.0, Vector3.UP)
+				cam.look_at(aim + Vector3.UP * 4.0, Vector3.UP)
+			elif (aim - eye.origin).normalized().dot(-eye.basis.z) < 0.6:
+				# (from the road, along it, unless the thing is well off to one side: then turned to it)
+				cam.look_at(aim + Vector3.UP * 4.0, Vector3.UP)
+			else:
+				cam.rotate_object_local(Vector3.RIGHT, 0.08)
 			w.scenery.visible = not before
 			for i in 12:
 				await get_tree().process_frame
@@ -157,6 +174,31 @@ func _settle(w: AdventureWorld) -> void:
 		await get_tree().process_frame
 
 
+## Every one of the place's own things laid out: [[rank (its kind's place in `want`), where (world)]], the mapped
+## churches' too where it wants one.
+func _things(w: AdventureWorld, want: Array) -> Array:
+	var out: Array = []
+	for node: Node3D in w.scenery.blocks.values():
+		for mmi in node.get_children():
+			if not mmi is MultiMeshInstance3D:
+				continue
+			var model := str(mmi.name).trim_prefix("history_")
+			for i in want.size():
+				if model.begins_with(str(want[i])):
+					var mm: MultiMesh = mmi.multimesh
+					for k in mm.instance_count:
+						out.append([i, ((mmi as Node3D).global_transform * mm.get_instance_transform(k)).origin])
+					break
+	for i in want.size():
+		var cls := str(want[i])
+		var of: Array = ["church", "chapel", "cathedral"] if cls == "church" else [cls]
+		if cls in ["church", "temple", "shrine", "mosque"]:
+			for b: Array in looks:
+				if str(b[2]) in of:
+					out.append([i, Vector3(float(b[0]), 0, float(b[1])) - w.origin])
+	return out
+
+
 ## The nearest of the place's own things to `eye` between 30 m and 1.5 km off: [model, where (world)], or ["", eye]. A
 ## "church" is looked for among the road blocks' buildings' places of worship: its nearest building of the worship kind.
 func _target(w: AdventureWorld, eye: Vector3, want: Array) -> Array:
@@ -181,7 +223,7 @@ func _target(w: AdventureWorld, eye: Vector3, want: Array) -> Array:
 					continue
 				if best.is_empty() or rank < int(best["rank"]) or (rank == int(best["rank"]) and d < float(best["d"])):
 					best = {"rank": rank, "d": d, "at": xf.origin, "model": model}
-	if best.is_empty() and want.has("church"):
+	if best.is_empty() and (want.has("church") or want.has("temple")):
 		return _church(w, eye)
 	if best.is_empty():
 		return ["", eye]
@@ -193,8 +235,8 @@ func _church(w: AdventureWorld, eye: Vector3) -> Array:
 	var best := ["", eye]
 	var bd := 1500.0
 	var o := w.origin
-	for b: Array in w.roads_region.features.get("buildings", []):
-		if str(b[2]) not in ["church", "chapel", "cathedral"]:
+	for b: Array in looks:
+		if str(b[2]) not in ["church", "chapel", "cathedral", "temple", "shrine", "mosque"]:
 			continue
 		var p := Vector3(float(b[0]), eye.y, float(b[1])) - Vector3(o.x, 0, o.z)
 		var d := Vector2(p.x, p.z).distance_to(Vector2(eye.x, eye.z))

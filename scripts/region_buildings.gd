@@ -361,9 +361,9 @@ static func worship(a: Dictionary, xf: Transform3D, w: float, d: float, h: float
 			var tall: float
 			if small:
 				# (a turret astride the ridge at the front)
-				side = 1.6
+				side = clampf(wide * 0.2, 1.6, 3.2)
 				t = body.translated_local(Vector3(0, wh, long * 0.5 - side))
-				tall = wide * 0.5 * RISE + 1.6
+				tall = wide * 0.5 * RISE + side
 			else:
 				# (a tower at the front, inside the map's outline like everything here, its foot in the ground)
 				side = 4.6

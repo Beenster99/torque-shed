@@ -111,11 +111,19 @@ func test_walls() -> void:
 		["city_wall", ring, null, null, 0, "Town Walls", "w1"],
 		["city_wall", PackedVector2Array([Vector2(470, 300), Vector2(512, 300)]), 6.0, null, 0, "", "w2"],
 		["city_wall", PackedVector2Array([Vector2(512, 300), Vector2(590, 300)]), 6.0, null, 0, "", "w2"],
-	], "areas": []}
+	], "areas": [
+		# (a wall mapped as the outline of what it rings)
+		["city_wall", PackedVector2Array([Vector2(250, 250), Vector2(350, 250), Vector2(350, 350), Vector2(250, 350)]), null, null, "", "w3"],
+	]}
 	var net := RoadNet.new(r, Roads.flat)
 	var walls := History._walls_of(net)
-	check((walls["walls"] as Array).size() == 2, "the wall cut at the edge is joined into one (%d walls)" % (walls["walls"] as Array).size())
+	check((walls["walls"] as Array).size() == 3, "the wall cut at the edge joined into one, and the outline a wall (%d walls)" % (walls["walls"] as Array).size())
 	var by := rows_of(r.features)
+	# (a wall's plan is worked out once, by the first block that asks; then each block lays out its own part)
+	var t0 := Time.get_ticks_usec()
+	for wi in (walls["walls"] as Array).size():
+		History._plan_of(net, walls, wi)
+	var plan_ms := (Time.get_ticks_usec() - t0) / 1000.0
 	var got := lay_all(net, by)
 	var items: Dictionary = got["items"]
 	var walls_n := 0
@@ -149,7 +157,8 @@ func test_walls() -> void:
 		func(xf): return Vector2(xf.origin.x, xf.origin.z).distance_to(Vector2(180, 265)) < History.TOWER_NEAR)
 	check(near_mapped.is_empty(), "no tower of its own by the mapped one")
 	check(items.has("flood") and (items["flood"] as Array).size() >= 15, "floodlights round the walls (%d)" % (items.get("flood", []) as Array).size())
-	check(float(got["ms"]) < 60.0, "laid out quickly (%.1f ms the slowest block, the walls' plans included)" % float(got["ms"]))
+	check(plan_ms < 400.0 and float(got["ms"]) < 60.0,
+		"laid out quickly (the walls' plans %.0f ms once, then %.1f ms the slowest block)" % [plan_ms, float(got["ms"])])
 	# Laid out again, the same.
 	History._walls.clear()
 	var again := lay_all(RoadNet.new(r, Roads.flat), by)
@@ -212,11 +221,11 @@ func test_points() -> void:
 ## church, mosque or hangar drawn as one, inside its outline; onion towers where they belong.
 func test_looks() -> void:
 	var look := BuildingLooks.look_of([0.0, 0.0, "", "gabled", "#778899", "slate", "brick", ""], 53.0)
-	check(look.get("roof") == "gable" and (look["roof_colour"] as Color).is_equal_approx(Color("#778899"))
-		and (look["wall_colour"] as Color).is_equal_approx(Color(BuildingLooks.FACADE_MATERIALS["brick"])),
+	check(look.get("roof") == "gable" and (look["roof_colour"] as Color).is_equal_approx(BuildingLooks.colour("#778899"))
+		and (look["wall_colour"] as Color).is_equal_approx(BuildingLooks.colour(BuildingLooks.FACADE_MATERIALS["brick"])),
 		"a gabled roof of light slate grey over brick walls (%s)" % str(look))
 	look = BuildingLooks.look_of([0.0, 0.0, "", "", "", "roof_tiles", "", ""])
-	check((look["roof_colour"] as Color).is_equal_approx(Color(BuildingLooks.ROOF_MATERIALS["roof_tiles"])), "a tiled roof without a colour is tile red")
+	check((look["roof_colour"] as Color).is_equal_approx(BuildingLooks.colour(BuildingLooks.ROOF_MATERIALS["roof_tiles"])), "a tiled roof without a colour is tile red")
 	check(BuildingLooks.look_of([0.0, 0.0, "", "", "", "", "", ""]).is_empty(), "nothing said, no look")
 	# Matched by where it stands: inside the building's box (turned as it's turned), the nearest of several.
 	var r := Roads.tee()
@@ -297,3 +306,30 @@ func test_features() -> void:
 	var plain := {"points": [], "lines": [], "areas": []}
 	RealRegion.add_features(plain, {"format": 1, "kinds": [], "names": [""], "points": [], "lines": [], "areas": []}, frame)
 	check(not plain.has("buildings"), "a file without looks leaves none")
+
+
+## The bundled regions: their history laid out within the budget, the Dales' boards and viewpoints placed, and their
+## buildings' looks matched.
+func test_regions() -> void:
+	for id in ["dales", "shodoshima"]:
+		var r := RealRegion.get_region(id)
+		var net := RoadNet.new(r, Roads.flat)
+		var by := rows_of(r.features, "british_isles" if id == "dales" else "east_asia")
+		# (the eight busiest blocks: the first lay-out of a block works out its roads' heights, so the test stays quick)
+		var keys: Array = by.keys()
+		keys.sort_custom(func(a, b): return (by[a]["points"] as Array).size() > (by[b]["points"] as Array).size())
+		var worst := 0.0
+		var items := 0
+		for k: Vector2i in keys.slice(0, 8):
+			History.lay_out(net, k, by[k])   # (once to work the roads' heights out)
+			var t0 := Time.get_ticks_usec()
+			var b := History.lay_out(net, k, by[k])
+			worst = maxf(worst, (Time.get_ticks_usec() - t0) / 1000.0)
+			for m: String in b["items"]:
+				items += (b["items"][m] as Array).size()
+		check(items > 0 and worst < 25.0, "%s: %d things in its busiest blocks, %.1f ms the slowest once its roads are known" % [id, items, worst])
+		var matched := 0
+		for row: Array in r.buildings:
+			if not BuildingLooks.of(r, row).is_empty():
+				matched += 1
+		check(matched > 0, "%s: %d of its %d mapped looks on its buildings" % [id, matched, (r.features.get("buildings", []) as Array).size()])

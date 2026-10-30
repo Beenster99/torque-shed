@@ -15,6 +15,8 @@ const VERSION := 1
 const GRID := 24.0
 ## A look stands for a building when its middle is inside the building's box grown by this much (m).
 const MARGIN := 1.5
+## How far a mapped colour is weathered towards its own grey (colour).
+const WEATHER := 0.35
 
 ## The map's roof shapes as the kits' roof forms (RegionBuildings._roof).
 const SHAPES := {"gabled": "gable", "hipped": "hip", "half_hipped": "hip", "side_hipped": "hip", "pyramidal": "hip",
@@ -101,14 +103,16 @@ static func look_of(r: Array, lat := 0.0) -> Dictionary:
 	return out if out.size() > 1 else {}
 
 
-## A map colour ("#778899", "#789", "red") as a Color, or null.
+## A map colour ("#778899", "#789", "red") as a Color, or null: a third of the way to its own grey and a touch darker,
+## as paint and slate weather (the map's colours are names picked from a short list, brighter than the real thing).
 static func colour(text: String):
 	if text == "":
 		return null
 	var c := Color.from_string(text, Color(-1, -1, -1))
 	if c.r < 0.0:
 		return null
-	return Color(c.r, c.g, c.b)
+	var grey := c.get_luminance()
+	return Color(c.r, c.g, c.b).lerp(Color(grey, grey, grey), WEATHER).darkened(0.08)
 
 
 ## Kit `kit` (a RegionKit) with building look `look` laid over it: its roof form and colours, its walls' colours, so

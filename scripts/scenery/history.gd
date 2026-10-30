@@ -45,7 +45,7 @@ const MONUMENT_WORDS := {
 	"statue": ["statue", "figure", "bust", "sculpture", "estatua", "statua", "denkmal"],
 }
 ## The stones walls and gates come in (a kit's "stone"), as vertex colours.
-const STONES := {"grey": Color(0.52, 0.5, 0.45), "sand": Color(0.76, 0.66, 0.5), "brick": Color(0.52, 0.28, 0.21),
+const STONES := {"grey": Color(0.42, 0.41, 0.37), "sand": Color(0.76, 0.66, 0.5), "brick": Color(0.52, 0.28, 0.21),
 	"earth": Color(0.72, 0.52, 0.36), "dark": Color(0.36, 0.35, 0.33), "white": Color(0.86, 0.84, 0.78),
 	"red": Color(0.62, 0.36, 0.26)}
 const WOOD := Color(0.36, 0.26, 0.18)
@@ -76,14 +76,16 @@ static func lay_out(net: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary
 		var p := Vector2(float(row[1]), float(row[2]))
 		if b.mine(p):
 			_point(b, str(row[0]), p, row, pair[1])
+	var walls := false
 	for pair: Array in rows.get("areas", []):
 		var row: Array = pair[0]
 		var ring: PackedVector2Array = row[1]
-		if ring.size() >= 3 and b.mine(_centre(ring)):
+		if str(row[0]) == "city_wall":
+			walls = true   # (a wall mapped as an outline: its ring is the wall, _join_walls)
+		elif ring.size() >= 3 and b.mine(_centre(ring)):
 			# (an area's thing at its middle, sized to it: a fountain's basin, an artwork's plot)
 			_point(b, str(row[0]), _centre(ring), [row[0], 0.0, 0.0, row[2], row[3], null, row[4], row[5]], pair[1],
 				sqrt(absf(_signed_area(ring)) / PI))
-	var walls := false
 	for pair: Array in rows.get("lines", []):
 		if str(pair[0][0]) == "city_wall":
 			walls = true
@@ -467,6 +469,12 @@ static func _join_walls(region: RealRegion) -> Array:
 	for row: Array in region.features.get("lines", []):
 		if str(row[0]) == "city_wall" and (row[1] as PackedVector2Array).size() >= 2:
 			pieces.append({"pts": (row[1] as PackedVector2Array).duplicate(), "h": row[2], "row": row})
+	# A wall mapped as an outline (the old town it rings, or the wall's own footprint): its ring, less any side the baker
+	# cut along a cell's edge (that's no wall), each run of it a line.
+	for row: Array in region.features.get("areas", []):
+		if str(row[0]) == "city_wall" and (row[1] as PackedVector2Array).size() >= 3:
+			for run in _ring_runs(region, row[1]):
+				pieces.append({"pts": run, "h": row[2], "row": row})
 	var joined := true
 	while joined:
 		joined = false
@@ -498,6 +506,34 @@ static func _join_walls(region: RealRegion) -> Array:
 		out.append({"pts": pts, "kit": k, "h": clampf(h, 3.0, 25.0), "box": box.grow(20.0),
 			"closed": pts[0].distance_to(pts[pts.size() - 1]) < JOIN})
 	return out
+
+
+## Ring `ring` (region frame) closed and split where a side runs along a cell's edge (both its ends on the same 0.25
+## degree line): its runs, each 2 points or more.
+static func _ring_runs(region: RealRegion, ring: PackedVector2Array) -> Array:
+	var frame := Vector2(region.frame_lat, region.frame_lon)
+	var on_edge := func(p: Vector2) -> Vector2:
+		# (which cell edges, lat and lon, the point is on: NAN for none)
+		var ll := RealRegion.from_frame(frame, p.x, p.y)
+		var lat := ll.x * 4.0
+		var lon := ll.y * 4.0
+		return Vector2(roundf(lat) if absf(lat - roundf(lat)) < 1e-4 else NAN, roundf(lon) if absf(lon - roundf(lon)) < 1e-4 else NAN)
+	var pts := ring.duplicate()
+	pts.append(ring[0])
+	var runs: Array = []
+	var run := PackedVector2Array([pts[0]])
+	var prev: Vector2 = on_edge.call(pts[0])
+	for i in range(1, pts.size()):
+		var e: Vector2 = on_edge.call(pts[i])
+		if (not is_nan(e.x) and e.x == prev.x) or (not is_nan(e.y) and e.y == prev.y):
+			if run.size() >= 2:
+				runs.append(run)
+			run = PackedVector2Array()
+		run.append(pts[i])
+		prev = e
+	if run.size() >= 2:
+		runs.append(run)
+	return runs
 
 
 ## Lines `a` and `c` joined where an end of one meets an end of the other, or empty where none do.

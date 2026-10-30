@@ -892,6 +892,7 @@ func _run_all() -> void:
 	await _t(&"_test_history_points")
 	await _t(&"_test_history_looks")
 	await _t(&"_test_history_features")
+	await _t(&"_test_history_regions")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22910,6 +22911,10 @@ func _test_history_looks() -> void:
 
 func _test_history_features() -> void:
 	_history().test_features()
+
+
+func _test_history_regions() -> void:
+	_history().test_regions()
 
 
 func _coop() -> RefCounted:
