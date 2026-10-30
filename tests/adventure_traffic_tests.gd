@@ -53,12 +53,16 @@ static func _run(tr: AdventureTraffic, seconds: float, dt := 0.1) -> void:
 
 
 ## A seed whose road (the whole of Rides.plan(km)) has a village at least `after` m in: [seed, the village's site].
+## The game makes no villages up (AdventureStops.made_up_villages); this turns them on for the test that asks, and
+## _free turns them off again.
 static func _with_village(km: float, after := 3000.0) -> Array:
+	AdventureStops.made_up_villages = true
 	for seed in range(1, 80):
 		var r := Rides.route(Rides.full(km), seed)
 		for st in r.sites_of("village"):
 			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0:
 				return [seed, st]
+	AdventureStops.made_up_villages = false
 	return []
 
 
@@ -70,6 +74,7 @@ static func _tick(tr: AdventureTraffic, delta: float) -> void:
 
 
 func _free(tr: AdventureTraffic) -> void:
+	AdventureStops.made_up_villages = false
 	tr.world.queue_free()
 	await _frames(2)
 
@@ -91,7 +96,7 @@ func test_density() -> void:
 	var r := tr.world.route
 	for k in range(40, int(minf(r.length - 1500.0, 40000.0) / 50.0)):
 		var s := k * 50.0
-		if r.surface_at_s(s) != "tarmac" or r.width_at_s(s) < 5.5:
+		if r.surface_at_s(s) != "tarmac" or r.width_at_s(s) < 5.5 or tr.limit_at(s) < 15.0:   # (not in a real town's 30)
 			continue
 		var d := INF
 		for st in tr.world.route.sites:
@@ -462,6 +467,7 @@ func test_perf() -> void:
 	if tr == null:
 		main.queue_free()
 		AdventureTrip.instant = false
+		AdventureStops.made_up_villages = false
 		Shed.stop()
 		return
 	tr.bus_chance = 1.0
@@ -501,6 +507,7 @@ func test_perf() -> void:
 	check(most >= 5 and total < 1.5, "riding through a village with %d vehicles about, the traffic costs %.2f ms a frame (%s)" % [most, total, ", ".join(parts)])
 	main.queue_free()
 	AdventureTrip.instant = false
+	AdventureStops.made_up_villages = false
 	Shed.stop()
 	await _frames(3)
 

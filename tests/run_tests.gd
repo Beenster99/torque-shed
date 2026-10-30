@@ -862,6 +862,9 @@ func _run_all() -> void:
 	await _t(&"_test_place_sound_ride_radio")
 	await _t(&"_test_place_sound_rules")
 	await _t(&"_test_place_sound_with_profiles")
+	await _t(&"_test_ride_fb_windows")
+	await _t(&"_test_ride_fb_respawn")
+	await _t(&"_test_ride_fb_map")
 	await _t(&"_test_road_block_interface")
 	await _t(&"_test_road_kinds")
 	await _t(&"_test_road_locate")
@@ -24734,6 +24737,24 @@ func _test_wtt_angular_tanks() -> void:
 
 func _test_wtt_mudguard_ends() -> void:
 	_wtt().test_mudguard_ends()
+
+
+# ---------------------------------------------------------------------------- the 30 Oct ride's feedback (tests/ride_feedback_tests.gd)
+
+func _ride_fb() -> RefCounted:
+	return load("res://tests/ride_feedback_tests.gd").new(self)
+
+
+func _test_ride_fb_windows() -> void:
+	_ride_fb().test_windows()
+
+
+func _test_ride_fb_respawn() -> void:
+	_ride_fb().test_respawn()
+
+
+func _test_ride_fb_map() -> void:
+	await _ride_fb().test_map()
 
 
 func _ferry() -> RefCounted:

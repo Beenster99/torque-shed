@@ -893,13 +893,15 @@ func step_off_spot(ground: Vector3, heading: float) -> Vector3:
 
 
 ## Where a crash picks you up (Bike.respawn_at): off the road, back on it at the nearest point
-## along it, on your side and facing on towards the destination (AdventureWorld.back_on_road);
-## on the road, or not out on an adventure, null: where you lie, as in town.
+## along it, on your side and facing on towards the destination (AdventureWorld.back_on_road; on the road network, on
+## the way you were riding); on the road, or not out on an adventure, null: where you lie, as in town (on the network's
+## road, where you lie but turned to face along it the way you were riding).
 func respawn_spot(p: Vector3):
 	if world == null:
 		return null
-	var xf = world.back_on_road(p)
-	if xf is Transform3D:
+	var xf = world.back_on_road(p, main.bike.respawn_heading() if main and is_instance_valid(main.bike) else NAN)
+	# (on the network's road it's picked up where it lies, only turned to face along the road)
+	if xf is Transform3D and (xf as Transform3D).origin.distance_to(p) > 1.0:
 		main.hud.flash("Back on the road.", 2.0, true)
 		main.camera.snap.call_deferred()   # once the bike's there
 	return xf

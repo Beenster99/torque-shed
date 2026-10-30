@@ -294,14 +294,14 @@ func test_budget() -> void:
 		% [r.chunk_count(), worst_v, where, BUDGET_BUILDING_VERTS, worst_i, BUDGET_INSTANCES, worst_ms])
 
 
-## Real places the stops take over, the real road's junctions and its speed limits.
+## The map's own places as the stops, the real road's junctions and its speed limits.
 func test_stops() -> void:
 	var p := Rides.tour_pack(PACK)
 	var a := AdventureRoute.new()
 	a.plan_real(p, 7, 23.0)
 	var fuel := a.sites_of("fuel")
 	check(not fuel.is_empty(), "a ride has fuel (%d stations)" % fuel.size())
-	# A real filling station at the first station's place (the planner's own pick, so it fits): taken over.
+	# A real filling station at the first station's place (where one fits): a stop there, and the only one.
 	var at := float(fuel[0]["s"])
 	var saved := p.pois
 	p.pois = [{"kind": "fuel", "name": "Test Garage", "x": 0.0, "z": 0.0, "k": int(round(at / AdventureRoute.STEP)), "lat": -22.0, "conf": 0.9},
@@ -311,9 +311,9 @@ func test_stops() -> void:
 	p.pois = saved
 	var taken := b.sites_of("fuel").filter(func(st): return st.has("real"))
 	check(taken.size() == 1 and str(taken[0]["name"]) == "Test Garage" and absf(float(taken[0]["s"]) - at) < 1.0 and int(taken[0]["side"]) == -1,
-		"a real filling station takes over a made-up one, with its name and side (%s)" % str(taken.map(func(st): return [st["name"], st["s"], st["side"]])))
-	check(b.sites_of("cafe").all(func(st): return str(st["name"]) != "Far Cafe"), "a real place too far from any stop is left alone")
-	check(a.sites_of("fuel").size() == b.sites_of("fuel").size(), "and taking over doesn't change how many stops there are")
+		"the map's filling station is a stop, with its name and side (%s)" % str(taken.map(func(st): return [st["name"], st["s"], st["side"]])))
+	check(b.sites_of("cafe").all(func(st): return str(st["name"]) != "Far Cafe"), "a real place right by the start is left alone")
+	check(b.sites_of("fuel").size() == 1, "and on a ride that short no made-up filling station beside it (%d)" % b.sites_of("fuel").size())
 	var c := AdventureRoute.new()
 	c.plan_real(p, 7, 23.0)
 	check(c.sites.size() == a.sites.size() and c.px == a.px, "with the real places put back it plans as before")

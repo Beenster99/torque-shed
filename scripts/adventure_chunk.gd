@@ -1080,6 +1080,7 @@ static func _commit_scenery(data: Dictionary, node: Node3D, scale: float) -> voi
 		var bmi := MeshInstance3D.new()
 		bmi.name = "Buildings"
 		bmi.mesh = AdventureProps.to_mesh(bld)
+		bmi.material_override = WindowLights.material()   # (their windows lit after dark)
 		_range(bmi, RANGES["buildings"] * scale)
 		node.add_child(bmi)
 	for k in data["km"]:

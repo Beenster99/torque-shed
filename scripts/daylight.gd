@@ -225,6 +225,7 @@ func _apply(force: bool) -> void:
 	var s := sun_dir.y
 	dark = 1.0 - smoothstep(-0.24, 0.06, s)
 	lamps = smoothstep(0.25, 0.6, dark)
+	WindowLights.set_share(WindowLights.share(hours, lamps))
 	var light_day := clampf((s + 0.06) / 0.3, 0.0, 1.0)
 	var warm := 1.0 - smoothstep(0.02, 0.42, s)
 	var twilight := exp(-pow(s / 0.13, 2.0))

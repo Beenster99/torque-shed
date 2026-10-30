@@ -71,7 +71,9 @@ var route_geo := PackedVector2Array()
 var note := ""
 ## The roads in view: the stitched cells (or a bundled region where the game has no cells), and its id.
 var roads: RealRegion
-var _roads_bbox := PackedFloat32Array()
+## The roads in view as each class's line pieces, ready to draw in one go: {class index: [a, b, a, b...]} in the roads'
+## frame (made on the worker with them: _road_segments).
+var _road_segs := {}
 var _want := ""                # the region id the view wants for its roads ("" when too far out)
 var _task := -1
 var _task_id := ""
@@ -236,26 +238,28 @@ func _load_roads(id: String) -> void:
 			said = ""
 		elif said == "":
 			said = "Nobody has mapped the roads here yet." if not states.has("sea") or states.size() > 1 else ""
-	var bbox := _edge_boxes(r) if r != null else PackedFloat32Array()
+	var segs := _road_segments(r) if r != null else {}
 	_task_lock.lock()
-	_task_result = [r, bbox, said, id, nobody]
+	_task_result = [r, segs, said, id, nobody]
 	_task_lock.unlock()
 
 
-static func _edge_boxes(r: RealRegion) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	out.resize(r.edge_count() * 4)
+## `r`'s roads as each class's line pieces end to end ({class index: [a, b, a, b...]}), so a redraw draws a class at a
+## time (draw_multiline) rather than a road at a time: the map stays smooth however many roads are in view.
+static func _road_segments(r: RealRegion) -> Dictionary:
+	var out := {}
 	for ei in r.edge_count():
+		var ci := int(r.edge_class[ei])
+		if not out.has(ci):
+			out[ci] = PackedVector2Array()
 		var line := r.edge_line[ei]
-		var lo := line[0]
-		var hi := line[0]
-		for p in line:
-			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
-			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
-		out[ei * 4] = lo.x
-		out[ei * 4 + 1] = lo.y
-		out[ei * 4 + 2] = hi.x
-		out[ei * 4 + 3] = hi.y
+		var segs: PackedVector2Array = out[ci]
+		var at := segs.size()
+		segs.resize(at + (line.size() - 1) * 2)
+		for j in line.size() - 1:
+			segs[at + j * 2] = line[j]
+			segs[at + j * 2 + 1] = line[j + 1]
+		out[ci] = segs
 	return out
 
 
@@ -283,7 +287,7 @@ func poll() -> bool:
 			_task_lock.unlock()
 			if res.size() == 5:
 				roads = res[0]
-				_roads_bbox = res[1]
+				_road_segs = res[1]
 				note = str(res[2]) if _want != "" else ""
 				unmapped = res[4] if _want != "" else ([] as Array[Vector2i])
 			again = true
@@ -568,6 +572,7 @@ func _draw_coast(k: float, m0: Vector2) -> void:
 
 
 func _draw_sketch(view_m: Rect2, k: float, m0: Vector2) -> void:
+	var to_px := Transform2D(Vector2(k, 0.0), Vector2(0.0, k), size * 0.5 - m0 * k)
 	for cls in [2, 1, 0]:   # (A roads first, so the motorways lie over them)
 		if cls == 2 and span > SKETCH_A_SPAN:
 			continue
@@ -581,12 +586,7 @@ func _draw_sketch(view_m: Rect2, k: float, m0: Vector2) -> void:
 				var e := i * 4
 				if boxes[e + 2] < view_m.position.x or boxes[e] > view_m.end.x or boxes[e + 3] < view_m.position.y or boxes[e + 1] > view_m.end.y:
 					continue
-				var line: PackedVector2Array = lines[i][1]
-				var pts := PackedVector2Array()
-				pts.resize(line.size())
-				for j in line.size():
-					pts[j] = (line[j] - m0) * k + size * 0.5
-				draw_polyline(pts, look[0], float(look[1]) * (1.3 if big else 1.0), true)
+				draw_polyline(to_px * (lines[i][1] as PackedVector2Array), look[0], float(look[1]) * (1.3 if big else 1.0), true)
 
 
 ## Whether the roads in view are drawn, so a touch there pins.
@@ -745,24 +745,16 @@ func _draw() -> void:
 func _draw_lines(layer: String, view_m: Rect2, k: float, m0: Vector2, col: Color, width: float) -> void:
 	var lines := WorldMap.lines(layer)
 	var boxes := WorldMap.line_boxes(layer)
+	var to_px := Transform2D(Vector2(k, 0.0), Vector2(0.0, k), size * 0.5 - m0 * k)
 	for i in lines.size():
 		var b := i * 4
 		if boxes[b + 2] < view_m.position.x or boxes[b] > view_m.end.x or boxes[b + 3] < view_m.position.y or boxes[b + 1] > view_m.end.y:
 			continue
-		var line: PackedVector2Array = lines[i]
-		var pts := PackedVector2Array()
-		pts.resize(line.size())
-		for j in line.size():
-			pts[j] = (line[j] - m0) * k + size * 0.5
-		draw_polyline(pts, col, width, true)
+		draw_polyline(to_px * (lines[i] as PackedVector2Array), col, width, true)
 
 
 func _draw_roads() -> void:
 	var xf := _frame_xf(Vector2(roads.frame_lat, roads.frame_lon))
-	var inv := xf.affine_inverse()
-	var a := inv * Vector2.ZERO
-	var b := inv * size
-	var view := Rect2(a, Vector2.ZERO).expand(b)
 	var scale := xf.x.x   # pixels per metre
 	var order: Array = ROAD_LOOK.keys()
 	order.reverse()
@@ -771,22 +763,12 @@ func _draw_roads() -> void:
 		if scale < float(look[2]):
 			continue
 		var ci := roads.classes.find(cls)
-		if ci < 0:
+		if ci < 0 or not _road_segs.has(ci):
 			continue
 		var width := maxf(float(look[1]) * clampf(scale * 60.0, 0.7, 2.0), 1.0) * (1.4 if big else 1.0)
-		for ei in roads.edge_count():
-			if roads.edge_class[ei] != ci:
-				continue
-			var e := ei * 4
-			if _roads_bbox[e + 2] < view.position.x or _roads_bbox[e] > view.end.x or _roads_bbox[e + 3] < view.position.y or _roads_bbox[e + 1] > view.end.y:
-				continue
-			var line := roads.edge_line[ei]
-			var pts := PackedVector2Array()
-			var step := 1 if scale > 0.05 else 2
-			for j in range(0, line.size() - 1, step):
-				pts.append(xf * line[j])
-			pts.append(xf * line[line.size() - 1])
-			draw_polyline(pts, look[0], width, true)
+		# (the whole class at once, placed on the screen in one go: off the screen is clipped; the main roads' edges
+		# smoothed, not the many small roads', which would cost more than the rest of the map put together)
+		draw_multiline(xf * (_road_segs[ci] as PackedVector2Array), look[0], width, float(look[2]) <= 0.0)
 
 
 ## The names of the biggest places in view (the world's towns and cities, and close in the roads' own towns and
@@ -815,10 +797,15 @@ func _draw_names() -> void:
 			if str(p["kind"]) == "town":
 				var g := RealRegion.from_frame(Vector2(roads.frame_lat, roads.frame_lon), float(p["x"]), float(p["z"]))
 				try.call(to_screen(g.x, g.y), str(p["name"]), fs_big, 3.5)
-	for p: Array in WorldMap.places():
+	# (each place's point on the screen in one go, and only those on it looked at further)
+	var world := WorldMap.places()
+	var at := Transform2D(Vector2(_k(), 0.0), Vector2(0.0, _k()), size * 0.5 - WorldMap.mercator(lat, lon) * _k()) * WorldMap.place_points()
+	for i in at.size():
 		if shown[0] >= MAX_LABELS:
 			break
-		try.call(to_screen(float(p[1]), float(p[2])), str(p[0]), fs_big if int(p[3]) >= 1000000 else fs_small, 3.0)
+		if screen.has_point(at[i]):
+			var p: Array = world[i]
+			try.call(at[i], str(p[0]), fs_big if int(p[3]) >= 1000000 else fs_small, 3.0)
 	if roads_shown():
 		for p: Dictionary in roads.places:
 			if str(p["kind"]) == "village":

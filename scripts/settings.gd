@@ -148,7 +148,7 @@ const ACTIONS := [
 	["photo", "Adventure: take a photo (hold to film a clip)", ["foot", "ride"]],
 	["photo_camera", "Adventure: hold the camera up on foot (zoom, friends in shot)", ["foot"]],
 	["movie", "Film a 10-second movie (a countdown first; again to stop)", ["foot", "ride"]],
-	["ride_radio", "Adventure: the radio, the local stations (each press the next, then off)", ["ride"]],
+	["ride_radio", "Adventure: the radio, the local stations (each press the next, hold to switch off)", ["ride"]],
 	["screen_up", "Adjustable screen up", ["ride"]], ["screen_down", "Adjustable screen down", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],

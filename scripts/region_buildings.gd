@@ -139,7 +139,7 @@ static func _house(a: Dictionary, xf: Transform3D, w: float, d: float, h: float,
 					continue
 				var y := 0.9 + f * 3.0
 				_plate(a, body, Vector3(bx, y - 0.08, d * 0.5), Vector2(1.06, 1.36), trim, face)
-				_plate(a, body, Vector3(bx, y, d * 0.5 + 0.01), Vector2(0.9, 1.2), glass, face)
+				_plate(a, body, Vector3(bx, y, d * 0.5 + 0.01), Vector2(0.9, 1.2), WindowLights.mark(glass, body * Vector3(bx, y, d * 0.5 * face)), face)
 				if not shutters.is_empty():
 					for sx: float in [-0.75, 0.75]:
 						_plate(a, body, Vector3(bx + sx, y - 0.04, d * 0.5 + 0.02), Vector2(0.45, 1.28), shutter, face)
@@ -194,11 +194,12 @@ static func _block(a: Dictionary, xf: Transform3D, w: float, d: float, h: float,
 		for face: float in [1.0, -1.0]:
 			for b in bays:
 				var bx := ((float(b) + 0.5) / bays - 0.5) * w
-				_plate(a, body, Vector3(bx, 0.9 + f * 3.2, d * 0.5), Vector2(minf(1.4, w / bays * 0.6), 1.3), glass, face)
+				_plate(a, body, Vector3(bx, 0.9 + f * 3.2, d * 0.5), Vector2(minf(1.4, w / bays * 0.6), 1.3),
+					WindowLights.mark(glass, body * Vector3(bx, 0.9 + f * 3.2, d * 0.5 * face)), face)
 	if kind == "shop":
 		var fascia: Color = RegionKit.pick(rng, kit["shop"]["fascia"], trim)
 		var awning: Color = RegionKit.pick(rng, kit["shop"]["awning"], fascia)
-		_plate(a, body, Vector3(0, 0.25, d * 0.5), Vector2(w * 0.8, 2.1), glass.lightened(0.15))
+		_plate(a, body, Vector3(0, 0.25, d * 0.5), Vector2(w * 0.8, 2.1), WindowLights.mark(glass.lightened(0.15), body.origin))
 		AdventureProps.box(a, body.translated_local(Vector3(0, 2.55, d * 0.5 + 0.08)), Vector3(w * 0.9, 0.6, 0.16), fascia)
 		_shop_name(a, body, Vector3(0, 2.85, d * 0.5 + 0.17), w * 0.8, 0.34, fascia, kit, rng)
 		_lean_to(a, body, Vector3(0, 2.5, d * 0.5 + 0.16), w * 0.85, 1.3, 0.5, awning)

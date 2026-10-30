@@ -2,7 +2,7 @@ class_name RideRadio
 extends Node
 ## The bike's radio on an adventure: the local stations of the country you're riding through (PlaceSound's
 ## radio list, the local language first). Each press of its key ({ride_radio}) tunes the next station, and after
-## the last it goes off. Switched on again, it starts on the station you last left it on in that country. It plays
+## the last it goes off; holding the key down (HOLD) switches it straight off from any station. Switched on again, it starts on the station you last left it on in that country. It plays
 ## from your bike, on the Radio bus (the radio volume setting), and hisses when a station can't be reached.
 ## RideAmbience makes it, so it lasts as long as the ride.
 
@@ -14,6 +14,10 @@ var country := ""
 var index := -1
 ## Tests turn this on so pressing doesn't go out to the internet.
 var offline := false
+## How long the key is held (seconds) to switch the radio straight off.
+const HOLD := 0.5
+## How long the key has been held since it last tuned a station (-1 when it isn't down, or has already switched off).
+var _held := -1.0
 var _speaker: AudioStreamPlayer3D
 var _hiss: AudioStreamPlayer3D
 var _stream: RadioStream
@@ -70,14 +74,20 @@ func press() -> String:
 	else:
 		index = next_index(index, list.size())
 	if index < 0:
-		last.erase(country)
-		_stream.stop()
-		Sfx.set_loop(_hiss, "")
-		return "Radio off"
+		return switch_off()
 	last[country] = index
 	if not offline:
 		_stream.tune(str(list[index]["url"]))
-	return "Radio: %s  ·  {ride_radio} for the next station" % label(list[index])
+	return "Radio %d/%d: %s  ·  {ride_radio} next, hold to switch off" % [index + 1, list.size(), label(list[index])]
+
+
+## Switches the radio off whatever it's on; it starts on the first station next time.
+func switch_off() -> String:
+	index = -1
+	last.erase(country)
+	_stream.stop()
+	Sfx.set_loop(_hiss, "")
+	return "Radio off"
 
 
 ## Changes country: a radio that was on goes to that country's stations (where you last left them there).
@@ -100,10 +110,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	get_viewport().set_input_as_handled()
 	trip.main.hud.flash(press(), 2.5)
+	_held = 0.0 if index >= 0 else -1.0
 
 
-func _process(_delta: float) -> void:
+## Held down after tuning in: switches off once it has been held for HOLD.
+func hold(delta: float, down: bool) -> String:
+	if _held < 0.0:
+		return ""
+	if not down:
+		_held = -1.0
+		return ""
+	_held += delta
+	if _held < HOLD:
+		return ""
+	_held = -1.0
+	return switch_off() if index >= 0 else ""
+
+
+func _process(delta: float) -> void:
 	var trip := AdventureTrip.current
+	var off := hold(delta, Input.is_action_pressed("ride_radio"))
+	if off != "" and trip and trip.main and trip.main.hud:
+		trip.main.hud.flash(off, 2.0)
 	if trip and trip.main and trip.main.bike and is_instance_valid(trip.main.bike):
 		_speaker.global_position = trip.main.bike.global_position + Vector3.UP
 	# No signal: the static through instead of silence.
