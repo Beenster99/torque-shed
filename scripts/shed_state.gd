@@ -2234,6 +2234,8 @@ func ensure_fixtures() -> void:
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
+	elif (furniture[whiteboard_id()]["xf"] as Transform3D).origin.distance_to(Whiteboard.OLD_MOUNT) < 0.01:
+		furniture[whiteboard_id()]["xf"] = Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT)
 	# Kit left where the bigger spray bay stands now goes to the paint shop's walkway.
 	var bay := Workshop.booth_footprint()
 	var n := 0

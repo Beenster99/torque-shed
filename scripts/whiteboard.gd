@@ -6,8 +6,11 @@ extends Node3D
 ## text, Z undoes your last mark and holding X wipes the whole board. What's on it lives in
 ## Shed.board (see BoardData); this draws it into a SubViewport shown on the board's face.
 
-## On the front wall inside, left of the roller door, between the corner and the scrap bin.
-const MOUNT := Vector3(-4.85, 1.55, 70.47)
+## On the front wall inside, left of the roller door, just above the two recycling bins (see
+## Workshop.BINS) and clear of the door.
+const MOUNT := Vector3(-3.62, 1.66, 70.47)
+## Where it hung before it moved above the bins: a board still there in a save moves up.
+const OLD_MOUNT := Vector3(-4.85, 1.55, 70.47)
 const FACING := PI           # turned to face into the shed
 const SIZE := Vector2(2.4, 1.2)
 const REACH := 2.5

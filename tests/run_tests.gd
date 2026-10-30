@@ -6240,7 +6240,7 @@ func _test_whiteboard_moves() -> void:
 	var me := Shed.me()
 	var board := Shed.whiteboard_id()
 	check(board != 0 and Shed.furniture[board]["xf"].origin == Whiteboard.MOUNT and Equipment.is_wall("whiteboard"),
-		"the whiteboard is a wall hanging in its old place on the front wall")
+		"the whiteboard is a wall hanging on the front wall, above the recycling bins")
 	check(Shed.check(me, {"a": "order_furniture", "model": "whiteboard"}).contains("already"), "there's only the one whiteboard")
 	check(not PartsComputer.all_kinds().has("eq:whiteboard"), "it isn't sold")
 	check(Shed.check(me, {"a": "grab", "furniture": board}) == "", "it can be taken down")
@@ -6249,7 +6249,16 @@ func _test_whiteboard_moves() -> void:
 	(old["furniture"] as Dictionary).erase(board)
 	Shed.load_state(old, "Tester")
 	var again := Shed.whiteboard_id()
-	check(again != 0 and Shed.furniture[again]["xf"].origin == Whiteboard.MOUNT, "a save from before keeps it at the old spot")
+	check(again != 0 and Shed.furniture[again]["xf"].origin == Whiteboard.MOUNT, "a save from before it could move gets it above the bins")
+	# A save with it still in its first spot, left of the bins: it moves up above them.
+	Shed.furniture[again]["xf"] = Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.OLD_MOUNT)
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.furniture[Shed.whiteboard_id()]["xf"].origin == Whiteboard.MOUNT, "a board left in its first spot moves above the bins")
+	# It sits over the two recycling bins, clear of their lids and of the roller door.
+	var bins_x := (float(Workshop.BINS["plastic"][0]) + float(Workshop.BINS["metal"][0])) * 0.5
+	var bottom := Whiteboard.MOUNT.y - 1.27 * 0.5
+	check(absf(Whiteboard.MOUNT.x - (Workshop.CENTER.x + bins_x)) < 0.05 and bottom > Workshop.BIN_SIZE.y + 0.05 and bottom < Workshop.BIN_SIZE.y + 0.25
+		and Whiteboard.MOUNT.x + 2.47 * 0.5 < Workshop.CENTER.x - Workshop.DOOR_HALF, "it hangs just above the recycling bins (%s)" % Whiteboard.MOUNT)
 	Shed.stop()
 	# In the game: take it down, hang it on the east wall, and it's still there after a save.
 	var kept := [Settings.time_of_day, Settings.day_night_cycle, Settings.day_length]
@@ -6262,7 +6271,7 @@ func _test_whiteboard_moves() -> void:
 	var w: Walker = main.walker
 	board = Shed.whiteboard_id()
 	var node: Whiteboard = get_tree().get_first_node_in_group("whiteboard")
-	check(node != null and node.global_position.distance_to(Whiteboard.MOUNT) < 0.01, "it hangs where it always did")
+	check(node != null and node.global_position.distance_to(Whiteboard.MOUNT) < 0.01, "it hangs above the recycling bins")
 	Shed.board_request({"a": "board_draw", "id": 501, "c": 2, "w": 6.0, "from": 0, "done": true,
 		"pts": PackedVector2Array([Vector2(100, 100), Vector2(400, 120)])})
 	w.target = {"kind": "board"}
