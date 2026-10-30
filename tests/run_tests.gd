@@ -919,6 +919,10 @@ func _run_all() -> void:
 	await _t(&"_test_coop_positions")
 	await _t(&"_test_coop_call")
 	await _t(&"_test_coop_state")
+	print("Simon's v0.39.0 round: the optional parts a bike is complete and ridable without")
+	await _t(&"_test_optional_parts_list")
+	await _t(&"_test_optional_parts_random_bikes")
+	await _t(&"_test_optional_parts_shed")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -7728,8 +7732,8 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		for id in PartsDB.by_kind[k]:
 			if PartsDB.spec_line(id) == "":
 				check(false, "%s has a spec line" % id)
-	check(not PartsDB.is_optional("tail") and PartsDB.is_optional("fairing") and PartsDB.is_optional("mirrors"),
-		"every bike needs a tail unit; fairings and mirrors are extras")
+	check(PartsDB.is_optional("tail") and PartsDB.is_optional("fairing") and PartsDB.is_optional("mirrors"),
+		"tail units, fairings and mirrors are all optional (Simon's list)")
 	check(PartsDB.dependents("headlight").has("fairing") and PartsDB.dependents("handlebars").has("mirrors")
 		and PartsDB.dependents("frame").has("tail"), "the fairing comes off before the headlight, the mirrors before the bars")
 	check(PartsDB.part_mounts("mirrors", "fairing_mirrors").has("fairing") and not PartsDB.part_mounts("mirrors", "round_mirrors").has("fairing"),
@@ -13862,8 +13866,8 @@ func _test_style_tags() -> void:
 func _test_filler_parts() -> void:
 	var all_ok := true
 	for s in PartsDB.FILLER_SLOTS:
-		all_ok = all_ok and PartsDB.is_optional(s) and PartsDB.BIKE_SLOTS.has(s) and PartsDB.MOUNTS[s] == ["frame"] and PartsDB.DEFAULT_BUILD[s] == "none"
-	check(all_ok, "indicators, side panels, rearsets, guards and number boards bolt to the frame and are optional")
+		all_ok = all_ok and PartsDB.may_be_empty(s) and PartsDB.BIKE_SLOTS.has(s) and PartsDB.MOUNTS[s] == ["frame"] and PartsDB.DEFAULT_BUILD[s] == "none"
+	check(all_ok, "indicators, side panels, rearsets, guards and number boards bolt to the frame and can be left off")
 	check(PartsDB.dependents("frame").has("rearsets") and PartsDB.LOW_SLOTS.has("guards"), "they come off before the frame, and you crouch for the low ones")
 	for slot in PartsDB.FILLER_SLOTS:
 		check(PartsDB.by_kind[slot].size() >= 5, "%s: at least five to choose from" % PartsDB.KIND_NAMES[slot])
@@ -24435,3 +24439,21 @@ func _test_road_signs() -> void:
 	_road_markings().test_signs()
 
 
+
+
+# ---------------------------------------------------------------------------- optional parts (tests/optional_parts_tests.gd)
+
+func _optional_parts() -> RefCounted:
+	return load("res://tests/optional_parts_tests.gd").new(self)
+
+
+func _test_optional_parts_list() -> void:
+	_optional_parts().test_list()
+
+
+func _test_optional_parts_random_bikes() -> void:
+	_optional_parts().test_random_bikes()
+
+
+func _test_optional_parts_shed() -> void:
+	_optional_parts().test_shed()

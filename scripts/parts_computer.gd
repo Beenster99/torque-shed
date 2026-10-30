@@ -510,7 +510,7 @@ static func fit_problem(id: String, bike_id: int) -> String:
 	# may never have: the headlight under a fairing, the fairing under fairing mirrors.
 	for slot in PartsDB.slots_for_kind(PartsDB.kind_of(id)):
 		for m in PartsDB.part_mounts(slot, id):
-			if not PartsDB.is_optional(str(m)):
+			if not PartsDB.may_be_empty(str(m)):
 				continue
 			if on.call(str(m)) == "none":
 				return "It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower()
@@ -893,6 +893,9 @@ func _fill_part(id: String) -> void:
 		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
 	_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nFits: " + ", ".join(fits)
+	var need := needed_text(_kind)
+	if need != "":
+		_spec.text += "\n" + need
 	if fits_bike != 0 and Shed.bikes.has(fits_bike):
 		var why := fit_problem(id, fits_bike)
 		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), "goes on it as it is" if why == "" else why]
@@ -906,6 +909,26 @@ func _fill_part(id: String) -> void:
 		_desc.text += " The shed has %d already, not fitted to anything." % owned(id)
 	if _kind == "chain":
 		_spec.text += "\n\nCrouch by the bike with the wrench and hold {work2} to set the tension. Lube it with chain lube."
+
+
+## What a bike still needs before it's complete and can be ridden, naming every missing part, and
+## the parts it can do without: "Missing: side stand, tank. Optional parts (...): headlight, ...".
+static func missing_text(bike_id: int) -> String:
+	var names: Array = Shed.missing_slots(bike_id).map(func(s): return PartsDB.slot_name(str(s)).to_lower())
+	return "Missing: %s.\nOptional parts (it rides without these): %s." % [", ".join(names), PartsDB.optional_text()]
+
+
+## Whether a bike needs a part of kind `k` to be complete and ridable, in a line for the part's
+## page, with the optional parts listed where it's one of them ("" for kinds that aren't bike parts).
+static func needed_text(k: String) -> String:
+	var slots := PartsDB.slots_for_kind(k)
+	if slots.is_empty():
+		return ""
+	if slots.all(func(s): return PartsDB.is_optional(str(s))):
+		return "Optional: a bike is complete and ridable without one.\nOptional parts: %s." % PartsDB.optional_text()
+	if slots.all(func(s): return PartsDB.FRAME_OWN_SLOTS.has(str(s))):
+		return "Without one, a bike uses its frame's own."
+	return "Needed: a bike can't be ridden without one."
 
 
 ## A kind picked (A on a pad, or a click): its parts list, with the pad's focus on the first.
@@ -1115,6 +1138,8 @@ func _show_sale(key: String) -> void:
 			if Money.rideable(id) else ("Complete, but needs petrol and oil to fetch the best price." if Shed.is_complete(id)
 			else "%d part%s missing and %d loose: a complete bike fetches more." % [missing, "" if missing == 1 else "s", loose])
 		_desc.text = "Sells the whole bike to the trade, off its display stand, with every part on it. %s" % state
+		if missing > 0:
+			_desc.text += "\n" + missing_text(id)
 		_spec.text = "The money goes into the business's account. Private buyers pay more: price it at the sales office PC. Bikes sold: XP for whoever sells it." \
 			+ "\n\nPaint, panel by panel:\n" + BikePaintInfo.text(id)
 		return

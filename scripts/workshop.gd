@@ -1249,6 +1249,27 @@ func _crew_rows() -> Array:
 	return players
 
 
+## The bay screen's lines naming the parts a bike still needs before it can be ridden ([] when
+## none are missing), wrapped to fit the screen's notes.
+static func missing_lines(missing: Array) -> Array:
+	if missing.is_empty():
+		return []
+	var lines: Array = []
+	var line := "Needs to ride:"
+	for i in missing.size():
+		var word := PartsDB.slot_name(str(missing[i])).to_lower() + ("," if i < missing.size() - 1 else "")
+		if line.length() + 1 + word.length() > MISSING_LINE:
+			lines.append(line)
+			line = " "
+		line += " " + word
+	lines.append(line)
+	return lines
+
+
+## How many characters of a bay screen note fit on a line.
+const MISSING_LINE := 46
+
+
 func _bay_data(bay: int) -> Dictionary:
 	var bike_id := 0
 	for id in Shed.bikes:
@@ -1278,7 +1299,7 @@ func _bay_data(bay: int) -> Dictionary:
 		if PartsDB.is_engine_slot(slot) and not has_engine:
 			continue
 		var item_id := Shed.item_on(bike_id, slot)
-		if item_id == 0 and PartsDB.is_optional(slot):
+		if item_id == 0 and PartsDB.may_be_empty(slot):
 			continue
 		var name: String = PartsDB.slot_name(slot)
 		if slot == "engine" and not has_engine:
@@ -1292,7 +1313,7 @@ func _bay_data(bay: int) -> Dictionary:
 		["Brake R", build.brake_fluid["rear"], 0.0],
 	]
 	var data := {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
-		"notes": build.notes, "fluids": fluids, "range_km": build.range_km()}
+		"notes": missing_lines(missing) + build.notes, "fluids": fluids, "range_km": build.range_km()}
 	# A customer's bike: the screen shows the job's checklist, deadline and money instead.
 	var job := Contracts.job_for_bike(bike_id)
 	if not job.is_empty():

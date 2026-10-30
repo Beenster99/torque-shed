@@ -170,7 +170,7 @@ static func inspect(bike_id: int) -> Array:
 		oil = float(engine["fluid"]["litres"]) / maxf(0.001, PartsDB.fluid_capacity(str(engine["part"])))
 	rows.append(_row("Fluids", "Engine oil level (no leaks)", "missing engine" if engine.is_empty() else _pct(oil), oil >= OIL_MIN,
 		"Top up the engine oil."))
-	var bolted := Shed.loose_slots(bike_id).is_empty() and Shed.missing_slots(bike_id).filter(func(s): return not PartsDB.is_optional(str(s))).is_empty()
+	var bolted := Shed.loose_slots(bike_id).is_empty() and Shed.missing_slots(bike_id).filter(func(s): return not PartsDB.may_be_empty(str(s))).is_empty()
 	rows.append(_row("Structure", "Everything fitted and bolted up", "all secure" if bolted else "loose or missing parts", bolted,
 		"Fit and bolt up every part."))
 	return rows

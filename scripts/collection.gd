@@ -304,7 +304,7 @@ static func look(p: Dictionary) -> Dictionary:
 		if not it.is_empty():
 			parts[slot] = str(it["part"])
 			cond[slot] = Shed.condition_of(it)
-		elif PartsDB.is_optional(slot):
+		elif PartsDB.may_be_empty(slot):
 			parts[slot] = "none"
 	var tune := {}
 	var own: Dictionary = bike.get("tune", {}) if bike.get("tune") is Dictionary else {}
