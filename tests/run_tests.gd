@@ -4125,7 +4125,7 @@ func _test_bike_baking() -> void:
 	check(b[0] * 2 < a[0] and b[1] * 2 < a[1], "a riding bike is drawn with far fewer draws (%d, not %d) and shadow casters (%d, not %d)" % [b[0], a[0], b[1], a[1]])
 	var off := []
 	for slot in plain._slot_meshes:
-		if (plain._slot_meshes[slot] as Array).is_empty() != (baked._slot_meshes[slot] as Array).is_empty():
+		if (plain._slot_meshes[slot] as Array).is_empty() != ((baked._slot_meshes[slot] as Array).is_empty() and not baked._slot_shapes.has(slot)):
 			off.append(slot)
 		elif not (plain._slot_meshes[slot] as Array).is_empty():
 			# Measured round the part's own corners: a box turned through the model's nodes is
@@ -4172,6 +4172,12 @@ func _faces_box(m: BikeModel, slot: String) -> AABB:
 			for v in (mi as MeshInstance3D).mesh.get_faces():
 				lo = lo.min(xf * v)
 				hi = hi.max(xf * v)
+	# The new look's shared meshes keep each part's own shape (see BikeLookNew.bake).
+	for shape in m._slot_shapes.get(slot, []):
+		var xf := Transform3D.IDENTITY if shape[0] == m else m._local_xform(shape[0])
+		for v in (shape[1] as Mesh).get_faces():
+			lo = lo.min(xf * v)
+			hi = hi.max(xf * v)
 	return AABB(lo, hi - lo)
 
 

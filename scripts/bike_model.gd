@@ -209,6 +209,10 @@ var _geo_anchors := {}           # node -> its rest transform in model space, fo
 ## _bake_static) and the dirt drawn over its merged pieces (see DirtLayer). They move with it.
 var _slot_extras := {}
 var _baked_pieces := {}          # instance id -> true for each mesh _bake_static merged
+## The new look's merged meshes that draw several parts at once (see BikeLookNew.bake), and each
+## of those parts' own shapes in them: slot -> [[the node they hang from, shape mesh, stock]].
+var _shared: Array = []
+var _slot_shapes := {}
 ## Each bent tube's line and thickness, by its mesh's instance id (see _bend). Kept here rather
 ## than as a meta on the mesh, which would stop _bake_static merging it.
 var _bends := {}
@@ -228,6 +232,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	mirrors.clear()
 	_slot_extras.clear()
 	_baked_pieces.clear()
+	_shared.clear()
+	_slot_shapes.clear()
 	_bends.clear()
 	_covered.clear()
 	_lamps.clear()
@@ -339,7 +345,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
 	set_lights(false, false)
-	baked_away = _bake_static() if baked else 0
+	# The new look folds the bike into far fewer meshes, all drawn by the one bike shader (see BikeLook).
+	baked_away = (BikeLookNew.bake(self) if BikeLook.is_new(self) else _bake_static()) if baked else 0
 	_floor_shine()
 	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
 	_show_blasted()
@@ -6922,6 +6929,8 @@ func set_grime(level: float) -> void:
 			for slot in _slot_meshes:
 				for mi in _slot_meshes[slot]:
 					(mi as GeometryInstance3D).material_overlay = null
+			for mi in _shared:
+				(mi as GeometryInstance3D).material_overlay = null
 			_grime = null
 		return
 	if _grime == null:
@@ -6934,6 +6943,9 @@ func set_grime(level: float) -> void:
 		_grime.roughness = 1.0
 		for slot in _slot_meshes:
 			for mi in _slot_meshes[slot]:
+				(mi as GeometryInstance3D).material_overlay = _grime
+		for mi in _shared:
+			if (mi as GeometryInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
 				(mi as GeometryInstance3D).material_overlay = _grime
 	_grime.albedo_color.a = clampf(level, 0.0, 0.9)
 
@@ -7201,6 +7213,10 @@ func highlight(slot: String) -> void:
 ## (the frame, the steering, a hub, a wheel, the swingarm), so this works for any slot, new
 ## ones included. Wheels and needles still spin under their offset rather than wobbling.
 func apply_geometry(geo: Dictionary) -> void:
+	if BikeLookNew.moves_shared(self, geo):
+		geometry = geo
+		redraw_look()
+		return
 	geometry = geo
 	if _build == null:
 		return
@@ -7299,6 +7315,12 @@ func slot_bounds(slot: String) -> AABB:
 		if _stock_pieces.has(mi):
 			continue   # the stock indicators on a headlight or tail unit
 		var aabb: AABB = _local_xform(mi) * (mi as VisualInstance3D).get_aabb()
+		box = aabb if first else box.merge(aabb)
+		first = false
+	for shape in _slot_shapes.get(slot, []):
+		if shape[2]:
+			continue
+		var aabb: AABB = (Transform3D.IDENTITY if shape[0] == self else _local_xform(shape[0])) * (shape[1] as Mesh).get_aabb()
 		box = aabb if first else box.merge(aabb)
 		first = false
 	return box
