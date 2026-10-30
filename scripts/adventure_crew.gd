@@ -34,13 +34,14 @@ static var _builds := ""   # (builds(), worked out once)
 
 ## This game's builder hash: everything that decides what a road block holds and how the agreed route is planned
 ## (RoadBlock.VERSION, the planner's version, the place profiles' format, the regional kits and country facts), and
-## what decides the scenery beside them (SceneryStreamer.VERSION, its kit library and its model scripts' versions).
-## Two games with different ones lay out different roads from the same map, so they can't ride the network together.
+## what decides the scenery beside them (SceneryStreamer.VERSION, its kit library and its model scripts' versions),
+## and the shape of the network messages (Net.PROTOCOL). Two games with different ones lay out different roads from
+## the same map, or can't follow each other's riders, so they can't ride the network together.
 static func builds() -> String:
 	if _builds == "":
 		_builds = builds_of([RoadBlock.VERSION, RoutePlanner.VERSION, PlaceProfile.FORMAT,
 			FileAccess.get_md5(RegionKit.KITS), FileAccess.get_md5(RegionKit.COUNTRIES),
-			SceneryStreamer.VERSION, FileAccess.get_md5(SceneryStreamer.KITS), SceneryStreamer.script_versions()])
+			SceneryStreamer.VERSION, FileAccess.get_md5(SceneryStreamer.KITS), SceneryStreamer.script_versions(), Net.PROTOCOL])
 	return _builds
 
 

@@ -200,11 +200,14 @@ func from_focus(s: float) -> float:
 
 
 ## Moves everything on `delta` seconds (and, on the host, brings new ones and lets far ones go).
-func step(delta: float) -> void:
+func step(delta: float, draw := true) -> void:
 	_near_t -= delta
 	if _near_t <= 0.0:
 		_near_t = 0.5
+		var jt := Perf.t0()
 		_find_junctions()
+		Perf.add("traffic_junctions", jt)
+	var st := Perf.t0()
 	if host:
 		for i in range(vehicles.size() - 1, -1, -1):
 			var d: Dictionary = vehicles[i]
@@ -223,6 +226,7 @@ func step(delta: float) -> void:
 			_side_timer = SIDE_EVERY
 			if vehicles.size() < wanted():
 				spawn_side()
+	Perf.add("traffic_spawn", st)
 	for d in vehicles:
 		if host:
 			if not d.get("scripted", false):
@@ -249,7 +253,15 @@ func step(delta: float) -> void:
 			var d: Dictionary = vehicles[i]
 			if not d.get("scripted", false) and not d.has("arm") and wrong_way(float(d["s"]), int(d["dir"])):
 				_remove(i)
+	if draw:
+		draw_all(delta)
+
+
+## Puts every vehicle where it's got to (step does it, unless the caller does it once a drawn frame instead).
+func draw_all(delta: float) -> void:
+	var dt := Perf.t0()
 	_draw(delta)
+	Perf.add("traffic_draw", dt)
 
 
 ## How many should be out round the riders, by how built up the road is round each group (a
@@ -932,8 +944,9 @@ func pack() -> PackedFloat32Array:
 	return out
 
 
-## Client: the host's vehicles (matched by seed; new ones built, gone ones removed).
-func unpack(state: PackedFloat32Array) -> void:
+## Client: the host's vehicles (matched by seed; new ones built, gone ones removed), from a snapshot that came `late`
+## seconds later than the quickest lately (each is aimed at where it has driven on to since).
+func unpack(state: PackedFloat32Array, late := 0.0) -> void:
 	var seen := {}
 	for b in range(0, state.size() - PACKED + 1, PACKED):
 		var seed_value := int(state[b + 3])
@@ -950,6 +963,9 @@ func unpack(state: PackedFloat32Array) -> void:
 				continue   # (a junction we don't have: the road changed under it)
 			arm = {"arm": code >> 4, "k": (code >> 1) & 7, "out": code & 1 == 1, "t": state[b]}
 			lat = NAN
+		# Where it has driven on to since (its s, or its t on a side road: growing going out).
+		var way := (1.0 if arm["out"] else -1.0) if not arm.is_empty() else state[b + 1]
+		var on := state[b] + way * state[b + 2] * late
 		var found := find(seed_value)
 		if found.is_empty() or str(found["kind"]) != VehicleModel.KINDS[ki]:
 			if not found.is_empty():
@@ -966,9 +982,9 @@ func unpack(state: PackedFloat32Array) -> void:
 			found["arm"] = arm["arm"]
 			found["k"] = arm["k"]
 			found["out"] = arm["out"]
-			found["target"] = state[b]
-			if not was_on or absf(float(found["t"]) - state[b]) > 25.0:
-				found["t"] = state[b]
+			found["target"] = on
+			if not was_on or absf(float(found["t"]) - on) > 25.0:
+				found["t"] = on
 		else:
 			if found.has("arm"):
 				for key in ["arm", "k", "t", "out"]:
@@ -976,9 +992,9 @@ func unpack(state: PackedFloat32Array) -> void:
 				found["s"] = state[b]
 			found["dir"] = int(state[b + 1])
 			found["v"] = state[b + 2]
-			found["target"] = state[b]
-			if absf(float(found["s"]) - state[b]) > 25.0:
-				found["s"] = state[b]
+			found["target"] = on
+			if absf(float(found["s"]) - on) > 25.0:
+				found["s"] = on
 		found["ind"] = (flags & 3) - 1
 		found["kerb"] = flags & 4 != 0
 		found["aux"] = flags >> 3

@@ -628,6 +628,8 @@
 	"_test_net_junctions": 120,
 	"_test_net_nav": 120,
 	"_test_net_plan": 4000,
+	"_test_net_timeline_bunched": 50,
+	"_test_net_timeline_late": 50,
 	"_test_net_world": 9000,
 	"_test_net_flats": 300,
 	"_test_net_sites": 12000,

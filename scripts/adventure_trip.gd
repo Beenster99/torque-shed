@@ -361,8 +361,9 @@ func leave() -> void:
 		main._stop_riding()
 	_unload()
 	main.workshop.sync_state()   # (left as it was while you were away: see Main._on_shed_changed)
-	if main.contracts_view:
-		main.contracts_view.sync_state()   # and the customers who came in meanwhile
+	for view in [main.contracts_view, main.sales_view, main.coffee_view, main.staff_view]:
+		if view:
+			view.sync_state()   # and the customers, buyers, cafe bikers and staff who came and went meanwhile
 	if main.walker:
 		main.walker.place(Workshop.walker_spawn(Net.local_slot()))
 	main.camera.snap()
@@ -575,7 +576,7 @@ func _put(xf: Transform3D) -> void:
 
 
 ## A mate's snapshot came in: where they are on the map (gone from crew_at when they're back in the shed).
-func _on_state(peer: int, state: PackedFloat32Array) -> void:
+func _on_state(peer: int, state: PackedFloat32Array, _sent := -1.0) -> void:
 	var at = AdventureCrew.region_xz(state)
 	if at == null:
 		crew_at.erase(peer)

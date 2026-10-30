@@ -51,6 +51,8 @@ func sync_state() -> void:
 			barista.queue_free()
 		barista = null
 		return
+	if Shed.active and main != null and main.get("trip") != null and main.trip.on_trip():
+		return   # (out on an adventure the shed's out of sight: put right on the way home, see AdventureTrip.leave)
 	_sync_visitors()
 	_sync_trays()
 	_sync_barista()

@@ -886,6 +886,13 @@ func _run_all() -> void:
 	await _t(&"_test_skyline_lines")
 	await _t(&"_test_skyline_block")
 	await _t(&"_test_skyline_regions")
+	print("Ride Anywhere v2, phase D round 2: mountains and wild ground (passes, peaks, cliffs, ice, sand, reefs)")
+	await _t(&"_test_wild_kits")
+	await _t(&"_test_wild_pass")
+	await _t(&"_test_wild_peaks_and_caves")
+	await _t(&"_test_wild_cliff")
+	await _t(&"_test_wild_areas")
+	await _t(&"_test_wild_regions")
 	print("Ride Anywhere v2, phase D round 2: history (walled towns, gates, monuments, viewpoints, buildings' real looks)")
 	await _t(&"_test_history_models")
 	await _t(&"_test_history_walls")
@@ -1390,7 +1397,7 @@ func _test_crash_and_respawn() -> void:
 		"the other players see the rider thrown off where they are on the crasher's game (%.3f m out)" % off)
 	var up := state.slice(0, RemoteBike.RAGDOLL_AT)
 	up[17] = 0.0
-	rb._snapshots.clear()
+	rb.timeline.snaps.clear()
 	rb.push_state(up)
 	await get_tree().physics_frame
 	check(not is_instance_valid(seen), "and theirs is gone when the crasher's picked up")
@@ -22899,6 +22906,34 @@ func _test_fields_regions() -> void:
 	_fields().test_regions()
 
 
+func _wild() -> RefCounted:
+	return load("res://tests/wild_tests.gd").new(self)
+
+
+func _test_wild_kits() -> void:
+	_wild().test_kits()
+
+
+func _test_wild_pass() -> void:
+	_wild().test_pass()
+
+
+func _test_wild_peaks_and_caves() -> void:
+	_wild().test_peaks_and_caves()
+
+
+func _test_wild_cliff() -> void:
+	_wild().test_cliff()
+
+
+func _test_wild_areas() -> void:
+	_wild().test_areas()
+
+
+func _test_wild_regions() -> void:
+	_wild().test_regions()
+
+
 func _skyline() -> RefCounted:
 	return load("res://tests/skyline_tests.gd").new(self)
 
@@ -24109,6 +24144,20 @@ func _test_filter_fairing_caps() -> void:
 
 func _test_filter_in_shed() -> void:
 	await _filters().test_in_shed()
+
+
+# ---------------------------------------------------------------------------- other riders drawn smoothly (tests/net_timeline_tests.gd)
+
+func _net_timeline() -> RefCounted:
+	return load("res://tests/net_timeline_tests.gd").new(self)
+
+
+func _test_net_timeline_bunched() -> void:
+	_net_timeline().test_bunched()
+
+
+func _test_net_timeline_late() -> void:
+	_net_timeline().test_late()
 
 
 # ---------------------------------------------------------------------------- smooth adventure roads (tests/smooth_tests.gd)

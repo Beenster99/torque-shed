@@ -6,7 +6,8 @@ extends Node
 signal player_joined(id: int, info: Dictionary)
 signal player_updated(id: int, info: Dictionary)
 signal player_left(id: int)
-signal state_received(id: int, state: PackedFloat32Array)
+## A player's snapshot, and when they took it on their clock (see clock; below 0 if they didn't say).
+signal state_received(id: int, state: PackedFloat32Array, sent: float)
 signal connected
 signal connection_failed(reason: String)
 signal disconnected
@@ -18,8 +19,9 @@ signal time_received(hours: float, rate: float)
 signal weather_received(state: String, from: String, blend: float, wet: float)
 ## The host's road traffic (see RoadTraffic.pack): the other bikers out on the roads.
 signal traffic_received(state: PackedFloat32Array)
-## The host's traffic on an adventure's road (see AdventureTraffic and TrafficStream.pack).
-signal adv_traffic_received(state: PackedFloat32Array)
+## The host's traffic on an adventure's road (see AdventureTraffic and TrafficStream.pack), and when the host took it
+## on its clock.
+signal adv_traffic_received(state: PackedFloat32Array, sent: float)
 
 ## Whether friends outside your network can reach your shed: "" (not hosting), "checking",
 ## "open" (the router opened the port for us via UPnP) or "closed" (it has to be forwarded by hand).
@@ -29,6 +31,9 @@ var _upnp: UPNP
 var _upnp_thread: Thread
 var _mapped_port := 0
 
+## The shape of the messages: one more each time one changes, so games that can't understand each other are told at
+## the lobby (it's part of AdventureCrew.builds). 2: snapshots carry their sender's clock (see clock).
+const PROTOCOL := 2
 const PORT := 24680
 const MAX_PLAYERS := 8
 
@@ -262,8 +267,15 @@ func update_local_info(info: Dictionary) -> void:
 func send_state(state: PackedFloat32Array) -> void:
 	if is_online() and not players.is_empty():
 		var pt := Perf.t0()
-		_state.rpc(state)
+		_state.rpc(state, clock())
 		Perf.add("net_send", pt)
+
+
+## This game's clock for its snapshots (s): how far its physics has got, so a snapshot taken on each of the ticks a
+## slow frame catches up on is stamped with the moment it stands for, not with when the frame happened to run. Their
+## receivers draw them along it (NetTimeline), however bunched up or late they arrive.
+static func clock() -> float:
+	return float(Engine.get_physics_frames()) / Engine.physics_ticks_per_second
 
 
 ## Host only: tell everyone the time of day.
@@ -312,9 +324,9 @@ func _register(info: Dictionary) -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func _state(state: PackedFloat32Array) -> void:
+func _state(state: PackedFloat32Array, sent := -1.0) -> void:
 	var pt := Perf.t0()
-	state_received.emit(multiplayer.get_remote_sender_id(), state)
+	state_received.emit(multiplayer.get_remote_sender_id(), state, sent)
 	Perf.add("net_receive", pt)
 
 
@@ -348,11 +360,11 @@ func _traffic(state: PackedFloat32Array) -> void:
 ## Host only: the traffic on the adventure's road (see AdventureTraffic), a few times a second.
 func send_adv_traffic(state: PackedFloat32Array) -> void:
 	if is_host() and not players.is_empty():
-		_adv_traffic.rpc(state)
+		_adv_traffic.rpc(state, clock())
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func _adv_traffic(state: PackedFloat32Array) -> void:
-	adv_traffic_received.emit(state)
+func _adv_traffic(state: PackedFloat32Array, sent := -1.0) -> void:
+	adv_traffic_received.emit(state, sent)
 
 
