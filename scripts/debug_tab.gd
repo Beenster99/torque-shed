@@ -34,6 +34,21 @@ func _ready() -> void:
 	_info = UITheme.label("", 16, UITheme.ACCENT)
 	box.add_child(_info)
 
+	# The bike look overhaul's safety net (see BikeLook): every bike swaps there and then, just for you.
+	box.add_child(UITheme.label("Bike look", 15, UITheme.ACCENT))
+	var look := OptionButton.new()
+	look.name = "BikeLookPicker"
+	for l in BikeLook.LOOKS:
+		look.add_item(BikeLook.NAMES[l])
+	look.selected = BikeLook.LOOKS.find(BikeLook.current())
+	look.tooltip_text = "Classic: the bikes as they were before the look overhaul. New: the overhaul. Only changes what you see."
+	look.item_selected.connect(func(i): BikeLook.choose(BikeLook.LOOKS[i]))
+	var look_label := UITheme.label("Bike look", 15)
+	look_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var look_row := _row([look_label])
+	look_row.add_child(look)
+	box.add_child(look_row)
+
 	box.add_child(UITheme.label("XP", 15, UITheme.ACCENT))
 	box.add_child(_row([
 		_button("Reset my XP", func(): _ask("Reset your XP?",
