@@ -21915,10 +21915,13 @@ func _test_detail_session() -> void:
 	var gb := 0.0
 	for i in front:
 		gf += job.e_g[i]
-	for i in side.slice(side.size() / 2):
+	# The other half: past the reach of the pad from the polished half's last points.
+	var reach_z: float = job.e_pos[front[front.size() - 1]].z + DetailJob.PAD if not front.is_empty() else 0.0
+	var back: Array = side.slice(side.size() / 2).filter(func(i): return job.e_pos[i].z > reach_z)
+	for i in back:
 		gb += job.e_g[i]
 	gf /= maxf(front.size(), 1)
-	gb /= maxf(side.size() - front.size(), 1)
+	gb /= maxf(back.size(), 1)
 	check(gf > 0.85 and gb < g0 + 0.05 and float(job.panel(ti)["gloss"]) > g0 and job.e_b.count(1) == 0,
 		"polished half of the tank comes up to a deep gloss and the other half's as it was (%.2f / %.2f, from %.2f), no burn" % [gf, gb, g0])
 	check(job.cues.any(func(c): return str(c["kind"]) == "gloss") or float(job.panel(ti)["gloss"]) < Detail.GLOSS_GOOD, "a panel brought up to a gloss dings")
