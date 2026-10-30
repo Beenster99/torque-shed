@@ -91,8 +91,12 @@ static func spec_from_build(build: BikeBuild) -> Dictionary:
 	var air := build.part("air_filter") if build.has_part("air_filter") else {}
 	var box := build.part("gearbox") if build.has_part("gearbox") else {}
 	var plugs := float(build.health.get("spark_plugs", 1.0))
+	var crank := str(block.get("crank", ""))
+	if crank == "" and build.layout == "vtwin":
+		# A V-twin fires as its V is wide: 45, 60 or (the ones without an angle) 90 degrees.
+		crank = {45: "45v", 60: "60v"}.get(roundi(build.v_angle), "90v")
 	var opts := {
-		"crank": str(block.get("crank", "")),
+		"crank": crank, "valves": build.valves,
 		"idle": build.idle_rpm, "redline": build.redline, "peak": build.peak_torque_rpm,
 		"exhaust": exhaust_style(ex), "loud": float(ex.get("loudness", 0.8)) if not ex.is_empty() else 1.4,
 		"intake": str(air.get("style", "airbox")) if not air.is_empty() else "cone",
@@ -129,6 +133,7 @@ static func make_spec(layout: String, cylinders: int, displacement: float, opts 
 		"shift": str(opts.get("shift", "click")), "quickshifter": bool(opts.get("quickshifter", false)),
 		"dry_clutch": bool(opts.get("dry_clutch", false)),
 		"rust": float(opts.get("rust", 0.0)), "misfire": float(opts.get("misfire", 0.0)), "kick": bool(opts.get("kick", false)),
+		"valves": int(opts.get("valves", 4)),
 	}
 
 
@@ -154,9 +159,11 @@ static func shift_feel(box: Dictionary) -> String:
 ## Everything that changes the baked sound (the gearbox's feel too, for its gear changes), as a
 ## key for sharing banks between bikes.
 static func signature(spec: Dictionary) -> String:
-	return "%s|%d|%d|%s|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s" % [spec["layout"], spec["cylinders"], roundi(spec["cc"] / 25.0), spec["crank"],
+	# (A one-valve flathead ticks differently; every other head sounds alike.)
+	return "%s|%d|%d|%s|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s%s" % [spec["layout"], spec["cylinders"], roundi(spec["cc"] / 25.0), spec["crank"],
 		roundi(spec["idle"] / 50.0), roundi(spec["redline"] / 100.0), roundi(spec["peak"] / 100.0), spec["exhaust"], spec["intake"],
-		spec["dry_clutch"], roundi(spec["rust"] * 4.0), roundi(spec["misfire"] * 10.0), spec["kick"], spec["shift"], spec["quickshifter"]]
+		spec["dry_clutch"], roundi(spec["rust"] * 4.0), roundi(spec["misfire"] * 10.0), spec["kick"], spec["shift"], spec["quickshifter"],
+		"|1v" if int(spec.get("valves", 4)) <= 1 else ""]
 
 
 static func is_two_stroke(spec: Dictionary) -> bool:
@@ -192,6 +199,8 @@ static func firing_events(spec: Dictionary) -> Array:
 			return [[0.0, 0], [270.0, 1]]   # a 90 degree V: 270 then 450 degrees, the lope
 		"45v":
 			return [[0.0, 0], [315.0, 1]]   # a narrow V: potato-potato
+		"60v":
+			return [[0.0, 0], [300.0, 1]]   # a 60 degree V: 300 then 420 degrees, a gentler lope
 		"boxer":
 			return [[0.0, 0], [360.0, 1]]
 		"240":
@@ -280,8 +289,11 @@ static func _cycle_events(spec: Dictionary, info: Dictionary, on: bool, rng: Ran
 			crackle = TWO_STROKE_CRACKLE * clampf((rpm - spec["idle"] * 1.5) / (spec["peak"] * 0.5), 0.0, 1.0)
 	elif two:
 		skip += 0.08 * clampf(1.0 - rpm / (spec["peak"] * 0.6), 0.0, 1.0)   # bogging below the powerband
-	# A two-stroke's idle is ragged: each firing comes a little early or late.
+	# A two-stroke's idle is ragged: each firing comes a little early or late. So is a narrow
+	# 45 degree V-twin's, its long-stroke pots lumping along at tickover.
 	var jitter := 0.004 + (0.02 * clampf(1.0 - (rpm - spec["idle"]) / 2000.0, 0.0, 1.0) if two else 0.0)
+	if str(spec["crank"]) == "45v":
+		jitter += 0.008 * clampf(1.0 - (rpm - spec["idle"]) / 1500.0, 0.0, 1.0)
 	var out := []
 	for c in info["cycles"]:
 		for i in fires.size():
@@ -561,9 +573,9 @@ static func _intake(spec: Dictionary, rpm: float, load: float, events: Array, n:
 		for j in int(tau * 4.0):
 			env[posmod(s + j, n)] += a * k
 			k *= decay
-		# Valve train: each valve seating ticks.
+		# Valve train: each valve seating ticks (a one-valve flathead's single valve just once).
 		if not two:
-			for at in [360.0 + 15.0, 540.0 + 45.0]:
+			for at in ([360.0 + 15.0] if int(spec.get("valves", 4)) <= 1 else [360.0 + 15.0, 540.0 + 45.0]):
 				var tt := roundi(float(e[0]) + at * deg_samples)
 				tick[posmod(tt, n)] += VALVE_TICK * rng.randf_range(0.7, 1.2)
 		# A dry clutch rattles at idle; a two-stroke's piston clatters.

@@ -59,6 +59,10 @@ const GROUPS := [
 	["Course", ["eq:barrier", "eq:marker"]],
 	["Sell to the dealer", ["sell:bikes", "sell:parts"]],
 ]
+## The engine families, in the order the shop lists them under their headings (an engine's
+## "type" in data/parts.json): each family one heading, every size of it together.
+const ENGINE_FAMILIES: Array[String] = ["Single", "Twin", "Parallel twin", "V-twin", "45° V-twin", "60° V-twin", "Boxer twin",
+	"Inline triple", "Inline four", "Two-stroke"]
 ## How a list can be sorted: key -> what the picker says.
 const SORTS := {"shop": "Shop order", "price_up": "Price: low to high", "price_down": "Price: high to low",
 	"name": "Name: A to Z", "light": "Lightest first"}
@@ -714,14 +718,24 @@ func listed(k: String) -> Array:
 					return float(PartsDB.get_part(str(a)).get("mass", 0.0)) < float(PartsDB.get_part(str(b)).get("mass", 0.0)))
 		_:
 			if k == "engine":
-				var order := ["Single", "Twin", "Parallel twin", "V-twin", "Boxer twin", "Inline triple", "Inline four", "Two-stroke"]
 				ids.sort_custom(func(a, b):
 					var pa := PartsDB.get_part(a)
 					var pb := PartsDB.get_part(b)
-					var ta := order.find(str(pa.get("type", "")))
-					var tb := order.find(str(pb.get("type", "")))
-					return ta < tb if ta != tb else float(pa["displacement"]) < float(pb["displacement"]))
+					var ta := engine_family(str(pa.get("type", "")))
+					var tb := engine_family(str(pb.get("type", "")))
+					if ta != tb:
+						return ta < tb
+					if str(pa.get("type", "")) != str(pb.get("type", "")):
+						return str(pa.get("type", "")) < str(pb.get("type", ""))
+					return float(pa["displacement"]) < float(pb["displacement"]))
 	return ids
+
+
+## Where an engine type comes in the shop's list (see ENGINE_FAMILIES): a type it doesn't
+## know goes after the rest, not before.
+static func engine_family(type: String) -> int:
+	var i := ENGINE_FAMILIES.find(type)
+	return i if i >= 0 else ENGINE_FAMILIES.size()
 
 
 ## Sorts every list by a key of SORTS.

@@ -164,12 +164,31 @@ var by_kind := {}  # kind -> Array of part ids, in catalogue order
 ## Parts taken out of the catalogue (data/retired_parts.json): old id -> the part that a save's
 ## copy of it becomes (see current_id and migrate).
 var retired := {}
+## More parts taken out of the catalogue, by kind: old id -> the kept part a save's copy of it
+## becomes (the nearest of the same sort). Added to `retired` with data/retired_parts.json's.
+## Engines (v0.39): the smallest of each family and the biggest two-strokes went; each becomes
+## the smallest of its own layout that's left.
+const RETIRED_PARTS := {
+	"engine": {
+		"2stroke_600": "2stroke_500", "2stroke_750": "2stroke_500", "2stroke_800": "2stroke_500",
+		"2stroke_1000": "2stroke_500", "2stroke_1100": "2stroke_500", "2stroke_1200": "2stroke_500",
+		"twin_50": "twin_500", "twin_125": "twin_500", "twin_350": "twin_500",
+		"parallel_50": "parallel_600", "parallel_125": "parallel_600", "parallel_350": "parallel_600",
+		"parallel_500": "parallel_600",
+		"vtwin_50": "vtwin_750", "vtwin_125": "vtwin_750", "vtwin_350": "vtwin_750", "vtwin_500": "vtwin_750",
+		"vtwin_600": "vtwin_750",
+		"boxer_50": "boxer_350", "boxer_125": "boxer_350",
+		"inline_50": "inline_500", "inline_125": "inline_500", "inline_350": "inline_500",
+	},
+}
 
 
 func _ready() -> void:
 	load_catalogue("res://data/parts.json")
 	var r = JSON.parse_string(FileAccess.get_file_as_string("res://data/retired_parts.json"))
 	retired = r.get("parts", {}) if r is Dictionary else {}
+	for k in RETIRED_PARTS:
+		retired.merge(RETIRED_PARTS[k], true)
 
 
 ## The catalogue's id for a part a save calls `id`: the one that replaced it when it was taken out
@@ -222,6 +241,13 @@ func load_catalogue(path: String) -> void:
 
 func get_part(id: String) -> Dictionary:
 	return parts.get(id, {})
+
+
+## The angle between a V-twin's cylinders in degrees ("v_angle" in data/parts.json; the V-twins
+## without one are 90 degree twins), or 0 for any other engine.
+func v_angle(id: String) -> float:
+	var p := get_part(id)
+	return float(p.get("v_angle", 90.0)) if str(p.get("layout", "")) == "vtwin" else 0.0
 
 
 func part_name(id: String) -> String:
@@ -398,7 +424,8 @@ func spec_line(id: String) -> String:
 			bits = [p["type"], "%d cc" % int(p["displacement"]), "%.0f x %.1f mm" % [p["bore"], p["stroke"]],
 				"redline %d" % int(p["redline"])]
 		"head":
-			bits = ["%d valves per cylinder" % int(p["valves"]), str(p["cam"]) + " cam", "%.1f:1" % p["compression"]]
+			var valves := int(p["valves"])
+			bits = ["%d valve%s per cylinder" % [valves, "" if valves == 1 else "s"], str(p["cam"]) + " cam", "%.1f:1" % p["compression"]]
 		"fuel":
 			bits = [p["type"], "feeds up to %d cc" % int(p["flow"])]
 		"air_filter":

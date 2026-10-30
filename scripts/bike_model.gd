@@ -553,10 +553,14 @@ func _place_cylinders(build: BikeBuild) -> void:
 	match build.layout:
 		"vtwin":
 			_block_w = 0.22 * s
-			# A cruiser's or chopper's V-twin is the narrow 45 degree kind; the rest open wider.
+			# A 45 or 60 degree twin is drawn at its own V. The 90 degree ones are drawn the narrow
+			# 45 degree way in a cruiser's or chopper's frame and open wider in the rest.
+			var half := deg_to_rad(build.v_angle) * 0.5 if build.v_angle > 0.0 and build.v_angle < 90.0 else -1.0
 			for dir in [-1.0, 1.0]:
 				var up := Vector3(0.0, cos(0.6), 0.6 * dir).normalized()
-				if _bay:
+				if half > 0.0:
+					up = Vector3(0.0, cos(half), sin(half) * dir)
+				elif _bay:
 					up = Vector3(0.0, cos(PI / 8.0), sin(PI / 8.0) * dir)
 				up *= _head_k
 				_cyls.append({"base": _engine_c + Vector3(0.0, 0.13 * s, 0.07 * dir * s) + up * 0.12 * s, "up": up})
@@ -1669,6 +1673,22 @@ func _draw_head() -> void:
 	var cover_mat := _tex(_mat(col, 0.85, 0.3), "crinkle") if col.get_luminance() < 0.3 else _mat(col, 0.95, 0.18)
 	var bolt := _mat(Color(0.62, 0.63, 0.66), 1.0, 0.3)
 	var valves := int(_part().get("valves", 4))
+	if valves <= 1 and _build.layout != "2stroke":
+		# A one-valve flathead: the valve sits down beside the bore, so the head is just a flat
+		# finned lid over the combustion chamber with a ring of studs; no cam cover on top.
+		for c in _cyls:
+			var top: Vector3 = c["base"] + c["up"] * 0.12
+			var b := _cyl_basis(c["up"])
+			_box(top, Vector3(0.13, 0.05, 0.16), gasket).basis = b
+			for k in 4:
+				_box(top + c["up"] * (-0.012 + k * 0.014), Vector3(0.16, 0.005, 0.18), mat).basis = b
+			var lid := _box(top + c["up"] * 0.045, Vector3(0.12, 0.018, 0.145), mat)
+			lid.basis = b
+			lid.name = "FlatHead"
+			for x in [-0.05, 0.0, 0.05]:
+				for z in [-0.06, 0.06]:
+					_mesh_instance(_cylinder(0.006, 0.012, -1.0, 6), bolt, top + c["up"] * 0.058 + b * Vector3(x, 0.0, z)).basis = b
+		return
 	match _build.layout:
 		"2stroke":
 			# No valves, no cam cover: just a deeply finned head round the plug.

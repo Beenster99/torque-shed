@@ -266,6 +266,9 @@ var inertia_add := Vector3.ZERO
 # Engine
 var cylinders := 2
 var layout := "parallel"
+## A V-twin's V in degrees (45, 60 or 90; 0 for other layouts), and the head's valves per cylinder.
+var v_angle := 0.0
+var valves := 4
 var displacement := 700.0
 var peak_torque := 70.0
 var peak_torque_rpm := 7000.0
@@ -364,6 +367,8 @@ func _compute() -> void:
 	var bars := part("handlebars")
 
 	cylinders = int(block["cylinders"])
+	v_angle = float(block.get("v_angle", 90.0)) if str(block.get("layout", "")) == "vtwin" else 0.0
+	valves = int(head.get("valves", 4))
 	main_capacity = tank["capacity"]
 	var fuel := _fluid("tank", "unleaded_95", main_capacity)
 	fuel_litres = fuel["litres"]

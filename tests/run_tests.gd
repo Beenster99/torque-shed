@@ -919,6 +919,10 @@ func _run_all() -> void:
 	await _t(&"_test_coop_positions")
 	await _t(&"_test_coop_call")
 	await _t(&"_test_coop_state")
+	print("Simon's v0.39.0 round: fewer small engines, one two-stroke family, a flathead head, 45 and 60 degree V-twins, more triples")
+	await _t(&"_test_engine_range_catalogue")
+	await _t(&"_test_engine_range_retired")
+	await _t(&"_test_engine_range_drawn_and_heard")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -2445,18 +2449,22 @@ func _test_round5_shed() -> void:
 		"an ordered ramp is left in the yard past the drag strip (%s)" % str(at))
 	check(Shed.check(me, {"a": "grab", "furniture": ordered["id"]}) == "", "you can take hold of it to move it")
 
-	# Six engine layouts in ten sizes each.
-	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+	# Six engine layouts in a range of sizes each (the smallest of most went in v0.39, see
+	# tests/engine_range_tests.gd).
+	var ranges := {"boxer": [350, 500, 600, 750, 800, 1000, 1100, 1200], "twin": [500, 600, 750, 800, 1000, 1100, 1200],
+		"parallel": [600, 750, 800, 1000, 1100, 1200], "vtwin": [750, 800, 1000, 1100, 1200], "2stroke": [50, 125, 350, 500],
+		"inline": [500, 600, 750, 800, 1000, 1100, 1200]}
+	for layout in ranges:
 		var sizes := 0
-		for cc in [50, 125, 350, 500, 600, 750, 800, 1000, 1100, 1200]:
+		for cc in ranges[layout]:
 			var p := PartsDB.get_part("%s_%d" % [layout, cc])
 			if not p.is_empty() and p["layout"] == layout and int(p["displacement"]) == cc:
 				sizes += 1
-		check(sizes == 10, "%s engines come in all ten sizes (%d)" % [layout, sizes])
-	var small := BikeBuild.new({"engine": "parallel_125"})
-	var big := BikeBuild.new({"engine": "parallel_1200"})
-	check(big.hp() > small.hp() * 5.0 and small.redline > big.redline, "a 125 is gutless and revvy next to a 1200 (%.0f vs %.0f hp)" % [small.hp(), big.hp()])
-	check(BikeBuild.new({"engine": "2stroke_125"}).hp() > BikeBuild.new({"engine": "twin_125"}).hp(), "a two-stroke makes more power per cc")
+		check(sizes == ranges[layout].size(), "%s engines come in all %d sizes (%d)" % [layout, ranges[layout].size(), sizes])
+	var small := BikeBuild.new({"engine": "inline_500"})
+	var big := BikeBuild.new({"engine": "inline_1200"})
+	check(big.hp() > small.hp() * 1.5 and small.redline > big.redline, "a 500 is gutless and revvy next to a 1200 (%.0f vs %.0f hp)" % [small.hp(), big.hp()])
+	check(BikeBuild.new({"engine": "2stroke_500"}).hp() > BikeBuild.new({"engine": "twin_500"}).hp(), "a two-stroke makes more power per cc")
 
 
 func _test_round5_models() -> void:
@@ -2533,16 +2541,17 @@ func _test_round5_models() -> void:
 	var eye := m.eye_transform().origin
 	check(eye.y > m._head.y + 0.4 and eye.z > m._head.z, "the first-person eye is up in the rider's helmet (%.2f m above the bars)" % (eye.y - m._head.y))
 	m.queue_free()
-	# Every engine layout draws, from 50 cc to 1200.
-	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+	# Every engine layout draws, its smallest to its biggest.
+	for pair in [["boxer_350", "boxer_1200"], ["twin_500", "twin_1200"], ["parallel_600", "parallel_1200"], ["vtwin_750", "vtwin_1800"],
+			["2stroke_50", "2stroke_500"], ["inline_500", "inline_1200"]]:
 		var sizes := []
-		for cc in [50, 1200]:
+		for id in pair:
 			var em := BikeModel.new()
 			add_child(em)
-			em.build_from(BikeBuild.new({"engine": "%s_%d" % [layout, cc]}))
+			em.build_from(BikeBuild.new({"engine": id}))
 			sizes.append(em.slot_bounds("engine").size.length())
 			em.queue_free()
-		check(sizes[1] > sizes[0] * 1.2, "a 1200 cc %s is drawn bigger than a 50 (%.2f vs %.2f)" % [layout, sizes[1], sizes[0]])
+		check(sizes[1] > sizes[0] * 1.08, "a %s is drawn bigger than a %s (%.2f vs %.2f)" % [PartsDB.part_name(pair[1]), PartsDB.part_name(pair[0]), sizes[1], sizes[0]])
 	var boxer := BikeModel.new()
 	add_child(boxer)
 	boxer.build_from(BikeBuild.new({"engine": "boxer_1000"}))
@@ -2960,7 +2969,7 @@ func _test_round6_riding() -> void:
 	var big := EngineSound.new()
 	add_child(small)
 	add_child(big)
-	small.setup(BikeBuild.new({"engine": "inline_50"}))
+	small.setup(BikeBuild.new({"engine": "2stroke_50"}))
 	big.setup(BikeBuild.new({"engine": "inline_1200"}))
 	await get_tree().process_frame
 	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
@@ -14144,9 +14153,9 @@ func _test_style_contracts_sales() -> void:
 	var shown: Array = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion()).map(func(c): return str(c.get_meta("part")))
 	check(shown.size() > 0 and shown.size() < PartsDB.by_kind["handlebars"].size() and shown.all(func(id): return PartsDB.styles_of(id).has("chopper")),
 		"the style filter shows only bars that suit a chopper %s" % str(shown))
-	pc._show_kind("engine")
+	pc._show_kind("oil_filter")
 	shown = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())
-	check(shown.size() == PartsDB.by_kind["engine"].size(), "and leaves kinds with no style (engines) alone")
+	check(not PartsComputer.styled_kind("oil_filter") and shown.size() == PartsDB.by_kind["oil_filter"].size(), "and leaves kinds with no style (oil filters) alone")
 	pc.set_fits_bike(proper)
 	pc._show_kind("handlebars")
 	pc._show_part("drag_bar")
@@ -24426,3 +24435,19 @@ func _test_road_signs() -> void:
 	_road_markings().test_signs()
 
 
+# ---------------------------------------------------------------------------- engine range, v0.39 (tests/engine_range_tests.gd)
+
+func _engine_range() -> RefCounted:
+	return load("res://tests/engine_range_tests.gd").new(self)
+
+
+func _test_engine_range_catalogue() -> void:
+	await _engine_range().test_catalogue()
+
+
+func _test_engine_range_retired() -> void:
+	_engine_range().test_retired()
+
+
+func _test_engine_range_drawn_and_heard() -> void:
+	_engine_range().test_drawn_and_heard()

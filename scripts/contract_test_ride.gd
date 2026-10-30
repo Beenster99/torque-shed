@@ -35,7 +35,7 @@ const BRANDS := {
 		"models": ["RX", "GT", "Terra"], "jacket": Color(0.12, 0.3, 0.7)},
 	"Kawasaki": {"styles": ["sport", "cafe"], "engines": ["inline_1000", "parallel_750"], "paint": "kawasaki_lime_green",
 		"models": ["Raiden", "Kaze", "Ronin"], "jacket": Color(0.3, 0.7, 0.1)},
-	"Harley-Davidson": {"styles": ["cruiser", "bobber", "chopper"], "engines": ["vtwin_1200"], "paint": "harley_vivid_black",
+	"Harley-Davidson": {"styles": ["cruiser", "bobber", "chopper"], "engines": ["vtwin45_883", "vtwin45_1200", "vtwin45_1800"], "paint": "harley_vivid_black",
 		"models": ["Ironclad", "Prairie", "Night Run"], "jacket": Color(0.1, 0.09, 0.08)},
 	"Royal Enfield": {"styles": ["cafe", "scrambler"], "engines": ["single_450", "parallel_750"], "paint": "royal_enfield_desert_sand",
 		"models": ["Ghat", "Himal", "Madras"], "jacket": Color(0.3, 0.32, 0.2)},
