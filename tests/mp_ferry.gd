@@ -142,14 +142,15 @@ func _ready() -> void:
 		if shots != "":
 			await _wait(2.0)
 			_shot("%s_%d_landed" % [place, int(f["step"])])
-		var far := _local(trip, trip.world.roads.net.region.node_pos[int(f["to"])])
-		var dist: float = main.bike.global_position.distance_to(far) if main.bike != null else INF
-		down = down and dist < 40.0
+		# (put off on the far side's road: up it from the terminal, clear of the water, one behind another)
+		var far := trip.ferry.landing_xf(int(f["to"])).origin
+		var dist: float = Vector2(main.bike.global_position.x - far.x, main.bike.global_position.z - far.z).length() if main.bike != null else INF
+		down = down and dist < 20.0
 		var nav := NetNav.of(trip.world)
 		var on := await _until(func():
 			nav.update(Vector2(main.bike.global_position.x, main.bike.global_position.z), Vector2(-sin(main.bike.rotation.y), -cos(main.bike.rotation.y)))
 			return nav.status == "on_route" and nav.progress >= int(f["step"]), 5.0)
-		print("MP ferry note %s: sailed %s, held on the deck %s, landed %s (%.1f m from the far terminal), sat nav on along the route %s (progress %d, step %d)" % [
+		print("MP ferry note %s: sailed %s, held on the deck %s, landed %s (%.1f m from where riders are put off there), sat nav on along the route %s (progress %d, step %d)" % [
 			role, went, kept[0], down, dist, on, nav.progress, int(f["step"])])
 		sailed = sailed and went
 		held = held and kept[0]
@@ -238,7 +239,7 @@ static func plan_for(which: String) -> Dictionary:
 func _to_ramp(trip: AdventureTrip, node: int) -> void:
 	var p := trip.world.roads.net.region.node_pos[node]
 	trip.world.roads.preload_round([p], 300.0)
-	var xf := trip.ferry.landing_xf(node)
+	var xf := trip.ferry.landing_xf(node, 0.0, false)   # (just short of the road's end, whatever its height)
 	main.bike.place(xf.origin, xf.basis.get_euler().y + PI)   # (facing the water)
 	main.camera.snap()
 

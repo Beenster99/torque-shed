@@ -390,8 +390,8 @@ func _land(bike: Bike) -> void:
 
 
 ## Where a bike's put off at terminal junction `node` (local): on the road leading inland from it, LAND_IN m (and
-## `back` more) along, facing along it.
-func landing_xf(node: int, back := 0.0) -> Transform3D:
+## `back` more) along, facing along it; on further up it while the road's still under the water there (`dry`).
+func landing_xf(node: int, back := 0.0, dry := true) -> Transform3D:
 	var net := world.roads.net
 	var r := net.region
 	var water := Vector2.ZERO
@@ -424,7 +424,7 @@ func landing_xf(node: int, back := 0.0) -> Transform3D:
 		h = net.heading_at(best, along) + (0.0 if r.edge_a[best] == node else PI)
 		var on := net.locate(p.x, p.y, best)
 		y = float(on["y"]) if not on.is_empty() else float(net.height.call(p.x, p.y))
-		if (not is_nan(y) and y >= level + DRY) or s + 4.0 > minf(len * 0.9, LAND_IN + back + DRY_MOST):
+		if not dry or (not is_nan(y) and y >= level + DRY) or s + 4.0 > minf(len * 0.9, LAND_IN + back + DRY_MOST):
 			break
 		s += 4.0
 	if is_nan(y):
