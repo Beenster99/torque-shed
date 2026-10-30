@@ -5,10 +5,10 @@ extends RefCounted
 ## (bins, picnic benches, a view), viewpoints (a car park and a path out to a bench and rocks),
 ## an inn or a campsite every so often, and a shop in every fuel station's kiosk.
 ##
-## plan() spaces them along the route as sites (AdventureRoute.add_site) before the road is laid,
-## so the road runs straight and level past each, the same on every player's game from the seed:
-## food every FOOD_EVERY (a village or a cafe, or the inn or campsite when one's due), somewhere
-## to pull in every REST_EVERY (a lay-by, rest area or viewpoint) and a bed every SLEEP_EVERY.
+## They're sites along the route (AdventureRoute.add_site) before the road is laid, so the road runs straight and
+## level past each, the same on every player's game: the map's own filling stations, cafes, lay-bys and viewpoints
+## beside the road (AdventureRoute._real_stops), and a village with its high street every VILLAGE_EVERY and a bed every
+## SLEEP_EVERY (plan_villages_and_beds).
 ## build() makes a stop's nodes when its chunk goes into the world (AdventureChunk.commit through
 ## AdventureWorld.site_builders), merged into a few meshes drawn only so far, and they go with
 ## the chunk when it's freed behind.
@@ -45,6 +45,8 @@ const FOOD_EVERY := [15000.0, 25000.0]
 const REST_FIRST := [3000.0, 6000.0]
 const REST_EVERY := [5000.0, 10000.0]
 const SLEEP_EVERY := [40000.0, 60000.0]
+## The villages' spacing (m): the first FOOD_FIRST in, then every so often.
+const VILLAGE_EVERY := [30000.0, 50000.0]
 ## How far a stop keeps from any other site (m), and how far it may be nudged to find room.
 const CLEAR := 360.0
 const NUDGE := 1400.0
@@ -114,51 +116,31 @@ const SIGN_GREEN := Color(0.06, 0.32, 0.18)
 
 # ---------------------------------------------------------------------------- planning
 
-## Spaces the stops along `route` (called by AdventureRoute.plan_real once its fuel stations are in,
-## before the road is laid). Their own rng, so the stops don't change the rest of the plan's draws.
-static func plan(route: AdventureRoute) -> void:
+## A village (its high street) every VILLAGE_EVERY along `route` and a bed (an inn or a campsite) when one's due,
+## every SLEEP_EVERY, where there's room: the made-up stops on a real road, whose others are the map's own
+## (AdventureRoute._real_stops). AdventureRoute._adopt_pois moves each bed to a real inn or campsite near it.
+static func plan_villages_and_beds(route: AdventureRoute) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([route.seed_value, "adventure_stops", route.theme])
 	var length := route.length
-	# Food, and a bed when one's due (which is food too).
 	var last_sleep := 0.0
 	var s := rng.randf_range(FOOD_FIRST[0], FOOD_FIRST[1])
-	var cafes := 0
-	var villages := 0
 	while s < length - 2500.0:
-		var at := _room_at(route, s, 900.0)
+		var at := _room_at(route, s, NUDGE)
 		if at < 0.0:
 			s += 500.0
 			continue
 		s = at
-		var d := s - last_sleep
-		var kind := ""
-		if d >= SLEEP_EVERY[0] - 1.0:
+		var kind := "village"
+		if s - last_sleep >= SLEEP_EVERY[0] - 1.0:
 			kind = "inn" if rng.randf() < 0.6 else "campsite"
 			last_sleep = s
-		else:
-			# Mostly taking turns, so a ride sees both.
-			kind = "cafe" if (cafes < villages or (cafes == villages and rng.randf() < 0.5)) else "village"
-			if kind == "cafe":
-				cafes += 1
-			else:
-				villages += 1
 		_add(route, rng, kind, s)
-		var gap := rng.randf_range(FOOD_EVERY[0], FOOD_EVERY[1])
-		d = s - last_sleep
+		var gap := rng.randf_range(VILLAGE_EVERY[0], VILLAGE_EVERY[1])
+		var d := s - last_sleep
 		if d < SLEEP_EVERY[0] and d + gap > SLEEP_EVERY[1]:
 			gap = maxf(FOOD_EVERY[0], SLEEP_EVERY[1] - d - 300.0)
 		s += gap
-	# Somewhere to pull in.
-	s = rng.randf_range(REST_FIRST[0], REST_FIRST[1])
-	while s < length - 1500.0:
-		var at := _room_at(route, s, NUDGE)
-		if at < 0.0:
-			s += REST_EVERY[0]
-			continue
-		var roll := rng.randf()
-		_add(route, rng, "viewpoint" if roll < 0.35 else ("rest_area" if roll < 0.55 else "layby"), at)
-		s = at + rng.randf_range(REST_EVERY[0], REST_EVERY[1])
 
 
 ## The nearest place to `s` within `reach` that's CLEAR of every site (and the start), or -1.

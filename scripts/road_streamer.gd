@@ -325,6 +325,7 @@ func commit(b: RoadBlock, at_once := false) -> Node3D:
 				var bmi := MeshInstance3D.new()
 				bmi.name = "Buildings_%d" % i
 				bmi.mesh = AdventureProps.to_mesh(tiles[i])
+				bmi.material_override = WindowLights.material()   # (their windows lit after dark)
 				return bmi
 			# (a town's houses are made into meshes a square a frame, over the frames after: see StreamPieces)
 			_put(node, make, at_once or solid_now)

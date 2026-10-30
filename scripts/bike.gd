@@ -184,6 +184,11 @@ var controls_enabled := true
 ## the heading), or null for where it lies. Out on an adventure a crash off the road is put back
 ## on it (see AdventureTrip.respawn_spot).
 var respawn_at := Callable()
+## The way it was last ridden (the heading place takes, radians), NAN before it has moved: a respawn faces on this way
+## rather than whichever way the crash left the bike lying.
+var heading_ridden := NAN
+## How fast (m/s) it has to be going for that to count as the way it's ridden.
+const RIDDEN_SPEED := 2.0
 var engine_on := true      # a parked bike you get on starts with it off; tests ride with it running
 var fuel_litres := 15.0    # petrol left in the tank
 var fuel_used := 0.0       # litres burnt since the last time someone read and cleared it
@@ -441,6 +446,7 @@ func _add_shape(shape: Shape3D, pos: Vector3) -> int:
 ## Places the bike upright on the ground at the given position and heading.
 func place(pos: Vector3, heading: float) -> void:
 	_clear_ragdoll()
+	heading_ridden = heading
 	is_crashed = false
 	_crash_timer = 0.0
 	var t := Transform3D(Basis(Vector3.UP, heading), pos + Vector3.UP * (build.rear_radius + 0.05))
@@ -572,9 +578,15 @@ func respawn() -> void:
 	if spot is Transform3D:
 		place((spot as Transform3D).origin, (spot as Transform3D).basis.get_euler().y)
 		return
+	place(global_position + Vector3.UP * 0.3, respawn_heading())
+
+
+## The heading a respawn faces: the way it was being ridden, else the way it points.
+func respawn_heading() -> float:
+	if not is_nan(heading_ridden):
+		return heading_ridden
 	var fwd := -global_transform.basis.z
-	var heading := atan2(-fwd.x, -fwd.z)
-	place(global_position + Vector3.UP * 0.3, heading)
+	return atan2(-fwd.x, -fwd.z)
 
 
 ## Makes the bike a ghost for `seconds`: see-through, and passing through other bikes, the
@@ -650,6 +662,9 @@ func _physics_process_body(delta: float) -> void:
 	var fwd := -b.z
 	speed = linear_velocity.dot(fwd)
 	_fling_age += delta
+	var flat := Vector2(linear_velocity.x, linear_velocity.z)
+	if not is_crashed and speed > RIDDEN_SPEED:   # (forwards: not pushed back)
+		heading_ridden = atan2(-flat.x, -flat.y)
 	if not is_crashed and (linear_velocity.length() >= _fling_vel.length() or _fling_age > FLING_MEMORY):
 		_fling_vel = linear_velocity
 		_fling_age = 0.0

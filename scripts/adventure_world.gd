@@ -359,10 +359,11 @@ func keep_at(p: Vector3) -> int:
 
 ## Where a bike that came to rest at local `p` off the road is put back on it: the nearest point
 ## along it, on the half the country drives on and facing on towards the destination. null when `p` is on the
-## road (or nowhere near it), so it's picked up where it lies.
-func back_on_road(p: Vector3):
+## road (or nowhere near it), so it's picked up where it lies. On the road network `heading` (the way it was being
+## ridden, Bike.heading_ridden) picks which way along the road it faces.
+func back_on_road(p: Vector3, heading := NAN):
 	if roads != null:
-		return _back_on_network(p)
+		return _back_on_network(p, heading)
 	var hit := locate_local(p, "respawn")
 	if hit.is_empty():
 		return null
@@ -373,17 +374,23 @@ func back_on_road(p: Vector3):
 	return transform_at(s, keep_at(p) * route.width_at_s(s) * 0.25)
 
 
-## back_on_road on the network ride: the nearest road's half the country drives on, facing along it (a to b).
-func _back_on_network(p: Vector3):
+## back_on_road on the network ride: the nearest road's half the country drives on, facing along it the way that's
+## nearer `heading` (a to b without one). On the road it's picked up where it lies, turned to face along the road
+## that way (in a junction, `heading` itself); null with no heading.
+func _back_on_network(p: Vector3, heading := NAN):
 	var xz := route_xz(p)
 	var hit := roads.net.locate(xz[0], xz[1])
 	if hit.is_empty():
 		return null
+	var h := float(hit["heading"])   # (a bearing: clockwise from north, so it's -h as a heading)
+	if not is_nan(heading) and absf(angle_difference(heading, -h)) > PI * 0.5:
+		h = fposmod(h + PI, TAU)
 	if bool(hit["on_road"]) or (absf(float(hit["lat"])) <= float(hit["width"]) * 0.5 + OFF_ROAD and p.y > float(hit["y"]) - 5.0):
-		return null
+		if is_nan(heading):
+			return null
+		return Transform3D(Basis(Vector3.UP, heading if int(hit["node"]) >= 0 else -h), p + Vector3.UP * 0.3)
 	var ei := int(hit["edge"])
 	var s := float(hit["s"])
-	var h := float(hit["heading"])
 	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (keep_at(p) * float(hit["width"]) * 0.25)
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(at.x, roads.net.road_y(ei, s) + RoadNet.CROWN, at.y))
 

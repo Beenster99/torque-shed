@@ -91,7 +91,7 @@ func test_density() -> void:
 	var r := tr.world.route
 	for k in range(40, int(minf(r.length - 1500.0, 40000.0) / 50.0)):
 		var s := k * 50.0
-		if r.surface_at_s(s) != "tarmac" or r.width_at_s(s) < 5.5:
+		if r.surface_at_s(s) != "tarmac" or r.width_at_s(s) < 5.5 or tr.limit_at(s) < 15.0:   # (not in a real town's 30)
 			continue
 		var d := INF
 		for st in tr.world.route.sites:

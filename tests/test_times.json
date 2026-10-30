@@ -661,5 +661,8 @@
 	"_test_history_points": 600,
 	"_test_history_looks": 1500,
 	"_test_history_features": 50,
-	"_test_history_regions": 12000
+	"_test_history_regions": 12000,
+	"_test_ride_fb_windows": 50,
+	"_test_ride_fb_respawn": 30,
+	"_test_ride_fb_map": 1500
 }

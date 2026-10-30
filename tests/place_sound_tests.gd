@@ -238,6 +238,16 @@ func test_ride_radio() -> void:
 	check(radio.country == "MA" and radio.index == 0, "on in Morocco, it's on Morocco's stations")
 	amb.setup(profile("polder"), 7)
 	check(radio.index == 1, "and back in the Netherlands, on the station you left it on")
+	# Holding the key switches it straight off from any station; a tap just tunes the next.
+	radio._held = 0.0
+	check(radio.hold(0.2, true) == "" and radio.index == 1, "a short hold still plays")
+	check(radio.hold(0.2, false) == "" and radio.index == 1, "let go early, it stays on")
+	radio._held = 0.0
+	radio.hold(0.3, true)
+	check(radio.hold(0.3, true) == "Radio off" and radio.index == -1, "held for half a second, it's off")
+	check(radio.hold(0.3, true) == "", "and still holding doesn't turn it back on")
+	said = radio.press()
+	check(radio.index == 0 and said.contains("hold to switch off"), "back on it starts on the first and says how to stop: %s" % said)
 	check(Settings.clashes().is_empty(), "its key clashes with nothing %s" % str(Settings.clashes().slice(0, 3)))
 	amb.queue_free()
 

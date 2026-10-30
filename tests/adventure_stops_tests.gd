@@ -1,11 +1,14 @@
 extends RefCounted
 ## The places along an adventure road's checks (AdventureStops: villages, cafes, lay-bys, rest
 ## areas, viewpoints, inns, campsites and the fuel stations' shops), run from tests/run_tests.gd:
-## its _test_adv_stops_* functions hand over to these. The roads are the tours Rides plans: the stops are laid out
-## along them, taking over the real places beside the road where there are some (see AdventureRoute._adopt_pois).
+## its _test_adv_stops_* functions hand over to these. The roads are the tours Rides plans: the stops along them are
+## the map's own filling stations, cafes, lay-bys and viewpoints (AdventureRoute._real_stops), with a village and a bed
+## now and then, the bed at a real inn or campsite where there's one (AdventureRoute._adopt_pois).
 
 const Rides := preload("res://tests/rides.gd")
 const SEEDS := [1, 7, 42, 99, 2024]
+## The kinds of stop a real road has (a rest area is only ever made up, so no longer planned).
+const MAP_KINDS: Array[String] = ["village", "cafe", "layby", "viewpoint", "inn", "campsite"]
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -65,41 +68,56 @@ func _in_group(group: String, s: float) -> Array:
 	return t.get_tree().get_nodes_in_group(group).filter(func(n): return absf(float(n.get_meta("s", -1.0)) - s) < 1.0)
 
 
-## Along both tours on several seeds: somewhere for food and somewhere to pull in all along the way, beds now and
-## then, fuel, never on top of each other or a fuel station, the road near straight and level past each; the same seed
-## lays out the same stops.
+## Along both tours on several seeds: every stop but the villages and beds at one of the map's own places beside the road (a
+## made-up filling station only in a stretch the map leaves without one for FUEL_GAP), every filling station the map
+## has beside the road a stop, a bed now and then, never on top of each other, the road near straight and level past
+## each; the same seed lays out the same stops.
 func test_spacing() -> void:
-	var tol := AdventureRoute.FIT_REACH * 2.0 + 1600.0   # a stop moves this far to find a real place, or room
+	var tol := AdventureRoute.FIT_REACH * 2.0 + 1600.0   # a bed moves this far to find a real place, or room
 	var bad := []
 	var kinds := {}
 	var real := 0
 	var count := 0
+	var map_fuel := 0
 	for seed in SEEDS:
 		for region_id in AdventurePlans.TOURS:
 			var r := Rides.tour_route(region_id, seed)
-			var food := []
-			var rest := []
+			var beds := []
 			var all := []
 			for st in AdventureStops.stops(r):
-				var s := float(st["s"])
-				var nav: String = AdventureStops.NAV[str(st["kind"])]
-				kinds[str(st["kind"])] = true
+				var kind := str(st["kind"])
+				kinds[kind] = true
 				all.append(st)
 				count += 1
 				real += 1 if st.has("real") else 0
-				if nav == "food" or nav == "sleep":
-					food.append(s)
-				if nav == "rest":
-					rest.append(s)
-			var fg := _gaps(food)
-			var rg := _gaps(rest)
+				if AdventureStops.NAV[kind] == "sleep":
+					beds.append(float(st["s"]))
+				elif kind != "village" and not st.has("from_map"):
+					bad.append("seed %d %s: a made-up %s at %.0f" % [seed, region_id, kind, float(st["s"])])
 			var tag := "seed %d %s" % [seed, region_id]
-			if fg.is_empty() or fg[0] > AdventureStops.FOOD_FIRST[1] + tol or fg.slice(1).any(func(g): return g > AdventureStops.FOOD_EVERY[1] + 2.0 * tol):
-				bad.append("%s food %s" % [tag, str(fg.map(func(g): return snappedf(g / 1000.0, 0.1)))])
-			if rg.is_empty() or rg.slice(1).any(func(g): return g > AdventureStops.REST_EVERY[1] + 2.0 * tol):
-				bad.append("%s rest %s" % [tag, str(rg.map(func(g): return snappedf(g / 1000.0, 0.1)))])
-			if r.sites_of("fuel").is_empty():
+			var bg := _gaps(beds)
+			if r.length > AdventureStops.SLEEP_EVERY[1] + tol and (bg.is_empty() or bg.any(func(g): return g > AdventureStops.SLEEP_EVERY[1] + 2.0 * tol)):
+				bad.append("%s beds %s" % [tag, str(bg.map(func(g): return snappedf(g / 1000.0, 0.1)))])
+			var fuel := r.sites_of("fuel")
+			if fuel.is_empty():
 				bad.append("%s no fuel" % tag)
+			var fs: Array = fuel.map(func(st): return float(st["s"]))
+			fs.append(r.length)
+			if _gaps(fs).any(func(g): return g > AdventureRoute.FUEL_GAP + tol):
+				bad.append("%s fuel %s" % [tag, str(_gaps(fs).map(func(g): return snappedf(g / 1000.0, 0.1)))])
+			for st in fuel:
+				if st.has("from_map"):
+					map_fuel += 1
+				elif fuel.any(func(o): return o.has("from_map") and absf(float(o["s"]) - float(st["s"])) < AdventureRoute.FUEL_GAP * 0.5):
+					bad.append("%s a made-up filling station at %.0f beside the map's own" % [tag, float(st["s"])])
+			# Every filling station the map has beside the road is one, unless there's no room for it there.
+			for poi: Dictionary in r.real.pois:
+				var s := float(int(poi["k"]) * AdventureRoute.STEP)
+				if str(poi["kind"]) != "fuel" or s < 600.0 or s > r.length - 400.0:
+					continue
+				if not fuel.any(func(st): return absf(float(st.get("planned_s", -1.0)) - s) < 1.0) \
+						and r._fit_near(s, AdventureRoute.ADOPT_FIT) >= 0.0 and not r.sites.any(func(o): return absf(float(o["s"]) - s) < AdventureStops.CLEAR):
+					bad.append("%s the map's filling station at %.0f (%s) isn't a stop" % [tag, s, str(poi.get("name", ""))])
 			for st in all:
 				for other in r.sites:
 					# (The junctions keep their own, shorter, distance: tests/adventure_roads_tests.gd.)
@@ -107,8 +125,9 @@ func test_spacing() -> void:
 						bad.append("%s %s at %.0f is on top of %s" % [tag, st["kind"], float(st["s"]), other["kind"]])
 				if not r._fit_for_stop(int(st["i"])):
 					bad.append("%s %s at %.0f is on a bend or a hill" % [tag, st["kind"], float(st["s"])])
-	check(bad.is_empty(), "stops are laid out right on every seed: food and pull-ins all along, fuel, room for each %s" % str(bad))
-	check(kinds.size() >= AdventureStops.KINDS.size() - 1 and real > 0, "the kinds of stop turn up %s, %d of %d at real places" % [str(kinds.keys()), real, count])
+	check(bad.is_empty(), "stops are the map's own on every seed: its filling stations, cafes and pull-ins, a bed now and then, room for each %s" % str(bad))
+	check(not kinds.has("rest_area") and kinds.has("cafe") and kinds.has("village") and map_fuel > 0,
+		"no made-up rest areas %s; %d of %d stops at real places (the rest villages and beds), %d filling stations off the map" % [str(kinds.keys()), real, count, map_fuel])
 	var a := Rides.tour_route("dales", 42)
 	var b := Rides.tour_route("dales", 42)
 	var same := a.sites.size() == b.sites.size()
@@ -121,14 +140,32 @@ func test_spacing() -> void:
 		check(rows.size() == 5, "a village has a high street: %d more rows of shops" % rows.size())
 
 
-## The first stop of `kind` on either tour on any of the seeds: [seed, site, region].
+## The first stop of `kind` on either tour on any of the seeds: [seed, site, region]. A kind the tours' maps have none
+## of beside the road (a lay-by) is made one for the test: a map cafe's place on the map is taken for one while the
+## world is built, put back by calling the fourth ([seed, site, region, put_back]).
 static func _find(kind: String) -> Array:
 	for seed in SEEDS + [3, 5, 11, 13, 17, 19]:
 		for region_id in AdventurePlans.TOURS:
 			var r := Rides.tour_route(region_id, seed)
-			var list := r.sites_of(kind)
+			# (not by the start or the end, where a round tour passes the other end of itself)
+			var list := r.sites_of(kind).filter(func(st): return float(st["s"]) > 3000.0 and float(st["s"]) < r.length - 3000.0)
 			if not list.is_empty():
 				return [seed, list[0], region_id]
+	for region_id in AdventurePlans.TOURS:
+		var r := Rides.tour_route(region_id, 1)
+		for st in r.sites_of("cafe"):
+			if not st.has("from_map") or float(st["s"]) < 3000.0 or float(st["s"]) > r.length - 3000.0:
+				continue
+			for poi: Dictionary in r.real.pois:
+				if float(int(poi["k"]) * AdventureRoute.STEP) != float(st["planned_s"]) or not str(poi["kind"]) in ["cafe", "pub"]:
+					continue
+				var was := str(poi["kind"])
+				poi["kind"] = kind
+				var again := Rides.tour_route(region_id, 1)
+				var got := again.sites_of(kind)
+				if not got.is_empty():
+					return [1, got[0], region_id, func(): poi["kind"] = was]
+				poi["kind"] = was
 	return []
 
 
@@ -136,13 +173,15 @@ static func _find(kind: String) -> Array:
 ## with a proper menu, beds at the inn and campsite, hard ground to pull onto, and a sign before it.
 func test_groups() -> void:
 	var report := []
-	for kind in AdventureStops.KINDS + ["fuel"]:
+	for kind in MAP_KINDS + ["fuel"]:
 		var found := _find(kind)
 		if found.is_empty():
 			check(false, "a %s turns up on some seed" % kind)
 			continue
 		var spot := {}
 		var w := _tour_world(found, spot)
+		if found.size() > 3:
+			found[3].call()   # (the map put back as it was, now the world's laid out)
 		var s := float(found[1]["s"])
 		var side := float(found[1]["side"])
 		spot["p"] = w.transform_at(s).origin
@@ -270,11 +309,13 @@ func test_freed() -> void:
 ## What the stops cost: building each kind on the main thread, the plan, and racing past them all.
 func test_frame_cost() -> void:
 	var worst := {}
-	for kind in AdventureStops.KINDS:
+	for kind in MAP_KINDS:
 		var found := _find(kind)
 		if found.is_empty():
 			continue
 		var r := Rides.tour_route(str(found[2]), int(found[0]))
+		if found.size() > 3:
+			found[3].call()
 		var site: Dictionary = found[1]
 		var xf := Transform3D(Basis(), Vector3(0, 100, 0))
 		for car in AdventureStops.PARKED:
@@ -293,7 +334,7 @@ func test_frame_cost() -> void:
 		worst[kind + "_meshes"] = meshes
 		node.free()
 	var build_max := 0.0
-	for kind in AdventureStops.KINDS:
+	for kind in MAP_KINDS:
 		build_max = maxf(build_max, float(worst.get(kind, 0.0)))
 	check(build_max < 12.0, "each stop builds in a few ms on the main thread (worst %.1f ms) %s" % [build_max, str(worst)])
 	var spot := {}

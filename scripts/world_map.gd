@@ -20,6 +20,7 @@ static var _lines := {}        # layer name -> Array of PackedVector2Array, in m
 static var _boxes := {}        # layer name -> PackedFloat32Array of each line's [x0, y0, x1, y1]
 static var _places: Array = [] # [name, lat, lon, population, country], the most important first
 static var _keys := PackedStringArray()   # each place's name, folded for searching
+static var _place_m := PackedVector2Array()   # each place's mercator point
 
 
 ## The mercator point of (lat, lon).
@@ -107,8 +108,10 @@ static func _read() -> bool:
 	var v = JSON.parse_string(FileAccess.get_file_as_string(PLACES_PATH))
 	_places = v if v is Array else []
 	_keys.clear()
+	_place_m.clear()
 	for p in _places:
 		_keys.append(fold(str(p[0])))
+		_place_m.append(mercator(float(p[1]), float(p[2])))
 	return true
 
 
@@ -139,6 +142,11 @@ static func line_boxes(layer: String) -> PackedFloat32Array:
 ## cities, then the rest, biggest first).
 static func places() -> Array:
 	return _places if loaded() else []
+
+
+## Each of places' mercator point, in the same order.
+static func place_points() -> PackedVector2Array:
+	return _place_m if loaded() else PackedVector2Array()
 
 
 ## A name made easy to match: lower case, without accents or anything but letters, numbers and spaces.

@@ -313,9 +313,11 @@ static func real_building(a: Dictionary, pos: Vector3, w: float, d: float, yaw: 
 					var wx := (float(b) + 0.5) / bays * w - w * 0.5
 					if kind == "shop" and f == 0:
 						continue
-					box(a, xf * Transform3D(Basis(), Vector3(wx, SKIRT + 1.0 + f * 3.0, d * 0.5)), Vector3(minf(1.3, w / bays * 0.6), 1.2, 0.06), glass)
+					var wat := xf * Vector3(wx, SKIRT + 1.0 + f * 3.0, d * 0.5)
+					box(a, xf * Transform3D(Basis(), Vector3(wx, SKIRT + 1.0 + f * 3.0, d * 0.5)), Vector3(minf(1.3, w / bays * 0.6), 1.2, 0.06),
+						WindowLights.mark(glass, wat))
 			if kind == "shop":
-				box(a, xf * Transform3D(Basis(), Vector3(0, SKIRT + 0.3, d * 0.5)), Vector3(w * 0.8, 2.0, 0.07), glass.lightened(0.15))
+				box(a, xf * Transform3D(Basis(), Vector3(0, SKIRT + 0.3, d * 0.5)), Vector3(w * 0.8, 2.0, 0.07), WindowLights.mark(glass.lightened(0.15), xf.origin))
 		"industrial":
 			var c := Color(0.62, 0.64, 0.62).lerp(wall, 0.25)
 			box(a, xf, Vector3(w, h + SKIRT, d), c, false)
@@ -336,7 +338,8 @@ static func real_building(a: Dictionary, pos: Vector3, w: float, d: float, yaw: 
 			box(a, xf * Transform3D(Basis(), Vector3(-w * 0.25, SKIRT, d * 0.5)), Vector3(0.9, 2.0, 0.08), door)
 			for sx: float in [-1.0, 1.0]:
 				if w > 5.0:
-					box(a, xf * Transform3D(Basis(), Vector3(sx * w * 0.3 + w * 0.1, SKIRT + 1.1, d * 0.5)), Vector3(1.0, 0.9, 0.06), glass)
+					box(a, xf * Transform3D(Basis(), Vector3(sx * w * 0.3 + w * 0.1, SKIRT + 1.1, d * 0.5)), Vector3(1.0, 0.9, 0.06),
+						WindowLights.mark(glass, xf * Vector3(sx, 1.1, 0.0)))
 
 
 ## A gable roof over a `w` x `d` box, the ridge along its long side.

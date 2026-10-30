@@ -126,14 +126,14 @@ static func _terrace(a: Dictionary, xf: Transform3D, w: float, d: float, h: floa
 		# The bay window, its glass on three sides and a little roof of its own.
 		var bay := body.translated_local(Vector3(bx, 0, d * 0.5 + 0.35))
 		AdventureProps.box(a, bay, Vector3(2.2, 2.5, 0.7), c.darkened(0.04))
-		RegionBuildings._plate(a, bay, Vector3(0, 0.8, 0.35), Vector2(1.8, 1.4), glass)
+		RegionBuildings._plate(a, bay, Vector3(0, 0.8, 0.35), Vector2(1.8, 1.4), WindowLights.mark(glass, bay * Vector3(0, 0.8, 0.35)))
 		AdventureProps.box(a, bay.translated_local(Vector3(0, 2.5, 0)), Vector3(2.35, 0.18, 0.85), roof)
 		for f in range(1, floors):
 			for sx: float in [-0.22, 0.22]:
 				RegionBuildings._plate(a, body, Vector3(ux + sx * uw, 0.9 + f * 2.9, d * 0.5), Vector2(1.0, 1.35), trim)
-				RegionBuildings._plate(a, body, Vector3(ux + sx * uw, 0.98 + f * 2.9, d * 0.5 + 0.01), Vector2(0.84, 1.2), glass)
+				RegionBuildings._plate(a, body, Vector3(ux + sx * uw, 0.98 + f * 2.9, d * 0.5 + 0.01), Vector2(0.84, 1.2), WindowLights.mark(glass, body * Vector3(ux + sx * uw, 0.98 + f * 2.9, d * 0.5 + 0.01)))
 		for f in floors:
-			RegionBuildings._plate(a, body, Vector3(ux, 0.9 + f * 2.9, d * 0.5), Vector2(1.0, 1.2), glass, -1.0)
+			RegionBuildings._plate(a, body, Vector3(ux, 0.9 + f * 2.9, d * 0.5), Vector2(1.0, 1.2), WindowLights.mark(glass, body * Vector3(ux, 0.9 + f * 2.9, d * 0.5)), -1.0)
 	var rise := d * 0.5 * float(kit["pitch"]) * RegionBuildings.RISE * 0.8
 	RegionBuildings._roof(a, body, w, d, top, "gable", float(kit["pitch"]) * 0.8, 0.15, roof, wall, rng, kit)
 	for u in range(0, n + 1):
@@ -209,7 +209,7 @@ static func _mansard(a: Dictionary, xf: Transform3D, w: float, d: float, h: floa
 			var x := ((float(b) + 0.5) / bays - 0.5) * (w - 2.0 * inset)
 			var dorm := body.translated_local(Vector3(x, top + 0.6, face * (d * 0.5 - inset * 0.55)))
 			AdventureProps.box(a, dorm, Vector3(1.0, 1.4, 0.9), wall)
-			RegionBuildings._plate(a, dorm, Vector3(0, 0.15, 0.45 * face), Vector2(0.7, 1.0), glass, face)
+			RegionBuildings._plate(a, dorm, Vector3(0, 0.15, 0.45 * face), Vector2(0.7, 1.0), WindowLights.mark(glass, dorm * Vector3(0, 0.15, 0.45 * face)), face)
 	for k in rng.randi_range(1, 3):
 		AdventureProps.box(a, body.translated_local(Vector3(rng.randf_range(-0.4, 0.4) * w, top + rise, rng.randf_range(-0.2, 0.2) * d)),
 			Vector3(0.7, 1.2, 1.8), Color(0.62, 0.36, 0.28))
@@ -236,7 +236,7 @@ static func _gabled(a: Dictionary, xf: Transform3D, w: float, d: float, h: float
 			RegionBuildings._plate(a, body, Vector3(-uw * 0.25, 0, d * 0.5), Vector2(1.0, 2.2), RegionKit.pick(rng, kit["door"]))
 		# The ridge from front to back: the gable end faces the street.
 		RegionBuildings._gable(a, body, uw - 0.04, d, top, (uw * 0.5) * 1.6, 0.1, RegionKit.pick(rng, style.get("roofs", kit["roofs"])), c)
-		RegionBuildings._plate(a, body, Vector3(0, top + uw * 0.3, d * 0.5), Vector2(0.8, 1.0), glass)
+		RegionBuildings._plate(a, body, Vector3(0, top + uw * 0.3, d * 0.5), Vector2(0.8, 1.0), WindowLights.mark(glass, body * Vector3(0, top + uw * 0.3, d * 0.5)))
 
 
 ## A modern block: render or concrete, a band of windows round every floor, a glazed ground floor for a shop, balconies
@@ -324,13 +324,13 @@ static func _shophouse(a: Dictionary, xf: Transform3D, w: float, d: float, h: fl
 		# The ground floor stands back under the arcade; the floors above come out to the street.
 		AdventureProps.box(a, uxf.translated_local(Vector3(0, 0, -deep * 0.5)), Vector3(uw - 0.04, SKIRT + 3.2, d - deep), c.darkened(0.1), false)
 		AdventureProps.box(a, body.translated_local(Vector3(0, 3.2, 0)), Vector3(uw - 0.04, top - 3.2, d), c, true)
-		RegionBuildings._plate(a, body, Vector3(0, 0.2, d * 0.5 - deep), Vector2(uw * 0.8, 2.6), glass.lightened(0.1))
+		RegionBuildings._plate(a, body, Vector3(0, 0.2, d * 0.5 - deep), Vector2(uw * 0.8, 2.6), WindowLights.mark(glass.lightened(0.1), body * Vector3(0, 0.2, d * 0.5 - deep)))
 		AdventureProps.box(a, uxf.translated_local(Vector3(-uw * 0.5 + 0.2, 0, d * 0.5 - 0.2)), Vector3(0.35, SKIRT + 3.2, 0.35), c.darkened(0.05))
 		RegionBuildings._plate(a, body, Vector3(0, 3.35, d * 0.5), Vector2(uw * 0.85, 0.8), RegionKit.pick(rng, fascia, trim))
 		var shutter: Color = RegionKit.pick(rng, shutters, c.darkened(0.3))
 		for f in range(1, floors):
 			for sx: float in ([0.0] if uw < 4.5 else [-0.22, 0.22]):
-				RegionBuildings._plate(a, body, Vector3(sx * uw, 0.8 + f * 3.2, d * 0.5), Vector2(1.0, 1.5), glass)
+				RegionBuildings._plate(a, body, Vector3(sx * uw, 0.8 + f * 3.2, d * 0.5), Vector2(1.0, 1.5), WindowLights.mark(glass, body * Vector3(sx * uw, 0.8 + f * 3.2, d * 0.5)))
 				RegionBuildings._plate(a, body, Vector3(sx * uw - 0.75, 0.8 + f * 3.2, d * 0.5 + 0.01), Vector2(0.45, 1.5), shutter)
 				RegionBuildings._plate(a, body, Vector3(sx * uw + 0.75, 0.8 + f * 3.2, d * 0.5 + 0.01), Vector2(0.45, 1.5), shutter)
 		if str(kit["roof"]) == "flat" or rng.randf() < 0.5:
@@ -394,12 +394,12 @@ static func _arcade(a: Dictionary, xf: Transform3D, w: float, d: float, h: float
 	for b in bays + 1:
 		var x := float(b) / bays * (w - 0.5) - (w - 0.5) * 0.5
 		AdventureProps.box(a, xf.translated_local(Vector3(x, 0, d * 0.5 - 0.25)), Vector3(0.5, SKIRT + fh, 0.5), wall)
-	RegionBuildings._plate(a, body, Vector3(0, 0.2, d * 0.5 - deep), Vector2(w * 0.85, 2.6), glass.lightened(0.1))
+	RegionBuildings._plate(a, body, Vector3(0, 0.2, d * 0.5 - deep), Vector2(w * 0.85, 2.6), WindowLights.mark(glass.lightened(0.1), body * Vector3(0, 0.2, d * 0.5 - deep)))
 	var shutter: Color = RegionKit.pick(rng, kit["shutters"], trim)
 	for f in range(1, floors):
 		for b in bays:
 			var x := ((float(b) + 0.5) / bays - 0.5) * w
-			RegionBuildings._plate(a, body, Vector3(x, f * fh + 0.1, d * 0.5), Vector2(1.0, 2.3), glass)
+			RegionBuildings._plate(a, body, Vector3(x, f * fh + 0.1, d * 0.5), Vector2(1.0, 2.3), WindowLights.mark(glass, body * Vector3(x, f * fh + 0.1, d * 0.5)))
 			RegionBuildings._plate(a, body, Vector3(x - 0.72, f * fh + 0.1, d * 0.5 + 0.01), Vector2(0.42, 2.3), shutter)
 			RegionBuildings._plate(a, body, Vector3(x + 0.72, f * fh + 0.1, d * 0.5 + 0.01), Vector2(0.42, 2.3), shutter)
 			AdventureProps.box(a, body.translated_local(Vector3(x, f * fh, d * 0.5 + 0.35)), Vector3(1.4, 0.12, 0.7), wall.darkened(0.1))
@@ -433,12 +433,12 @@ static func _windows(a: Dictionary, body: Transform3D, w: float, d: float, floor
 		for f in range(from, floors):
 			var y := f * fh + (fh - wh) * 0.55
 			if bands:
-				RegionBuildings._plate(a, sxf, Vector3(0, y, z), Vector2(len - 1.0, wh), glass)
+				RegionBuildings._plate(a, sxf, Vector3(0, y, z), Vector2(len - 1.0, wh), WindowLights.mark(glass, sxf * Vector3(0, y, z)))
 				continue
 			for k in n:
 				var x := ((float(k) + 0.5) / n - 0.5) * len
 				RegionBuildings._plate(a, sxf, Vector3(x, y - 0.1, z), Vector2(ww + 0.2, wh + 0.2), surround)
-				RegionBuildings._plate(a, sxf, Vector3(x, y, z + 0.01), Vector2(ww, wh), glass)
+				RegionBuildings._plate(a, sxf, Vector3(x, y, z + 0.01), Vector2(ww, wh), WindowLights.mark(glass, sxf * Vector3(x, y, z)))
 
 
 ## The shop fronts along a building's ground floor: wide windows, a fascia and an awning for each.
@@ -448,7 +448,7 @@ static func _shopfronts(a: Dictionary, body: Transform3D, w: float, d: float, ki
 	for u in n:
 		var x := (float(u) + 0.5) * uw - w * 0.5
 		var fascia: Color = RegionKit.pick(rng, kit["shop"]["fascia"], DARK)
-		RegionBuildings._plate(a, body, Vector3(x, 0.25, d * 0.5), Vector2(uw - 0.8, 2.3), glass.lightened(0.18))
+		RegionBuildings._plate(a, body, Vector3(x, 0.25, d * 0.5), Vector2(uw - 0.8, 2.3), WindowLights.mark(glass.lightened(0.18), body * Vector3(x, 0.25, d * 0.5)))
 		AdventureProps.box(a, body.translated_local(Vector3(x, 2.7, d * 0.5 + 0.08)), Vector3(uw - 0.3, 0.55, 0.16), fascia)
 		RegionBuildings._shop_name(a, body, Vector3(x, 2.975, d * 0.5 + 0.17), uw - 1.0, 0.32, fascia, kit, rng)
 		if rng.randf() < 0.5:

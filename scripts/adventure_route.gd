@@ -41,6 +41,12 @@ const ADOPT_FIT := 400.0
 ## The real places each kind of made-up stop can be (RealPack.pois kinds).
 const ADOPT_ROLES := {"fuel": ["fuel"], "cafe": ["cafe", "pub"], "inn": ["inn"], "campsite": ["campsite"], "layby": ["layby"],
 	"rest_area": ["layby"], "viewpoint": ["viewpoint"]}
+## The stops the map's own places beside the road become (RealPack.pois kind -> site kind): every one of them is a stop
+## (the cafes and pubs no nearer than FOOD_GAP to the last, so a town's high street isn't a row of them).
+const REAL_STOPS := {"fuel": "fuel", "cafe": "cafe", "pub": "cafe", "layby": "layby", "viewpoint": "viewpoint"}
+const FOOD_GAP := 1500.0
+## The longest the road goes (m) without a filling station before a made-up one is put in the gap.
+const FUEL_GAP := 60000.0
 ## Road widths (kerb to kerb, metres): a wide two-lane road down to a single track.
 const WIDTHS := {"two_lane": 7.4, "road": 6.0, "narrow": 4.6, "single": 3.3}
 ## Fuel stations: the first this far in (m), then every so often.
@@ -229,9 +235,12 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 		else:
 			sections.append({"s0": k0 * STEP, "s1": k1 * STEP, "kind": kind, "width": "road"})
 	_lie_of_land()
-	# Fuel and the stops, only where the road is straight and level enough to pull in.
-	_plan_fuel(rng)
-	AdventureStops.plan(self)
+	# Fuel and the stops, only where the road is straight and level enough to pull in: the map's own filling stations,
+	# cafes, lay-bys and viewpoints beside the road, a made-up filling station only where the map has none for FUEL_GAP,
+	# and a village and a bed every so often (the bed at a real inn or campsite where there's one near).
+	_real_stops()
+	_plan_fuel_gaps(rng)
+	AdventureStops.plan_villages_and_beds(self)
 	_adopt_pois()
 	_fit_stops()
 	_level_stops()
@@ -314,7 +323,7 @@ func _adopt_pois() -> void:
 	var taken := {}
 	for st in sites:
 		var roles: Array = ADOPT_ROLES.get(str(st["kind"]), [])
-		if roles.is_empty():
+		if roles.is_empty() or st.has("from_map"):
 			continue
 		var best: Dictionary = {}
 		var best_d := ADOPT_REACH
@@ -348,6 +357,8 @@ func _fit_stops() -> void:
 	todo.sort_custom(func(a, b): return int(a.has("real")) > int(b.has("real")))
 	for st in todo:
 		var at := _fit_near(float(st["s"]), ADOPT_FIT if st.has("real") else FIT_REACH, placed)
+		if at < 0.0 and st.has("from_map"):
+			continue   # (the map's own place, with nowhere to pull in beside it: left out, not moved away)
 		if at < 0.0 and st.has("real"):
 			# No straight, level stretch by the real place: back to where it was planned, and its made-up name.
 			st["s"] = st["planned_s"]
@@ -948,13 +959,54 @@ func _theme_numbers() -> void:
 		look[table[0]] = d
 
 
-func _plan_fuel(rng: RandomNumberGenerator) -> void:
-	var s := rng.randf_range(FUEL_FIRST[0], FUEL_FIRST[1])
-	if length < FUEL_FIRST[1] + 3000.0:
-		s = length * 0.5
-	while s < length - 3000.0 or (sites_of("fuel").is_empty() and s < length):
-		add_site("fuel", snappedf(s, STEP), 1, 30.0, "Fuel")
-		s += rng.randf_range(FUEL_EVERY[0], FUEL_EVERY[1])
+## A stop at every filling station, cafe, lay-by and viewpoint the map has beside the road (REAL_STOPS), on its side
+## of the road and under its own name, clear of the others (AdventureStops.CLEAR). Marked "from_map": one with no
+## straight, level stretch near it is left out rather than moved away (_fit_stops).
+func _real_stops() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value, "real_stops", real.id])
+	var food_last := -INF
+	for poi: Dictionary in real.pois:
+		var kind := str(REAL_STOPS.get(str(poi["kind"]), ""))
+		if kind == "":
+			continue
+		var s := float(int(poi["k"]) * STEP)
+		if s < 600.0 or s > length - 400.0 or (kind == "cafe" and s - food_last < FOOD_GAP) or not AdventureStops._clear(self, s):
+			continue
+		var name := str(poi.get("name", ""))
+		if name == "":
+			name = "Fuel" if kind == "fuel" else AdventureStops._name(rng, kind)
+		var st := add_site(kind, s, 1 if float(poi["lat"]) >= 0.0 else -1, 30.0 if kind == "fuel" else float(AdventureStops.FLAT[kind]), name)
+		if kind != "fuel":
+			st["stop"] = true
+			st["seed"] = rng.randi()
+		st["real"] = true
+		st["from_map"] = true
+		st["planned_s"] = s
+		st["planned_name"] = name
+		if kind == "cafe":
+			food_last = s
+
+
+## A made-up filling station in every stretch the map leaves without one for longer than FUEL_GAP (from the start, between
+## two, and on to the destination), spaced FUEL_EVERY through it; one halfway on a ride with none at all.
+func _plan_fuel_gaps(rng: RandomNumberGenerator) -> void:
+	var at: Array[float] = [0.0]
+	for st in sites_of("fuel"):
+		at.append(float(st["s"]))
+	at.append(length)
+	if at.size() == 2:
+		add_site("fuel", snappedf(clampf(rng.randf_range(FUEL_FIRST[0], FUEL_FIRST[1]), 0.0, length * 0.5), STEP), 1, 30.0, "Fuel")
+		at.insert(1, float(sites_of("fuel")[0]["s"]))
+	for k in at.size() - 1:
+		var a := at[k]
+		var b := at[k + 1]
+		if b - a <= FUEL_GAP:
+			continue
+		var s := a + rng.randf_range(FUEL_EVERY[0], FUEL_EVERY[1])
+		while s < b - FUEL_EVERY[0] * 0.5 and s < length - 3000.0:
+			add_site("fuel", snappedf(s, STEP), 1, 30.0, "Fuel")
+			s += rng.randf_range(FUEL_EVERY[0], FUEL_EVERY[1])
 
 
 func _build_grid() -> void:
