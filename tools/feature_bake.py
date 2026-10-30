@@ -153,6 +153,8 @@ CLASSES = {
         "bunker": ("golf_bunker", False), "tee": ("golf_tee", False), "track": ("race_track", False),
         "raceway": ("race_track", False), "theme_park": ("theme_park", False), "zoo": ("zoo", False),
         "roller_coaster": ("roller_coaster", False),
+        # D5: farmland near the roads (paddies, where the place is hot and wet: the game decides by its climate).
+        "farmland": ("farmland", True),
     },
     ("transportation", "segment", "class"): {
         # D2 rail (a road segment is never kept: the roads are roads.json's).
@@ -191,6 +193,10 @@ TAGGED = {
     ("base", "water", "class"): {
         # D3: a canal's locks are its lines tagged lock=yes, and the water in them polygons tagged water=lock.
         "canal": [("lock", "yes", "canal_lock")], "water": [("water", "lock", "canal_lock")],
+    },
+    ("base", "land_use", "class"): {
+        # D5: rice fields, wherever they are (the farmland the map says grows rice).
+        "farmland": [("crop", "rice", "paddy"), ("produce", "rice", "paddy")],
     },
 }
 NAME_TAGS = {"canal_lock": ("lock_name", "lock:name:flight")}

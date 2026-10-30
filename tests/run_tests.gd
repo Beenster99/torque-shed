@@ -900,6 +900,12 @@ func _run_all() -> void:
 	await _t(&"_test_history_looks")
 	await _t(&"_test_history_features")
 	await _t(&"_test_history_regions")
+	print("Ride Anywhere v2, phase D round 2: land texture (fields, walls, glass, salt, paddies, quarries, graves, golf)")
+	await _t(&"_test_fields_kits")
+	await _t(&"_test_fields_lay_out")
+	await _t(&"_test_fields_paddies")
+	await _t(&"_test_fields_blocks_meet")
+	await _t(&"_test_fields_regions")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22874,6 +22880,30 @@ func _test_water_blocks_meet() -> void:
 
 func _test_water_regions() -> void:
 	_water().test_regions()
+
+
+func _fields() -> RefCounted:
+	return load("res://tests/fields_tests.gd").new(self)
+
+
+func _test_fields_kits() -> void:
+	_fields().test_kits()
+
+
+func _test_fields_lay_out() -> void:
+	_fields().test_lay_out()
+
+
+func _test_fields_paddies() -> void:
+	_fields().test_paddies()
+
+
+func _test_fields_blocks_meet() -> void:
+	_fields().test_blocks_meet()
+
+
+func _test_fields_regions() -> void:
+	_fields().test_regions()
 
 
 func _wild() -> RefCounted:
