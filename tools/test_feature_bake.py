@@ -237,6 +237,12 @@ class FeatureTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0][0] / 1e5, S + 0.10005, places=4)
         self.assertAlmostEqual(rows[0][1] / 1e5, W + 0.10005, places=4)
 
+    def test_buildings_at_one_spot_saying_different_things_sort(self):
+        # (two looks at the same middle, one saying its roof's shape and the other not: they still sort, None as "")
+        got = self.bake([(BLD, {"geometry": self.square(W + 0.1, S + 0.1), "class": "church"}),
+                         (BLD, {"geometry": self.square(W + 0.1, S + 0.1), "class": "church", "roof_shape": "dome"})])
+        self.assertEqual(len(fb.undelta_rows(got["buildings"])), 2)
+
     def test_a_building_the_map_says_nothing_of_is_left_out(self):
         got = self.bake([(BLD, {"geometry": self.square(W + 0.1, S + 0.1), "class": "house"})])
         self.assertNotIn("buildings", got)
