@@ -178,7 +178,7 @@ var posters := {}
 ## What each screen is tuned to: screen key (see TvChannels) -> {ch: channel id, rider: the peer
 ## its live channel follows, 0 for whoever is out first}. Screens not in here show their home channel.
 var screens := {}
-## The dyno room's kit (see DynoRoom): the extraction hose ("hook", "bike" or "held" with
+## The dyno room's kit (see DynoRoom): the extraction hose ("hook": parked up at the ceiling, "bike" or "held" with
 ## hose_by the peer holding it), the cooling fan and the room's own lights (on/off), the four
 ## straps on the rig (front left, front right, rear left, rear right), who is wearing the ear
 ## defenders (0: on their hook), how hot the engine on the rig is (0..1) and how much exhaust
@@ -905,7 +905,7 @@ func _dyno_check(peer: int, action: Dictionary) -> String:
 						return "You've got the petrol nozzle in your hand. Hang it back on the pump first."
 				"bike":
 					if hose_holder() != peer:
-						return "Take the exhaust hose off its hook first."
+						return "Pull the exhaust hose down first."
 					if on_rig == 0:
 						return "Wheel a bike onto the rig first."
 					if item_on(on_rig, "exhaust") == 0:
@@ -948,7 +948,7 @@ func _dyno_apply(peer: int, action: Dictionary) -> String:
 			if to == "held":
 				return "Got the extraction hose. Hold the work button on the bike's exhaust to fit it." if was == "hook" \
 					else "Took the hose off the exhaust."
-			return "Hose back on its hook."
+			return "Hose back up out of the way."
 		"dyno_fan":
 			dyno["fan"] = bool(action.get("on", not bool(dyno["fan"])))
 			return "Cooling fan %s" % ("on" if dyno["fan"] else "off")

@@ -917,6 +917,9 @@ func _run_all() -> void:
 	await _t(&"_test_fields_paddies")
 	await _t(&"_test_fields_blocks_meet")
 	await _t(&"_test_fields_regions")
+	print("Simon's v0.39.0 round: the dyno room's signs down, and its extraction hose hanging from the ceiling over the rig")
+	await _t(&"_test_dyno_tidy_signs")
+	await _t(&"_test_dyno_tidy_hose")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -6628,7 +6631,7 @@ func _test_dyno_kit() -> void:
 	check(Shed.strapped(), "all four straps done up")
 	check(Shed.check(me, {"a": "dyno_strap", "point": 7}) != "", "there are only four strap posts")
 	# The extraction hose: off its hook, over the exhaust.
-	check(Shed.check(me, {"a": "dyno_hose", "to": "bike"}).contains("hook"), "you need the hose in your hands to fit it")
+	check(Shed.check(me, {"a": "dyno_hose", "to": "bike"}).contains("hose down"), "you need the hose in your hands to fit it")
 	Shed.request({"a": "dyno_hose", "to": "held"})
 	check(Shed.hose_holder() == me and Shed.check(me, {"a": "take", "spot": "bench_0"}).contains("hose"),
 		"carrying the hose, your hands are full")
@@ -6790,11 +6793,11 @@ func _test_dyno_room_session() -> void:
 		await _aim_point(w, post.global_position)
 		await _hold_act(main)
 	check(Shed.strapped() and room._strap_nodes.all(func(s): return s.visible), "holding the work button at each post straps it down, and the straps show")
-	# The hose: off the hook, onto the exhaust.
-	w.place(Transform3D(Basis(), DynoRoom.HOSE_HOOK + Vector3(-1.2, -DynoRoom.HOSE_HOOK.y, 0.0)))
-	await _aim_point(w, room.get_node("HoseHook").global_position)
+	# The hose: down from the ceiling, onto the exhaust.
+	w.place(Transform3D(Basis(), Vector3(DynoRoom.HOSE_PARK.x, 0.0, DynoRoom.HOSE_PARK.z + 1.2)))
+	await _aim_point(w, room.get_node("HoseDrop").global_position)
 	await _hold_act(main)
-	check(Shed.hose_holder() == Shed.me(), "the work button at the hook takes the hose")
+	check(Shed.hose_holder() == Shed.me(), "the work button at the hose hanging from the ceiling pulls it down")
 	await _aim_at(main, faithful, "exhaust")
 	await _hold_act(main)
 	for i in 3:
@@ -23873,6 +23876,20 @@ func _test_headlight_builds() -> void:
 
 func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- the tidied dyno room (tests/dyno_room_tidy_tests.gd)
+
+func _dyno_tidy() -> RefCounted:
+	return load("res://tests/dyno_room_tidy_tests.gd").new(self)
+
+
+func _test_dyno_tidy_signs() -> void:
+	_dyno_tidy().test_signs()
+
+
+func _test_dyno_tidy_hose() -> void:
+	_dyno_tidy().test_hose()
 
 
 # ---------------------------------------------------------------------------- rider styles (tests/rider_style_tests.gd)
