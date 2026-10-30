@@ -771,7 +771,8 @@ static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionar
 				var suits: Array = options.filter(func(id): return PartsDB.styles_of(str(id)).has(lean))
 				if not suits.is_empty():
 					options = suits
-			if PartsDB.is_optional(slot):
+			# A road bike keeps its tail unit: its rear light and number plate.
+			if PartsDB.is_optional(slot) and not (road and slot == "tail"):
 				options.append("none")
 			pick[key] = options[rng.randi() % options.size()]
 		parts[slot] = pick[key]

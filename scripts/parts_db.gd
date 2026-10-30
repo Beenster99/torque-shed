@@ -33,10 +33,23 @@ const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rea
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
 	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper",
 	"tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
-## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
-const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
-	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards",
-	"swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
+## The optional parts: bike slots a bike is still complete and ridable without, in the order the
+## game lists them. "none" in a build means nothing is fitted there. Everything else (the side
+## stand among them) has to be on and bolted up before the bike can be ridden. Optional isn't road
+## legal: the MOT still wants a headlight, a tail unit's rear light and plate, a horn and mirrors.
+const OPTIONAL_SLOTS: Array[String] = ["headlight", "indicators", "front_mudguard", "ecu", "steering_damper", "mirrors",
+	"lever_guards", "fairing", "satnav", "tail", "guards", "panniers", "top_box", "tank_bag", "number_boards", "aux_tank",
+	"toolbox", "fog_lights", "horn", "side_panels", "centre_stand"]
+## What the optional parts list calls each one, in plain words.
+const OPTIONAL_NAMES := {"headlight": "headlight", "indicators": "indicators", "front_mudguard": "front mudguard",
+	"ecu": "ECU", "steering_damper": "steering damper", "mirrors": "mirrors", "lever_guards": "lever guards",
+	"fairing": "fairing", "satnav": "sat nav", "tail": "tail unit", "guards": "engine protectors", "panniers": "panniers",
+	"top_box": "top box", "tank_bag": "tank bag", "number_boards": "number boards", "aux_tank": "extra fuel tank",
+	"toolbox": "tool kit", "fog_lights": "fog lights", "horn": "horn", "side_panels": "side panels", "centre_stand": "centre stand"}
+## Slots the frame covers itself when they're empty: its own footpegs and its own swingarm. "none"
+## there is fine and the bike still rides, but they aren't extras a bike does without (it always
+## has pegs and a swingarm), so they aren't in OPTIONAL_SLOTS.
+const FRAME_OWN_SLOTS: Array[String] = ["rearsets", "swingarm"]
 ## The adventure kit: a tank bag, an extra fuel tank, a toolbox and a sat nav (the luggage and
 ## the screens are the panniers, top box and fairing). Bikes saved before they existed get the
 ## slots empty.
@@ -268,8 +281,20 @@ func slot_name(slot: String) -> String:
 	return n
 
 
+## Whether a bike is complete and ridable without anything in `slot` (see OPTIONAL_SLOTS).
 func is_optional(slot: String) -> bool:
 	return OPTIONAL_SLOTS.has(slot)
+
+
+## Whether "none" in `slot` is a real state for a bike: an optional part left off, or the frame's
+## own pegs or swingarm (FRAME_OWN_SLOTS). A bike with only these empty is still complete.
+func may_be_empty(slot: String) -> bool:
+	return OPTIONAL_SLOTS.has(slot) or FRAME_OWN_SLOTS.has(slot)
+
+
+## The optional parts in plain words: "headlight, indicators, front mudguard, ...".
+func optional_text() -> String:
+	return ", ".join(OPTIONAL_SLOTS.map(func(s): return str(OPTIONAL_NAMES.get(s, slot_name(s).to_lower()))))
 
 
 func is_fluid(id: String) -> bool:
@@ -596,7 +621,7 @@ func sanitize_build(build: Dictionary) -> Dictionary:
 	var no_guard := false
 	for slot in SLOTS:
 		var id: String = current_id(str(build.get(slot, "")))
-		if id == "none" and is_optional(slot):
+		if id == "none" and may_be_empty(slot):
 			clean[slot] = id
 			continue
 		if not parts.has(id) or parts[id]["kind"] != SLOT_KIND[slot]:

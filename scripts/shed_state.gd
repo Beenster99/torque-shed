@@ -688,7 +688,7 @@ func riding(peer: int) -> int:
 func missing_slots(bike_id: int) -> Array:
 	var out := []
 	for slot in PartsDB.BIKE_SLOTS:
-		if item_on(bike_id, slot) == 0 and not PartsDB.is_optional(slot):
+		if item_on(bike_id, slot) == 0 and not PartsDB.may_be_empty(slot):
 			out.append(slot)
 	if item_on(bike_id, "engine") != 0:
 		for slot in PartsDB.ENGINE_SLOTS:
@@ -776,7 +776,7 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 		if item_id != 0:
 			parts[slot] = items[item_id]["part"]
 			cond[slot] = condition_of(items[item_id])
-		elif PartsDB.is_optional(slot):
+		elif PartsDB.may_be_empty(slot):
 			parts[slot] = "none"
 	if swap != 0 and items.has(swap) and swap_slot != "":
 		var it: Dictionary = items[swap]
@@ -5483,7 +5483,7 @@ func blueprint_of(bike_id: int) -> Dictionary:
 		if on != 0:
 			parts[slot] = str(items[on]["part"])
 			colors[slot] = {"color": items[on]["color"], "finish": str(items[on].get("finish", ""))}
-		elif PartsDB.is_optional(slot):
+		elif PartsDB.may_be_empty(slot):
 			parts[slot] = "none"
 		else:
 			parts[slot] = str(bike.get("original", {}).get(slot, PartsDB.DEFAULT_BUILD.get(slot, "none")))
