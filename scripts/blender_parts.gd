@@ -59,9 +59,17 @@ static func _in(root: Node, n: Node3D) -> Transform3D:
 	return t
 
 
-## The surface tag a part's material carries (its name, less any ".001" Blender added).
+## The surface tag a part's material carries (its name, less any ".001" Blender added and any
+## "__<slot>" ending).
 static func tag_of(mat: Material) -> String:
-	return "" if mat == null else mat.resource_name.get_slice(".", 0)
+	return "" if mat == null else mat.resource_name.get_slice(".", 0).get_slice("__", 0)
+
+
+## The slot whose part a surface takes its colour from: the "__<slot>" ending of its material's
+## name (a head glb's barrels are the engine's colour), or "" for the part's own.
+static func colour_slot(mat: Material) -> String:
+	var name := "" if mat == null else mat.resource_name.get_slice(".", 0)
+	return name.get_slice("__", 1) if name.contains("__") else ""
 
 
 ## Where a top end goes: its origin on the first barrel's base, turned up the barrels, and scaled
@@ -79,6 +87,12 @@ static func top_end_xform(cyls: Array, eng_s: float) -> Transform3D:
 	if cyls.size() > 1:
 		across = absf((cyls[cyls.size() - 1]["base"] as Vector3).x - (cyls[0]["base"] as Vector3).x) / (TOP_END_SPACING * (cyls.size() - 1))
 	return Transform3D(turn * Basis.from_scale(Vector3(across, up.length(), eng_s)), cyls[0]["base"])
+
+
+## Where an engine's crankcase goes: on the engine's middle (BikeModel's _engine_c), scaled by its
+## size (_eng_s).
+static func engine_xform(engine_c: Vector3, eng_s: float) -> Transform3D:
+	return Transform3D(Basis.from_scale(Vector3.ONE * eng_s), engine_c)
 
 
 ## The engine layouts whose top ends are drawn a cylinder at a time (a glb on each cylinder), where

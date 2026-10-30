@@ -61,6 +61,7 @@ SMALL_BUDGET = [1500, 400, 0]
 # The mount points every glb of a kind must carry (agreement 4, and N = 1 .. the cylinders).
 MOUNTS = {
     "head": ["cyl_N", "exhaust_port_N", "plug_N", "intake_N"],
+    "engine": ["engine"],
 }
 
 
@@ -73,12 +74,14 @@ def reset():
 
 
 def tag_material(tag):
-    assert tag in TAGS, tag
+    """The material for surface `tag`. A tag can end in "__<slot>" to take its colour from that
+    slot's part (barrels in a head glb are "cast_alloy__engine"), agreement v5."""
+    assert tag.split("__")[0] in TAGS, tag
     m = bpy.data.materials.get(tag)
     if m is None:
         m = bpy.data.materials.new(tag)
         m.use_nodes = True
-        col, metal, rough = PREVIEW[tag]
+        col, metal, rough = PREVIEW[tag.split("__")[0]]
         b = m.node_tree.nodes["Principled BSDF"]
         b.inputs["Base Color"].default_value = (*col, 1.0)
         b.inputs["Metallic"].default_value = metal
@@ -222,3 +225,49 @@ def export(path, lods, mounts):
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
         export_yup=True, export_extras=False, export_materials="EXPORT", export_image_format="NONE",
         export_tangents=True, export_texcoords=True, export_normals=True)
+
+
+def superellipse(hw, up, down, n, segs):
+    """A rounded-box cross-section in the XZ plane (half width hw, `up` above and `down` below, n
+    the squareness: 2 is an ellipse, higher is boxier), anticlockwise from +X."""
+    pts = []
+    for k in range(segs):
+        t = 2.0 * math.pi * k / segs
+        c, s = math.cos(t), math.sin(t)
+        x = hw * math.copysign(abs(c) ** (2.0 / n), c)
+        z = (up if s > 0 else down) * math.copysign(abs(s) ** (2.0 / n), s)
+        pts.append((x, z))
+    return pts
+
+
+def loft(name, sections, segs, tag, at=(0.0, 0.0, 0.0)):
+    """A closed solid lofted through cross-sections along Y: each (y, half width, up, down, n), as
+    BikeModel's _shell draws its crankcases."""
+    bm = bmesh.new()
+    rings = []
+    for y, hw, up, down, n in sections:
+        rings.append([bm.verts.new((at[0] + x, at[1] + y, at[2] + z)) for x, z in superellipse(hw, up, down, n, segs)])
+    for a, b in zip(rings, rings[1:]):
+        for i in range(segs):
+            j = (i + 1) % segs
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+    bm.faces.new(rings[0])
+    bm.faces.new(list(reversed(rings[-1])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return _new_object(name, bm, tag)
+
+
+def sphere(name, at, r, scale, segs, tag, rot_x=0.0):
+    """A ball of radius `r` stretched by `scale`, turned `rot_x` about X: lofted ring by ring along
+    Y, its ends closed flat on small rings (a UV sphere's poles didn't export the same normals
+    twice running, and CI rebuilds every glb to the byte)."""
+    sx, sy, sz = scale
+    rings = max(4, segs // 2)
+    secs = []
+    for i in range(rings + 1):
+        a = math.pi * (0.04 + 0.92 * i / rings)
+        secs.append((-math.cos(a) * r * sy, math.sin(a) * r * sx, math.sin(a) * r * sz, math.sin(a) * r * sz, 2.0))
+    ob = loft(name, secs, segs, tag)
+    ob.rotation_euler = (rot_x, 0.0, 0.0)
+    ob.location = at
+    return ob

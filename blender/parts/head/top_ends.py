@@ -20,6 +20,8 @@ smallest that room comes to over the layout's engines, at the reference size."""
 
 import kit
 
+# The barrels are the engine part's colour, not the head's (agreement v5's "__<slot>" tags).
+BARREL = "cast_alloy__engine"
 SPACING = 0.12           # m: a 700 cc's bores apart, as BikeModel lays a row out (0.12 x _eng_s)
 
 # How finely each LOD is drawn.
@@ -78,15 +80,15 @@ def finned_barrels(spec, lod, parts):
     hw = _half_row(spec)
     fin = spec["fin"]
     core = fin * 0.68
-    parts.append(kit.prism("core", kit.rounded_rect(hw + core, core, core, d["corner"] * 2), -0.098, 0.088, "cast_alloy"))
-    parts.append(kit.prism("flange", kit.rounded_rect(hw + fin * 0.9, fin * 0.9, 0.022, d["corner"]), -0.1, -0.091, "cast_alloy", _bevel(d, 0.0015)))
+    parts.append(kit.prism("core", kit.rounded_rect(hw + core, core, core, d["corner"] * 2), -0.098, 0.088, BARREL))
+    parts.append(kit.prism("flange", kit.rounded_rect(hw + fin * 0.9, fin * 0.9, 0.022, d["corner"]), -0.1, -0.091, BARREL, _bevel(d, 0.0015)))
     n = d["fins"]
     for k in range(n):
         z = -0.08 + k * (0.162 / max(n - 1, 1))
         g = 1.0 - 0.06 * k / max(n - 1, 1)
         t = [0.0042, 0.006, 0.03][lod]
         parts.append(kit.prism("fin", kit.rounded_rect(hw + fin * g - 0.001, fin * g - 0.001, 0.024 * g * fin / 0.065, d["corner"]),
-            z - t * 0.5, z + t * 0.5, "cast_alloy", _bevel(d, 0.0012)))
+            z - t * 0.5, z + t * 0.5, BARREL, _bevel(d, 0.0012)))
     if spec.get("pushrods") and lod < 2:
         for y in (-1.0, 1.0):
             parts.append(kit.tube("pushrod", (0.0, y * fin * 0.8, -0.092), (0.0, y * fin * 0.8, 0.088), 0.008, d["round"] // 2 + 2, "chrome"))
@@ -99,16 +101,16 @@ def block_barrels(spec, lod, parts):
     d = DETAIL[lod]
     hw = _half_row(spec)
     r = spec["fin"]
-    parts.append(kit.prism("block", kit.rounded_rect(hw + r - 0.006, r - 0.006, 0.03, d["corner"] * 2), -0.1, 0.09, "cast_alloy", _bevel(d, 0.004), 2))
+    parts.append(kit.prism("block", kit.rounded_rect(hw + r - 0.006, r - 0.006, 0.03, d["corner"] * 2), -0.1, 0.09, BARREL, _bevel(d, 0.004), 2))
     if lod < 2:
         for z0, z1 in ((-0.1, -0.084), (0.07, 0.09)):
-            parts.append(kit.prism("band", kit.rounded_rect(hw + r - 0.001, r - 0.001, 0.032, d["corner"] * 2), z0, z1, "cast_alloy", _bevel(d, 0.002)))
+            parts.append(kit.prism("band", kit.rounded_rect(hw + r - 0.001, r - 0.001, 0.032, d["corner"] * 2), z0, z1, BARREL, _bevel(d, 0.002)))
         # The cam chain tunnel bulging out of the front, in the middle (between a triple's second and third bores).
         x = 0.0 if spec["cyls"] % 2 == 0 else SPACING * 0.5
-        parts.append(kit.prism("tunnel", kit.rounded_rect(0.022, 0.012, 0.01, d["corner"]), -0.09, 0.088, "cast_alloy", _bevel(d, 0.002),
+        parts.append(kit.prism("tunnel", kit.rounded_rect(0.022, 0.012, 0.01, d["corner"]), -0.09, 0.088, BARREL, _bevel(d, 0.002),
             at=(x, r - 0.008, 0.0)))
         for x in _xs(spec):
-            parts.append(kit.tube("coolant", (x, -r + 0.004, 0.06), (x, -r - 0.002, 0.06), 0.009, d["round"] // 2 + 2, "cast_alloy"))
+            parts.append(kit.tube("coolant", (x, -r + 0.004, 0.06), (x, -r - 0.002, 0.06), 0.009, d["round"] // 2 + 2, BARREL))
 
 
 # Which way a head's exhaust and inlet ports face, as a Blender direction (a V-twin's rear head
@@ -238,8 +240,8 @@ def two_stroke(spec, lod, parts):
     d = DETAIL[lod]
     fin = spec["fin"]
     core = fin * 0.68
-    parts.append(kit.prism("core", kit.rounded_rect(core, core, core, d["corner"] * 2), -0.098, 0.088, "cast_alloy"))
-    parts.append(kit.prism("flange", kit.rounded_rect(fin * 0.9, fin * 0.9, 0.022, d["corner"]), -0.1, -0.091, "cast_alloy", _bevel(d, 0.0015)))
+    parts.append(kit.prism("core", kit.rounded_rect(core, core, core, d["corner"] * 2), -0.098, 0.088, BARREL))
+    parts.append(kit.prism("flange", kit.rounded_rect(fin * 0.9, fin * 0.9, 0.022, d["corner"]), -0.1, -0.091, BARREL, _bevel(d, 0.0015)))
     n = d["fins"]
     for k in range(n):
         z = -0.08 + k * (0.162 / max(n - 1, 1))
@@ -247,12 +249,12 @@ def two_stroke(spec, lod, parts):
         # Wider fins round the top of the barrel, where it runs hottest.
         g = 0.9 + 0.1 * k / max(n - 1, 1)
         parts.append(kit.prism("fin", kit.rounded_rect(fin * g - 0.001, fin * g - 0.001, 0.018, d["corner"]), z - t * 0.5, z + t * 0.5,
-            "cast_alloy", _bevel(d, 0.001)))
+            BARREL, _bevel(d, 0.001)))
     if lod < 2:
-        parts.append(kit.tube("export", (0.0, core, -0.02), (0.0, fin + 0.004, -0.02), 0.019, d["round"], "cast_alloy", _bevel(d, 0.002)))
-        parts.append(kit.tube("inport", (0.0, -core, -0.05), (0.0, -fin - 0.004, -0.05), 0.016, d["round"], "cast_alloy", _bevel(d, 0.002)))
+        parts.append(kit.tube("export", (0.0, core, -0.02), (0.0, fin + 0.004, -0.02), 0.019, d["round"], BARREL, _bevel(d, 0.002)))
+        parts.append(kit.tube("inport", (0.0, -core, -0.05), (0.0, -fin - 0.004, -0.05), 0.016, d["round"], BARREL, _bevel(d, 0.002)))
         for side in (-1.0, 1.0):
-            parts.append(kit.prism("transfer", kit.rounded_rect(0.012, 0.03, 0.01, d["corner"]), -0.09, 0.02, "cast_alloy", _bevel(d, 0.002),
+            parts.append(kit.prism("transfer", kit.rounded_rect(0.012, 0.03, 0.01, d["corner"]), -0.09, 0.02, BARREL, _bevel(d, 0.002),
                 at=(side * core, 0.0, 0.0)))
     r = spec["head_r"]
     parts.append(kit.tube("headcore", (0.0, 0.0, 0.09), (0.0, 0.0, 0.145), core, d["round"] * 2, "cast_alloy", _bevel(d, 0.003)))

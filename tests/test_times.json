@@ -282,6 +282,7 @@
 	"_test_lever_guards": 155,
 	"_test_blender_parts_glbs": 200,
 	"_test_blender_parts_fit": 14500,
+	"_test_blender_parts_cases": 14500,
 	"_test_blender_parts_fallback": 60,
 	"_test_lighting_clouds": 102,
 	"_test_lighting_lamps_and_gi": 1,

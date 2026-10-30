@@ -138,6 +138,57 @@ func test_top_end_fit() -> void:
 	check(off.is_empty(), "its barrels land on the engine's cylinders and its plugs where the plugs are drawn %s" % str(off.slice(0, 6)))
 
 
+## Every engine's crankcase is made in Blender, and fits every frame its engine suits: inside the
+## room BikeModel keeps round the code-built case, sump and alternator cover, or the code-built
+## engine's own pieces that reach out past that (its covers, a V-twin's pushrod tubes, a four's
+## starter motor).
+func test_cases_fit() -> void:
+	var missing := []
+	var out := []
+	var seen := {}
+	var pairs := 0
+	for e in PartsDB.by_kind["engine"]:
+		var path := BlenderParts.path_for("engine", str(e))
+		if BlenderParts.part(path).is_empty():
+			missing.append(e)
+			continue
+		var styles := PartsDB.styles_of(str(e))
+		var local := {}
+		for v in BlenderParts.points(path, Transform3D()):
+			local[v.snappedf(0.0002)] = true
+		for f in PartsDB.by_kind["frame"]:
+			if not PartsDB.styles_of(str(f)).any(func(s): return styles.has(s)):
+				continue
+			var m := BikeModel.new()
+			var build := BikeBuild.new({"engine": e, "frame": f})
+			m._lay_out(build)
+			m._layout_cylinders(build)
+			pairs += 1
+			var key := "%s %.4f" % [e, m._eng_s]
+			if seen.has(key):
+				m.free()
+				continue
+			seen[key] = true
+			var s := m._eng_s
+			var corners := m._engine_corners()
+			m.build_from(build, m.paint, {}, null, false)
+			for mi in m._slot_meshes.get("engine", []):
+				var g := mi as GeometryInstance3D
+				if g != null:
+					var box := g.transform * g.get_aabb()
+					BikeModel._add_box_corners(corners, box.get_center(), Basis(), box.size * 0.5)
+			var room := _boxes(corners)
+			var xform := BlenderParts.engine_xform(m._engine_c, s)
+			var worst := 0.0
+			for v in local:
+				worst = maxf(worst, _outside(room, xform * v))
+			if worst > 0.003:
+				out.append("%s in %s: %.1f mm out" % [e, f, worst * 1000.0])
+			m.free()
+	check(missing.is_empty(), "every engine has a crankcase made in Blender %s" % str(missing))
+	check(pairs >= 300 and out.is_empty(), "each fits every frame its engine suits (%d pairs) %s" % [pairs, str(out.slice(0, 6))])
+
+
 ## A part with no glb has none to load, so BikeModel keeps drawing it itself: an engine layout with no
 ## top ends made yet.
 func test_fallback() -> void:
