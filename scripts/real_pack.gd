@@ -75,6 +75,9 @@ var region := "world"
 var steps := PackedInt32Array()
 var pin_nodes := PackedInt32Array()
 var run_start := 0
+## The crossings by ferry (FerryLinks), in order: [{step (the step of `steps` it comes before), id (the route's), from,
+## to (the terminals' junctions), name, m (the crossing's length), seconds (how long the crew's aboard), size}].
+var ferries: Array = []
 
 
 ## The planned pack `pack_id` (see register), or null when this game hasn't planned it.

@@ -927,6 +927,14 @@ func _run_all() -> void:
 	print("Simon's v0.39.0 round: the dyno room's signs down, and its extraction hose hanging from the ceiling over the rig")
 	await _t(&"_test_dyno_tidy_signs")
 	await _t(&"_test_dyno_tidy_hose")
+	print("Ride Anywhere v2, phase D round 3: ferries (the links, the ferry leg, crossing as a crew, the boats)")
+	await _t(&"_test_ferry_links")
+	await _t(&"_test_ferry_plan")
+	await _t(&"_test_ferry_nav")
+	await _t(&"_test_ferry_crew")
+	await _t(&"_test_ferry_timeline")
+	await _t(&"_test_ferry_kits")
+	await _t(&"_test_ferry_lay_out")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -24687,3 +24695,33 @@ func _test_wtt_mudguard_ends() -> void:
 	_wtt().test_mudguard_ends()
 
 
+func _ferry() -> RefCounted:
+	return load("res://tests/ferry_tests.gd").new(self)
+
+
+func _test_ferry_links() -> void:
+	_ferry().test_links()
+
+
+func _test_ferry_plan() -> void:
+	_ferry().test_plan()
+
+
+func _test_ferry_nav() -> void:
+	_ferry().test_nav()
+
+
+func _test_ferry_crew() -> void:
+	_ferry().test_crew()
+
+
+func _test_ferry_timeline() -> void:
+	_ferry().test_timeline()
+
+
+func _test_ferry_kits() -> void:
+	_ferry().test_kits()
+
+
+func _test_ferry_lay_out() -> void:
+	_ferry().test_lay_out()

@@ -340,6 +340,12 @@ func _draw_junction(j: Dictionary, y: float, fs: int, font: Font) -> void:
 			draw_line(icon + Vector2(0, rad * 0.6), icon + Vector2(0, rad * 1.3), Color.WHITE, 2.0, true)
 			# The way out: straight on over the top (the main road goes on).
 			draw_line(icon - Vector2(0, rad * 0.6), icon - Vector2(0, rad * 1.3), ROUTE, 3.0, true)
+		"ferry":
+			# A boat on the water (NetNav's "Take the ferry").
+			draw_colored_polygon(PackedVector2Array([icon + Vector2(-rad, 0), icon + Vector2(rad, 0), icon + Vector2(rad * 0.7, rad * 0.45),
+				icon + Vector2(-rad * 0.7, rad * 0.45)]), Color.WHITE)
+			draw_rect(Rect2(icon + Vector2(-rad * 0.35, -rad * 0.5), Vector2(rad * 0.6, rad * 0.5)), ROUTE)
+			draw_line(icon + Vector2(-rad * 1.2, rad * 0.75), icon + Vector2(rad * 1.2, rad * 0.75), ROUTE, 2.0, true)
 		"lights":
 			for k in 3:
 				draw_circle(icon + Vector2(0, (k - 1) * rad * 0.62), rad * 0.26, [Color(0.95, 0.2, 0.15), Color(1.0, 0.7, 0.1), Color(0.2, 0.9, 0.35)][k])

@@ -163,29 +163,47 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	var costs := PackedFloat64Array()
 	for c in region.classes:
 		costs.append(float((CLASS_COST[mode] as Dictionary).get(str(c), 1.5)))
-	# The pins, on the road network.
+	# The pins, on the road network (and the ferries between its pieces: FerryLinks).
+	var links := FerryLinks.of(region)
 	var stops := PackedInt32Array()
 	for p: Vector2 in pins:
 		var n := region.nearest_connected(p.x, p.y, SNAP_M)
 		if n < 0:
 			return _fail("That pin is too far from any road (%d m is the most)." % int(SNAP_M))
-		if stops.size() > 0 and region.component[n] != region.component[stops[0]]:
+		if stops.size() > 0 and not links.joined(region.component[n], region.component[stops[0]]):
 			return _fail("There is no way by road between those places.")
 		stops.append(n)
 	var steps: Array[Vector3i] = []
+	var ferries: Array = []   # [[the step the crossing comes before, link, the terminal it's boarded at], ...]
 	for i in stops.size() - 1:
-		var leg = _shortest(region, stops[i], stops[i + 1], costs)
+		var leg = _leg(region, stops[i], stops[i + 1], costs, links)
 		if leg == null:
 			return _fail("There is no way by road between those places.")
-		steps.append_array(leg)
-	steps = strip_spurs(region, steps)
+		# (each stretch of road between crossings has its short out-and-backs taken out on its own)
+		var cuts: Array = leg["ferries"]
+		var lo := 0
+		for k in cuts.size() + 1:
+			var hi: int = int(cuts[k][0]) if k < cuts.size() else (leg["steps"] as Array).size()
+			var piece: Array[Vector3i] = []
+			piece.assign((leg["steps"] as Array).slice(lo, hi))
+			steps.append_array(strip_spurs(region, piece))
+			if k < cuts.size():
+				ferries.append([steps.size(), int(cuts[k][1]), int(cuts[k][2])])
+			lo = hi
 	if steps.is_empty():
 		return _fail("Those pins are the same place: pin somewhere else to get to.")
 	parts["roads"] = Time.get_ticks_msec() - t0
 	var run_start := steps.size()
-	var tail := _run_out(region, steps, costs)
+	var tail: Array[Vector3i] = []
+	if not ferries.is_empty() and int(ferries[ferries.size() - 1][0]) == steps.size():
+		# (the last pin is where the last crossing lands: the run-out is from there)
+		var f: Array = ferries[ferries.size() - 1]
+		var fl := links.line_from(int(f[1]), int(f[2]))
+		tail = _run_out(region, steps, costs, links.other_end(int(f[1]), int(f[2])), _bearing(fl[fl.size() - 1] - fl[fl.size() - 2]))
+	else:
+		tail = _run_out(region, steps, costs)
 	steps.append_array(tail)
-	var line := _line_of(region, steps)
+	var line := _line_of(region, steps, ferries, links)
 	var raw: PackedVector2Array = line["pts"]
 	var owner: PackedInt32Array = line["owner"]
 	var turns: Array = line["turns"]
@@ -215,6 +233,8 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	parts["heights"] = Time.get_ticks_msec() - t0
 	# Where the pins' route ends and the run-out begins.
 	var ends_at := _length_of_steps(region, steps, run_start)
+	for f: Array in ferries:
+		ends_at += float(links.links[int(f[1])]["m"])
 	# Chunks.
 	var chunks_info := _chunks(region, raw, owner, n)
 	var buildings := _buildings(region, xs, zs)
@@ -249,6 +269,12 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 		pack.steps.append_array([st.x, st.y, st.z])
 	pack.pin_nodes = stops
 	pack.run_start = run_start
+	for f: Array in ferries:
+		var l: Dictionary = links.links[int(f[1])]
+		var from := int(f[2])
+		pack.ferries.append({"step": int(f[0]), "id": str(l["id"]), "from": from, "to": links.other_end(int(f[1]), from),
+			"name": links.title(int(f[1])), "m": snappedf(float(l["m"]), 0.1), "seconds": snappedf(links.seconds(int(f[1])), 0.1),
+			"size": str(l["size"])})
 	var end_k := n - 1
 	turns.append({"d": snappedf((n - 1) * STEP, 0.1), "x": snappedf(xs[end_k], 0.1), "z": snappedf(zs[end_k], 0.1), "turn": "arrive", "onto": "", "branches": 0})
 	pack.turns = turns
@@ -266,12 +292,14 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 	pack.index_streams()
 	pack.pois = _pois(region, xs, zs)
 	parts["places"] = Time.get_ticks_msec() - t0
-	pack.junctions = thin_junctions(junctions_along(region, steps, xs, zs))
+	pack.junctions = thin_junctions(junctions_along(region, steps, xs, zs, ferries))
 	if terrain != null and terrain.live and terrain.fetch() > 0:
 		return _fail("Couldn't get the lie of the land for that journey: are you online?")
 	pack.summary = _summary(rows, names, elev, request)
+	if not pack.ferries.is_empty():
+		pack.summary["ferries"] = pack.ferries.map(func(f): return {"name": f["name"], "m": f["m"], "seconds": f["seconds"]})
 	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array(), bridges, tunnels,
-		pack.streams)
+		pack.streams, pack.ferries)
 	pack.hash = hash
 	pack.id = "plan_" + hash
 	parts["junctions"] = Time.get_ticks_msec() - t0
@@ -301,7 +329,7 @@ static func _fail(why: String) -> Dictionary:
 ## that plans the same journey, and different if any of them planned another); and with live heights the road's
 ## heights too, to the 10 cm (two machines could have been given different map tiles of the land).
 static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i], elev := PackedFloat32Array(),
-		bridges := PackedInt32Array(), tunnels := PackedInt32Array(), streams: Array = []) -> String:
+		bridges := PackedInt32Array(), tunnels := PackedInt32Array(), streams: Array = [], ferries: Array = []) -> String:
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	var text := "%d|%s|%s|%s" % [VERSION, region.hash, str(request.get("mode", "main")), str(request.get("seed", 0))]
@@ -330,6 +358,11 @@ static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i
 				dm.append_array([roundi(p.x * 10.0), roundi(p.y * 10.0)])
 		ctx.update("|streams".to_utf8_buffer())
 		ctx.update(dm.to_byte_array())
+	if not ferries.is_empty():
+		# (a crossing is between two steps: the steps alone don't say it's there; a route with none hashes as it did)
+		ctx.update(("|ferries%d" % FerryLinks.VERSION).to_utf8_buffer())
+		for f: Dictionary in ferries:
+			ctx.update(("|%d:%s:%d:%d" % [int(f["step"]), str(f["id"]), int(f["from"]), int(f["to"])]).to_utf8_buffer())
 	return ctx.finish().hex_encode().substr(0, 16)
 
 
@@ -396,6 +429,91 @@ static func _search(region: RealRegion, start: int, costs: PackedFloat64Array, b
 	return {"best": best, "prev": prev, "done": done, "start": start}
 
 
+## The cheapest way from node `start` to `goal`, by road and by any ferries (`links`) on the way: {steps (from, edge,
+## to), ferries: [[the step a crossing comes before, link, the terminal it's boarded at], ...]}, or null where there's none. A way with no ferry is
+## the one _shortest finds; a crossing is taken only where it costs less (FerryLinks.cost) than the way round by road,
+## or there's no way round. The search is over the terminals: from each one reached, the roads out to the others.
+static func _leg(region: RealRegion, start: int, goal: int, costs: PackedFloat64Array, links: FerryLinks) -> Variant:
+	var land = _shortest(region, start, goal, costs)
+	var best := _steps_cost(region, land, costs) if land != null else INF
+	if links.is_empty() or not links.groups.has(region.component[start]):
+		return {"steps": land, "ferries": []} if land != null else null
+	var dist := {start: 0.0}
+	var came := {}    # terminal -> [the node the road to it starts at, the terminal it's ridden to, link]
+	var settled := {}
+	var via := -1     # the last node before the road on to the goal (-1: the way by road alone)
+	var heap := Heap.new()
+	heap.push(0.0, start)
+	while not heap.is_empty():
+		var u := heap.pop()
+		if settled.has(u):
+			continue
+		settled[u] = true
+		var du := float(dist[u])
+		if du >= best:
+			break
+		var search := _search(region, u, costs, {}, best - du)
+		if u != start and region.component[u] == region.component[goal]:
+			var c := 0.0 if u == goal else _cost_to(region, search, goal)
+			if du + c < best:
+				best = du + c
+				via = u
+		for t: int in links.at:
+			if region.component[t] != region.component[u]:
+				continue
+			var ct := 0.0 if t == u else _cost_to(region, search, t)
+			if du + ct >= best:
+				continue
+			for i in (links.at[t] as PackedInt32Array):
+				var v := links.other_end(i, t)
+				var w := du + ct + links.cost(i, costs)
+				if w < float(dist.get(v, INF)) - 1e-9:
+					dist[v] = w
+					came[v] = [u, t, i]
+					heap.push(w, v)
+	if via < 0:
+		return {"steps": land, "ferries": []} if land != null else null
+	# Back from the goal: the roads between the crossings, each found again (the searches weren't kept).
+	var chain: Array = []   # [road from, road to, link or -1], from the start
+	var at := via
+	chain.push_front([via, goal, -1])
+	while at != start:
+		var c: Array = came[at]
+		chain.push_front([int(c[0]), int(c[1]), int(c[2])])
+		at = int(c[0])
+	var steps: Array[Vector3i] = []
+	var ferries: Array = []
+	for k in chain.size():
+		var c: Array = chain[k]
+		var road = _shortest(region, int(c[0]), int(c[1]), costs)
+		if road == null:
+			return {"steps": land, "ferries": []} if land != null else null
+		steps.append_array(road)
+		if int(c[2]) >= 0:
+			ferries.append([steps.size(), int(c[2]), int(c[1])])
+	return {"steps": steps, "ferries": ferries}
+
+
+## What riding `steps` costs.
+static func _steps_cost(region: RealRegion, steps: Array, costs: PackedFloat64Array) -> float:
+	var c := 0.0
+	for st: Vector3i in steps:
+		c += region.edge_len[st.y] * costs[region.edge_class[st.y]]
+	return c
+
+
+## The cost of the cheapest settled arrival at `node` in `search` (_search's), INF for none.
+static func _cost_to(region: RealRegion, search: Dictionary, node: int) -> float:
+	var best: PackedFloat64Array = search["best"]
+	var done: PackedByteArray = search["done"]
+	var out := INF
+	for ei in region.adjacent[node]:
+		var st := ei * 2 + (1 if region.edge_b[ei] == region.other_end(ei, node) else 0)
+		if done[st] == 1:
+			out = minf(out, best[st])
+	return out
+
+
 ## The steps of the cheapest way the search found to `goal` (the cheapest arrival there that was settled), or null.
 static func _path_to(region: RealRegion, search: Dictionary, goal: int) -> Variant:
 	var best: PackedFloat64Array = search["best"]
@@ -448,14 +566,18 @@ static func strip_spurs(region: RealRegion, steps: Array[Vector3i]) -> Array[Vec
 
 ## Steps that carry on RUN_OUT metres past the end of `steps`, along the biggest road that goes on (never back the way
 ## it came); fewer where the road ends.
-static func _run_out(region: RealRegion, steps: Array[Vector3i], costs: PackedFloat64Array) -> Array[Vector3i]:
+static func _run_out(region: RealRegion, steps: Array[Vector3i], costs: PackedFloat64Array, from_node := -1, from_heading := 0.0) -> Array[Vector3i]:
 	var out: Array[Vector3i] = []
-	var at := steps[steps.size() - 1].z
-	var came := steps[steps.size() - 1].y
+	var at := from_node
+	var came := -1
+	var h := from_heading
+	if from_node < 0:
+		at = steps[steps.size() - 1].z
+		came = steps[steps.size() - 1].y
+		var heading_pts := region.line_from(came, steps[steps.size() - 1].x)
+		h = _bearing(heading_pts[heading_pts.size() - 1] - heading_pts[maxi(heading_pts.size() - 2, 0)])
 	var seen := {}
 	var run := 0.0
-	var heading_pts := region.line_from(came, steps[steps.size() - 1].x)
-	var h := _bearing(heading_pts[heading_pts.size() - 1] - heading_pts[maxi(heading_pts.size() - 2, 0)])
 	while run < RUN_OUT + 50.0:
 		var best := -1
 		var best_key := Vector2(INF, INF)
@@ -536,15 +658,30 @@ static func classify_turn(angle: float) -> String:
 
 
 ## {pts, owner (the edge of each point), turns} for the steps.
-static func _line_of(region: RealRegion, steps: Array[Vector3i]) -> Dictionary:
+## A crossing (`ferries`, plan's: [[the step it comes before, link, the terminal it's boarded at]] on `links`) is the
+## ferry's line over the water, its points owned by no road (-1).
+static func _line_of(region: RealRegion, steps: Array[Vector3i], ferries: Array = [], links: FerryLinks = null) -> Dictionary:
 	var pts := PackedVector2Array()
 	var owner := PackedInt32Array()
 	var turns: Array = []
 	var run := 0.0
-	for i in steps.size():
+	var crossing := {}
+	for f: Array in ferries:
+		crossing[int(f[0])] = f
+	for i in steps.size() + 1:
+		if crossing.has(i):
+			var f: Array = crossing[i]
+			var water := links.line_from(int(f[1]), int(f[2]))
+			for k in range(0 if pts.is_empty() else 1, water.size()):
+				pts.append(water[k])
+				owner.append(-1)
+				if pts.size() > 1:
+					run += pts[pts.size() - 1].distance_to(pts[pts.size() - 2])
+		if i == steps.size():
+			break
 		var st := steps[i]
 		var line := region.line_from(st.y, st.x)
-		if i > 0:
+		if i > 0 and not crossing.has(i):
 			var prev := steps[i - 1]
 			var pline := region.line_from(prev.y, prev.x)
 			var incoming := _heading_deg(_point_at(pline, 25.0, true), pline[pline.size() - 1])
@@ -1456,9 +1593,13 @@ static func _is_round(region: RealRegion, edge_ids: PackedInt32Array) -> bool:
 
 
 ## The junctions the route passes: [{k (the nearest road knot), type, arms, ri, ro}] in order along the road.
-static func junctions_along(region: RealRegion, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array) -> Array:
+## (Where a crossing comes before a step, `ferries` as plan's, the junction at its foot isn't one the road rides through.)
+static func junctions_along(region: RealRegion, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array,
+		ferries: Array = []) -> Array:
 	var out: Array = []
 	var used := {}
+	for f: Array in ferries:
+		used[int(f[0])] = true
 	var ringed := {}
 	var count := steps.size()
 	var grid := KnotGrid.new(xs, zs)
