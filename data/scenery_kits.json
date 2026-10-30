@@ -549,7 +549,7 @@
     "span": 50,
     "sag": 0.015,
     "clear": 5.5,
-    "wire": 0.015
+    "wire": 0.005
    }
   },
   "communication_tower": {
@@ -1373,7 +1373,7 @@
     "span": 70,
     "sag": 0.015,
     "clear": 6,
-    "wire": 0.02
+    "wire": 0.007
    },
    "regions": {
     "east_asia": {
@@ -1713,7 +1713,7 @@
     "span": 330,
     "sag": 0.03,
     "clear": 12,
-    "wire": 0.035
+    "wire": 0.02
    },
    "regions": {
     "north_america": {
