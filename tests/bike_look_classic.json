@@ -1,0 +1,100 @@
+{
+	"adventure": {
+		"colours": "efa92285",
+		"materials": "160",
+		"meshes": "604",
+		"size": "1.05,1.65,2.35",
+		"tris": "84114"
+	},
+	"bobber": {
+		"colours": "f2eedbfe",
+		"materials": "131",
+		"meshes": "395",
+		"size": "0.96,1.10,2.24",
+		"tris": "72138"
+	},
+	"cafe": {
+		"colours": "ae65eadf",
+		"materials": "129",
+		"meshes": "399",
+		"size": "0.89,1.14,2.09",
+		"tris": "74596"
+	},
+	"chopper": {
+		"colours": "ca912daf",
+		"materials": "128",
+		"meshes": "396",
+		"size": "1.03,1.54,2.50",
+		"tris": "73574"
+	},
+	"classic": {
+		"colours": "14bbf542",
+		"materials": "135",
+		"meshes": "461",
+		"size": "0.76,1.37,2.15",
+		"tris": "80844"
+	},
+	"cruiser": {
+		"colours": "2bacb3a2",
+		"materials": "143",
+		"meshes": "422",
+		"size": "0.72,1.25,2.39",
+		"tris": "72854"
+	},
+	"mx": {
+		"colours": "21b6261e",
+		"materials": "129",
+		"meshes": "389",
+		"size": "0.86,1.48,2.30",
+		"tris": "62742"
+	},
+	"naked": {
+		"colours": "0c63ad82",
+		"materials": "144",
+		"meshes": "392",
+		"size": "0.81,1.28,2.06",
+		"tris": "76754"
+	},
+	"race": {
+		"colours": "8ec911a2",
+		"materials": "117",
+		"meshes": "306",
+		"size": "0.70,1.16,2.02",
+		"tris": "60138"
+	},
+	"roader": {
+		"colours": "a6809633",
+		"materials": "151",
+		"meshes": "412",
+		"size": "0.85,1.27,2.10",
+		"tris": "74060"
+	},
+	"scrambler": {
+		"colours": "9a7d3261",
+		"materials": "136",
+		"meshes": "429",
+		"size": "1.01,1.58,2.09",
+		"tris": "74986"
+	},
+	"sport": {
+		"colours": "7aee19dc",
+		"materials": "116",
+		"meshes": "297",
+		"size": "0.67,1.18,2.03",
+		"tris": "59290"
+	},
+	"supermoto": {
+		"colours": "3bdce6e6",
+		"materials": "132",
+		"meshes": "419",
+		"size": "0.86,1.54,2.26",
+		"tris": "69800"
+	},
+	"tourer": {
+		"colours": "814bc133",
+		"materials": "172",
+		"meshes": "658",
+		"size": "0.83,1.45,2.22",
+		"tris": "91464"
+	}
+}

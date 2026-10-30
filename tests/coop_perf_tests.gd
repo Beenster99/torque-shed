@@ -79,7 +79,9 @@ func test_close() -> void:
 		"only %d things on the crew's bike are drawn just up close (not the 88 letters there were), and %d labels (their name)" % [(d["close"] as Array).size(), labels])
 	var dirt: DirtLayer = rb.model.dirt_layer
 	var dirt_draws: int = (dirt._overlays.size() + dirt._restore.size()) if dirt else 0
-	check(dirt != null and dirt.mesh_count() > 40 and dirt_draws * 2 < dirt.mesh_count(),
+	# The new look (see BikeLook) has merged most of the pieces already: one draw a part per node.
+	var new_look := BikeLook.is_new(rb.model)
+	check(dirt != null and (dirt.mesh_count() > 40 and dirt_draws * 2 < dirt.mesh_count() if not new_look else dirt_draws <= 45),
 		"its dirt is drawn over %d pieces in %d draws" % [dirt.mesh_count() if dirt else 0, dirt_draws])
 	# (Three more casters since the brake discs have their holes cut through them.)
 	check(int(d["all"]) <= 215 and int(d["casters"]) <= 78,

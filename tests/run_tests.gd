@@ -988,6 +988,13 @@ func _run_all() -> void:
 	await _t(&"_test_wtt_treads")
 	await _t(&"_test_wtt_angular_tanks")
 	await _t(&"_test_wtt_mudguard_ends")
+	print("The bike look overhaul: the Classic bikes kept as they were, the Classic / New switch")
+	await _t(&"_test_bike_look_classic")
+	await _t(&"_test_bike_look_classic_parts")
+	await _t(&"_test_bike_look_switch")
+	await _t(&"_test_bike_look_budgets")
+	await _t(&"_test_bike_look_parts_detail")
+	await _t(&"_test_bike_look_finishes")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -4127,7 +4134,7 @@ func _test_bike_baking() -> void:
 	check(b[0] * 2 < a[0] and b[1] * 2 < a[1], "a riding bike is drawn with far fewer draws (%d, not %d) and shadow casters (%d, not %d)" % [b[0], a[0], b[1], a[1]])
 	var off := []
 	for slot in plain._slot_meshes:
-		if (plain._slot_meshes[slot] as Array).is_empty() != (baked._slot_meshes[slot] as Array).is_empty():
+		if (plain._slot_meshes[slot] as Array).is_empty() != ((baked._slot_meshes[slot] as Array).is_empty() and not baked._slot_shapes.has(slot)):
 			off.append(slot)
 		elif not (plain._slot_meshes[slot] as Array).is_empty():
 			# Measured round the part's own corners: a box turned through the model's nodes is
@@ -4174,6 +4181,12 @@ func _faces_box(m: BikeModel, slot: String) -> AABB:
 			for v in (mi as MeshInstance3D).mesh.get_faces():
 				lo = lo.min(xf * v)
 				hi = hi.max(xf * v)
+	# The new look's shared meshes keep each part's own shape (see BikeLookNew.bake).
+	for shape in m._slot_shapes.get(slot, []):
+		var xf := Transform3D.IDENTITY if shape[0] == m else m._local_xform(shape[0])
+		for v in (shape[1] as Mesh).get_faces():
+			lo = lo.min(xf * v)
+			hi = hi.max(xf * v)
 	return AABB(lo, hi - lo)
 
 
@@ -23945,6 +23958,41 @@ func _test_dash_modes() -> void:
 
 func _test_dash_cruise() -> void:
 	await _dash_t().test_cruise()
+
+
+# ---------------------------------------------------------------------------- the bike look overhaul (tests/bike_look_tests.gd)
+
+func _bike_look() -> RefCounted:
+	return load("res://tests/bike_look_tests.gd").new(self)
+
+
+func _test_bike_look_classic() -> void:
+	_bike_look().test_classic_unchanged()
+
+
+func _test_bike_look_classic_parts() -> void:
+	_bike_look().test_classic_every_part()
+
+
+func _test_bike_look_switch() -> void:
+	_bike_look().test_switch()
+
+
+func _test_bike_look_budgets() -> void:
+	_bike_look().test_new_budgets()
+
+
+func _test_bike_look_parts_detail() -> void:
+	_bike_look().test_new_parts_and_detail()
+
+
+func _test_bike_look_finishes() -> void:
+	_bike_look().test_finishes()
+
+
+## Not in the suite: records the Classic bikes again (see bike_look_tests.gd).
+func _test_bike_look_write_classic() -> void:
+	_bike_look().write_classic()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
