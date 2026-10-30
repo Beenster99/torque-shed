@@ -61,6 +61,14 @@ func pump() -> void:
 			return
 
 
+## Puts everything waiting for `parent` in now (a rider's reached it).
+func flush(parent: Node) -> void:
+	for i in range(waiting.size() - 1, -1, -1):
+		if waiting[i][0] == parent:
+			parent.add_child(_made(waiting[i][1]))
+			waiting.remove_at(i)
+
+
 ## Drops everything waiting (the ride's over).
 func clear() -> void:
 	for w in waiting:

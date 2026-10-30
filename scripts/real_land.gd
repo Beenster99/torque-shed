@@ -318,6 +318,11 @@ func _process(_delta: float) -> void:
 
 func _process_body(_delta: float) -> void:
 	_pieces.pump()
+	if not _pieces.waiting.is_empty() and _at.x != INF:
+		# (the block you're on is solid at once, if you've reached it before its pieces were all in)
+		var on := Vector2i(floori(_at.x / BLOCK), floori(_at.y / BLOCK))
+		if _blocks.has(on) and is_instance_valid(_blocks[on]["mi"]):
+			_pieces.flush(_blocks[on]["mi"])
 	while not hold and _tasks.size() < AT_ONCE and not _queue.is_empty():
 		var item: Dictionary = _queue.pop_front()
 		var key: Vector2i = item["key"]
