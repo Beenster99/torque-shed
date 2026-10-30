@@ -333,13 +333,12 @@ func test_sites() -> void:
 	check(moved <= NetSites.NUDGE + 0.1, "none moved further than %d m (%.0f)" % [NetSites.NUDGE, moved])
 	check(straight >= ns.places.size() * 0.7, "most on straight road (%d of %d)" % [straight, ns.places.size()])
 	# The first stop with a bike length or two of its road either side (a wake is kept on its own road: net_wake_xf):
-	# its ground, and it built into its block. (Not a village: over a high street's 150 m its floor is up to 0.9 m off
-	# this ride's road where the road rolls; a long place's floor is a known limit, not what this checks.)
+	# its ground, and it built into its block.
 	var at := -1
 	for i in ns.places.size():
 		var pl: Dictionary = ns.places[i]
 		var room := minf(float(pl["s"]), w.roads.net.length_of(int(pl["edge"])) - float(pl["s"]))
-		if AdventureStops.KINDS.has(str(pl["site"]["kind"])) and str(pl["site"]["kind"]) != "village" and room > 15.0:
+		if AdventureStops.KINDS.has(str(pl["site"]["kind"])) and room > 15.0:
 			at = i
 			break
 	check(at >= 0, "a stop on the ride")

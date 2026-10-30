@@ -2,13 +2,13 @@ extends RefCounted
 ## The places along an adventure road's checks (AdventureStops: villages, cafes, lay-bys, rest
 ## areas, viewpoints, inns, campsites and the fuel stations' shops), run from tests/run_tests.gd:
 ## its _test_adv_stops_* functions hand over to these. The roads are the tours Rides plans: the stops along them are
-## the map's own filling stations, cafes, lay-bys and viewpoints (AdventureRoute._real_stops), with a village and a bed
-## now and then, the bed at a real inn or campsite where there's one (AdventureRoute._adopt_pois).
+## the map's own filling stations, cafes, lay-bys and viewpoints (AdventureRoute._real_stops), with a bed now and then
+## at a real inn or campsite where there's one (AdventureRoute._adopt_pois).
 
 const Rides := preload("res://tests/rides.gd")
 const SEEDS := [1, 7, 42, 99, 2024]
-## The kinds of stop a real road has (a rest area is only ever made up, so no longer planned).
-const MAP_KINDS: Array[String] = ["village", "cafe", "layby", "viewpoint", "inn", "campsite"]
+## The kinds of stop a real road has (a village or a rest area is only ever made up, so no longer planned).
+const MAP_KINDS: Array[String] = ["cafe", "layby", "viewpoint", "inn", "campsite"]
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -68,7 +68,7 @@ func _in_group(group: String, s: float) -> Array:
 	return t.get_tree().get_nodes_in_group(group).filter(func(n): return absf(float(n.get_meta("s", -1.0)) - s) < 1.0)
 
 
-## Along both tours on several seeds: every stop but the villages and beds at one of the map's own places beside the road (a
+## Along both tours on several seeds: every stop but the beds at one of the map's own places beside the road (a
 ## made-up filling station only in a stretch the map leaves without one for FUEL_GAP), every filling station the map
 ## has beside the road a stop, a bed now and then, never on top of each other, the road near straight and level past
 ## each; the same seed lays out the same stops.
@@ -92,7 +92,7 @@ func test_spacing() -> void:
 				real += 1 if st.has("real") else 0
 				if AdventureStops.NAV[kind] == "sleep":
 					beds.append(float(st["s"]))
-				elif kind != "village" and not st.has("from_map"):
+				elif not st.has("from_map"):
 					bad.append("seed %d %s: a made-up %s at %.0f" % [seed, region_id, kind, float(st["s"])])
 			var tag := "seed %d %s" % [seed, region_id]
 			var bg := _gaps(beds)
@@ -126,18 +126,14 @@ func test_spacing() -> void:
 				if not r._fit_for_stop(int(st["i"])):
 					bad.append("%s %s at %.0f is on a bend or a hill" % [tag, st["kind"], float(st["s"])])
 	check(bad.is_empty(), "stops are the map's own on every seed: its filling stations, cafes and pull-ins, a bed now and then, room for each %s" % str(bad))
-	check(not kinds.has("rest_area") and kinds.has("cafe") and kinds.has("village") and map_fuel > 0,
-		"no made-up rest areas %s; %d of %d stops at real places (the rest villages and beds), %d filling stations off the map" % [str(kinds.keys()), real, count, map_fuel])
+	check(not kinds.has("village") and not kinds.has("rest_area") and kinds.has("cafe") and map_fuel > 0,
+		"no made-up villages or rest areas %s; %d of %d stops at real places (the rest beds), %d filling stations off the map" % [str(kinds.keys()), real, count, map_fuel])
 	var a := Rides.tour_route("dales", 42)
 	var b := Rides.tour_route("dales", 42)
 	var same := a.sites.size() == b.sites.size()
 	for k in mini(a.sites.size(), b.sites.size()):
 		same = same and a.sites[k]["kind"] == b.sites[k]["kind"] and a.sites[k]["s"] == b.sites[k]["s"] and a.sites[k]["name"] == b.sites[k]["name"]
 	check(same, "the same seed lays out the same stops, names and all (%d sites)" % a.sites.size())
-	var vil: Array = a.sites_of("village")
-	if not vil.is_empty():
-		var rows := a.sites.filter(func(st): return str(st["kind"]) == AdventureStops.ROW and float(st.get("main_s", -1.0)) == float(vil[0]["s"]))
-		check(rows.size() == 5, "a village has a high street: %d more rows of shops" % rows.size())
 
 
 ## The first stop of `kind` on either tour on any of the seeds: [seed, site, region]. A kind the tours' maps have none

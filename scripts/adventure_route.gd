@@ -237,10 +237,10 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	_lie_of_land()
 	# Fuel and the stops, only where the road is straight and level enough to pull in: the map's own filling stations,
 	# cafes, lay-bys and viewpoints beside the road, a made-up filling station only where the map has none for FUEL_GAP,
-	# and a village and a bed every so often (the bed at a real inn or campsite where there's one near).
+	# and a bed every so often (at a real inn or campsite where there's one near).
 	_real_stops()
 	_plan_fuel_gaps(rng)
-	AdventureStops.plan_villages_and_beds(self)
+	AdventureStops.plan_beds(self)
 	_adopt_pois()
 	_fit_stops()
 	_level_stops()

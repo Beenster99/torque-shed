@@ -96,11 +96,11 @@ func test_scenery() -> void:
 		var r := Rides.tour_route(region_id, 7)
 		var site: Dictionary = {}
 		for st in AdventureStops.stops(r):
-			if str(st["kind"]) in ["village", "inn"]:
+			if str(st["kind"]) in ["inn", "cafe"]:
 				site = st
 				break
 		if site.is_empty():
-			check(false, "%s: a village or inn to build" % theme)
+			check(false, "%s: an inn or cafe to build" % theme)
 			continue
 		var node := AdventureStops.build(r, site, Transform3D(Basis(), Vector3(0, 100, 0)))
 		var style := AdventureTheme.style(theme)

@@ -7,8 +7,9 @@ extends RefCounted
 ##
 ## They're sites along the route (AdventureRoute.add_site) before the road is laid, so the road runs straight and
 ## level past each, the same on every player's game: the map's own filling stations, cafes, lay-bys and viewpoints
-## beside the road (AdventureRoute._real_stops), and a village with its high street every VILLAGE_EVERY and a bed every
-## SLEEP_EVERY (plan_villages_and_beds).
+## beside the road (AdventureRoute._real_stops), and a bed every SLEEP_EVERY (plan_beds). No made-up villages in the
+## game (made_up_villages: the real road's own towns are there); the tests still lay them out for the single road's
+## village traffic (busy high streets, buses).
 ## build() makes a stop's nodes when its chunk goes into the world (AdventureChunk.commit through
 ## AdventureWorld.site_builders), merged into a few meshes drawn only so far, and they go with
 ## the chunk when it's freed behind.
@@ -45,8 +46,10 @@ const FOOD_EVERY := [15000.0, 25000.0]
 const REST_FIRST := [3000.0, 6000.0]
 const REST_EVERY := [5000.0, 10000.0]
 const SLEEP_EVERY := [40000.0, 60000.0]
-## The villages' spacing (m): the first FOOD_FIRST in, then every so often.
+## The villages' spacing (m) where they're made up (made_up_villages): the first FOOD_FIRST in, then every so often.
 const VILLAGE_EVERY := [30000.0, 50000.0]
+## Made-up villages along the road: off in the game (Simon, 30 Oct), on only where a test turns it on.
+static var made_up_villages := false
 ## How far a stop keeps from any other site (m), and how far it may be nudged to find room.
 const CLEAR := 360.0
 const NUDGE := 1400.0
@@ -116,10 +119,10 @@ const SIGN_GREEN := Color(0.06, 0.32, 0.18)
 
 # ---------------------------------------------------------------------------- planning
 
-## A village (its high street) every VILLAGE_EVERY along `route` and a bed (an inn or a campsite) when one's due,
-## every SLEEP_EVERY, where there's room: the made-up stops on a real road, whose others are the map's own
+## A bed (an inn or a campsite) every SLEEP_EVERY along `route` where there's room, and with made_up_villages a village
+## (its high street) every VILLAGE_EVERY between: the made-up stops on a real road, whose others are the map's own
 ## (AdventureRoute._real_stops). AdventureRoute._adopt_pois moves each bed to a real inn or campsite near it.
-static func plan_villages_and_beds(route: AdventureRoute) -> void:
+static func plan_beds(route: AdventureRoute) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([route.seed_value, "adventure_stops", route.theme])
 	var length := route.length
@@ -135,7 +138,8 @@ static func plan_villages_and_beds(route: AdventureRoute) -> void:
 		if s - last_sleep >= SLEEP_EVERY[0] - 1.0:
 			kind = "inn" if rng.randf() < 0.6 else "campsite"
 			last_sleep = s
-		_add(route, rng, kind, s)
+		if kind != "village" or made_up_villages:
+			_add(route, rng, kind, s)
 		var gap := rng.randf_range(VILLAGE_EVERY[0], VILLAGE_EVERY[1])
 		var d := s - last_sleep
 		if d < SLEEP_EVERY[0] and d + gap > SLEEP_EVERY[1]:
