@@ -395,8 +395,9 @@ func _spawn() -> void:
 
 ## Moves them all on `delta` s (AdventureTraffic calls it each tick, after finding the riders and
 ## before the traffic moves); the host rides them, the crew's machines carry them on between the
-## host's snapshots. Then they're drawn, and each is put in the traffic's way as a blocker.
-func step(delta: float) -> void:
+## host's snapshots. Then they're drawn (unless `draw` is off: AdventureTraffic draws them once a drawn frame, see
+## draw_all), and each is put in the traffic's way as a blocker.
+func step(delta: float, draw := true) -> void:
 	host = traffic.host
 	_find_riders(delta)
 	if host:
@@ -418,13 +419,19 @@ func step(delta: float) -> void:
 		for d in bikers:
 			_carry(d, delta)
 	_nods(delta)
-	_draw(delta)
+	if draw:
+		_draw(delta)
 	_hint()
 	for d in bikers:
 		if d.has("arm"):
 			continue
 		var lane := int(d["dir"]) if float(d["lat"]) * int(d["dir"]) * stream.keep(float(d["s"])) > 0.7 else 0
 		stream.blockers.append([float(d["s"]), lane, 1.1])
+
+
+## Puts every biker where they've got to (once a drawn frame, see step).
+func draw_all(delta: float) -> void:
+	_draw(delta)
 
 
 ## Whether any of biker `d`'s group is within UNSEEN of the riders (so it doesn't leave them).
@@ -1112,19 +1119,19 @@ func pack() -> PackedFloat32Array:
 
 
 ## The crew: takes the bikers off the end of the host's snapshot (if they're there), and hands
-## back the rest of it.
-func unpack_tail(state: PackedFloat32Array) -> PackedFloat32Array:
+## back the rest of it. It came `late` seconds later than the quickest lately (see TrafficStream.unpack).
+func unpack_tail(state: PackedFloat32Array, late := 0.0) -> PackedFloat32Array:
 	if state.size() < 2 or state[state.size() - 1] != TAG:
 		return state
 	var n := int(state[state.size() - 2])
 	var from := state.size() - 2 - n * PACKED
 	if n < 0 or from < 0:
 		return state
-	unpack(state.slice(from, state.size() - 2))
+	unpack(state.slice(from, state.size() - 2), late)
 	return state.slice(0, from)
 
 
-func unpack(state: PackedFloat32Array) -> void:
+func unpack(state: PackedFloat32Array, late := 0.0) -> void:
 	var seen := {}
 	for b in range(0, state.size() - PACKED + 1, PACKED):
 		var id := int(state[b + 3])
@@ -1140,6 +1147,8 @@ func unpack(state: PackedFloat32Array) -> void:
 			if code >> 3 >= stream.junctions.size() or code & 7 >= (stream.junctions[code >> 3]["arms"] as Array).size():
 				continue
 			arm = {"arm": code >> 3, "k": code & 7, "t": state[b], "out": true}
+		# Where it has ridden on to since (on a side road its t grows: it's riding out).
+		var on := state[b] + (1.0 if not arm.is_empty() else state[b + 1]) * state[b + 2] * late
 		var d := find(id)
 		if d.is_empty():
 			d = {"id": id, "s": state[b], "dir": int(state[b + 1]), "v": state[b + 2], "lat": lat, "target": state[b], "lat_to": lat,
@@ -1149,18 +1158,18 @@ func unpack(state: PackedFloat32Array) -> void:
 		if not arm.is_empty():
 			var was_on := d.has("arm") and int(d["arm"]) == int(arm["arm"])
 			d.merge(arm, true)
-			if not was_on or absf(float(d["t"]) - state[b]) > 25.0:
-				d["t"] = state[b]
-			d["target"] = state[b]
+			if not was_on or absf(float(d["t"]) - on) > 25.0:
+				d["t"] = on
+			d["target"] = on
 		else:
 			if d.has("arm"):
 				for key in ["arm", "k", "t", "out"]:
 					d.erase(key)
 				d["s"] = state[b]
-			d["target"] = state[b]
+			d["target"] = on
 			d["lat_to"] = lat
-			if absf(float(d["s"]) - state[b]) > 25.0:
-				d["s"] = state[b]
+			if absf(float(d["s"]) - on) > 25.0:
+				d["s"] = on
 				d["lat"] = lat
 		d["dir"] = int(state[b + 1])
 		d["v"] = state[b + 2]

@@ -36,6 +36,10 @@ const KEEP := 2400.0
 ## Settings.gfx_draw_distance, as the roads' do.
 const FAR_MOST := 8000.0
 const MAX_TASKS := 1
+## How far a rider moves before the wanted blocks are picked again (m).
+const MOVE_AGAIN := 24.0
+## How often the wanted blocks are gone over for one to lay out while none needs it (ms).
+const SCAN_MS := 250
 ## How far round a block the ground must be final before it's laid out (m), as the road blocks' (RoadStreamer).
 const READY_PAD := 128.0
 ## How far past a road's verge a thing the map puts on the road is stood (m).
@@ -56,6 +60,11 @@ var _filed := {}         # Vector2i -> {points, lines, areas: PackedInt32Array}:
 var _far := {}           # Vector2i -> m: the blocks holding a kind whose reach is past REACH, and the farthest
 var _coarse := {}        # Vector2i -> true: blocks laid out before their ground was final (laid out again once it is)
 var _tasks := {}         # Vector2i -> JobPool job id
+var _want: Array = []    # the blocks wanted (nearest first) and which of them are near, as _choose last picked them
+var _want_near := {}
+var _want_at: Array[Vector2] = []   # where the riders were then, and the draw distance
+var _want_scale := 0.0
+var _scan_at := 0        # (msec) when the wanted blocks are next gone over for one to start laying out
 var _done := {}          # Vector2i -> Dictionary (lay_out's), read under the lock
 var _stale := {}
 var _lock := Mutex.new()
@@ -358,6 +367,12 @@ func can_build(k: Vector2i) -> bool:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("scenery_stream", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if net == null or _filed.is_empty() or not (show_standins or models_beyond_standin()):
 		return
 	stream(riders())
@@ -368,7 +383,58 @@ func _process(_delta: float) -> void:
 func stream(at: Array[Vector2]) -> void:
 	if at.is_empty():
 		return
+	# Which blocks are wanted is worked out again once a rider has moved MOVE_AGAIN on (or the draw distance changed):
+	# going over every far block each frame was a millisecond and a half a frame.
 	var scale := clampf(Settings.gfx_draw_distance, 0.5, 2.0)
+	if _want_at.size() != at.size() or scale != _want_scale or range(at.size()).any(func(i): return at[i].distance_to(_want_at[i]) > MOVE_AGAIN):
+		_want_at = at.duplicate()
+		_want_scale = scale
+		_choose(at, scale)
+		_scan_at = 0
+	var want := _want
+	var near := _want_near
+	var now := Time.get_ticks_msec()
+	var ready_one: Dictionary = {}
+	_lock.lock()
+	for k in _done.keys():
+		if JobPool.done(_tasks[k]):
+			JobPool.wait(_tasks[k])
+			_tasks.erase(k)
+			_scan_at = 0
+			if ready_one.is_empty() and want.has(k):
+				ready_one = _done[k]
+				_done.erase(k)
+			elif not want.has(k):
+				_done.erase(k)
+	_lock.unlock()
+	if not ready_one.is_empty():
+		commit(ready_one)
+	# (gone over when a worker's free, and then only every SCAN_MS while there's nothing to start)
+	if _tasks.size() >= MAX_TASKS or now < _scan_at:
+		return
+	_scan_at = now + SCAN_MS
+	for k in want:
+		if _tasks.size() >= MAX_TASKS:
+			_scan_at = 0
+			break
+		var coarse := not near.has(k) or not can_build(k)
+		if coarse and not _far.has(k):
+			continue
+		var redo := _stale.has(k) or (_coarse.has(k) and not coarse)
+		if (blocks.has(k) and not redo) or _tasks.has(k) or _done.has(k):
+			continue
+		_stale.erase(k)
+		if coarse:
+			_coarse[k] = true
+		else:
+			_coarse.erase(k)
+		# (ranked with the road blocks by distance: a block of scenery is a fraction of a millisecond)
+		_tasks[k] = JobPool.add(_work.bind(k), ((Vector2(k) + Vector2(0.5, 0.5)) * RoadBlock.SIZE).distance_to(at[0]))
+
+
+## Frees the blocks every rider is past, and picks the blocks wanted round riders `at` (_want, nearest first, and which
+## of them are near: _want_near).
+func _choose(at: Array[Vector2], scale: float) -> void:
 	for k: Vector2i in blocks.keys():
 		var c := (Vector2(k) + Vector2(0.5, 0.5)) * RoadBlock.SIZE
 		var keep := maxf(KEEP, (float(_far.get(k, 0.0)) * scale) + KEEP - REACH)
@@ -387,36 +453,8 @@ func stream(at: Array[Vector2]) -> void:
 		var r := float(_far[k]) * scale
 		if at.any(func(p): return c.distance_to(p) <= r):
 			want.append(k)
-	var ready_one: Dictionary = {}
-	_lock.lock()
-	for k in _done.keys():
-		if JobPool.done(_tasks[k]):
-			JobPool.wait(_tasks[k])
-			_tasks.erase(k)
-			if ready_one.is_empty() and want.has(k):
-				ready_one = _done[k]
-				_done.erase(k)
-			elif not want.has(k):
-				_done.erase(k)
-	_lock.unlock()
-	if not ready_one.is_empty():
-		commit(ready_one)
-	for k in want:
-		if _tasks.size() >= MAX_TASKS:
-			break
-		var coarse := not near.has(k) or not can_build(k)
-		if coarse and not _far.has(k):
-			continue
-		var redo := _stale.has(k) or (_coarse.has(k) and not coarse)
-		if (blocks.has(k) and not redo) or _tasks.has(k) or _done.has(k):
-			continue
-		_stale.erase(k)
-		if coarse:
-			_coarse[k] = true
-		else:
-			_coarse.erase(k)
-		# (ranked with the road blocks by distance: a block of scenery is a fraction of a millisecond)
-		_tasks[k] = JobPool.add(_work.bind(k), ((Vector2(k) + Vector2(0.5, 0.5)) * RoadBlock.SIZE).distance_to(at[0]))
+	_want = want
+	_want_near = near
 
 
 func _work(k: Vector2i) -> void:
@@ -427,6 +465,7 @@ func _work(k: Vector2i) -> void:
 
 
 func _on_ground_arrived(area: Rect2, _level := 0) -> void:
+	_scan_at = 0
 	for k: Vector2i in blocks.keys():
 		if Rect2(Vector2(k) * RoadBlock.SIZE, Vector2.ONE * RoadBlock.SIZE).grow(READY_PAD).intersects(area):
 			_stale[k] = true

@@ -1384,7 +1384,7 @@ func _test_crash_and_respawn() -> void:
 		"the other players see the rider thrown off where they are on the crasher's game (%.3f m out)" % off)
 	var up := state.slice(0, RemoteBike.RAGDOLL_AT)
 	up[17] = 0.0
-	rb._snapshots.clear()
+	rb.timeline.snaps.clear()
 	rb.push_state(up)
 	await get_tree().physics_frame
 	check(not is_instance_valid(seen), "and theirs is gone when the crasher's picked up")
@@ -24079,6 +24079,20 @@ func _test_filter_fairing_caps() -> void:
 
 func _test_filter_in_shed() -> void:
 	await _filters().test_in_shed()
+
+
+# ---------------------------------------------------------------------------- other riders drawn smoothly (tests/net_timeline_tests.gd)
+
+func _net_timeline() -> RefCounted:
+	return load("res://tests/net_timeline_tests.gd").new(self)
+
+
+func _test_net_timeline_bunched() -> void:
+	_net_timeline().test_bunched()
+
+
+func _test_net_timeline_late() -> void:
+	_net_timeline().test_late()
 
 
 # ---------------------------------------------------------------------------- smooth adventure roads (tests/smooth_tests.gd)

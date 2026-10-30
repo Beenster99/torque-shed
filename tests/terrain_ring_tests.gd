@@ -250,7 +250,8 @@ func test_off_plan() -> void:
 		var q := PhysicsRayQueryParameters3D.create(local + Vector3.UP * (ground + 50.0), local + Vector3.UP * (ground - 50.0), 1)
 		var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
 		tried += 1
-		if hit and (hit["collider"] as Node).name == "Ground" and absf(float(hit["position"].y) - ground) < 3.0:
+		# (its ground is in pieces: Ground, Ground_1 ...)
+		if hit and str((hit["collider"] as Node).name).begins_with("Ground") and absf(float(hit["position"].y) - ground) < 3.0:
 			held += 1
 		heights += " %.0f m out: %s" % [out, ("%.0f m" % ground) if not is_nan(ground) else "none"]
 	check(held == tried, "riding out from the road, the land holds the bike up %d of %d places out to 2.6 km (%s)" % [held, tried, heights.strip_edges()])

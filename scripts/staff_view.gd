@@ -37,6 +37,8 @@ func _ready() -> void:
 ## and what each is holding, doing and saying (everything that only changes with a sync, so
 ## nothing is worked out again every frame).
 func sync_state() -> void:
+	if Shed.active and main != null and main.get("trip") != null and main.trip.on_trip():
+		return   # (out on an adventure the shed's out of sight: put right on the way home, see AdventureTrip.leave)
 	var ws := Staff.workers() if Shed.active else {}
 	for id in figures.keys():
 		if not ws.has(id):

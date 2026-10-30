@@ -15,6 +15,10 @@ const MAX_TASKS := 2
 const READY_PAD := 128.0
 ## A block's trees are drawn while the camera is this close to any of them (m).
 const TREES_REACH := 900.0
+## A block's trees, posts and buildings go in as TILES x TILES squares of their own, not one each for the whole block:
+## the camera's view and each of the sun's shadow splits then only draw the squares they reach, not every tree and
+## house of a 512 m block that one corner of it is in (the shadows' many times over).
+const TILES := 2
 
 var world: AdventureWorld
 var net: RoadNet
@@ -25,6 +29,7 @@ var _done := {}          # Vector2i -> RoadBlock, laid out by a worker (read und
 var _waiting := {}       # Vector2i -> RoadBlock, laid out and waiting its turn to go in
 var _lock := Mutex.new()
 var _stale := {}         # Vector2i -> true: laid out on ground that has since sharpened (lay out again)
+var _pieces := StreamPieces.new()   # the blocks' road going solid a piece at a time
 
 
 func setup(w: AdventureWorld, n: RoadNet) -> void:
@@ -40,6 +45,7 @@ func _exit_tree() -> void:
 	for k in _tasks:
 		JobPool.drop(_tasks[k])
 	_tasks.clear()
+	_pieces.clear()
 
 
 ## The region-frame (x, z) of each rider (the world's focus points).
@@ -85,6 +91,13 @@ func can_build(k: Vector2i) -> bool:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("road_stream", pt)
+
+
+func _process_body(_delta: float) -> void:
+	_pieces.pump()
 	if net == null:
 		return
 	stream(riders())
@@ -128,10 +141,60 @@ func stream(at: Array[Vector2]) -> void:
 
 
 func _work(k: Vector2i) -> void:
-	var b := net.block(k)
+	var b := _laid(k)
 	_lock.lock()
 	_done[k] = b
 	_lock.unlock()
+
+
+## Block `k` laid out, with its collision shapes made too (any thread), in pieces (StreamPieces): made in commit, on
+## the main thread, and taken in by the physics as one, a block's shapes were a hitch of their own as it came in.
+func _laid(k: Vector2i) -> RoadBlock:
+	var b := net.block(k)
+	var shapes := {}
+	for surf: String in b.arrays["faces"]:
+		shapes[surf] = StreamPieces.shapes(StreamPieces.split(b.arrays["faces"][surf], RoadBlock.SIZE))
+	b.set_meta("shapes", shapes)
+	if b.arrays.has("buildings"):
+		b.set_meta("building_tiles", tile_soup(b.arrays["buildings"]))
+	b.set_meta("tree_tiles", tile_lists(b.trees))
+	b.set_meta("roadside_tiles", tile_lists(b.roadside))
+	return b
+
+
+## Which of a block's TILES x TILES squares block-local point `p` is in (0 .. TILES² - 1).
+static func tile_of(p: Vector3) -> int:
+	var n := RoadBlock.SIZE / TILES
+	return clampi(int(p.z / n), 0, TILES - 1) * TILES + clampi(int(p.x / n), 0, TILES - 1)
+
+
+## Triangle soup `a` ({v, n, c}, block-local) cut into the squares its triangles' middles are in: one soup a square.
+static func tile_soup(a: Dictionary) -> Array:
+	var out := []
+	for i in TILES * TILES:
+		out.append(AdventureProps.new_arrays())
+	var v: PackedVector3Array = a["v"]
+	var nrm: PackedVector3Array = a["n"]
+	var col: PackedColorArray = a["c"]
+	for t in range(0, v.size() - 2, 3):
+		var o: Dictionary = out[tile_of((v[t] + v[t + 1] + v[t + 2]) / 3.0)]
+		o["v"].append_array([v[t], v[t + 1], v[t + 2]])
+		o["n"].append_array([nrm[t], nrm[t + 1], nrm[t + 2]])
+		o["c"].append_array([col[t], col[t + 1], col[t + 2]])
+	return out
+
+
+## {kind: [transforms]} cut into the squares each stands in: {kind: [[transforms] a square]}.
+static func tile_lists(by_kind: Dictionary) -> Dictionary:
+	var out := {}
+	for kind in by_kind:
+		var tiles := []
+		for i in TILES * TILES:
+			tiles.append([])
+		for xf: Transform3D in by_kind[kind]:
+			tiles[tile_of(xf.origin)].append(xf)
+		out[kind] = tiles
+	return out
 
 
 ## Lays out every wanted block round `at` here and now (on every core at once), and puts it in (the start, behind a
@@ -148,11 +211,11 @@ func preload_round(at: Array[Vector2], reach := 600.0) -> void:
 	# (ahead of all else on the workers, and this thread lends a hand: no more threads at work than there are cores)
 	var ids: Array[int] = []
 	for i in keys.size():
-		ids.append(JobPool.add(func(): laid[i] = net.block(keys[i]), -INF))
+		ids.append(JobPool.add(func(): laid[i] = _laid(keys[i]), -INF))
 	for id in ids:
 		JobPool.wait(id)
 	for b in laid:
-		commit(b)
+		commit(b, true)
 
 
 ## As preload_round, without holding the game up while it's done (so a loading screen can show how it's getting on):
@@ -169,7 +232,7 @@ func preload_round_async(at: Array[Vector2], reach := 600.0, report := Callable(
 	set_process(false)
 	var laid: Array[RoadBlock] = []
 	laid.resize(keys.size())
-	var group := WorkerThreadPool.add_group_task(func(i: int): laid[i] = net.block(keys[i]), keys.size(), -1, true,
+	var group := WorkerThreadPool.add_group_task(func(i: int): laid[i] = _laid(keys[i]), keys.size(), -1, true,
 		"Road blocks round the start")
 	while not WorkerThreadPool.is_group_task_completed(group):
 		if report.is_valid():
@@ -177,7 +240,7 @@ func preload_round_async(at: Array[Vector2], reach := 600.0, report := Callable(
 		await get_tree().process_frame
 	WorkerThreadPool.wait_for_group_task_completion(group)
 	for i in laid.size():
-		commit(laid[i])
+		commit(laid[i], true)
 		if i % 4 == 3 and i + 1 < laid.size():
 			await get_tree().process_frame
 	if report.is_valid():
@@ -187,7 +250,8 @@ func preload_round_async(at: Array[Vector2], reach := 600.0, report := Callable(
 
 ## Whether a block with its collision is in under region-frame (x, z).
 func has_ground(x: float, z: float) -> bool:
-	return blocks.has(RoadBlock.key_of(x, z))
+	var k := RoadBlock.key_of(x, z)
+	return blocks.has(k) and not _pieces.has(blocks[k])
 
 
 func _on_ground_arrived(area: Rect2, _level := 0) -> void:
@@ -204,12 +268,16 @@ func _on_ground_arrived(area: Rect2, _level := 0) -> void:
 	_lock.unlock()
 
 
-## Puts laid out block `b` into the world (in place of the one there before, if any).
-func commit(b: RoadBlock) -> Node3D:
+## Puts laid out block `b` into the world (in place of the one there before, if any), solid `at_once` or a piece at a
+## time.
+func commit(b: RoadBlock, at_once := false) -> Node3D:
 	var t0 := Time.get_ticks_usec()
 	stats["built"] += 1
 	stats["build_ms_max"] = maxf(float(stats["build_ms_max"]), b.ms)
 	_stale.erase(b.key)
+	# (in place of one a rider may be on, or with a rider on it or nearly: solid at once)
+	var area := Rect2(Vector2(b.key) * RoadBlock.SIZE, Vector2.ONE * RoadBlock.SIZE).grow(64.0)
+	var solid_now := blocks.has(b.key) or (is_inside_tree() and riders().any(func(p): return area.has_point(p)))
 	if blocks.has(b.key):
 		blocks[b.key].queue_free()
 	var node := Node3D.new()
@@ -249,10 +317,17 @@ func commit(b: RoadBlock) -> Node3D:
 		lmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(lmi)
 	if b.arrays.has("buildings") and not (b.arrays["buildings"]["v"] as PackedVector3Array).is_empty():
-		var bmi := MeshInstance3D.new()
-		bmi.name = "Buildings"
-		bmi.mesh = AdventureProps.to_mesh(b.arrays["buildings"])
-		node.add_child(bmi)
+		var tiles: Array = b.get_meta("building_tiles") if b.has_meta("building_tiles") else tile_soup(b.arrays["buildings"])
+		for i in tiles.size():
+			if (tiles[i]["v"] as PackedVector3Array).is_empty():
+				continue
+			var make := func() -> Node:
+				var bmi := MeshInstance3D.new()
+				bmi.name = "Buildings_%d" % i
+				bmi.mesh = AdventureProps.to_mesh(tiles[i])
+				return bmi
+			# (a town's houses are made into meshes a square a frame, over the frames after: see StreamPieces)
+			_put(node, make, at_once or solid_now)
 	for l: Dictionary in b.arrays.get("labels", []):
 		var label := Label3D.new()
 		label.text = str(l["text"])
@@ -264,38 +339,31 @@ func commit(b: RoadBlock) -> Node3D:
 		label.transform = l["xf"]
 		label.visibility_range_end = float(l["reach"])
 		node.add_child(label)
-	for kind: String in b.trees:
-		var list: Array = b.trees[kind]
-		var multi := MultiMesh.new()
-		multi.transform_format = MultiMesh.TRANSFORM_3D
-		multi.mesh = AdventureProps.mesh(kind)
-		multi.instance_count = list.size()
-		for k in list.size():
-			multi.set_instance_transform(k, list[k])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "Trees_" + kind
-		mmi.multimesh = multi
-		if kind in AdventureChunk.BUSHES:
-			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		# (a block's trees go as one: drawn while any of the block is within reach)
-		AdventureChunk._range(mmi, TREES_REACH)
-		node.add_child(mmi)
+	var tree_tiles: Dictionary = b.get_meta("tree_tiles") if b.has_meta("tree_tiles") else tile_lists(b.trees)
+	for kind: String in tree_tiles:
+		for i in TILES * TILES:
+			var list: Array = tree_tiles[kind][i]
+			if list.is_empty():
+				continue
+			var mmi := _multi(AdventureProps.mesh(kind), list, "Trees_%s_%d" % [kind, i])
+			if kind in AdventureChunk.BUSHES:
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# (a square's trees go as one: drawn while any of it is within reach)
+			AdventureChunk._range(mmi, TREES_REACH)
+			node.add_child(mmi)
 	# The posts by the road (RoadBlock._roadside), and the fences' rails, walls and hedges: as the trees, drawn while
-	# any of the block is within reach.
-	for kind: String in b.roadside:
-		var list: Array = b.roadside[kind]
-		var multi := MultiMesh.new()
-		multi.transform_format = MultiMesh.TRANSFORM_3D
-		multi.mesh = RegionKit.post_mesh(kind.trim_prefix("kit_post_")) if kind.begins_with("kit_post_") else AdventureProps.mesh(kind)
-		multi.instance_count = list.size()
-		for k in list.size():
-			multi.set_instance_transform(k, list[k])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "Roadside_" + kind
-		mmi.multimesh = multi
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		AdventureChunk._range(mmi, TREES_REACH)
-		node.add_child(mmi)
+	# any of the square is within reach.
+	var roadside_tiles: Dictionary = b.get_meta("roadside_tiles") if b.has_meta("roadside_tiles") else tile_lists(b.roadside)
+	for kind: String in roadside_tiles:
+		var mesh := RegionKit.post_mesh(kind.trim_prefix("kit_post_")) if kind.begins_with("kit_post_") else AdventureProps.mesh(kind)
+		for i in TILES * TILES:
+			var list: Array = roadside_tiles[kind][i]
+			if list.is_empty():
+				continue
+			var mmi := _multi(mesh, list, "Roadside_%s_%d" % [kind, i])
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			AdventureChunk._range(mmi, TREES_REACH)
+			node.add_child(mmi)
 	var walls: Dictionary = b.arrays.get("walls", {})
 	if not walls.is_empty() and not (walls["v"] as PackedVector3Array).is_empty():
 		var wmi := MeshInstance3D.new()
@@ -305,37 +373,69 @@ func commit(b: RoadBlock) -> Node3D:
 		AdventureChunk._range(wmi, TREES_REACH)
 		node.add_child(wmi)
 	for s: Dictionary in b.arrays.get("signals", []):
-		# The traffic lights at a crossroads in town (RoadBlock._signals), as the planned road's are.
-		var sig := AdventureJunctions.Signals.new()
-		sig.name = "Signals_%d" % int(s["node"])
-		sig.site = {"green": s["green"], "phase": s["phase"]}
-		var poles := AdventureProps.new_arrays()
-		var sbody := StaticBody3D.new()
-		sbody.collision_layer = 1
-		for h: Array in s["heads"]:
-			AdventureJunctions._head(sig, poles, sbody, h[0], str(h[1]))
-		var pmi := MeshInstance3D.new()
-		pmi.mesh = AdventureProps.to_mesh(poles)
-		sig.add_child(pmi)
-		sig.add_child(sbody)
-		node.add_child(sig)
+		_put(node, _signals.bind(s), at_once or solid_now)
+	# Its road solid a piece at a time over the next frames (see StreamPieces), unless it's in place of one a rider
+	# may be on, or it's the start's (behind the fade).
+	var shapes: Dictionary = b.get_meta("shapes", {})
 	for surf: String in b.arrays["faces"]:
-		var body := StaticBody3D.new()
-		body.name = "Body_" + surf
-		body.collision_layer = 1
-		body.set_meta("surface", surf)
-		var shape := ConcavePolygonShape3D.new()
-		shape.backface_collision = true
-		shape.set_faces(b.arrays["faces"][surf])
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		body.add_child(cs)
-		node.add_child(body)
+		var pieces: Array = shapes[surf] if shapes.has(surf) else \
+			StreamPieces.shapes(StreamPieces.split(b.arrays["faces"][surf], RoadBlock.SIZE))
+		for i in pieces.size():
+			var body := StaticBody3D.new()
+			body.name = "Body_%s_%d" % [surf, i]
+			body.collision_layer = 1
+			body.set_meta("surface", surf)
+			var cs := CollisionShape3D.new()
+			cs.shape = pieces[i]
+			body.add_child(cs)
+			if at_once or solid_now:
+				node.add_child(body)
+			else:
+				_pieces.add(node, body)   # (made already: the shapes were made on the worker)
 	blocks[b.key] = node
 	_place(node)
 	add_child(node)
 	stats["commit_ms_max"] = maxf(float(stats["commit_ms_max"]), (Time.get_ticks_usec() - t0) / 1000.0)
 	return node
+
+
+## The traffic lights at a crossroads in town (RoadBlock._signals), as the planned road's are, from signals entry `s`.
+static func _signals(s: Dictionary) -> Node:
+	var sig := AdventureJunctions.Signals.new()
+	sig.name = "Signals_%d" % int(s["node"])
+	sig.site = {"green": s["green"], "phase": s["phase"]}
+	var poles := AdventureProps.new_arrays()
+	var sbody := StaticBody3D.new()
+	sbody.collision_layer = 1
+	for h: Array in s["heads"]:
+		AdventureJunctions._head(sig, poles, sbody, h[0], str(h[1]))
+	var pmi := MeshInstance3D.new()
+	pmi.mesh = AdventureProps.to_mesh(poles)
+	sig.add_child(pmi)
+	sig.add_child(sbody)
+	return sig
+
+
+## Puts `make`'s node (made now or when its turn comes) into block `node`: `now`, or over the next frames (StreamPieces).
+func _put(node: Node, make: Callable, now: bool) -> void:
+	if now:
+		node.add_child(make.call())
+	else:
+		_pieces.add(node, make)
+
+
+## A MultiMeshInstance3D named `name` of `mesh` at each of `list`'s transforms.
+static func _multi(mesh: Mesh, list: Array, name: String) -> MultiMeshInstance3D:
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.mesh = mesh
+	multi.instance_count = list.size()
+	for k in list.size():
+		multi.set_instance_transform(k, list[k])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = name
+	mmi.multimesh = multi
+	return mmi
 
 
 ## An ArrayMesh of RoadBlock grid arrays.

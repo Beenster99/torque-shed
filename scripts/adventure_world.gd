@@ -82,8 +82,12 @@ var roads_region: RealRegion
 var net_sites: NetSites
 ## The scenery round the riders on the network ride (SceneryStreamer); null on the single road.
 var scenery: SceneryStreamer
-var _net_y := {}         # route knot -> the network road's height there (network_y)
-var _net_y_hint := -1
+var _net_y := {}         # route knot -> the network road's height there, once final (network_y)
+var _net_y_guess := {}   # route knot -> [its height as a guess, or as it was before the ground sharpened; msec]
+var _net_y_want := {}    # route knots asked for and not yet worked out
+var _net_y_got := {}     # route knot -> [height, final]: worked out on a worker, waiting to be taken in
+var _net_y_job := -1
+var _net_y_lock := Mutex.new()
 var _box := _Results.new()
 var _tasks := {}         # chunk -> WorkerThreadPool task id
 var _ready_data := {}    # chunk -> built data waiting to be committed
@@ -104,6 +108,9 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if _net_y_job >= 0:
+		JobPool.wait(_net_y_job)
+		_net_y_job = -1
 	for c in _tasks:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
@@ -269,25 +276,68 @@ func net_wake_xf(bed: Array, slot: int):
 
 
 ## The network's road height under the planned road's knot `i` (the network ride: the planned line only follows the
-## network's roads, whose heights are their own), or NaN off the network or where it isn't laid out yet. Kept until the
-## ground under the roads sharpens (RoadStreamer.heights_changed).
+## network's roads, whose heights are their own), or NaN off the network or where it isn't known yet. Worked out on a
+## worker, not here: the first height asked for along a long road can take its whole height profile to work out (seconds,
+## a hitch the traffic spawning far ahead used to cause). Till it's in, NaN (or the height it had before the ground
+## sharpened, or the guess from before it was final, at most a second old). Kept once the ground under it is final,
+## until it sharpens (RoadStreamer.heights_changed).
 func network_y(i: int) -> float:
 	if roads == null:
 		return NAN
 	if _net_y.has(i):
 		return _net_y[i]
-	var on := roads.net.locate(route.px[i], route.pz[i], _net_y_hint)
-	if on.is_empty() or not bool(on["on_road"]):
-		return NAN
-	_net_y_hint = int(on["edge"])
-	var y := roads.net.road_y(int(on["edge"]), float(on["s"])) if int(on["node"]) < 0 else float(on["y"]) - RoadNet.CROWN
-	if roads.can_build(RoadBlock.key_of(route.px[i], route.pz[i])):
-		_net_y[i] = y   # (only once the ground there is final: before that it's a guess)
-	return y
+	var g = _net_y_guess.get(i)
+	if g == null or Time.get_ticks_msec() - int(g[1]) > 1000:
+		_net_y_want[i] = true
+	return float(g[0]) if g != null else NAN
 
 
-## Forgets the network heights under the planned road (network_y): the ground under them has sharpened.
+## Takes in the heights worked out (network_y) and starts working out the ones asked for since (each frame).
+func _pump_network_y() -> void:
+	if roads == null or (_net_y_job >= 0 and not JobPool.done(_net_y_job)):
+		return
+	if _net_y_job >= 0:
+		JobPool.wait(_net_y_job)
+		_net_y_job = -1
+	_net_y_lock.lock()
+	var got := _net_y_got
+	_net_y_got = {}
+	_net_y_lock.unlock()
+	var now := Time.get_ticks_msec()
+	for i in got:
+		if bool(got[i][1]):
+			_net_y[i] = got[i][0]   # (only once the ground there is final: before that it's a guess)
+			_net_y_guess.erase(i)
+		else:
+			_net_y_guess[i] = [got[i][0], now]
+	if _net_y_want.is_empty():
+		return
+	var knots: Array = _net_y_want.keys()
+	_net_y_want.clear()
+	var net := roads.net
+	var r := route
+	var streamer := roads
+	_net_y_job = JobPool.add(func():
+		var hint := -1
+		var out := {}
+		for i: int in knots:
+			var on := net.locate(r.px[i], r.pz[i], hint)
+			var y := NAN
+			if not on.is_empty() and bool(on["on_road"]):
+				hint = int(on["edge"])
+				y = net.road_y(int(on["edge"]), float(on["s"])) if int(on["node"]) < 0 else float(on["y"]) - RoadNet.CROWN
+			out[i] = [y, streamer.can_build(RoadBlock.key_of(r.px[i], r.pz[i]))]
+		_net_y_lock.lock()
+		_net_y_got.merge(out, true)
+		_net_y_lock.unlock(), -1.0)
+
+
+## Forgets the network heights under the planned road (network_y): the ground under them has sharpened. They're kept
+## as guesses meanwhile, so nothing drawn on them drops for a frame.
 func forget_network_y() -> void:
+	var now := Time.get_ticks_msec() - 2000
+	for i in _net_y:
+		_net_y_guess[i] = [_net_y[i], now]
 	_net_y.clear()
 
 
@@ -469,6 +519,7 @@ func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	if roads == null:
 		stream()   # (the network ride's blocks stream themselves: RoadStreamer)
+	_pump_network_y()
 	stats["stream_ms_max"] = maxf(float(stats["stream_ms_max"]), (Time.get_ticks_usec() - t0) / 1000.0)
 	# The tunnel roof over the camera, eased so the light doesn't snap at a portal.
 	var cam := get_viewport().get_camera_3d() if get_viewport() else null
