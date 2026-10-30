@@ -354,8 +354,9 @@ static func _blender_made(mi) -> bool:
 	return mesh.get_surface_count() > 0 and BlenderParts.TAGS.has(BlenderParts.tag_of(mesh.surface_get_material(0)))
 
 
-## The slots the loader draws in their Blender-made shapes (this wave's).
-const LOADED: Array[String] = ["engine", "head", "exhaust"]
+## The slots the loader draws in their Blender-made shapes (waves 1 and 2 so far).
+const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
+	"front_disc", "rear_disc"]
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
 ## The most triangles a new-look bike may draw close up with its Blender-made parts on, and how
@@ -365,8 +366,8 @@ const LOADED_TRIS := 150000
 const LOADED_MORE := 60000
 
 
-## The loader: a bike in the new look wears its Blender-made engine, top end and exhaust where
-## the code-built ones were, each surface in its finish on that bike, with the headers' ports
+## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
+## tyres and brakes where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
 ## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
 func test_new_look() -> void:
 	var off := []
@@ -392,6 +393,11 @@ func test_new_look() -> void:
 				missing.append("%s %s" % [style, slot])
 			if (models["classic"] as BikeModel)._slot_meshes[slot].any(_blender_made):
 				classic_blender.append("%s %s" % [style, slot])
+			# What turns with the wheel hangs from its spinning node.
+			if slot.ends_with("_wheel") or slot.ends_with("_tyre") or slot.ends_with("_disc"):
+				var spin: Node = m._front_wheel if slot.begins_with("front") else m._rear_wheel
+				if mine.any(func(mi): return (mi as Node).get_parent() != spin):
+					off.append("%s %s off its wheel" % [style, slot])
 		for slot in LOADED:
 			var a := (models["code"] as BikeModel).slot_bounds(slot)
 			var b := m.slot_bounds(slot)
@@ -413,7 +419,7 @@ func test_new_look() -> void:
 			off.append("%s %d triangles (%d with the code's shapes)" % [style, tris, tris_code])
 		for k in models:
 			(models[k] as Node).free()
-	# Every engine, head and exhaust in the catalogue, on a bike in the new look, is drawn.
+	# Every one of those parts in the catalogue, on a bike in the new look, is drawn.
 	var by_slot := {}
 	var most := 0
 	for id in PartsDB.parts:
@@ -437,7 +443,7 @@ func test_new_look() -> void:
 				missing.append(str(parts[slot]))
 		m.free()
 	BikeLookNew.lods_now = false
-	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end and exhaust, and every one in the catalogue is drawn %s" % [missing])
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres and brakes, and every one in the catalogue is drawn %s" % [missing])
 	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
 	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
 	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.
@@ -452,7 +458,8 @@ func test_new_look() -> void:
 	var left := 0
 	for mi in bake.find_children("*", "MeshInstance3D", true, false):
 		var mesh := (mi as MeshInstance3D).mesh
-		if _blender_made(mi):
+		# (A tyre stays a mesh of its own, the sidewall lettering hanging off it, as in Classic.)
+		if _blender_made(mi) and (mi as Node).get_child_count() == 0:
 			left += 1
 		if mesh == null or (mi as MeshInstance3D).material_override != BikeShader.material():
 			continue
@@ -461,8 +468,9 @@ func test_new_look() -> void:
 			for i in range(1, (c3 as PackedFloat32Array).size(), 4):
 				hot = hot or (c3 as PackedFloat32Array)[i] > 0.1
 	var s: Dictionary = BikeLook.stats(bake)
-	check(hot and left == 0 and s["draws"] - s["rider_draws"] <= 40,
-		"baked, the Blender-made pieces merge with the rest (%d left, %d draws) and the headers colour with heat" % [left, s["draws"] - s["rider_draws"]])
+	check(hot and left == 0 and s["draws"] - s["rider_draws"] <= 40 and s["tris_lod1"] <= 26000 and s["tris_lod2"] <= 22000,
+		"baked, the Blender-made pieces merge with the rest (%d left, %d draws, %d and %d triangles 30 and 120 m off) and the headers colour with heat"
+		% [left, s["draws"] - s["rider_draws"], s["tris_lod1"], s["tris_lod2"]])
 	bake.free()
 	# A can on the left is the right-hand one mirrored, its triangles still facing out.
 	var path := BlenderParts.can_path("turnout")

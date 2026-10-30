@@ -369,6 +369,59 @@ const TYRE_SECTIONS := 32
 const TYRE_BULGE := 0.434
 
 
+## The size (m) of a pixel `distance` off, on a 75 degree view 1080 pixels high (as BikeLook.lod_tris
+## works it out): a level of detail that size is drawn from there on.
+static func lod_size(distance: float) -> float:
+	return distance * 2.0 * tan(deg_to_rad(75.0) * 0.5) / 1080.0
+
+
+## A mesh per surface of `lods` (a part's three LODs as ArrayMeshes, as tyre_hoop makes them),
+## each carrying all three: the lighter ones drawn from LOD1_AT and LOD2_AT off. [[Mesh, Material],
+## ...] as split's, each mesh with its triangles at each level in its "lod_tris" (see BikeLook.stats).
+static func with_lods(lods: Array) -> Array:
+	var first: Mesh = lods[0]
+	var out := []
+	for s in first.get_surface_count():
+		var mat := first.surface_get_material(s)
+		var arrays := first.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var tris := [(arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3]
+		var levels := {}
+		for k in range(1, lods.size()):
+			var mesh: Mesh = lods[k]
+			# (A surface a lighter level leaves out, such as studs far off, is one empty triangle there.)
+			var idx := PackedInt32Array([0, 0, 0])
+			for j in mesh.get_surface_count():
+				if mesh.surface_get_material(j) != mat:
+					continue
+				var a := mesh.surface_get_arrays(j)
+				var base := verts.size()
+				verts.append_array(a[Mesh.ARRAY_VERTEX])
+				normals.append_array(a[Mesh.ARRAY_NORMAL])
+				uvs.append_array(a[Mesh.ARRAY_TEX_UV])
+				idx = PackedInt32Array()
+				for i in a[Mesh.ARRAY_INDEX]:
+					idx.append(base + i)
+			var size := lod_size(LOD1_AT if k == 1 else LOD2_AT)
+			levels[size] = idx
+			tris.append([size, idx.size() / 3])
+		var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		arrays = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		arrays[Mesh.ARRAY_INDEX] = index
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], levels)
+		am.surface_set_material(0, mat)
+		am.set_meta(&"lod_tris", tris)
+		out.append([am, mat])
+	return out
+
+
 ## The glb for a tyre's tread pattern (BikeModel.tread_pattern's: "" is a slick).
 static func tyre_path(tread: String) -> String:
 	return ROOT + "tyre/%s.glb" % (tread if tread != "" else "slick")
