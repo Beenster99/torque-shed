@@ -148,7 +148,7 @@ const TOOLBOX_CONTENTS := {
 	"chain_lube": {"name": "Can of chain lube", "short": "chain lube", "price": 9, "mass": 0.4, "fixes": "lube"},
 }
 const ECU_AID_NAMES := {"traction": "traction control", "abs": "ABS", "anti_wheelie": "anti-wheelie",
-	"stability": "stability control"}
+	"stability": "stability control", "lean_traction": "lean-angle traction control"}
 
 ## What each kind of part is mostly made of, which decides the bin it goes in when it's thrown
 ## away (see bin_for). A part can say otherwise with its own "material" in data/parts.json:
@@ -177,12 +177,20 @@ var by_kind := {}  # kind -> Array of part ids, in catalogue order
 ## Parts taken out of the catalogue (data/retired_parts.json): old id -> the part that a save's
 ## copy of it becomes (see current_id and migrate).
 var retired := {}
+## Parts taken out of the catalogue since, by kind: old id -> the part a save's copy becomes, or
+## "none" where nothing takes its place (that slot is optional, and a loose one is gone). Joined
+## to `retired` when the catalogue loads, so current_id and migrate see them too.
+const RETIRED_PARTS := {
+	"ecu": {"stock_ecu": "none", "abs_ecu": "ecu_safety"},
+}
 
 
 func _ready() -> void:
 	load_catalogue("res://data/parts.json")
 	var r = JSON.parse_string(FileAccess.get_file_as_string("res://data/retired_parts.json"))
 	retired = r.get("parts", {}) if r is Dictionary else {}
+	for kind in RETIRED_PARTS:
+		retired.merge(RETIRED_PARTS[kind], true)
 
 
 ## The catalogue's id for a part a save calls `id`: the one that replaced it when it was taken out
@@ -194,20 +202,23 @@ func current_id(id: String) -> String:
 ## `v` (a save's shed, deep) with every retired part id in it swapped for the part that replaced
 ## it, in values and in keys. A part keeps its own colour (items carry it), so an old red tank
 ## is the new tank in that red.
+## A part retired with nothing in its place (see RETIRED_PARTS) becomes "none" where a build names
+## it, and drops out of a list or out of the keys (shop stock) altogether.
 func migrate(v: Variant) -> Variant:
 	if v is String:
 		return retired.get(v, v)
 	if v is Array:
-		var out: Array = v.duplicate()
-		for i in out.size():
-			out[i] = migrate(out[i])
+		var out: Array = []
+		for x in v:
+			if not (x is String and str(retired.get(x, "")) == "none"):
+				out.append(migrate(x))
 		return out
 	if v is Dictionary:
 		var out: Dictionary = v.duplicate()
 		for k in v:
 			out[k] = migrate(v[k])
 			if k is String and retired.has(k):
-				if not out.has(retired[k]):
+				if not out.has(retired[k]) and str(retired[k]) != "none":
 					out[retired[k]] = out[k]
 				out.erase(k)
 		return out

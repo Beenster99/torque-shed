@@ -44,7 +44,7 @@ func test_catalogue() -> void:
 	var bad := []
 	for old in PartsDB.retired:
 		var now := PartsDB.current_id(old)
-		if PartsDB.parts.has(old) or not PartsDB.parts.has(now):
+		if PartsDB.parts.has(old) or not (PartsDB.parts.has(now) or now == "none"):
 			bad.append(old)
 	check(PartsDB.retired.size() > 80 and bad.is_empty(), "every part taken out has one in its place (%d) %s" % [PartsDB.retired.size(), bad])
 

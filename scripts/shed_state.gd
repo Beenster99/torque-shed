@@ -77,7 +77,8 @@ const SYNC_INTERVAL := 0.1
 ## are the bike's too (the rider's choice for that bike, kept if the ECU is changed).
 const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "limiter": ["bike", "limiter"],
 	"aid_traction": ["bike", "aid_traction"], "aid_stability": ["bike", "aid_stability"],
-	"aid_anti_wheelie": ["bike", "aid_anti_wheelie"],
+	"aid_anti_wheelie": ["bike", "aid_anti_wheelie"], "aid_lean_traction": ["bike", "aid_lean_traction"],
+	"aid_abs": ["bike", "aid_abs"],
 	"f_preload": ["fork", "preload"], "f_bump": ["fork", "bump"], "f_rebound": ["fork", "rebound"],
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
@@ -381,6 +382,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	adventure = {}   # nobody is out on an adventure in a save just opened
 	Roadside.bring_home()   # and nobody's bike is left at an adventure's roadside (see Roadside)
 	_forget_punctures()
+	_drop_retired_items()
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -441,6 +443,21 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	ensure_fixtures()
 	_mark_dirty()
 	changed.emit()
+
+
+## Parts a save holds that were taken out of the catalogue with nothing in their place (PartsDB
+## migrate makes them "none", like the old stock ECU): gone, from the bikes they were on too.
+func _drop_retired_items() -> void:
+	var gone := items.keys().filter(func(id): return str(items[id].get("part", "")) == "none")
+	if gone.is_empty():
+		return
+	for bike_id in bikes:
+		for slot in bikes[bike_id].get("slots", {}):
+			if gone.has(int(bikes[bike_id]["slots"][slot])):
+				bikes[bike_id]["slots"][slot] = 0
+				bikes[bike_id].get("bolted", {})[slot] = false
+	for id in gone:
+		items.erase(id)
 
 
 ## Saves from before the pumps (and the adventure kit) come back with every bike's tanks full,
@@ -2842,6 +2859,18 @@ func check(peer: int, action: Dictionary) -> String:
 				return "You're not riding that bike."
 			if not BikeBuild.MODE_ORDER.has(str(action.get("mode", "?"))):
 				return "There's no such ride mode."
+		"aid":
+			# A rider aid set from the dash while riding (the dyno desk's "tune" does it in the shed).
+			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
+				return "You're not riding that bike."
+			var key := str(action.get("key", ""))
+			if not BikeBuild.AID_KEYS.values().has(key):
+				return "There's no such rider aid."
+			if not (action.get("value") is float or action.get("value") is int):
+				return "Pick a level."
+			var why := build_of(bike_id).tune_block(key)
+			if why != "":
+				return why
 		"beam":
 			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
 				return "You're not riding that bike."
@@ -3787,6 +3816,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["beam"] = int(action["beam"])   # the headlight switch stays where it's left
 		"ride_mode":
 			bikes[bike_id]["ride_mode"] = str(action["mode"])   # so is the dash's ride mode
+		"aid":
+			# Kept where the dyno desk keeps it (see TUNE_HOME), so the desk shows it too.
+			var key := str(action["key"])
+			var r := build_of(bike_id).tune_range(key)
+			if not bikes[bike_id].has("tune"):
+				bikes[bike_id]["tune"] = {}
+			bikes[bike_id]["tune"][str(TUNE_HOME[key][1])] = clampf(float(roundi(float(action["value"]))), r.x, r.y)
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			var fairing := item_on(ridden, "fairing")

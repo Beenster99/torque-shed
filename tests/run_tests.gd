@@ -923,6 +923,12 @@ func _run_all() -> void:
 	await _t(&"_test_optional_parts_list")
 	await _t(&"_test_optional_parts_random_bikes")
 	await _t(&"_test_optional_parts_shed")
+	print("Simon's v0.39.0 round: the ECUs (Performance 2 remap, ECU Safety) and rider aids set on the bike")
+	await _t(&"_test_ecu_safety_catalogue")
+	await _t(&"_test_ecu_safety_lean_traction")
+	await _t(&"_test_ecu_safety_on_bike")
+	await _t(&"_test_ecu_safety_saves")
+	await _t(&"_test_ecu_safety_dash")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -3585,7 +3591,7 @@ func _test_ecu_aid_settings() -> void:
 	var race := BikeBuild.new({"ecu": "race_ecu"})
 	check(sport.tune_block("aid_traction") == "" and sport.tune_block("aid_anti_wheelie") == ""
 		and sport.tune_block("aid_stability").contains("no stability control") and race.tune_block("aid_stability") == ""
-		and BikeBuild.new({"ecu": "stock_ecu"}).tune_block("aid_traction").contains("no traction"),
+		and BikeBuild.new({"ecu": "none"}).tune_block("aid_traction").contains("no traction"),
 		"only the aids the ECU has can be set (sport: traction and anti-wheelie; race: stability too)")
 	check(is_equal_approx(race.aid_strength("traction"), race.ecu_aid) and is_equal_approx(sport.aid_strength("anti_wheelie"), sport.ecu_aid)
 		and sport.aid_strength("stability") == 0.0, "untouched, each aid works as the ECU came from the factory")
@@ -4626,7 +4632,7 @@ func _test_tuning() -> void:
 	var t := Shed.tune_of(faithful)
 	check(is_equal_approx(float(t.get("map", 0.0)), 0.25) and is_equal_approx(float(t.get("psi_r", 0.0)), 2.0)
 		and is_equal_approx(float(t.get("sprocket_r", 0.0)), 50.0), "the tune survives the snapshot (save and co-op sync) %s" % str(t))
-	check(BikeBuild.new({"ecu": "race_ecu"}).tune_range("map").y > BikeBuild.new({"ecu": "stock_ecu"}).tune_range("map").y
+	check(BikeBuild.new({"ecu": "race_ecu"}).tune_range("map").y > BikeBuild.new({"ecu": "none"}).tune_range("map").y
 		and BikeBuild.new({"ecu": "remap_ecu"}).tune_range("limiter").y > 0.0 and stock.tune_range("limiter").y == 0.0,
 		"a remap or race ECU opens up the map and the rev limiter")
 
@@ -24457,3 +24463,29 @@ func _test_optional_parts_random_bikes() -> void:
 
 func _test_optional_parts_shed() -> void:
 	_optional_parts().test_shed()
+
+
+# ---------------------------------------------------------------------------- ECUs and rider aids on the bike (tests/ecu_safety_tests.gd)
+
+func _ecu_safety() -> RefCounted:
+	return load("res://tests/ecu_safety_tests.gd").new(self)
+
+
+func _test_ecu_safety_catalogue() -> void:
+	_ecu_safety().test_catalogue()
+
+
+func _test_ecu_safety_lean_traction() -> void:
+	await _ecu_safety().test_lean_traction()
+
+
+func _test_ecu_safety_on_bike() -> void:
+	_ecu_safety().test_on_bike()
+
+
+func _test_ecu_safety_saves() -> void:
+	_ecu_safety().test_saves()
+
+
+func _test_ecu_safety_dash() -> void:
+	await _ecu_safety().test_dash()

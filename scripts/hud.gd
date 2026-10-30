@@ -490,6 +490,32 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 
 ## The speedo shows what the bike's dashboard can: every dash the speed, gear, trip, fuel economy
 ## and range; most the revs; a TFT or race logger a shift light, the ride mode and cruise control.
+## The rider aids as the dash's menu names them.
+const AID_SHORT := {"abs": "ABS", "traction": "Traction", "lean_traction": "Lean traction", "anti_wheelie": "Anti-wheelie",
+	"stability": "Stability"}
+
+
+## The rider aids menu, up on the dash above the speedo (see Bike.next_menu_aid): each aid the ECU
+## has and its level, the one picked lit up.
+func _draw_aids_menu(font: Font, dash: Rect2) -> void:
+	if not bike.aids_menu_open():
+		return
+	var aids := bike.build.rider_aids()
+	var h := 26.0 + 20.0 * aids.size()
+	var box := Rect2(dash.position + Vector2(0, -h - 40.0), Vector2(dash.size.x, h))
+	draw_rect(box, Color(0.03, 0.03, 0.04, 0.75))
+	draw_string(font, box.position + Vector2(10, 18), "RIDER AIDS", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+	for i in aids.size():
+		var aid: String = aids[i]
+		var picked := aid == bike.aids_menu
+		var y := box.position.y + 38.0 + 20.0 * i
+		var col := UITheme.ACCENT if picked else Color(1, 1, 1, 0.8)
+		draw_string(font, Vector2(box.position.x + 10, y), ("> " if picked else "  ") + str(AID_SHORT.get(aid, aid)), HORIZONTAL_ALIGNMENT_LEFT, 140, 13, col)
+		var level := bike.build.aid_level(aid)
+		var val := "OFF" if level <= 0 else ("ON" if BikeBuild.AID_SWITCHES.has(aid) else "%d / %d" % [level, BikeBuild.AID_LEVELS])
+		draw_string(font, Vector2(box.position.x + 160, y), val, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+
+
 func _draw_speedo() -> void:
 	if bike.build == null:
 		return
@@ -540,6 +566,7 @@ func _draw_speedo() -> void:
 		tags.append("CRUISE %d" % Units.speed_value(bike.cruise_speed))
 	if not tags.is_empty():
 		draw_string(font, r.position + Vector2(120, 15), "  ".join(tags), HORIZONTAL_ALIGNMENT_LEFT, 80, 12, UITheme.ACCENT)
+	_draw_aids_menu(font, r)
 	if fuel_stop and fuel_stop.low() and int(Time.get_ticks_msec() / 500) % 2 == 0:
 		# The low fuel light, blinking.
 		draw_string(font, r.position + Vector2(140, 106), "LOW FUEL", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.65, 0.1))
