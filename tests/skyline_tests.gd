@@ -218,6 +218,10 @@ func test_block() -> void:
 	check(now.size() == mover.multimesh.instance_count and (now[0] as Transform3D).origin.distance_to((later[0] as Transform3D).origin) > 4.0
 		and str(mover.placed(1000.0)) == str(now), "and they move by the clock, five metres a second")
 	check(node.find_children("*", "CollisionObject3D", true, false).is_empty(), "nothing a bike can touch")
+	# (the wires in their own see-through shader, so a far one is faint rather than a bold line)
+	var wire_mi := node.find_child("SkylineWires", true, false) as MeshInstance3D
+	check(wire_mi != null and wire_mi.mesh.surface_get_material(0) == Skyline.wire_material()
+		and Skyline.wire_material().shader.code.contains("ALPHA = cover"), "the wires drawn fainter the finer they look")
 	node.queue_free()
 
 

@@ -14,8 +14,9 @@ extends RefCounted
 ## over the ground and the roads under it (CLEAR in its kit).
 ##
 ## Every model is built here from boxes and lathes, vertex coloured, with one shared shader (SHADER): the blades turn
-## in it, the lamps are lit and blink in it (red aviation lamps blink together by the clock, so a crew sees them in step)
-## and the wires keep at least a pixel wide in it, so a power line reads at a distance as it does in life.
+## in it and the lamps are lit and blink in it (red aviation lamps blink together by the clock, so a crew sees them in
+## step). The wires have a shader of their own (WIRE_SHADER): never drawn thinner than about a pixel, but fainter the
+## less of that pixel a real wire would cover, so a line is a fine thread close by and fades out over a kilometre or so.
 
 ## Bumped when what a block lays out changes (the kit library's rows are hashed by the streamer already).
 const VERSION := 1
@@ -83,6 +84,7 @@ static var _meshes := {}
 static var _meshes_lock := Mutex.new()
 static var _material: ShaderMaterial
 static var _steam: ShaderMaterial
+static var _wire_material: ShaderMaterial
 static var _regions := {}     # region instance id -> its lines' supports and spans (_lines_of)
 static var _regions_lock := Mutex.new()
 static var _spin := 0.0
@@ -749,7 +751,7 @@ static func dress(node: Node3D, data) -> void:
 	if not arrays.is_empty():
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_material(0, material())
+		mesh.surface_set_material(0, wire_material())
 		var mi := MeshInstance3D.new()
 		mi.name = "SkylineWires"
 		mi.mesh = mesh
@@ -1429,6 +1431,16 @@ static func material() -> ShaderMaterial:
 	return _material
 
 
+## The wires' and fences' material (WIRE_SHADER).
+static func wire_material() -> ShaderMaterial:
+	if _wire_material == null:
+		var s := Shader.new()
+		s.code = WIRE_SHADER
+		_wire_material = ShaderMaterial.new()
+		_wire_material.shader = s
+	return _wire_material
+
+
 static func _steam_material() -> ShaderMaterial:
 	if _steam == null:
 		var s := Shader.new()
@@ -1450,7 +1462,7 @@ varying float glow;
 void vertex() {
 	glow = 0.0;
 	float flag = UV2.x;
-	// (the lamps and wires below place themselves; everything else as usual: POSITION is written either way)
+	// (the lamps below place themselves; everything else as usual: POSITION is written either way)
 	if (flag < 1.5) {
 		if (flag > 0.5) {
 			// A rotor's part: turned about the hub (0, UV2.y, UV.x) round z.
@@ -1462,7 +1474,7 @@ void vertex() {
 			NORMAL = vec3(NORMAL.x * k - NORMAL.y * s, NORMAL.x * s + NORMAL.y * k, NORMAL.z);
 		}
 		POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
-	} else if (flag > 1.5 && flag < 3.5) {
+	} else {
 		// A lamp: a square to the camera, kept a few pixels across however far, lit only at night.
 		float on = flag < 2.5 ? night * blink : night;
 		vec4 c = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
@@ -1470,15 +1482,6 @@ void vertex() {
 		c.xy += UV * size;
 		POSITION = PROJECTION_MATRIX * c;
 		glow = on;
-	} else if (flag > 3.5) {
-		// A wire: a strip across the camera's view of it, at least about a pixel wide.
-		vec4 c = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
-		vec3 d = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-		vec3 side = normalize(cross(d, c.xyz));
-		float w = max(UV2.y, -c.z * 0.0009);
-		c.xyz += side * UV.x * w;
-		POSITION = PROJECTION_MATRIX * c;
-		NORMAL = vec3(0.0, 1.0, 0.0);
 	}
 }
 
@@ -1489,6 +1492,46 @@ void fragment() {
 	} else {
 		ALBEDO = COLOR.rgb;
 	}
+	ROUGHNESS = 0.8;
+	SPECULAR = 0.3;
+}
+"""
+
+## The wires (and the fences in the same mesh, drawn as they are). A wire is a strip across the camera's view of it,
+## never thinner than a pixel and a half, as faint as the share of that pixel the real wire would cover; close by it keeps a
+## little more than that, fading out between NEAR and FAR m, so a line reads as a thread and never as a bold dark stroke,
+## nor where several line up with the eye.
+const WIRE_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, blend_mix, depth_draw_never, shadows_disabled;
+
+const float NEAR = 200.0;
+const float FAR = 1200.0;
+const float FAINT = 0.3;    // the least a wire is shown at, out to NEAR
+varying float cover;
+
+void vertex() {
+	cover = 1.0;
+	if (UV2.x > 3.5) {
+		vec4 c = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+		vec3 d = (MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+		vec3 across = cross(d, c.xyz);
+		vec3 side = length(across) > 1e-6 ? normalize(across) : vec3(1.0, 0.0, 0.0);
+		float far = max(-c.z, 0.01);
+		float pixel = 2.0 * far / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y);
+		float w = max(UV2.y, pixel * 0.75);   // (a pixel and a half across: a thinner strip breaks up into dots)
+		c.xyz += side * UV.x * w;
+		POSITION = PROJECTION_MATRIX * c;
+		NORMAL = vec3(0.0, 1.0, 0.0);
+		cover = clamp(max(UV2.y / w, FAINT * (1.0 - smoothstep(NEAR, FAR, far))), 0.0, 1.0);
+	} else {
+		POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+	}
+}
+
+void fragment() {
+	ALBEDO = COLOR.rgb;
+	ALPHA = cover;
 	ROUGHNESS = 0.8;
 	SPECULAR = 0.3;
 }

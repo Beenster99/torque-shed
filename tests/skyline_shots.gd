@@ -104,7 +104,7 @@ func _ready() -> void:
 			if w.count > 0:
 				var mesh := ArrayMesh.new()
 				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, w.arrays())
-				mesh.surface_set_material(0, Skyline.material())
+				mesh.surface_set_material(0, Skyline.wire_material())
 				var wm := MeshInstance3D.new()
 				wm.mesh = mesh
 				holder.add_child(wm)
