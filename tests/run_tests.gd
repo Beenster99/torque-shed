@@ -752,6 +752,10 @@ func _run_all() -> void:
 	await _t(&"_test_headlight_catalogue")
 	await _t(&"_test_headlight_builds")
 	await _t(&"_test_headlight_lit")
+	print("Simon's v0.39 round: slimmer twin-spar and monocoque frames, grips on every bar's ends, mirror stalks to the back of the head")
+	await _t(&"_test_fgm_frames")
+	await _t(&"_test_fgm_grips")
+	await _t(&"_test_fgm_mirrors")
 	print("Simon's v0.21.0 round: his starter motor recordings, healthy and struggling, and his two-stroke")
 	await _t(&"_test_sound_starter_files")
 	await _t(&"_test_sound_starter_choice")
@@ -24426,3 +24430,19 @@ func _test_road_signs() -> void:
 	_road_markings().test_signs()
 
 
+# ---------------------------------------------------------------------------- slimmer spars, grips on every bar, mirror stalks (tests/frame_grip_mirror_tests.gd)
+
+func _fgm() -> RefCounted:
+	return load("res://tests/frame_grip_mirror_tests.gd").new(self)
+
+
+func _test_fgm_frames() -> void:
+	_fgm().test_frames()
+
+
+func _test_fgm_grips() -> void:
+	await _fgm().test_grips()
+
+
+func _test_fgm_mirrors() -> void:
+	await _fgm().test_mirrors()

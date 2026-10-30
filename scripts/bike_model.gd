@@ -829,19 +829,33 @@ func _col() -> Color:
 
 # ---------------------------------------------------------------------------- chassis
 
+## A twin-spar frame's beams: a round tube of radius SPAR_R squashed to SPAR_HALF (half its
+## width across, half its depth up the beam's side), or MONO_HALF for a carbon monocoque. They
+## were 0.099 deep each way of the middle (and a monocoque's 0.072 across) before v0.39.
+const SPAR_R := 0.045
+const SPAR_HALF := Vector2(0.045, 0.063)
+const MONO_HALF := Vector2(0.048, 0.063)
+## How far out the beams start at the head stock (m): close enough in that they run into it.
+const SPAR_FRONT_X := 0.065
+
+
 func _draw_frame(build: BikeBuild, zr: float) -> void:
 	_current_slot = "frame"
 	var style := str(_part().get("style", "cradle"))
-	var carbon := _part_id() == "carbon_monocoque"
+	var carbon := str(_part().get("material", "")) == "carbon"
 	var frame_mat := _skin(_mat(_col(), 0.2 if carbon else 0.7, 0.25 if carbon else 0.35, 0.8 if carbon else 0.0))
 	frame_mat = _look_finish(str(_look().get("finish", "")), frame_mat)
 	var black := _mat(Color(0.03, 0.03, 0.03), 0.0, 0.7)
 	var hb := _head_bottom
 	match style:
 		"spar":
-			var thick := 1.6 if carbon else 1.0
+			# Two deep beams from the head stock to the pivot plates, a carbon monocoque's a little
+			# wider. Each starts inside the head stock, so it meets it with no gap.
+			var half := MONO_HALF if carbon else SPAR_HALF
 			for side in [-1.0, 1.0]:
-				_tube(hb + Vector3(0.09 * side, 0.05, 0.0), _pivot + Vector3(0.12 * side, 0.1, 0.0), 0.045, frame_mat, Vector3(thick, 1.0, 2.2))
+				var beam := _tube(hb + Vector3(SPAR_FRONT_X * side, 0.05, 0.0), _pivot + Vector3(0.12 * side, 0.1, 0.0), SPAR_R, frame_mat,
+					Vector3(half.x / SPAR_R, 1.0, half.y / SPAR_R))
+				beam.name = "SparBeam"
 				_tube(_pivot + Vector3(0.12 * side, 0.1, 0.0), _pivot + Vector3(0.12 * side, -0.12, 0.02), 0.04, frame_mat)
 				_tube(_seat_front + Vector3(0.08 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.016, frame_mat)
 				_tube(_pivot + Vector3(0.1 * side, 0.12, 0.0), _tail + Vector3(0.06 * side, -0.02, -0.05), 0.014, frame_mat)
@@ -2344,60 +2358,94 @@ func _draw_handlebars() -> void:
 	var rubber := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.92)
 	var hw := float(p.get("width", 720)) / 2000.0
 	var rise := float(p.get("rise", 0.08))
-	var ends := []
+	var tip := Vector3.ZERO   # the right-hand bar end
 	var lk := _look()
 	match "Look" if lk.has("bend") else str(p.get("style", "Flat")):
 		"Look":
-			ends = _bent_bar(lk, hw, rise, mat)
+			tip = _bent_bar(lk, hw, rise, mat)
+			_bar_r = float(lk.get("thick", 0.012))
 		"Clip-ons":
 			for side in [-1.0, 1.0]:
-				var a := Vector3(0.09 * side, -0.07, 0.0)
-				var b := Vector3(hw * side, rise, 0.13)
-				_tube(a, b, 0.013, mat, Vector3.ONE, _steer_node)
-				ends.append(b)
+				_tube(Vector3(0.09 * side, -0.07, 0.0), Vector3(hw * side, rise, 0.13), 0.013, mat, Vector3.ONE, _steer_node)
 			_bar_line = PackedVector3Array([Vector3(0.09, -0.07, 0.0), Vector3(hw, rise, 0.13)])
+			_bar_r = 0.013
 		"Ape hanger":
 			for side in [-1.0, 1.0]:
 				var post_top := Vector3(0.12 * side, rise, 0.0)
 				_tube(Vector3(0.05 * side, 0.02, 0.0), post_top, 0.012, mat, Vector3.ONE, _steer_node)
-				var end := Vector3(hw * side, rise - 0.03, 0.14)
-				_tube(post_top, end, 0.012, mat, Vector3.ONE, _steer_node)
-				ends.append(end)
+				_tube(post_top, Vector3(hw * side, rise - 0.03, 0.14), 0.012, mat, Vector3.ONE, _steer_node)
 			_bar_line = PackedVector3Array([Vector3(0.05, 0.02, 0.0), Vector3(0.12, rise, 0.0), Vector3(hw, rise - 0.03, 0.14)])
+			_bar_r = 0.012
 		"MX braced":
 			for side in [-1.0, 1.0]:
 				var mid := Vector3(0.14 * side, rise, 0.0)
-				var end := Vector3(hw * side, rise + 0.03, 0.1)
-				_tube(mid, end, 0.014, mat, Vector3.ONE, _steer_node)
+				_tube(mid, Vector3(hw * side, rise + 0.03, 0.1), 0.014, mat, Vector3.ONE, _steer_node)
 				_tube(Vector3(0.04 * side, 0.02, 0.0), mid, 0.016, mat, Vector3.ONE, _steer_node)
-				ends.append(end)
 			_tube(Vector3(-0.14, rise, 0.0), Vector3(0.14, rise, 0.0), 0.014, mat, Vector3.ONE, _steer_node)
 			_tube(Vector3(-0.12, rise + 0.07, 0.01), Vector3(0.12, rise + 0.07, 0.01), 0.01, mat, Vector3.ONE, _steer_node)
 			_bar_line = PackedVector3Array([Vector3(0.0, rise, 0.0), Vector3(0.14, rise, 0.0), Vector3(hw, rise + 0.03, 0.1)])
+			_bar_r = 0.014
 		_:
 			_tube(Vector3(-hw, rise, 0.06), Vector3(hw, rise, 0.06), 0.012, mat, Vector3.ONE, _steer_node)
 			for side in [-1.0, 1.0]:
 				_tube(Vector3(0.04 * side, 0.0, 0.0), Vector3(0.04 * side, rise, 0.06), 0.014, mat, Vector3.ONE, _steer_node)
-				ends.append(Vector3(hw * side, rise, 0.06))
 			_bar_line = PackedVector3Array([Vector3(0.0, rise, 0.06), Vector3(hw, rise, 0.06)])
+			_bar_r = 0.012
+	if tip == Vector3.ZERO:
+		tip = _bar_line[_bar_line.size() - 1]
+	# The grips go on along the bar's own last run, whichever way it sweeps back or drops there.
+	_bar_tip = tip
+	_bar_out = (tip - _bar_line[_bar_line.size() - 2]).normalized()
 	_tex(rubber, "knurl", 70.0)
-	for end in ends:
-		var inward := Vector3(-signf(end.x) * 0.1, 0.0, 0.0)
-		_tube(end, end + inward, 0.018, rubber, Vector3.ONE, _steer_node).name = "Grip"
+	for side in [-1.0, 1.0]:
+		var end := bar_end(side)
+		var out := bar_out(side)
+		var grip := _tube(end - out * GRIP_LEN, end, GRIP_R, rubber, Vector3.ONE, _steer_node)
+		grip.name = "Grip"
 		# The grip's flange at the inner end.
-		var flange := _mesh_instance(_cylinder(0.022, 0.006), rubber, end + inward, _steer_node)
-		flange.rotation.z = PI * 0.5
-	_grip_l = ends[0] + Vector3(0.05, 0.0, 0.0)
-	_grip_r = ends[1] + Vector3(-0.05, 0.0, 0.0)
-	_draw_controls(ends[0], ends[1])
+		var flange := _mesh_instance(_cylinder(0.022, 0.006), rubber, end - out * GRIP_LEN, _steer_node)
+		flange.basis = _basis_up(out)
+	_grip_l = bar_end(-1.0) - bar_out(-1.0) * GRIP_LEN * 0.5
+	_grip_r = bar_end(1.0) - bar_out(1.0) * GRIP_LEN * 0.5
+	_draw_controls(bar_end(-1.0), bar_end(1.0))
+
+
+## A grip's length (m) from the bar end in, and its radius.
+const GRIP_LEN := 0.1
+const GRIP_R := 0.018
+## How far in from each end a bent bar runs dead straight (m), for the grip and the switches and
+## levers inboard of it to sit on.
+const BAR_STRAIGHT := 0.17
+var _bar_tip := Vector3(0.36, 0.08, 0.06)   # the right-hand bar end, in steering space (the left is its mirror)
+var _bar_out := Vector3.RIGHT   # which way that end points, out along the bar
+var _bar_r := 0.012             # the bar tube's radius out at the ends
+
+
+## The bar's end on `side` (-1 left, 1 right), in steering space.
+func bar_end(side: float) -> Vector3:
+	return Vector3(_bar_tip.x * signf(side), _bar_tip.y, _bar_tip.z)
+
+
+## Which way the bar runs out to its end on `side`, along its axis.
+func bar_out(side: float) -> Vector3:
+	return Vector3(_bar_out.x * signf(side), _bar_out.y, _bar_out.z)
+
+
+## The way the controls on the bar end on `side` sit: X along the bar to the rider's right, Y up
+## off it and Z back towards the rider; a straight, level bar's is no turn at all.
+func _bar_end_basis(side: float) -> Basis:
+	var x := bar_out(side) * signf(side)
+	var z := x.cross(Vector3.UP).normalized()
+	return Basis(x, z.cross(x).normalized(), z)
 
 
 ## A one-piece bar bent to the shape its look names in "bend": tracker, moto, drag, buckhorn,
 ## z, t (one fat post in the middle), clubman (dropping below the clamp) or ape. "pull" is how
 ## far the ends come back to the rider, "drop" how far they fall at the tips, "risers" the
 ## height of the risers under the clamp, "brace" an MX cross bar (with a "pad" on it) and
-## "thick" the tube. Returns the left and right bar ends.
-func _bent_bar(lk: Dictionary, hw: float, rise: float, mat: Material) -> Array:
+## "thick" the tube. Each end runs straight for BAR_STRAIGHT, the way it sweeps there, for the
+## grip and the levers. Returns the right-hand bar end.
+func _bent_bar(lk: Dictionary, hw: float, rise: float, mat: Material) -> Vector3:
 	var bend := str(lk.get("bend", "tracker"))
 	var pull := float(lk.get("pull", 0.08))
 	var drop := float(lk.get("drop", 0.0))
@@ -2420,13 +2468,16 @@ func _bent_bar(lk: Dictionary, hw: float, rise: float, mat: Material) -> Array:
 			right = [Vector3(0.0, rh, 0.0), Vector3(0.09, rh, 0.0), Vector3(0.12, rh + rise * 0.6, -0.01), Vector3(0.14, rh + rise, 0.02), Vector3(hw * 0.8, rh + rise, pull * 0.7), Vector3(hw, rh + rise - drop - 0.02, pull)]
 		_:
 			right = [Vector3(0.0, rh, 0.0), Vector3(0.1, rh, 0.0), Vector3(0.18, rh + rise * 0.8, pull * 0.4), Vector3(hw, rh + rise - drop, pull)]
+	right = _straight_ends(right)
 	var path := []
 	for i in range(right.size() - 1, 0, -1):
 		var q: Vector3 = right[i]
 		path.append(Vector3(-q.x, q.y, q.z))
 	path.append_array(right)
 	_bend(path, thick, mat, _steer_node, 10)
-	_bar_line = PackedVector3Array(right)
+	# The bar's line as drawn (smoothed as _bend smooths it), the middle out to the right end.
+	var drawn := ShapeKit.smooth(path, 6)
+	_bar_line = PackedVector3Array(drawn.slice((right.size() - 1) * 6))
 	if bend == "t":
 		_tube(Vector3(0.0, -0.01, 0.0), Vector3(0.0, rh + rise, 0.0), 0.022, mat, Vector3.ONE, _steer_node)
 	elif rh > 0.025:
@@ -2435,13 +2486,49 @@ func _bent_bar(lk: Dictionary, hw: float, rise: float, mat: Material) -> Array:
 	else:
 		_box(Vector3(0.0, rh, 0.0), Vector3(0.1, 0.03, 0.04), _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35), _steer_node)
 	if lk.get("brace", false):
-		var by := rh + maxf(rise, 0.02) * 0.7
-		_tube(Vector3(-0.13, by, pull * 0.3), Vector3(0.13, by, pull * 0.3), 0.009, mat, Vector3.ONE, _steer_node)
+		# The cross brace, its ends on the bar part way up its bend (where it's risen 60% of the
+		# way to the end), and never further out than 0.16.
+		var top := float(right[right.size() - 1].y)
+		var at := _bar_at_x(0.16)
+		for i in range(1, _bar_line.size()):
+			if _bar_line[i].y >= lerpf(rh, top, 0.6) and _bar_line[i].x <= 0.16:
+				at = _bar_line[i]
+				break
+		_tube(Vector3(-at.x, at.y, at.z), at, 0.009, mat, Vector3.ONE, _steer_node)
 		if lk.get("pad", false):
-			var pad := _mesh_instance(_capsule(0.025, 0.2), _mat(_accent(Color(0.9, 0.1, 0.1)), 0.0, 0.8), Vector3(0.0, by + 0.005, pull * 0.3), _steer_node)
+			var pad := _mesh_instance(_capsule(0.025, 0.2), _mat(_accent(Color(0.9, 0.1, 0.1)), 0.0, 0.8), Vector3(0.0, at.y + 0.005, at.z), _steer_node)
 			pad.rotation.z = PI * 0.5
+	return right[right.size() - 1]
+
+
+## A bent bar's right half (`right`, the middle out to the end) with its end made straight for
+## BAR_STRAIGHT: the way the bar heads into its end (swept back no more than about 30 degrees and
+## dropped or raised no more than about 20, as real bars are), the bends inside that taken out,
+## and two points on that line so the smoothing (see ShapeKit.smooth) keeps it straight.
+static func _straight_ends(right: Array) -> Array:
 	var tip: Vector3 = right[right.size() - 1]
-	return [Vector3(-tip.x, tip.y, tip.z), tip]
+	var prev: Vector3 = right[right.size() - 2]
+	var dx := maxf(tip.x - prev.x, 0.02)
+	var out := Vector3(1.0, clampf((tip.y - prev.y) / dx, -0.35, 0.25), clampf((tip.z - prev.z) / dx, -0.1, 0.6)).normalized()
+	var start := tip - out * BAR_STRAIGHT
+	var lead := tip - out * (BAR_STRAIGHT + 0.03)
+	var kept := [right[0]]
+	for i in range(1, right.size() - 1):
+		var q: Vector3 = right[i]
+		if q.x < lead.x - 0.015:
+			kept.append(q)
+	kept.append_array([lead, start, tip])
+	return kept
+
+
+## The point on the right half of the bar `x` out from the middle (steering space).
+func _bar_at_x(x: float) -> Vector3:
+	for i in range(1, _bar_line.size()):
+		var a := _bar_line[i - 1]
+		var b := _bar_line[i]
+		if b.x >= x and a.x <= x:
+			return a.lerp(b, (x - a.x) / maxf(b.x - a.x, 0.0001))
+	return _bar_line[_bar_line.size() - 1]
 
 
 ## A finish from a look ("chrome", "black", "brushed", "titanium", "gold", "copper", "carbon",
@@ -2670,37 +2757,44 @@ func _draw_controls(l_end: Vector3, r_end: Vector3) -> void:
 	var black := _mat(Color(0.05, 0.05, 0.055), 0.2, 0.5)
 	var cable := _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6)
 	var steel := _mat(Color(0.82, 0.83, 0.85), 1.0, 0.2)
-	var inward_l := Vector3(1.0, 0.0, 0.0)
+	# Everything sits on the bar's own line at each end (see _bar_end_basis): `bl` and `br` turn
+	# the offsets from a straight, level bar onto it.
+	var bl := _bar_end_basis(-1.0)
+	var br := _bar_end_basis(1.0)
 	# Switch gear housings just inboard of each grip, and the throttle tube on the right.
-	var sw_l := l_end + inward_l * 0.118
-	_box(sw_l, Vector3(0.03, 0.042, 0.048), black, _steer_node).name = "SwitchGear"
-	_box(sw_l + Vector3(0.0, 0.005, -0.026), Vector3(0.016, 0.01, 0.006), _mat(Color(0.85, 0.1, 0.06), 0.1, 0.4), _steer_node)
-	var thr := r_end - inward_l * 0.103
+	var sw_l := l_end + bl * Vector3(0.118, 0.0, 0.0)
+	var sw := _box(sw_l, Vector3(0.03, 0.042, 0.048), black, _steer_node)
+	sw.name = "SwitchGear"
+	sw.basis = bl
+	var button := _box(sw_l + bl * Vector3(0.0, 0.005, -0.026), Vector3(0.016, 0.01, 0.006), _mat(Color(0.85, 0.1, 0.06), 0.1, 0.4), _steer_node)
+	button.basis = bl
+	var thr := r_end + br * Vector3(-0.103, 0.0, 0.0)
 	var housing := _mesh_instance(_cylinder(0.022, 0.022), black, thr, _steer_node)
-	housing.rotation.z = PI * 0.5
+	housing.basis = _basis_up(br.x)
 	housing.name = "Throttle"
-	_box(thr + Vector3(0.0, 0.02, 0.0), Vector3(0.02, 0.016, 0.03), black, _steer_node)
+	_box(thr + br * Vector3(0.0, 0.02, 0.0), Vector3(0.02, 0.016, 0.03), black, _steer_node).basis = br
 	# Bar-end weights.
-	for be in [l_end, r_end]:
-		var out := Vector3(signf(be.x), 0.0, 0.0)
-		var w := _mesh_instance(_cylinder(0.017, 0.022), steel, be + out * 0.008, _steer_node)
-		w.rotation.z = PI * 0.5
+	for side in [-1.0, 1.0]:
+		var out := bar_out(side)
+		var w := _mesh_instance(_cylinder(0.017, 0.022), steel, bar_end(side) + out * 0.008, _steer_node)
+		w.basis = _basis_up(out)
 		w.name = "BarEnd"
 	# The clutch lever: a clamp on the bar, the blade sweeping out in front of the grip.
-	var perch := l_end + inward_l * 0.152
+	var perch := l_end + bl * Vector3(0.152, 0.0, 0.0)
 	var clamp := _mesh_instance(_cylinder(0.019, 0.026), alloy, perch, _steer_node)
-	clamp.rotation.z = PI * 0.5
-	_box(perch + Vector3(0.0, 0.0, -0.026), Vector3(0.026, 0.02, 0.028), alloy, _steer_node)
-	var blade := _bend([perch + Vector3(0.0, -0.004, -0.04), perch + Vector3(-0.04, -0.008, -0.05), l_end + Vector3(0.025, -0.012, -0.045)],
+	clamp.basis = _basis_up(bl.x)
+	_box(perch + bl * Vector3(0.0, 0.0, -0.026), Vector3(0.026, 0.02, 0.028), alloy, _steer_node).basis = bl
+	var lever_tip := l_end + bl * Vector3(0.025, -0.012, -0.045)
+	var blade := _bend([perch + bl * Vector3(0.0, -0.004, -0.04), perch + bl * Vector3(-0.04, -0.008, -0.05), lever_tip],
 		0.0055, alloy, _steer_node, 6)
 	blade.name = "ClutchLever"
-	_mesh_instance(_sphere(0.009), alloy, l_end + Vector3(0.023, -0.012, -0.045), _steer_node)
+	_mesh_instance(_sphere(0.009), alloy, l_end + bl * Vector3(0.023, -0.012, -0.045), _steer_node)
 	# Cables: out of the perch and the throttle, down past the headstock.
 	var j_l := -_steer_axis * 0.24 + Vector3(-0.055, 0.0, 0.035)
 	var j_r := -_steer_axis * 0.24 + Vector3(0.055, 0.0, 0.035)
-	var c1 := _bike_only(_bend([perch + Vector3(0.012, 0.0, -0.05), perch.lerp(j_l, 0.35) + Vector3(0.0, 0.03, -0.14), j_l], 0.0042, cable, _steer_node, 6))
+	var c1 := _bike_only(_bend([perch + bl * Vector3(0.012, 0.0, -0.05), perch.lerp(j_l, 0.35) + Vector3(0.0, 0.03, -0.14), j_l], 0.0042, cable, _steer_node, 6))
 	c1.name = "ClutchCable"
-	var c2 := _bike_only(_bend([thr + Vector3(-0.01, 0.0, -0.02), thr.lerp(j_r, 0.35) + Vector3(0.0, 0.03, -0.14), j_r], 0.0042, cable, _steer_node, 6))
+	var c2 := _bike_only(_bend([thr + br * Vector3(-0.01, 0.0, -0.02), thr.lerp(j_r, 0.35) + Vector3(0.0, 0.03, -0.14), j_r], 0.0042, cable, _steer_node, 6))
 	c2.name = "ThrottleCable"
 	# ...then on in the frame to the clutch arm and the carbs or throttle bodies.
 	var jl := _head + j_l
@@ -2743,23 +2837,25 @@ func _draw_front_master() -> void:
 	_current_slot = "front_master"
 	var mat := _tex(_mat(_col(), 0.6, 0.35), "brushed", -1.0, 0.6)
 	var radial := str(_part().get("type", "")).begins_with("Radial")
-	var at := _grip_r + Vector3(-0.08, 0.0, 0.0)
-	_box(at, Vector3(0.04, 0.04, 0.05) if radial else Vector3(0.035, 0.035, 0.035), mat, _steer_node)
+	# On the bar's own line just inboard of the grip (see _bar_end_basis), its reservoir upright.
+	var br := _bar_end_basis(1.0)
+	var at := _grip_r + br * Vector3(-0.08, 0.0, 0.0)
+	_box(at, Vector3(0.04, 0.04, 0.05) if radial else Vector3(0.035, 0.035, 0.035), mat, _steer_node).basis = br
 	var res := _mesh_instance(_cylinder(0.022 if radial else 0.018, 0.03), mat, at + Vector3(0.0, 0.04, 0.0), _steer_node)
 	res.name = "Reservoir"
 	_mesh_instance(_cylinder(0.02 if radial else 0.016, 0.004), _mat(Color(0.05, 0.05, 0.05), 0.2, 0.5), at + Vector3(0.0, 0.057, 0.0), _steer_node)
 	# The lever: a shaped blade with a ball end, in front of the grip.
-	var tip := _grip_r + Vector3(0.06, -0.012, -0.05)
-	var blade := _bend([at + Vector3(0.0, -0.004, -0.03), at + Vector3(0.04, -0.008, -0.05), tip], 0.0055,
+	var tip := _grip_r + br * Vector3(0.06, -0.012, -0.05)
+	var blade := _bend([at + br * Vector3(0.0, -0.004, -0.03), at + br * Vector3(0.04, -0.008, -0.05), tip], 0.0055,
 		_tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), "brushed"), _steer_node, 6)
 	blade.name = "BrakeLever"
 	_mesh_instance(_sphere(0.009), _mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), tip, _steer_node)
 	# The brake hose (or cable, for a drum) from the master down to the fork leg.
 	var line := _mat(Color(0.03, 0.03, 0.035), 0.1, 0.55) if _front_is_drum() else _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4)
 	var j := _brake_line_joint()
-	var hose := _bike_only(_bend([at + Vector3(0.0, -0.01, -0.025), at.lerp(j, 0.3) + Vector3(0.0, 0.0, -0.16), j], 0.005 if not _front_is_drum() else 0.0042, line, _steer_node, 8))
+	var hose := _bike_only(_bend([at + br * Vector3(0.0, -0.01, -0.025), at.lerp(j, 0.3) + Vector3(0.0, 0.0, -0.16), j], 0.005 if not _front_is_drum() else 0.0042, line, _steer_node, 8))
 	hose.name = "BrakeHose"
-	_mesh_instance(_cylinder(0.0075, 0.016), _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2), at + Vector3(0.0, -0.01, -0.03), _steer_node)
+	_mesh_instance(_cylinder(0.0075, 0.016), _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2), at + br * Vector3(0.0, -0.01, -0.03), _steer_node)
 
 
 func _draw_rear_master() -> void:
@@ -4710,44 +4806,123 @@ func _draw_mirrors() -> void:
 	if style == "fairing" and fairing.is_empty():
 		style = "sport"   # nothing to bolt to (a loose part on its own): shown as stalks
 	for side in [-1.0, 1.0]:
-		var grip: Vector3 = _grip_r if side > 0.0 else _grip_l
-		var base := Vector3(grip.x * 0.55, grip.y + 0.01, grip.z - 0.02)
 		match style:
 			"bar_end":
-				var end := grip + Vector3(0.06 * side, 0.0, 0.0)
-				var head := end + Vector3(0.07 * side, -0.04, -0.01)
-				_tube(end, head, 0.008, mat, Vector3.ONE, _steer_node)
-				_mirror_head(head, Vector2(0.045, 0.0), mat, glass, _steer_node)
+				# Out of the bar end past its weight, the head hung out and down a little behind it.
+				var from := bar_end(side) + bar_out(side) * 0.019
+				var head := from + bar_out(side) * 0.012 + Vector3(0.06 * side, -0.035, 0.05)
+				_mirror_on_stalk(from, head, Vector2(0.045, 0.0), 0.008, mat, glass, _steer_node)
 			"sport":
-				var head := base + Vector3(0.13 * side, 0.1, -0.08)
-				_tube(base, head, 0.007, mat, Vector3.ONE, _steer_node)
-				_mirror_head(head, Vector2(0.13, 0.06), mat, glass, _steer_node)
+				var from := _mirror_clamp(side, mat)
+				_mirror_on_stalk(from, from + Vector3(0.12 * side, 0.15, 0.0), Vector2(0.13, 0.06), 0.007, mat, glass, _steer_node, MIRROR_RISE)
 			"rect":
-				var head := base + Vector3(0.14 * side, 0.28, -0.02)
-				_tube(base, head, 0.008, mat, Vector3.ONE, _steer_node)
-				_mirror_head(head, Vector2(0.13, 0.09), mat, glass, _steer_node)
+				var from := _mirror_clamp(side, mat)
+				_mirror_on_stalk(from, from + Vector3(0.12 * side, 0.27, 0.0), Vector2(0.13, 0.09), 0.008, mat, glass, _steer_node, MIRROR_RISE)
 			"fairing":
 				if fairing.get("frame_mount", false):
 					var wide := 0.27 if str(fairing.get("style", "")) == "touring" else 0.2
 					var h := lamp_position()
-					var head := h + Vector3((wide + 0.05) * side, 0.1, 0.06)
-					_tube(h + Vector3((wide - 0.01) * side, 0.08, 0.04), head, 0.01, mat)
-					_mirror_head(head, Vector2(0.11, 0.055), mat, glass, self)
+					_mirror_on_stalk(h + Vector3((wide - 0.01) * side, 0.08, 0.04), h + Vector3((wide + 0.05) * side, 0.1, 0.06), Vector2(0.11, 0.055),
+						0.01, mat, glass, self)
 				else:
 					var lamp := Vector3(0.0, -0.08, -0.13)
-					var head := lamp + Vector3(0.2 * side, 0.08, 0.05)
-					_tube(lamp + Vector3(0.12 * side, 0.06, 0.03), head, 0.009, mat, Vector3.ONE, _steer_node)
-					_mirror_head(head, Vector2(0.1, 0.05), mat, glass, _steer_node)
+					_mirror_on_stalk(lamp + Vector3(0.12 * side, 0.06, 0.03), lamp + Vector3(0.2 * side, 0.08, 0.05), Vector2(0.1, 0.05),
+						0.009, mat, glass, _steer_node)
 			_:
-				var head := base + Vector3(0.08 * side, 0.2, -0.03)
-				_tube(base, head, 0.007, mat, Vector3.ONE, _steer_node)
-				_mirror_head(head, Vector2(0.05, 0.0), mat, glass, _steer_node)
+				var from := _mirror_clamp(side, mat)
+				_mirror_on_stalk(from, from + Vector3(0.08 * side, 0.2, 0.0), Vector2(0.05, 0.0), 0.007, mat, glass, _steer_node, MIRROR_RISE)
+
+
+## How far in from the bar end a mirror's clamp goes (m, along the bar): inboard of the clutch
+## lever's perch and the brake master cylinder.
+const MIRROR_CLAMP_BACK := 0.18
+## How far a bar-mounted mirror's stalk stands straight up off its clamp before it heads out (m),
+## clear of the levers and the brake's reservoir.
+const MIRROR_RISE := 0.04
+## A mirror head's thickness, back to glass (m).
+const MIRROR_DEPTH := 0.02
+## The stem from a mirror's ball joint into the back of its head (m).
+const MIRROR_STEM := 0.016
+
+
+## A mirror's clamp round the bar on `side`, inboard of the levers: a short collar on the bar's
+## own line and a boss on top. Returns the top of the boss, where the stalk starts (steering space).
+func _mirror_clamp(side: float, mat: Material) -> Vector3:
+	var at: Array = bar_point(minf(MIRROR_CLAMP_BACK, bar_length() - 0.03))
+	var c: Vector3 = at[0]
+	var along: Vector3 = at[1]
+	c.x *= signf(side)
+	along.x *= signf(side)
+	var up := (Vector3.UP - along * along.y).normalized()
+	var collar := _mesh_instance(_cylinder(_bar_r + 0.005, 0.022), mat, c, _steer_node)
+	collar.basis = _basis_up(along)
+	collar.name = "MirrorClamp"
+	var top := c + up * (_bar_r + 0.012)
+	_tube(c, top, 0.009, mat, Vector3.ONE, _steer_node)
+	return top
+
+
+## One mirror: its head at `at` (see _mirror_head) on a stalk `r` thick from `from`, in
+## `parent`'s space, straight up `rise` first if it's given one. The stalk runs from its mount to
+## a ball joint just behind the head, and a short stem goes from that into the middle of the
+## head's back: it never passes into the glass. Where the head, turned to the rider's eyes, would
+## face the stalk coming up to it, it moves back along its face's line until the stalk meets it
+## from behind; failing that, the stalk goes round the rim to the back.
+func _mirror_on_stalk(from: Vector3, at: Vector3, size: Vector2, r: float, mat: Material, glass: Material, parent: Node3D, rise := 0.0) -> void:
+	var path := [from]
+	if rise > 0.0:
+		path.append(from + Vector3.UP * rise)
+	var last: Vector3 = path[path.size() - 1]
+	var need := -(MIRROR_DEPTH * 0.5 + r * 1.5 + 0.012)   # how far behind the head's middle the stalk comes in from
+	for i in 3:
+		var n := _mirror_aim(at, parent).z
+		var depth := (last - at).dot(n)
+		if depth <= need:
+			break
+		at += n * (depth - need)
+	_mirror_head(at, size, mat, glass, parent)
+	var basis := _mirror_aim(at, parent)
+	var back := -basis.z
+	var knuckle := at + back * (MIRROR_DEPTH * 0.5 + MIRROR_STEM)
+	var stem_end := at + back * (MIRROR_DEPTH * 0.5 - 0.004)   # into the shell, well short of the glass
+	var rel := last - at
+	var depth := rel.dot(basis.z)   # above 0: on the glass's side
+	var round_rim := depth > -(MIRROR_DEPTH * 0.5 + r)
+	if round_rim:
+		var flat := rel - basis.z * depth
+		var reach := _mirror_reach(size * _mirror_k) + r + 0.015
+		var round_to := flat.normalized() * maxf(flat.length(), reach) if flat.length() > 0.001 else -basis.y * reach
+		path.append(at + round_to + back * (MIRROR_DEPTH * 0.5 + MIRROR_STEM))
+	path.append(knuckle)
+	for i in path.size() - 1:
+		var stalk := _tube(path[i], path[i + 1], r, mat, Vector3.ONE, parent)
+		stalk.name = "MirrorStalk"
+		if i > 0:
+			_mesh_instance(_sphere(r), mat, path[i], parent)
+	_mesh_instance(_sphere(r * 1.5), mat, knuckle, parent).name = "MirrorJoint"
+	_tube(knuckle, stem_end, r * 0.9, mat, Vector3.ONE, parent).name = "MirrorStem"
+	path.append(stem_end)
+	var m: Dictionary = mirrors[mirrors.size() - 1]
+	m["stalk"] = PackedVector3Array(path)
+	m["stalk_r"] = r
+	m["head"] = Transform3D(basis, at)
+	m["half"] = Vector2.ONE * size.x * _mirror_k if size.y <= 0.0 else size * _mirror_k * 0.5
+	m["on_bars"] = parent == _steer_node
+	m["round_rim"] = round_rim
+
+
+## How far a mirror head of `size` (see _mirror_head, already scaled) reaches from its middle.
+static func _mirror_reach(size: Vector2) -> float:
+	return size.x if size.y <= 0.0 else size.length() * 0.5
 
 
 var _mirror_k := 1.0   # the mirrors' look "size", while they're drawn
 ## Each mirror's glass, for live reflections (see BikeMirrors): {"glass": the glass mesh,
 ## "frame": a node on the glass's face (+Z out towards the rider, X to their right), "size": its
-## width and height}.
+## width and height}, and how it's held (see _mirror_on_stalk): "stalk" (its line from the mount
+## to the stem's end in the head), "stalk_r", "head" (the head's place and turn), "half" (half
+## its width and height, or its radius both ways for a round one), "on_bars" (in steering
+## space, or the model's) and "round_rim" (the stalk had to go round the rim to the back).
 var mirrors: Array = []
 ## Where a rider sets their mirrors to look: back past their shoulder, a little out and level.
 const MIRROR_AIM := Vector3(0.16, 0.0, 1.0)
@@ -5149,12 +5324,14 @@ func _draw_lever_guards() -> void:
 	var mat := _tex(_mat(_col(), 0.2, 0.3), "carbon") if carbon else _tex(_mat(_col(), 0.85, 0.25), "brushed", -1.0, 0.5)
 	var sides := [1.0, -1.0] if str(p.get("style", "brake")) == "pair" else [1.0]
 	for side in sides:
-		var bar_end: Vector3 = (_grip_r if side > 0.0 else _grip_l) + Vector3(0.05 * side, 0.0, 0.0)
-		var boss := _mesh_instance(_cylinder(0.019, 0.016), mat, bar_end + Vector3(0.026 * side, 0.0, 0.0), _steer_node)
-		boss.rotation.z = PI * 0.5
+		# On the bar's own line out past its end (see _bar_end_basis).
+		var end := bar_end(side)
+		var b := _bar_end_basis(side)
+		var boss := _mesh_instance(_cylinder(0.019, 0.016), mat, end + b * Vector3(0.026 * side, 0.0, 0.0), _steer_node)
+		boss.basis = _basis_up(b.x)
 		# Out from the boss, forward past the lever's tip and back in across the front of it.
-		var hoop := _bend([bar_end + Vector3(0.03 * side, -0.004, -0.012), bar_end + Vector3(0.042 * side, -0.01, -0.05),
-			bar_end + Vector3(0.024 * side, -0.014, -0.082), bar_end + Vector3(-0.045 * side, -0.014, -0.09)], 0.0065, mat, _steer_node, 8)
+		var hoop := _bend([end + b * Vector3(0.03 * side, -0.004, -0.012), end + b * Vector3(0.042 * side, -0.01, -0.05),
+			end + b * Vector3(0.024 * side, -0.014, -0.082), end + b * Vector3(-0.045 * side, -0.014, -0.09)], 0.0065, mat, _steer_node, 8)
 		hoop.name = "LeverGuard"
 
 
