@@ -53,6 +53,11 @@ var _foot_want := 0.0
 ## _bake_static), for a bike that's ridden past rather than worked on. How many went, after.
 var baked := false
 var baked_away := 0
+## Which look the bike is drawn in (see BikeLook): "" follows the player's choice in the Debug
+## tab, and a bike drawn that way is drawn again in the other look the moment it changes.
+var look := ""
+var _with_rider := true
+var _stripped := false          # cut down to some of its parts (see strip_to): not drawn again
 
 var _build: BikeBuild
 var _slot_meshes := {}           # slot -> Array of GeometryInstance3D
@@ -213,6 +218,8 @@ var _bends := {}
 ## maps slot -> {rust, dirt, wear, color} and defaults to the build's own condition.
 func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condition = null, with_rider := true) -> void:
 	_build = build
+	_with_rider = with_rider
+	_stripped = false
 	paint = paint_color
 	jacket = paint.darkened(0.45)
 	present = fitted
@@ -6781,8 +6788,31 @@ func wave_amount() -> float:
 	return clampf(_arm_rest.angle_to(now) / 1.2, 0.0, 1.0)
 
 
+func _enter_tree() -> void:
+	add_to_group(BikeLook.GROUP)
+
+
 func _ready() -> void:
 	set_process(_gesture != "" or look_back != 0.0)
+
+
+## The look this bike is drawn in now: its own, or the player's (see BikeLook).
+func drawn_look() -> String:
+	return look if look != "" else BikeLook.current()
+
+
+## Draws the bike again as it is, in the look now chosen (see BikeLook.choose). Loose parts
+## cut down from a bike (strip_to) are left as they are until they're next drawn.
+func redraw_look() -> void:
+	if _build == null or _stripped:
+		return
+	var lit := _highlighted
+	var lamps: Array = _lit.duplicate()
+	var signals: Array = _signals.duplicate()
+	build_from(_build, paint, present, condition, _with_rider)
+	highlight(lit)
+	set_lights(lamps[0], lamps[1], lamps[2])
+	set_signals(signals[0], signals[1], signals[2])
 
 
 func _process(delta: float) -> void:
@@ -7414,6 +7444,7 @@ func _add_box(body: StaticBody3D, xf: Transform3D, size: Vector3) -> void:
 
 ## Frees every mesh that isn't part of `keep`, for showing loose parts on their own.
 func strip_to(keep: Array) -> void:
+	_stripped = true
 	for s in _slot_meshes:
 		if keep.has(s):
 			continue

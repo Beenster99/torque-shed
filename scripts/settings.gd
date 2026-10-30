@@ -54,6 +54,7 @@ var weather_now := "clear"   # the weather when last played, so it carries on ne
 var snap_placement := true # equipment you carry snaps square and flush to walls and corners
 var money_graph_range := "day"   # the money graphs' time unit: minute, hour, day, week, month or year (see MoneyGraph)
 var free_rotate := false   # the rotate keys turn what you hold freely (5 degree taps, smooth held) rather than a quarter a press
+var bike_look := "new"     # how bikes are drawn: "classic" (the bikes as they were) or "new" (the overhaul), see BikeLook
 
 ## Emitted whenever a graphics setting (gfx_*) changes.
 signal graphics_changed
@@ -232,6 +233,9 @@ func load_settings() -> void:
 		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
 		free_rotate = bool(cfg.get_value("building", "free_rotate", free_rotate))
 		money_graph_range = str(cfg.get_value("display", "money_graph", money_graph_range))
+		bike_look = str(cfg.get_value("display", "bike_look", bike_look))
+		if not BikeLook.LOOKS.has(bike_look):
+			bike_look = BikeLook.NEW
 		if not MoneyGraph.RANGES.has(money_graph_range):
 			money_graph_range = MoneyGraph.DEFAULT_RANGE
 		_load_graphics(cfg)
@@ -276,6 +280,7 @@ func save_settings() -> void:
 	cfg.set_value("building", "snap", snap_placement)
 	cfg.set_value("building", "free_rotate", free_rotate)
 	cfg.set_value("display", "money_graph", money_graph_range)
+	cfg.set_value("display", "bike_look", bike_look)
 	for k in GFX_KEYS:
 		cfg.set_value("graphics", k, get(k))
 	cfg.save(PATH)

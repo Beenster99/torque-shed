@@ -982,6 +982,10 @@ func _run_all() -> void:
 	await _t(&"_test_wtt_treads")
 	await _t(&"_test_wtt_angular_tanks")
 	await _t(&"_test_wtt_mudguard_ends")
+	print("The bike look overhaul: the Classic bikes kept as they were, the Classic / New switch")
+	await _t(&"_test_bike_look_classic")
+	await _t(&"_test_bike_look_classic_parts")
+	await _t(&"_test_bike_look_switch")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -23939,6 +23943,29 @@ func _test_dash_modes() -> void:
 
 func _test_dash_cruise() -> void:
 	await _dash_t().test_cruise()
+
+
+# ---------------------------------------------------------------------------- the bike look overhaul (tests/bike_look_tests.gd)
+
+func _bike_look() -> RefCounted:
+	return load("res://tests/bike_look_tests.gd").new(self)
+
+
+func _test_bike_look_classic() -> void:
+	_bike_look().test_classic_unchanged()
+
+
+func _test_bike_look_classic_parts() -> void:
+	_bike_look().test_classic_every_part()
+
+
+func _test_bike_look_switch() -> void:
+	_bike_look().test_switch()
+
+
+## Not in the suite: records the Classic bikes again (see bike_look_tests.gd).
+func _test_bike_look_write_classic() -> void:
+	_bike_look().write_classic()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
