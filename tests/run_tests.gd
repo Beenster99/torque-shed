@@ -844,6 +844,9 @@ func _run_all() -> void:
 	await _t(&"_test_part_colour_retired")
 	await _t(&"_test_part_colour_model")
 	await _t(&"_test_part_colour_random")
+	print("The parts page: its picture in a studio, a tidier detail column, smaller words")
+	await _t(&"_test_parts_page_fits")
+	await _t(&"_test_parts_page_studio")
 	print("Ride anywhere v2: the place's look and sound (T3, T4) and the road network (T6)")
 	await _t(&"_test_place_look_eight_places")
 	await _t(&"_test_place_look_ground")
@@ -24663,6 +24666,20 @@ func _test_part_colour_model() -> void:
 
 func _test_part_colour_random() -> void:
 	_part_colours().test_random_bikes()
+
+
+# ---------------------------------------------------------------------------- the parts page (tests/parts_page_tests.gd)
+
+func _parts_page() -> RefCounted:
+	return load("res://tests/parts_page_tests.gd").new(self)
+
+
+func _test_parts_page_fits() -> void:
+	await _parts_page().test_fits()
+
+
+func _test_parts_page_studio() -> void:
+	await _parts_page().test_studio()
 
 
 # ---------------------------------------------------------------------------- wheels, tyres, tanks and mudguards (tests/wheel_tyre_tank_tests.gd)

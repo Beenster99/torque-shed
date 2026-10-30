@@ -89,16 +89,37 @@ var _bike_style_pick: OptionButton
 ## empty for the factory's own. Set again for each part looked at.
 var look := {}
 var _look_box: VBoxContainer
-var _colour_row: HBoxContainer
-var _second_row: HBoxContainer
+var _colour_row: HFlowContainer
+var _second_row: HFlowContainer
+var _second_line: HBoxContainer
 var _second_label: Label
+var _look_said := ""     # what the status line last said about the colours picked
 var _finish_pick: OptionButton
 var _trim_pick: OptionButton
+
+var _panel: PanelContainer
+
+## The page's text size (the other pages use UITheme's 18), a colour swatch's size, and the width
+## of the colour picker's names.
+const FONT := 15
+const SWATCH := 20
+const LOOK_LABEL := 58
+## The largest the page is drawn, and the room it leaves round itself on a smaller screen.
+const PANEL_MAX := Vector2(1240, 840)
+const PANEL_MARGIN := Vector2(40, 30)
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = UITheme.make()
+	# A step smaller than the other pages, so more of the shop fits on the screen.
+	theme.default_font_size = FONT
+	# And its buttons and pickers a little shorter, for the same reason.
+	for kind in ["Button", "OptionButton"]:
+		for state in ["normal", "hover", "pressed", "focus"]:
+			var sb := theme.get_stylebox(state, kind)
+			sb.content_margin_top = 6
+			sb.content_margin_bottom = 6
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var shade := ColorRect.new()
 	shade.color = Color(0, 0, 0, 0.55)
@@ -108,17 +129,19 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(1080, 760)
+	_panel = panel
 	center.add_child(panel)
+	_fit_panel()
+	get_viewport().size_changed.connect(_fit_panel)
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 12)
+	root.add_theme_constant_override("separation", 8)
 	panel.add_child(root)
 	var head := HBoxContainer.new()
-	head.add_child(UITheme.title("PARTS COMPUTER"))
+	head.add_child(UITheme.title("PARTS COMPUTER", 24))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	_bank = UITheme.label("", 17, Color(0.55, 0.95, 0.55))
+	_bank = UITheme.label("", 15, Color(0.55, 0.95, 0.55))
 	# One line: wrapped in this row it was squeezed to a word per line, which made the header
 	# hundreds of pixels tall and pushed the bottom of every list off the screen.
 	_bank.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -151,7 +174,7 @@ func _ready() -> void:
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
-	root.add_child(UITheme.label("Pick a kind of part, then a model. Sort and filter the list below. Orders arrive in boxes outside the roller door.", 15, Color(1, 1, 1, 0.6)))
+	root.add_child(UITheme.label("Pick a kind of part, then a model. Sort and filter the list below. Orders arrive in boxes outside the roller door.", 13, Color(1, 1, 1, 0.6)))
 
 	var aisles := HBoxContainer.new()
 	aisles.add_theme_constant_override("separation", 8)
@@ -159,7 +182,7 @@ func _ready() -> void:
 		var sb := Button.new()
 		sb.text = SECTIONS[sec]
 		sb.toggle_mode = true
-		sb.custom_minimum_size = Vector2(130, 40)
+		sb.custom_minimum_size = Vector2(120, 34)
 		sb.pressed.connect(_show_section.bind(sec))
 		aisles.add_child(sb)
 		_section_btns[sec] = sb
@@ -168,7 +191,7 @@ func _ready() -> void:
 	aisles.add_child(gap)
 	_search = LineEdit.new()
 	_search.placeholder_text = "Search the shop..."
-	_search.custom_minimum_size = Vector2(360, 40)
+	_search.custom_minimum_size = Vector2(320, 34)
 	_search.clear_button_enabled = true
 	_search.text_changed.connect(func(_t): _refresh_list())
 	aisles.add_child(_search)
@@ -177,7 +200,7 @@ func _ready() -> void:
 	# Sorting and filters for the list of models.
 	var tools := HBoxContainer.new()
 	tools.add_theme_constant_override("separation", 8)
-	tools.add_child(_cell("Sort:", 15, Color(1, 1, 1, 0.7), false))
+	tools.add_child(_cell("Sort:", 13, Color(1, 1, 1, 0.7), false))
 	_sort_pick = OptionButton.new()
 	for key in SORTS:
 		_sort_pick.add_item(SORTS[key])
@@ -187,7 +210,7 @@ func _ready() -> void:
 	var gap2 := Control.new()
 	gap2.custom_minimum_size = Vector2(16, 0)
 	tools.add_child(gap2)
-	tools.add_child(_cell("Fits:", 15, Color(1, 1, 1, 0.7), false))
+	tools.add_child(_cell("Fits:", 13, Color(1, 1, 1, 0.7), false))
 	_bike_pick = OptionButton.new()
 	_bike_pick.custom_minimum_size = Vector2(240, 0)
 	_bike_pick.tooltip_text = "Only show parts that go on this bike as it is now"
@@ -204,7 +227,7 @@ func _ready() -> void:
 	var gap4 := Control.new()
 	gap4.custom_minimum_size = Vector2(16, 0)
 	tools.add_child(gap4)
-	tools.add_child(_cell("Style:", 15, Color(1, 1, 1, 0.7), false))
+	tools.add_child(_cell("Style:", 13, Color(1, 1, 1, 0.7), false))
 	_style_pick = OptionButton.new()
 	_style_pick.custom_minimum_size = Vector2(170, 0)
 	_style_pick.tooltip_text = "Only show parts that suit this style of bike"
@@ -220,35 +243,44 @@ func _ready() -> void:
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_theme_constant_override("separation", 14)
 	root.add_child(cols)
-	_kinds = _column(cols, 220)
-	_variants = _column(cols, 360)
+	_kinds = _column(cols, 200)
+	_variants = _column(cols, 330)
+	# The part picked: its picture on top, then its name, what it is (scrolling if it's long),
+	# the colours to order it in, and the Order button, always at the bottom.
 	var detail := VBoxContainer.new()
+	detail.name = "Detail"
 	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail.add_theme_constant_override("separation", 10)
+	detail.add_theme_constant_override("separation", 8)
 	cols.add_child(detail)
-	_title = UITheme.title("", 24, Color.WHITE)
+	# The part picked, turning in 3D in a little photo studio (drag it to turn it yourself).
+	preview = PartPreview.new()
+	preview.use_studio()
+	preview.custom_minimum_size = Vector2(0, 150)
+	preview.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview.size_flags_stretch_ratio = 2.2
+	detail.add_child(preview)
+	_title = UITheme.title("", 20, Color.WHITE)
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	detail.add_child(_title)
-	# The part picked, turning in 3D (drag it to turn it yourself).
-	preview = PartPreview.new()
-	detail.add_child(preview)
 	# The words under it scroll, so a long description never pushes the page off the screen.
 	var info_scroll := ScrollContainer.new()
+	info_scroll.name = "Info"
 	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	info_scroll.custom_minimum_size = Vector2(0, 60)
 	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	detail.add_child(info_scroll)
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.add_theme_constant_override("separation", 10)
+	info.add_theme_constant_override("separation", 8)
 	info_scroll.add_child(info)
-	_desc = UITheme.label("", 17)
-	info.add_child(_desc)
-	_spec = UITheme.label("", 16, UITheme.ACCENT)
+	_spec = UITheme.label("", 13, UITheme.ACCENT)
 	info.add_child(_spec)
-	_build_look_box(info)
+	_desc = UITheme.label("", 14)
+	info.add_child(_desc)
+	_build_look_box(detail)
 	_sizes = HBoxContainer.new()
 	_sizes.add_theme_constant_override("separation", 6)
-	_sizes.add_child(UITheme.label("Size:", 16))
+	_sizes.add_child(UITheme.label("Size:", 14))
 	for key in Equipment.POSTER_SIZE_ORDER:
 		var sb := Button.new()
 		sb.text = str(Equipment.POSTER_SIZES[key]["name"])
@@ -259,11 +291,11 @@ func _ready() -> void:
 		_size_btns[key] = sb
 	_sizes.visible = false
 	detail.add_child(_sizes)
-	_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
+	_status = UITheme.label("", 13, Color(1, 1, 1, 0.7))
 	detail.add_child(_status)
 	_order = Button.new()
 	_order.text = "Order it"
-	_order.custom_minimum_size = Vector2(0, 48)
+	_order.custom_minimum_size = Vector2(0, 40)
 	_order.pressed.connect(order)
 	detail.add_child(_order)
 
@@ -288,6 +320,14 @@ func _ready() -> void:
 	add_child(upgrades_panel)
 	bike_card = ProjectOrderCard.new()
 	add_child(bike_card)
+
+
+## The page as big as PANEL_MAX, or the screen less a margin round it if that's smaller.
+func _fit_panel() -> void:
+	if _panel == null or not is_inside_tree():
+		return
+	var room := get_viewport().get_visible_rect().size - PANEL_MARGIN * 2.0
+	_panel.custom_minimum_size = Vector2(minf(PANEL_MAX.x, room.x), minf(PANEL_MAX.y, room.y))
 
 
 ## Opens the Garage upgrades page over the shop.
@@ -365,9 +405,9 @@ func _show_section(sec: String) -> void:
 		c.queue_free()
 	var first := ""
 	for g in groups_of(sec):
-		var head := UITheme.label(str(g[0]).to_upper(), 13, UITheme.ACCENT)
+		var head := UITheme.label(str(g[0]).to_upper(), 12, UITheme.ACCENT)
 		if _kinds.get_child_count() > 0:
-			head.custom_minimum_size = Vector2(0, 26)
+			head.custom_minimum_size = Vector2(0, 24)
 			head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 		_kinds.add_child(head)
 		for k in g[1]:
@@ -394,7 +434,7 @@ func _refresh_list() -> void:
 	for c in _variants.get_children():
 		c.queue_free()
 	var found := search(q)
-	_variants.add_child(UITheme.label("%d FOUND" % found.size(), 14, UITheme.ACCENT))
+	_variants.add_child(UITheme.label("%d FOUND" % found.size(), 12, UITheme.ACCENT))
 	for hit in found.slice(0, 80):
 		var k := str(hit["kind"])
 		var id := str(hit["id"])
@@ -420,7 +460,7 @@ func _row(id: String, title: String, price: String, sub: String) -> Button:
 	b.toggle_mode = true
 	b.set_meta("part", id)
 	b.tooltip_text = title
-	b.custom_minimum_size = Vector2(0, 50)
+	b.custom_minimum_size = Vector2(0, 44)
 	b.clip_contents = true
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -434,12 +474,12 @@ func _row(id: String, title: String, price: String, sub: String) -> Button:
 	var top := HBoxContainer.new()
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(top)
-	var name_l := _cell(title, 16, Color.WHITE)
+	var name_l := _cell(title, 14, Color.WHITE)
 	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_l)
 	if price != "":
-		top.add_child(_cell(price, 16, Color(0.55, 0.95, 0.55), false))
-	box.add_child(_cell(sub, 13, Color(1, 1, 1, 0.55)))
+		top.add_child(_cell(price, 14, Color(0.55, 0.95, 0.55), false))
+	box.add_child(_cell(sub, 12, Color(1, 1, 1, 0.55)))
 	return b
 
 
@@ -645,17 +685,17 @@ func _show_kind(k: String) -> void:
 		filters.append("suit %s" % PartsDB.style_phrase(style_filter))
 	if not filters.is_empty():
 		head += ": " + " and ".join(filters).to_upper()
-	var count := UITheme.label(head, 13, Color(1, 1, 1, 0.55))
+	var count := UITheme.label(head, 12, Color(1, 1, 1, 0.55))
 	_variants.add_child(count)
 	for id in ids:
 		if k == "engine" and sort_key == "shop" and str(PartsDB.get_part(id).get("type", "")) != group:
 			# Engines come in families: a heading over each layout's sizes.
 			group = str(PartsDB.get_part(id).get("type", ""))
-			_variants.add_child(UITheme.label(group.to_upper(), 14, UITheme.ACCENT))
+			_variants.add_child(UITheme.label(group.to_upper(), 12, UITheme.ACCENT))
 		if k == "wheel" and sort_key == "shop" and wheel_group(id) != group:
 			# Wheels by rim size, smallest first: a heading over each diameter.
 			group = wheel_group(id)
-			_variants.add_child(UITheme.label(group, 14, UITheme.ACCENT))
+			_variants.add_child(UITheme.label(group, 12, UITheme.ACCENT))
 		var title := str(Equipment.get_model(id)["name"]) if k.begins_with("eq:") else PartsDB.part_name(id)
 		var b := _row(id, title, price_text(k, id), key_spec(k, id))
 		b.pressed.connect(_pick_part.bind(id))
@@ -667,9 +707,9 @@ func _show_kind(k: String) -> void:
 	_posters_shown = Shed.posters.size()
 	if k == "eq:poster":
 		# The crew's own whiteboard drawings, saved as posters at the board.
-		_variants.add_child(UITheme.label("FROM THE WHITEBOARD", 14, UITheme.ACCENT))
+		_variants.add_child(UITheme.label("FROM THE WHITEBOARD", 12, UITheme.ACCENT))
 		if Shed.posters.is_empty():
-			var none := UITheme.label("None yet: press {board_poster} at the whiteboard to make one.", 14, Color(1, 1, 1, 0.5))
+			var none := UITheme.label("None yet: press {board_poster} at the whiteboard to make one.", 13, Color(1, 1, 1, 0.5))
 			none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_variants.add_child(none)
 		for d in Shed.posters:
@@ -974,43 +1014,61 @@ func order() -> void:
 
 # ---------------------------------------------------------------------------- the colour picker
 
-## The colour picker under a part's spec: a row of the paint shop's colours for the part, its
-## finish, and a row for its second colour (or a list of finishes for an exhaust's headers).
+## The colour picker under a part's words, three short lines: the paint shop's colours for the
+## part, its second colour (or a list of finishes for an exhaust's headers), and its finish. The
+## swatches wrap onto another line when the page is narrow.
 func _build_look_box(parent: Control) -> void:
 	_look_box = VBoxContainer.new()
-	_look_box.add_theme_constant_override("separation", 6)
+	_look_box.name = "Look"
+	_look_box.add_theme_constant_override("separation", 5)
 	parent.add_child(_look_box)
-	_look_box.add_child(UITheme.label("Colour:", 16))
-	_colour_row = HBoxContainer.new()
-	_colour_row.add_theme_constant_override("separation", 3)
-	_look_box.add_child(_colour_row)
-	var finish_row := HBoxContainer.new()
-	finish_row.add_theme_constant_override("separation", 8)
-	finish_row.add_child(UITheme.label("Finish:", 16))
-	_finish_pick = OptionButton.new()
-	_finish_pick.add_item("As it comes")
-	for f in Shed.FINISHES:
-		_finish_pick.add_item(str(Shed.FINISH_NAMES.get(f, f.capitalize())))
-	_finish_pick.item_selected.connect(func(i): pick_finish("" if i == 0 else Shed.FINISHES[i - 1]))
-	finish_row.add_child(_finish_pick)
-	_look_box.add_child(finish_row)
-	_second_label = UITheme.label("", 16)
-	_look_box.add_child(_second_label)
-	_second_row = HBoxContainer.new()
-	_second_row.add_theme_constant_override("separation", 3)
-	_look_box.add_child(_second_row)
+	var colour_line := _look_line("Colour:")
+	_colour_row = HFlowContainer.new()
+	_colour_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_colour_row.add_theme_constant_override("h_separation", 3)
+	_colour_row.add_theme_constant_override("v_separation", 3)
+	colour_line.add_child(_colour_row)
+	_second_line = _look_line("")
+	_second_label = _second_line.get_child(0)
+	_second_row = HFlowContainer.new()
+	_second_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_second_row.add_theme_constant_override("h_separation", 3)
+	_second_row.add_theme_constant_override("v_separation", 3)
+	_second_line.add_child(_second_row)
 	_trim_pick = OptionButton.new()
 	_trim_pick.add_item("As it comes")
 	for h in PartColours.HEADERS:
 		_trim_pick.add_item(str(PartColours.HEADER_NAMES[h]))
 	_trim_pick.item_selected.connect(func(i): pick_trim("" if i == 0 else PartColours.HEADERS[i - 1]))
-	_look_box.add_child(_trim_pick)
+	_second_line.add_child(_trim_pick)
+	var finish_line := _look_line("Finish:")
+	_finish_pick = OptionButton.new()
+	_finish_pick.add_item("As it comes")
+	for f in Shed.FINISHES:
+		_finish_pick.add_item(str(Shed.FINISH_NAMES.get(f, f.capitalize())))
+	_finish_pick.item_selected.connect(func(i): pick_finish("" if i == 0 else Shed.FINISHES[i - 1]))
+	finish_line.add_child(_finish_pick)
 	_look_box.visible = false
+
+
+## One line of the colour picker: its name in a column of its own, then what's added after it.
+func _look_line(what: String) -> HBoxContainer:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	var l := _cell(what, 13, Color(0.85, 0.87, 0.9), false)
+	l.custom_minimum_size = Vector2(LOOK_LABEL, 0)
+	line.add_child(l)
+	_look_box.add_child(line)
+	return line
 
 
 ## A part looked at: the picker set back to how the factory makes it, shown if it has colours to pick.
 func _fill_look(id: String) -> void:
 	look = {}
+	# The colours picked for the last part aren't this one's.
+	if _look_said != "" and _status.text == _look_said:
+		_status.text = ""
+	_look_said = ""
 	var on := not _kind.begins_with("eq:") and not _kind.begins_with("sell:") and not _kind.begins_with("paint:") \
 		and PartColours.pickable(id)
 	_look_box.visible = on
@@ -1020,6 +1078,7 @@ func _fill_look(id: String) -> void:
 	_trim_pick.select(0)
 	_fill_swatches(_colour_row, PartsDB.default_color(id), "As it comes", pick_colour)
 	var second := PartColours.second_of(id)
+	_second_line.visible = second != ""
 	_second_label.visible = second != ""
 	_second_label.text = "%s:" % str(PartColours.SECOND_NAMES.get(second, ""))
 	_second_row.visible = second != "" and second != "header"
@@ -1033,7 +1092,7 @@ func _fill_look(id: String) -> void:
 
 ## A row of swatches: the factory's own (`first`, named `first_name`) and then each paint colour;
 ## pressing one calls `picked` with its colour (null for the factory's).
-func _fill_swatches(row: HBoxContainer, first: Color, first_name: String, picked: Callable) -> void:
+func _fill_swatches(row: Container, first: Color, first_name: String, picked: Callable) -> void:
 	for c in row.get_children():
 		c.queue_free()
 	var group := ButtonGroup.new()
@@ -1048,7 +1107,7 @@ func _swatch(c: Color, tip: String, group: ButtonGroup, on_press: Callable, pres
 	b.button_group = group
 	b.button_pressed = pressed
 	b.tooltip_text = tip
-	b.custom_minimum_size = Vector2(22, 22)
+	b.custom_minimum_size = Vector2(SWATCH, SWATCH)
 	b.focus_mode = Control.FOCUS_ALL
 	for state in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
 		var sb := StyleBoxFlat.new()
@@ -1109,6 +1168,9 @@ func _relook() -> void:
 		preview.show_part(_part, {} if look.is_empty() else cond)
 	if not look.is_empty():
 		_status.text = "In %s." % PartColours.text(cond, _part).to_lower()
+		_look_said = _status.text
+	elif _status.text == _look_said:
+		_status.text = ""
 
 
 ## A kind picked (A on a pad, or a click): its parts list, with the pad's focus on the first.
@@ -1208,7 +1270,7 @@ static func paint_supplies(k: String) -> Array:
 func _show_paint_supplies(k: String) -> void:
 	var codes := paint_supplies(k)
 	_paint_shown = str(PaintBay.stock())
-	_variants.add_child(UITheme.label("FOR THE MIXING BAY, FROM THE GARAGE'S MONEY", 13, Color(1, 1, 1, 0.55)))
+	_variants.add_child(UITheme.label("FOR THE MIXING BAY, FROM THE GARAGE'S MONEY", 12, Color(1, 1, 1, 0.55)))
 	for code in codes:
 		var c := str(code)
 		var lock := PaintBay.locked(Shed.me(), c)
@@ -1259,11 +1321,11 @@ func _sell_signature(k: String) -> String:
 func _show_sellables(k: String) -> void:
 	var keys := sellables(k)
 	_sell_shown = ",".join(keys)
-	_variants.add_child(UITheme.label("%d TO SELL" % keys.size(), 14, UITheme.ACCENT))
+	_variants.add_child(UITheme.label("%d TO SELL" % keys.size(), 12, UITheme.ACCENT))
 	if keys.is_empty():
 		var none := UITheme.label("Bikes are sold from the showroom: stand one on a display stand in the sales office. "
 			+ "The office PC upstairs prices it for buyers; it can be sold to the trade from here." if k == "sell:bikes" else
-			"No loose parts. Take parts off a bike, or put them down in the shed, to sell them.", 14, Color(1, 1, 1, 0.5))
+			"No loose parts. Take parts off a bike, or put them down in the shed, to sell them.", 13, Color(1, 1, 1, 0.5))
 		none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_variants.add_child(none)
 		_title.text = kind_title(k)
