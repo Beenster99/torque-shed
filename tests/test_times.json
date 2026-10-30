@@ -661,5 +661,12 @@
 	"_test_history_points": 600,
 	"_test_history_looks": 1500,
 	"_test_history_features": 50,
-	"_test_history_regions": 12000
+	"_test_history_regions": 12000,
+	"_test_ferry_links": 60,
+	"_test_ferry_plan": 250,
+	"_test_ferry_nav": 200,
+	"_test_ferry_crew": 5,
+	"_test_ferry_timeline": 15,
+	"_test_ferry_kits": 120,
+	"_test_ferry_lay_out": 60
 }

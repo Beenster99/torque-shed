@@ -173,23 +173,25 @@ static func plan(region: RealRegion, request: Dictionary, progress := Callable()
 		if stops.size() > 0 and not links.joined(region.component[n], region.component[stops[0]]):
 			return _fail("There is no way by road between those places.")
 		stops.append(n)
-	var steps: Array[Vector3i] = []
-	var ferries: Array = []   # [[the step the crossing comes before, link, the terminal it's boarded at], ...]
+	var raw_steps: Array[Vector3i] = []
+	var cuts: Array = []   # [[the raw step a crossing comes before, link, the terminal it's boarded at], ...]
 	for i in stops.size() - 1:
 		var leg = _leg(region, stops[i], stops[i + 1], costs, links)
 		if leg == null:
 			return _fail("There is no way by road between those places.")
-		# (each stretch of road between crossings has its short out-and-backs taken out on its own)
-		var cuts: Array = leg["ferries"]
-		var lo := 0
-		for k in cuts.size() + 1:
-			var hi: int = int(cuts[k][0]) if k < cuts.size() else (leg["steps"] as Array).size()
-			var piece: Array[Vector3i] = []
-			piece.assign((leg["steps"] as Array).slice(lo, hi))
-			steps.append_array(strip_spurs(region, piece))
-			if k < cuts.size():
-				ferries.append([steps.size(), int(cuts[k][1]), int(cuts[k][2])])
-			lo = hi
+		for c: Array in leg["ferries"]:
+			cuts.append([raw_steps.size() + int(c[0]), int(c[1]), int(c[2])])
+		raw_steps.append_array(leg["steps"])
+	# (each stretch of road between crossings has its short out-and-backs taken out on its own: with none, the whole)
+	var steps: Array[Vector3i] = []
+	var ferries: Array = []   # [[the step the crossing comes before, link, the terminal it's boarded at], ...]
+	var lo := 0
+	for k in cuts.size() + 1:
+		var hi: int = int(cuts[k][0]) if k < cuts.size() else raw_steps.size()
+		steps.append_array(strip_spurs(region, raw_steps.slice(lo, hi)))
+		if k < cuts.size():
+			ferries.append([steps.size(), int(cuts[k][1]), int(cuts[k][2])])
+		lo = hi
 	if steps.is_empty():
 		return _fail("Those pins are the same place: pin somewhere else to get to.")
 	parts["roads"] = Time.get_ticks_msec() - t0
