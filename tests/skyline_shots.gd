@@ -94,7 +94,7 @@ func _ready() -> void:
 					holder.add_child(b_mi)
 					for wire: Vector3 in Skyline.SUPPORTS[m]["wires"]:
 						var span := (a * wire).distance_to(b * wire)
-						w.catenary(a * wire, b * wire, span * (0.03 if gap > 30.0 else 0.015), 0.03, Color(0.23, 0.24, 0.25))
+						w.catenary(a * wire, b * wire, span * (0.03 if gap > 30.0 else 0.015), 0.02 if gap > 30.0 else 0.007, Color(0.23, 0.24, 0.25))
 			if name == "small":
 				for cabin: String in ["gondola", "chair", "cable_car", "tbar"]:
 					var c := MeshInstance3D.new()

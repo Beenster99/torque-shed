@@ -16,7 +16,7 @@ extends RefCounted
 ## Every model is built here from boxes and lathes, vertex coloured, with one shared shader (SHADER): the blades turn
 ## in it and the lamps are lit and blink in it (red aviation lamps blink together by the clock, so a crew sees them in
 ## step). The wires have a shader of their own (WIRE_SHADER): never drawn thinner than about a pixel, but fainter the
-## less of that pixel a real wire would cover, so a line is a fine thread close by and fades out over a kilometre or so.
+## less of that pixel a real wire would cover, so a line is a fine thread close by and fades out within a few hundred metres (a pylon's further).
 
 ## Bumped when what a block lays out changes (the kit library's rows are hashed by the streamer already).
 const VERSION := 1
@@ -1499,31 +1499,35 @@ void fragment() {
 
 ## The wires (and the fences in the same mesh, drawn as they are). A wire is a strip across the camera's view of it,
 ## never thinner than a pixel and a half, as faint as the share of that pixel the real wire would cover; close by it keeps a
-## little more than that, fading out between NEAR and FAR m, so a line reads as a thread and never as a bold dark stroke,
+## little more than that, fading out from NEAR m (the thicker the wire, the further), so a line reads as a thread and never as a bold dark stroke,
 ## nor where several line up with the eye.
 const WIRE_SHADER := """
 shader_type spatial;
 render_mode cull_disabled, blend_mix, depth_draw_never, shadows_disabled;
 
-const float NEAR = 200.0;
-const float FAR = 1200.0;
-const float FAINT = 0.3;    // the least a wire is shown at, out to NEAR
+const float NEAR = 100.0;
+const float FAR = 600.0;    // (m for each cm of the wire's radius: a pole's thin wires go first, a pylon's carry on)
+const float MIN_PX = 1.5;   // the narrowest strip drawn (px): a thinner one breaks up into dots
 varying float cover;
 
 void vertex() {
 	cover = 1.0;
 	if (UV2.x > 3.5) {
+		// (worked out on the screen, in pixels: the wire's own width there, and the strip drawn across it)
 		vec4 c = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
 		vec3 d = (MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
-		vec3 across = cross(d, c.xyz);
-		vec3 side = length(across) > 1e-6 ? normalize(across) : vec3(1.0, 0.0, 0.0);
+		vec4 p = PROJECTION_MATRIX * c;
+		vec4 q = PROJECTION_MATRIX * (c + vec4(d, 0.0));
+		vec2 along = (q.xy / q.w - p.xy / p.w) * VIEWPORT_SIZE;
+		vec2 across = length(along) > 1e-6 ? vec2(-along.y, along.x) / length(along) : vec2(0.0, 1.0);
 		float far = max(-c.z, 0.01);
-		float pixel = 2.0 * far / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y);
-		float w = max(UV2.y, pixel * 0.75);   // (a pixel and a half across: a thinner strip breaks up into dots)
-		c.xyz += side * UV.x * w;
-		POSITION = PROJECTION_MATRIX * c;
+		float real = UV2.y * 2.0 * PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y * 0.5 / far;   // the wire's width (px)
+		float drawn = max(real, MIN_PX);
+		p.xy += across * UV.x * drawn / VIEWPORT_SIZE * p.w;
+		POSITION = p;
 		NORMAL = vec3(0.0, 1.0, 0.0);
-		cover = clamp(max(UV2.y / w, FAINT * (1.0 - smoothstep(NEAR, FAR, far))), 0.0, 1.0);
+		float faint = min(0.15 + UV2.y * 5.0, 0.3);   // the least it is shown at, out to NEAR: a pole's 0.19, a pylon's 0.25
+		cover = clamp(max(real / drawn, faint * (1.0 - smoothstep(NEAR, max(FAR * UV2.y * 100.0, NEAR + 1.0), far))), 0.0, 1.0);
 	} else {
 		POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
 	}
