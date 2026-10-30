@@ -134,8 +134,16 @@
   "bench": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:bench",
+    "reach": 350
+   },
+   "regions": {
+    "mediterranean": {
+     "style": "stone"
+    },
+    "north_africa_middle_east": {
+     "style": "stone"
+    }
    }
   },
   "blowhole": {
@@ -159,8 +167,22 @@
   "bollard": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:bollard",
+    "reach": 250
+   },
+   "regions": {
+    "british_isles": {
+     "style": "white"
+    },
+    "nordic": {
+     "style": "white"
+    },
+    "mediterranean": {
+     "style": "stone"
+    },
+    "north_africa_middle_east": {
+     "style": "stone"
+    }
    }
   },
   "border_control": {
@@ -231,8 +253,26 @@
   "bus_stop": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:bus_stop",
+    "reach": 500,
+    "flag": "bus_flag",
+    "shelter": "glass"
+   },
+   "regions": {
+    "british_isles": {},
+    "sub_saharan_africa": {
+     "shelter": "wood",
+     "flag": "bus_flag_pole"
+    },
+    "south_asia": {
+     "flag": "bus_flag_pole"
+    },
+    "latin_america": {
+     "flag": "bus_flag_pole"
+    },
+    "australia_nz": {
+     "shelter": "wood"
+    }
    }
   },
   "cable_car": {
@@ -330,8 +370,8 @@
   "cattle_grid": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:cattle_grid",
+    "reach": 400
    }
   },
   "cave_entrance": {
@@ -425,8 +465,8 @@
   "charging_station": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:charger",
+    "reach": 400
    }
   },
   "city_wall": {
@@ -1064,8 +1104,19 @@
   "gate": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:gate",
+    "reach": 400
+   },
+   "regions": {
+    "north_america": {
+     "style": "metal"
+    },
+    "australia_nz": {
+     "style": "metal"
+    },
+    "nordic": {
+     "style": "metal"
+    }
    }
   },
   "generator": {
@@ -1343,8 +1394,8 @@
   "kissing_gate": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:kissing_gate",
+    "reach": 300
    }
   },
   "level_crossing": {
@@ -1357,8 +1408,8 @@
   "lift_gate": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:lift_gate",
+    "reach": 400
    }
   },
   "light_rail": {
@@ -1731,8 +1782,8 @@
   "picnic_table": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:picnic_table",
+    "reach": 350
    }
   },
   "pier": {
@@ -1802,8 +1853,74 @@
   "post_box": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:post_box",
+    "reach": 350,
+    "style": "box_red",
+    "countries": {
+     "GB": "pillar_red",
+     "IM": "pillar_red",
+     "JE": "pillar_red",
+     "GG": "pillar_red",
+     "IE": "pillar_green",
+     "MT": "pillar_red",
+     "CY": "pillar_yellow",
+     "IN": "pillar_red",
+     "PK": "pillar_red",
+     "LK": "pillar_red",
+     "HK": "pillar_green",
+     "MY": "pillar_red",
+     "SG": "box_red",
+     "AU": "pillar_red",
+     "NZ": "box_red",
+     "ZA": "pillar_red",
+     "KE": "pillar_red",
+     "JP": "pillar_red",
+     "KR": "box_red",
+     "CN": "box_green",
+     "TW": "box_green",
+     "DE": "box_yellow",
+     "AT": "box_yellow",
+     "CH": "box_yellow",
+     "FR": "box_yellow",
+     "ES": "box_yellow",
+     "PL": "box_red",
+     "CZ": "box_orange",
+     "SK": "box_orange",
+     "HU": "box_red",
+     "NL": "box_orange",
+     "BE": "box_red",
+     "LU": "box_yellow",
+     "IT": "box_red",
+     "PT": "pillar_red",
+     "GR": "box_yellow",
+     "SE": "box_yellow",
+     "FI": "box_yellow",
+     "NO": "box_red",
+     "DK": "box_red",
+     "IS": "box_red",
+     "RU": "box_blue",
+     "UA": "box_blue",
+     "RO": "box_yellow",
+     "BG": "box_yellow",
+     "HR": "box_yellow",
+     "SI": "box_yellow",
+     "RS": "box_yellow",
+     "TR": "box_yellow",
+     "US": "drop_blue",
+     "CA": "drop_red",
+     "MX": "box_red",
+     "BR": "box_yellow",
+     "AR": "box_yellow",
+     "CL": "box_red",
+     "MA": "box_yellow",
+     "TN": "box_yellow",
+     "EG": "box_red",
+     "IL": "box_red",
+     "TH": "pillar_red",
+     "VN": "box_yellow",
+     "ID": "box_orange",
+     "PH": "box_red"
+    }
    }
   },
   "power_cable": {
@@ -2311,8 +2428,26 @@
   "region_border": {
    "round": "D8",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "furniture:boundary",
+    "reach": 800,
+    "plate": "white"
+   },
+   "regions": {
+    "north_america": {
+     "plate": "green"
+    },
+    "australia_nz": {
+     "plate": "green"
+    },
+    "latin_america": {
+     "plate": "green"
+    },
+    "mediterranean": {
+     "plate": "brown"
+    },
+    "western_europe": {
+     "plate": "white"
+    }
    }
   },
   "reservoir": {
@@ -2557,8 +2692,8 @@
   "stile": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:stile",
+    "reach": 300
    }
   },
   "storage_tank": {
@@ -2576,8 +2711,46 @@
   "street_lamp": {
    "round": "D9",
    "default": {
-    "model": "standin:post",
-    "reach": 600
+    "model": "furniture:lamp",
+    "reach": 1200,
+    "style": "column",
+    "light": "white"
+   },
+   "regions": {
+    "british_isles": {
+     "light": "white"
+    },
+    "western_europe": {
+     "style": "lantern",
+     "light": "warm"
+    },
+    "mediterranean": {
+     "style": "lantern",
+     "light": "warm"
+    },
+    "eastern_europe": {
+     "style": "concrete",
+     "light": "sodium"
+    },
+    "north_africa_middle_east": {
+     "style": "concrete",
+     "light": "sodium"
+    },
+    "sub_saharan_africa": {
+     "style": "concrete",
+     "light": "sodium"
+    },
+    "south_asia": {
+     "style": "concrete",
+     "light": "sodium"
+    },
+    "latin_america": {
+     "style": "concrete",
+     "light": "sodium"
+    },
+    "north_america": {
+     "light": "warm"
+    }
    }
   },
   "substation": {

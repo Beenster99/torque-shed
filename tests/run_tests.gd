@@ -914,6 +914,10 @@ func _run_all() -> void:
 	await _t(&"_test_history_looks")
 	await _t(&"_test_history_features")
 	await _t(&"_test_history_regions")
+	await _t(&"_test_furniture_models")
+	await _t(&"_test_furniture_points")
+	await _t(&"_test_furniture_mapped")
+	await _t(&"_test_furniture_regions")
 	print("Ride Anywhere v2, phase D round 2: land texture (fields, walls, glass, salt, paddies, quarries, graves, golf)")
 	await _t(&"_test_fields_kits")
 	await _t(&"_test_fields_lay_out")
@@ -23082,6 +23086,26 @@ func _test_history_features() -> void:
 
 func _test_history_regions() -> void:
 	_history().test_regions()
+
+
+func _furniture() -> RefCounted:
+	return load("res://tests/furniture_tests.gd").new(self)
+
+
+func _test_furniture_models() -> void:
+	_furniture().test_models()
+
+
+func _test_furniture_points() -> void:
+	_furniture().test_points()
+
+
+func _test_furniture_mapped() -> void:
+	_furniture().test_mapped()
+
+
+func _test_furniture_regions() -> void:
+	_furniture().test_regions()
 
 
 func _coop() -> RefCounted:

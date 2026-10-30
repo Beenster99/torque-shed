@@ -21,7 +21,7 @@ extends RefCounted
 ## says so) from the kit library, with a default for everywhere; nothing is keyed to a place.
 
 ## Part of what a block lays out: bump it with the look (SceneryStreamer folds the scripts' versions into its own).
-const VERSION := 1
+const VERSION := 2
 ## A cliff's face in pieces this long along its line (m), each the block's whose middle it is in.
 const STEP := 8.0
 ## How far past a road's verge a piece's footprint must be (m: SceneryStreamer.CLEAR's).
@@ -421,6 +421,8 @@ class _Grid:
 				xs.append(a.x + (z - a.y) / (c.y - a.y) * (c.x - a.x))
 				rows[j] = xs
 		var s := share(skin)
+		var before := s.duplicate()
+		var inside := {}   # corner -> true, the ring's own
 		for j: int in rows:
 			var xs: PackedFloat32Array = rows[j]
 			xs.sort()
@@ -428,11 +430,60 @@ class _Grid:
 				var i0 := maxi(ceili((xs[q] - origin.x) / GRID), 0)
 				var i1 := mini(floori((xs[q + 1] - origin.x) / GRID), N - 1)
 				for i in range(i0, i1 + 1):
+					inside[j * N + i] = true
 					if s[j * N + i] < 1.0:
 						s[j * N + i] = 1.0
 						count += 1
+		count += _soften(s, before, inside, rows, ring, stride(skin))
 		skins[skin] = s
 		return count
+
+	## The corners (of the skin's stride) within a cell's width of `ring`'s outline take a share by how far inside
+	## (over a half) or outside (under) it they are, so the sheet's edge, where the shader cuts it at about a half, runs
+	## along the outline rather than in the grid's steps. How far is the nearest of where the outline crosses the
+	## corner's row (`rows`, fill's) and its column: near enough, and only a few sums an edge. A corner keeps any more it
+	## had from another ring (`before`). Returns how many corners outside the ring took some.
+	func _soften(s: PackedFloat32Array, before: PackedFloat32Array, inside: Dictionary, rows: Dictionary,
+			ring: PackedVector2Array, st: int) -> int:
+		var w := GRID * st
+		var nearest := {}   # corner -> m to the outline
+		for j: int in rows:
+			if j % st != 0:
+				continue
+			for x: float in rows[j]:
+				var i0 := maxi(ceili((x - w - origin.x) / (GRID * st)) * st, 0)
+				var i1 := mini(floori((x + w - origin.x) / (GRID * st)) * st, CELLS)
+				for i in range(i0, i1 + 1, st):
+					var q := j * N + i
+					nearest[q] = minf(float(nearest.get(q, INF)), absf(origin.x + i * GRID - x))
+		# (and down each column the same)
+		for k in ring.size():
+			var a := ring[k]
+			var c := ring[(k + 1) % ring.size()]
+			if a.x == c.x:
+				continue
+			var lo := minf(a.x, c.x)
+			var hi := maxf(a.x, c.x)
+			for i in range(maxi(ceili((lo - origin.x) / (GRID * st)) * st, 0), mini(ceili((hi - origin.x) / (GRID * st)) * st - 1, CELLS) + 1, st):
+				var x := origin.x + i * GRID
+				if x < lo or x >= hi:
+					continue
+				var z := a.y + (x - a.x) / (c.x - a.x) * (c.y - a.y)
+				var j0 := maxi(ceili((z - w - origin.y) / (GRID * st)) * st, 0)
+				var j1 := mini(floori((z + w - origin.y) / (GRID * st)) * st, CELLS)
+				for j in range(j0, j1 + 1, st):
+					var q := j * N + i
+					nearest[q] = minf(float(nearest.get(q, INF)), absf(origin.y + j * GRID - z))
+		var out := 0
+		for q: int in nearest:
+			var d: float = nearest[q]
+			if d >= w:
+				continue
+			var v := clampf(0.5 + (d if inside.has(q) else -d) / w * 0.5, 0.0, 1.0)
+			if not inside.has(q) and v > 0.0 and before[q] <= 0.0:
+				out += 1
+			s[q] = maxf(before[q], v)
+		return out
 
 	## The sheets of this grid into `built` ({skin: [verts, normals, colours, uvs, indices]}): the cells (of the skin's
 	## stride) with some of a skin at a corner, every corner's land known and clear of the roads.

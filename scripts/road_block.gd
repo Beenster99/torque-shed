@@ -472,6 +472,8 @@ func _roadside(kit: Dictionary) -> void:
 	var bounds: Array = look.get("bounds", [])
 	var bound_kind := "fence" if bounds.is_empty() else str(bounds[0])
 	var tries: Dictionary = look.get("plants", AdventureChunk.REAL_TRIES)
+	# (where the map has its own walls, lamps and gates, the generic ones stand back: MappedRoadside)
+	var mapped := MappedRoadside.of(net.region)
 	# Everything of the place's that isn't a tree (the canopy has those, _plant): its rocks, bushes, tussock, agave,
 	# cactus and sheep.
 	var near: Array[String] = []
@@ -507,7 +509,7 @@ func _roadside(kit: Dictionary) -> void:
 				var d := dirs[k]
 				for side: float in [-1.0, 1.0]:
 					var xf := _verge_spot(ei, at[k], pts[k], d, (e + 1.0) * side, atan2(-d.x, -d.y), o)
-					if xf != Transform3D():
+					if xf != Transform3D() and not mapped.taken(xf.origin.x + o.x, xf.origin.z + o.z):
 						_put(roadside, "kit_post_" + style, xf)
 		# Rocks, bushes and the rest out from the verge, as many to the metre as the planned road has to a chunk.
 		var len := at[at.size() - 1] - at[0]
@@ -525,7 +527,7 @@ func _roadside(kit: Dictionary) -> void:
 				if rng.randf() < float(odds.get(cover, AdventureChunk.OTHER_ODDS)):
 					var size := rng.randf_range(0.7, 1.35)
 					_stand(t, kind, x, z, 1.0, o, rng, Vector3.ONE * size)
-		_bounds(p, dirs, e, bound_kind, t, o)
+		_bounds(p, dirs, e, bound_kind, t, o, mapped)
 
 
 ## Whether the road at `p` (way `d`, half `e` wide) runs through a built-up place, as RegionKit.built_up has it.
@@ -558,8 +560,9 @@ func _verge_spot(ei: int, s: float, p: Vector3, d: Vector2, lat: float, angle: f
 
 ## Along farmland either side of piece `p` (a good part of the land beside it cropland), a fence (a post every
 ## RoadNet.STEP with two rails between), a dry-stone wall or a hedge (`kind`, the place's look's "bounds"), as the
-## planned road's (AdventureChunk._scenery); broken where a post can't stand (_verge_spot).
-func _bounds(p: Dictionary, dirs: Array[Vector2], e: float, kind: String, t: RealTerrain, o: Vector3) -> void:
+## planned road's (AdventureChunk._scenery); broken where a post can't stand (_verge_spot) and where the map has its own
+## wall, fence or hedge along the road (`mapped`: the scenery draws that one).
+func _bounds(p: Dictionary, dirs: Array[Vector2], e: float, kind: String, t: RealTerrain, o: Vector3, mapped: MappedRoadside) -> void:
 	var pts: PackedVector3Array = p["points"]
 	var at: PackedFloat32Array = p["at"]
 	var ei := int(p["edge"])
@@ -582,7 +585,7 @@ func _bounds(p: Dictionary, dirs: Array[Vector2], e: float, kind: String, t: Rea
 		for k in pts.size():
 			var d := dirs[k]
 			var xf := _verge_spot(ei, at[k], pts[k], d, (e + (4.0 if kind == "fence" else 2.6)) * side, atan2(d.x, d.y), o)
-			if xf == Transform3D():
+			if xf == Transform3D() or mapped.walled(xf.origin.x + o.x, xf.origin.z + o.z):
 				prev = Vector3.INF
 				continue
 			if kind == "fence":
