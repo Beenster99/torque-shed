@@ -270,3 +270,36 @@ func test_finishes() -> void:
 		m.free()
 	check(hottest[0.0] > 0.1 and hottest[0.9] > hottest[0.0] * 2.0 and hottest[0.9] <= 1.0,
 		"a new exhaust shows a little heat colour by the head, a well-used one much more %s" % [hottest])
+
+
+## M2: a part's wear and the brake dust on the wheels ride on its vertices for the shader, and
+## the rain wets every bike at once.
+func test_wear_and_wet() -> void:
+	var seen := {}
+	for wear in [0.0, 0.8]:
+		var cond := {}
+		for s in PartsDB.SLOTS:
+			cond[s] = {"wear": wear}
+		var m := BikeModel.new()
+		m.look = BikeLook.NEW
+		m.baked = true
+		t.add_child(m)
+		m.build_from(BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build("roader"))), Color(0.7, 0.12, 0.1), {}, cond)
+		var most := Vector2.ZERO   # the most wear, and the most dust
+		for mi in m.find_children("*", "MeshInstance3D", true, false):
+			var mesh := (mi as MeshInstance3D).mesh
+			if (mi as MeshInstance3D).material_override != BikeShader.material() or mesh == null:
+				continue
+			var c3 = mesh.surface_get_arrays(0)[Mesh.ARRAY_CUSTOM3]
+			if c3 is PackedFloat32Array:
+				for i in range(0, (c3 as PackedFloat32Array).size(), 4):
+					most = Vector2(maxf(most.x, c3[i + 2]), maxf(most.y, c3[i + 3]))
+		seen[wear] = most
+		m.free()
+	check(seen[0.0] == Vector2.ZERO and is_equal_approx(seen[0.8].x, 0.8) and seen[0.8].y > 0.5,
+		"a fresh bike shows no wear or brake dust, a worn one both %s" % [seen])
+	BikeShader.set_wet(1.0)
+	var wet := float(BikeShader.material().get_shader_parameter("wet"))
+	BikeShader.set_wet(0.0)
+	check(is_equal_approx(wet, 1.0) and is_zero_approx(float(BikeShader.material().get_shader_parameter("wet"))),
+		"the rain wets the bikes, and they dry again")

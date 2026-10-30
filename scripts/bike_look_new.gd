@@ -22,8 +22,13 @@ const CUSTOM_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM
 	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT) \
 	| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT)
 
-## The finishes the bike shader adds its own detail to (see finish_of), as CUSTOM3.x.
+## The finishes the bike shader adds its own detail to (see finish_of), as CUSTOM3.x; CUSTOM3.y
+## is how hot an exhaust runs there, .z how worn the part is (its condition's "wear") and .w the
+## brake dust on a wheel.
 enum Finish { PLAIN, PAINT, METAL_FLAKE, CHROME, ALLOY, BRUSHED, RUBBER, LEATHER, CARBON }
+## The parts brake dust settles on, from the pads' wear and their own.
+const DUSTY := ["front_wheel", "rear_wheel", "front_disc", "rear_disc", "front_caliper", "rear_caliper"]
+
 ## How far from the head an exhaust header colours with heat, in metres, and how much heat a
 ## brand-new pipe shows (a worn one shows it all).
 const HEAT_REACH := 0.3
@@ -57,11 +62,15 @@ static func bake(model: BikeModel) -> int:
 			for s in m.mesh.get_surface_count():
 				var mat := m.get_active_material(s)
 				var look := _look_of(mat, lamps, kits)
+				if not look.is_empty():
+					look["wear"] = _wear(model, slot)
+					if slot in DUSTY:
+						look["dust"] = maxf(_wear(model, slot), _wear(model, "front_pads" if slot.begins_with("front") else "rear_pads"))
 				if slot == "exhaust" and not look.is_empty() and m.get_parent() == model and not model._exhaust_ports.is_empty() \
 						and look["finish"] in [Finish.CHROME, Finish.ALLOY, Finish.BRUSHED]:
 					look = look.duplicate()
 					look["ports"] = model._exhaust_ports
-					look["heat"] = lerpf(HEAT_NEW, 1.0, clampf(float((model.condition.get(slot, {}) as Dictionary).get("wear", 0.0)) if model.condition.get(slot) is Dictionary else 0.0, 0.0, 1.0))
+					look["heat"] = lerpf(HEAT_NEW, 1.0, _wear(model, slot))
 				var key: Array
 				if look.is_empty():
 					key = [slot, m.get_parent(), mat, m.cast_shadow, m.layers, model._stock_pieces.has(mi)]
@@ -219,6 +228,12 @@ static func _can_merge(model: BikeModel, mi, moving: Dictionary) -> bool:
 	return ok
 
 
+## How worn `slot`'s part is, 0..1 (its condition's "wear").
+static func _wear(model: BikeModel, slot: String) -> float:
+	var cond = model.condition.get(slot)
+	return clampf(float((cond as Dictionary).get("wear", 0.0)), 0.0, 1.0) if cond is Dictionary else 0.0
+
+
 ## Whether `slot`'s part keeps a mesh of its own after the bake: something is drawn over just
 ## that part afterwards (dirt, a detailed finish, blasting) or it's moved in geometry mode.
 static func _keeps_own(model: BikeModel, slot: String) -> bool:
@@ -352,6 +367,8 @@ static func _shaded_arrays(pieces: Array) -> Array:
 		var finish := float(look.get("finish", Finish.PLAIN))
 		var ports: Array = look.get("ports", [])
 		var heat := float(look.get("heat", 0.0))
+		var wear := float(look.get("wear", 0.0))
+		var dust := float(look.get("dust", 0.0))
 		for i in v.size():
 			var at := xf * v[i]
 			verts.append(at)
@@ -363,7 +380,7 @@ static func _shaded_arrays(pieces: Array) -> Array:
 			var hot := 0.0
 			for port in ports:
 				hot = maxf(hot, 1.0 - at.distance_to(port) / HEAT_REACH)
-			c3.append_array([finish, clampf(hot, 0.0, 1.0) * heat, 0.0, 0.0])
+			c3.append_array([finish, clampf(hot, 0.0, 1.0) * heat, wear, dust])
 		var idx = arrays[Mesh.ARRAY_INDEX]
 		if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
 			for i in idx:

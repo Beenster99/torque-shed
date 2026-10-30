@@ -11,13 +11,19 @@ class_name BikeShader
 ## coat roughness and the surface texture's depth; CUSTOM2 = the surface texture (a layer of
 ## the kit arrays, or -1), its repeats per metre, and the rust: its level 1..10 for rust mixed
 ## in, minus 5 for patina multiplied in, 0 for none; CUSTOM3 = the finish (BikeLookNew.Finish)
-## and how hot an exhaust header runs there, 0..1.
+## and how hot an exhaust header runs there, 0..1, how worn the part is, 0..1, and the brake dust
+## on it, 0..1.
 ##
 ## Each finish gets the close-up detail its StandardMaterial3D never had: the orange peel in a
 ## clear coat, the flakes glinting under a metallic one, chrome's faint polishing waves, a cast
 ## or polished alloy's grain, rubber's and leather's uneven sheen, and the straw-to-blue heat
 ## colours where an exhaust leaves the head. It's all small next to the part's own colour, so a
 ## bike reads the same from across the road.
+##
+## Wear and weather (M2): a worn part shows it in its own way (chipped paint down to the primer
+## and the steel, dulled and pitted chrome and alloy, faded rubber, scuffed leather), brake dust
+## browns the wheels by worn pads, and rain wets every bike at once (the `wet` uniform, from
+## Weather): darker, glossier surfaces, most on the tops.
 
 const SHADER := "
 shader_type spatial;
@@ -35,6 +41,7 @@ uniform vec4 srgb_probe : source_color = vec4(0.5, 0.5, 0.5, 1.0);
 uniform float min_roughness = 0.08;
 uniform float min_clearcoat_roughness = 0.1;
 uniform float grain_layer = -1.0;
+uniform float wet = 0.0;
 
 varying vec3 tri_w;
 varying vec3 tri_pos;
@@ -44,6 +51,9 @@ varying flat vec4 c2;
 varying flat float finish;
 varying vec3 obj_pos;
 varying float heat;
+varying flat float wear;
+varying flat float dust;
+varying float up;
 
 vec3 to_linear(vec3 c) {
 	if (srgb_probe.r > 0.4) {
@@ -121,6 +131,9 @@ void vertex() {
 	c2 = CUSTOM2;
 	finish = CUSTOM3.x;
 	heat = CUSTOM3.y;
+	wear = CUSTOM3.z;
+	dust = CUSTOM3.w;
+	up = (MODEL_MATRIX * vec4(NORMAL, 0.0)).y;
 	obj_pos = VERTEX;
 	// As Godot's own triplanar material: the texture's axes from the face's facing.
 	TANGENT = normalize(vec3(0.0, 0.0, -1.0) * abs(NORMAL.x) + vec3(1.0, 0.0, 0.0) * abs(NORMAL.y) + vec3(1.0, 0.0, 0.0) * abs(NORMAL.z));
@@ -177,6 +190,43 @@ void fragment() {
 		albedo *= mix(0.66, 1.1, noise(3.0));
 		rough *= mix(0.7, 1.1, noise(9.0));
 	}
+	float coat = c1.y;
+	float coat_rough = c1.z;
+	if (wear > 0.01) {
+		if (f == 1 || f == 2) {
+			// Chipped paint: small flakes gone down to grey primer, the biggest to bare steel;
+			// the clear coat round them scuffed dull.
+			float n = noise(45.0) * 0.5 + noise(2.5) * 0.5;
+			float chip = smoothstep(0.8 - wear * 0.2, 0.82 - wear * 0.2, n);
+			float bare = smoothstep(0.87 - wear * 0.17, 0.89 - wear * 0.17, n);
+			albedo = mix(albedo, mix(vec3(0.42, 0.42, 0.4), vec3(0.55, 0.55, 0.56), bare), chip);
+			metal = mix(metal, bare, chip);
+			rough = mix(rough + wear * 0.15 * noise(7.0), 0.55, chip);
+			coat *= 1.0 - chip;
+			coat_rough = mix(coat_rough, 0.6, wear * noise(5.0));
+		} else if (f == 3 || f == 4 || f == 5) {
+			// Dulled and pitted metal.
+			float n = noise(25.0);
+			rough = mix(rough, rough + 0.35, wear * n);
+			albedo *= 1.0 - wear * 0.2 * smoothstep(0.6, 0.8, noise(60.0));
+		} else if (f == 6) {
+			// Rubber fades grey and goes dry.
+			albedo = mix(albedo, vec3(0.1, 0.1, 0.1), wear * 0.6);
+			rough = mix(rough, 1.0, wear * 0.5);
+		} else if (f == 7) {
+			// Leather and vinyl scuffed pale where it's rubbed.
+			float rub = smoothstep(0.45, 0.75, noise(5.0)) * wear;
+			albedo = mix(albedo, albedo * 1.45 + 0.03, rub);
+			rough = mix(rough, 0.9, rub);
+		}
+	}
+	if (dust > 0.01) {
+		// Brake dust: a brown-grey film, thickest in patches.
+		float k = dust * (0.35 + 0.45 * noise(6.0));
+		albedo = mix(albedo, vec3(0.16, 0.13, 0.1), k);
+		rough = mix(rough, 0.85, k);
+		metal *= 1.0 - k * 0.7;
+	}
 	if (heat > 0.001) {
 		// The temper colours where an exhaust leaves the head, blotchy at the edges.
 		float t = clamp(heat + (noise(12.0) - 0.5) * 0.25, 0.0, 1.0);
@@ -198,12 +248,22 @@ void fragment() {
 			albedo = mix(albedo, mix(albedo, albedo * d.rgb, d.a), mask);
 		}
 	}
+	if (wet > 0.01) {
+		// Rain: everything glossier, porous rubber, leather and fabric darker, most on the tops
+		// where it settles.
+		float w = wet * mix(0.45, 1.0, clamp(up * 0.5 + 0.5, 0.0, 1.0));
+		bool porous = (f == 0 && metal < 0.3) || f == 6 || f == 7;
+		albedo *= porous ? 1.0 - 0.4 * w : 1.0;
+		rough = mix(rough, rough * (porous ? 0.5 : 0.75), w);
+		coat = max(coat, 0.6 * w);
+		coat_rough = mix(coat_rough, 0.05, w);
+	}
 	ALBEDO = albedo;
 	METALLIC = metal;
 	SPECULAR = 0.5;
 	ROUGHNESS = max(rough, min_roughness);
-	CLEARCOAT = c1.y;
-	CLEARCOAT_ROUGHNESS = max(c1.z, min_clearcoat_roughness);
+	CLEARCOAT = coat;
+	CLEARCOAT_ROUGHNESS = max(coat_rough, min_clearcoat_roughness);
 }
 "
 
@@ -242,6 +302,16 @@ static func material() -> ShaderMaterial:
 	_material.set_shader_parameter("min_clearcoat_roughness", BikeModel.MIN_CLEARCOAT_ROUGHNESS)
 	_material.set_shader_parameter("grain_layer", float(_kits.find("grain")))
 	return _material
+
+
+static var _wet := 0.0
+
+## How wet the rain has made every bike, 0..1 (see Weather).
+static func set_wet(amount: float) -> void:
+	if absf(amount - _wet) < 0.005:
+		return
+	_wet = amount
+	material().set_shader_parameter("wet", amount)
 
 
 ## The layer of the kit arrays a TextureKit kind's textures are in, or -1.

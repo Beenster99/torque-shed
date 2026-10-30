@@ -247,6 +247,8 @@ func _apply_effects(delta: float) -> void:
 	if absf(wet - _wet_shown) > 0.01:
 		_wet_shown = wet
 		_soak()
+	# The bikes too, though not in the dry of the shed.
+	BikeShader.set_wet(0.0 if indoors else wet)
 
 
 func _loop_player(sound: String) -> AudioStreamPlayer:
