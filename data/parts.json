@@ -4088,6 +4088,7 @@
 			"width": 130,
 			"aspect": 0.8,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -4124,6 +4125,7 @@
 			"width": 90,
 			"aspect": 0.9,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -4160,6 +4162,7 @@
 			"width": 100,
 			"aspect": 0.9,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -4196,6 +4199,7 @@
 			"width": 110,
 			"aspect": 0.85,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -4232,6 +4236,7 @@
 			"width": 150,
 			"aspect": 0.8,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -4268,6 +4273,7 @@
 			"width": 160,
 			"aspect": 0.6,
 			"style": "road",
+			"tread": "touring",
 			"construction": "radial",
 			"profile": 1.1,
 			"stiffness": 0.95,
@@ -4305,6 +4311,7 @@
 			"width": 110,
 			"aspect": 0.8,
 			"style": "road",
+			"tread": "touring",
 			"construction": "radial",
 			"profile": 1.1,
 			"stiffness": 0.95,
@@ -4342,6 +4349,7 @@
 			"width": 120,
 			"aspect": 0.7,
 			"style": "road",
+			"tread": "touring",
 			"construction": "radial",
 			"profile": 1.1,
 			"stiffness": 0.95,
@@ -4379,6 +4387,7 @@
 			"width": 130,
 			"aspect": 0.7,
 			"style": "road",
+			"tread": "touring",
 			"construction": "radial",
 			"profile": 1.1,
 			"stiffness": 0.95,
@@ -4416,6 +4425,7 @@
 			"width": 150,
 			"aspect": 0.7,
 			"style": "road",
+			"tread": "touring",
 			"construction": "radial",
 			"profile": 1.1,
 			"stiffness": 0.95,
@@ -4453,6 +4463,7 @@
 			"width": 180,
 			"aspect": 0.55,
 			"style": "road",
+			"tread": "touring",
 			"construction": "radial",
 			"profile": 1.1,
 			"stiffness": 0.95,
@@ -4490,6 +4501,7 @@
 			"width": 180,
 			"aspect": 0.55,
 			"style": "road",
+			"tread": "sport",
 			"construction": "radial",
 			"profile": 0.9,
 			"stiffness": 1.05,
@@ -4523,6 +4535,7 @@
 			"width": 120,
 			"aspect": 0.7,
 			"style": "road",
+			"tread": "sport",
 			"construction": "radial",
 			"profile": 0.9,
 			"stiffness": 1.05,
@@ -4556,6 +4569,7 @@
 			"width": 160,
 			"aspect": 0.6,
 			"style": "road",
+			"tread": "sport",
 			"construction": "radial",
 			"profile": 0.9,
 			"stiffness": 1.05,
@@ -4589,6 +4603,7 @@
 			"width": 190,
 			"aspect": 0.55,
 			"style": "road",
+			"tread": "sport",
 			"construction": "radial",
 			"profile": 0.9,
 			"stiffness": 1.05,
@@ -4622,6 +4637,7 @@
 			"width": 200,
 			"aspect": 0.55,
 			"style": "road",
+			"tread": "sport",
 			"construction": "radial",
 			"profile": 0.9,
 			"stiffness": 1.05,
@@ -4655,6 +4671,7 @@
 			"width": 130,
 			"aspect": 0.85,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.85,
@@ -4689,6 +4706,7 @@
 			"width": 90,
 			"aspect": 0.9,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.85,
@@ -4723,6 +4741,7 @@
 			"width": 110,
 			"aspect": 0.8,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.85,
@@ -4757,6 +4776,7 @@
 			"width": 150,
 			"aspect": 0.7,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.85,
@@ -4791,6 +4811,7 @@
 			"width": 170,
 			"aspect": 0.6,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.85,
@@ -4825,6 +4846,7 @@
 			"width": 120,
 			"aspect": 0.9,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.7,
@@ -4858,6 +4880,7 @@
 			"width": 80,
 			"aspect": 1.0,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.7,
@@ -4891,6 +4914,7 @@
 			"width": 90,
 			"aspect": 1.0,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.7,
@@ -4924,6 +4948,7 @@
 			"width": 100,
 			"aspect": 0.95,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.7,
@@ -4957,6 +4982,7 @@
 			"width": 110,
 			"aspect": 0.95,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.7,
@@ -4990,6 +5016,7 @@
 			"width": 140,
 			"aspect": 0.8,
 			"style": "offroad",
+			"tread": "knobs",
 			"construction": "bias",
 			"profile": 1.0,
 			"stiffness": 0.7,
@@ -5181,6 +5208,7 @@
 			"width": 110,
 			"aspect": 0.85,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -5224,6 +5252,7 @@
 			"width": 100,
 			"aspect": 0.9,
 			"style": "road",
+			"tread": "rib",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -5267,6 +5296,7 @@
 			"width": 150,
 			"aspect": 0.8,
 			"style": "road",
+			"tread": "cruiser",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -5311,6 +5341,7 @@
 			"width": 90,
 			"aspect": 0.9,
 			"style": "road",
+			"tread": "cruiser",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -5353,6 +5384,7 @@
 			"width": 130,
 			"aspect": 0.8,
 			"style": "road",
+			"tread": "cruiser",
 			"construction": "bias",
 			"profile": 1.15,
 			"stiffness": 0.8,
@@ -5399,6 +5431,7 @@
 			"width": 90,
 			"aspect": 0.9,
 			"style": "road",
+			"tread": "trail",
 			"construction": "radial",
 			"profile": 1.0,
 			"stiffness": 1.0,
@@ -5433,6 +5466,7 @@
 			"width": 110,
 			"aspect": 0.8,
 			"style": "road",
+			"tread": "trail",
 			"construction": "radial",
 			"profile": 1.0,
 			"stiffness": 1.0,
@@ -5467,6 +5501,7 @@
 			"width": 150,
 			"aspect": 0.7,
 			"style": "road",
+			"tread": "trail",
 			"construction": "radial",
 			"profile": 1.0,
 			"stiffness": 1.0,
@@ -5926,6 +5961,7 @@
 			"width": 240,
 			"aspect": 0.4,
 			"style": "road",
+			"tread": "cruiser",
 			"construction": "radial",
 			"profile": 1.25,
 			"stiffness": 0.95,
@@ -5960,6 +5996,7 @@
 			"width": 300,
 			"aspect": 0.35,
 			"style": "road",
+			"tread": "cruiser",
 			"construction": "radial",
 			"profile": 1.35,
 			"stiffness": 0.95,
@@ -6563,6 +6600,78 @@
 				"adventure"
 			],
 			"pack": "mx"
+		},
+		"angular_gt_19": {
+			"name": "Angular sports-tourer tank, 19 L",
+			"description": "Folded from flat panels with sharp creases: a high front shoulder sloping down to the seat, flat sides and deep knee cut-outs. Modern big-tourer looks with the range to match.",
+			"mass": 4.6,
+			"capacity": 19,
+			"style": "angular",
+			"color": [
+				0.55,
+				0.56,
+				0.58
+			],
+			"price": 340,
+			"look": {
+				"shape": "gt",
+				"cap": "flush",
+				"badge": "none"
+			},
+			"styles": [
+				"tourer",
+				"roader",
+				"naked"
+			],
+			"pack": "tourer"
+		},
+		"angular_naked_15": {
+			"name": "Faceted naked tank, 15 L",
+			"description": "Short and muscular, all hard edges: a tall chest, flat flanks and knee recesses cut in hard. Made for a naked bike.",
+			"mass": 3.4,
+			"capacity": 15,
+			"style": "angular",
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"price": 280,
+			"look": {
+				"shape": "streetfighter",
+				"cap": "flush",
+				"badge": "none"
+			},
+			"styles": [
+				"naked",
+				"roader",
+				"sport"
+			],
+			"pack": "naked"
+		},
+		"angular_sport_17": {
+			"name": "Creased sports tank, 17 L",
+			"description": "A sharp wedge with a crisp crease down each side and room to tuck your knees in.",
+			"mass": 3.6,
+			"capacity": 17,
+			"style": "angular",
+			"color": [
+				0.75,
+				0.08,
+				0.06
+			],
+			"price": 300,
+			"look": {
+				"shape": "wedge",
+				"cap": "flush",
+				"badge": "none"
+			},
+			"styles": [
+				"sport",
+				"naked",
+				"roader"
+			],
+			"pack": "sport"
 		}
 	},
 	"saddle": {
@@ -6752,7 +6861,8 @@
 			},
 			"styles": [
 				"classic",
-				"cruiser"
+				"cruiser",
+				"tourer"
 			],
 			"pack": "classic",
 			"price": 130
@@ -6837,7 +6947,8 @@
 				"cafe",
 				"naked",
 				"scrambler",
-				"bobber"
+				"bobber",
+				"classic"
 			],
 			"pack": "cafe",
 			"price": 130
@@ -7002,7 +7113,9 @@
 			},
 			"styles": [
 				"chopper",
-				"cruiser"
+				"cruiser",
+				"adventure",
+				"roader"
 			],
 			"pack": "chopper",
 			"price": 130
@@ -7030,7 +7143,9 @@
 			},
 			"styles": [
 				"cruiser",
-				"tourer"
+				"tourer",
+				"adventure",
+				"roader"
 			],
 			"pack": "cruiser",
 			"price": 130
@@ -7091,34 +7206,6 @@
 				"bobber"
 			],
 			"pack": "cruiser",
-			"price": 130
-		},
-		"scrambler_ribbed_flat": {
-			"mass": 2.5,
-			"style": "bench",
-			"height": 0.0,
-			"comfort": 0.7,
-			"name": "Flat ribbed scrambler seat",
-			"description": "Long flat seat with ribbed top, tan.",
-			"color": [
-				0.52,
-				0.33,
-				0.17
-			],
-			"look": {
-				"shape": "brat",
-				"pattern": "ribs",
-				"accent": [
-					0.28,
-					0.16,
-					0.09
-				]
-			},
-			"styles": [
-				"scrambler",
-				"classic"
-			],
-			"pack": "scrambler",
 			"price": 130
 		},
 		"scrambler_tracker_seat": {
@@ -7196,223 +7283,10 @@
 			},
 			"styles": [
 				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 130
-		},
-		"mx_blue_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Blue MX seat",
-			"description": "Blue gripper seat with white stripe.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				]
-			},
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 130
-		},
-		"mx_red_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Red MX seat",
-			"description": "Red gripper cover.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 130
-		},
-		"sm_flat_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Flat motard seat",
-			"description": "Long and flat so you can slide around.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.92,
-					0.38,
-					0.04
-				]
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 130
-		},
-		"sm_tracker_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Motard flat-track seat",
-			"description": "Thin with a little hump at the back.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"shape": "flat_track",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
 				"supermoto",
-				"scrambler"
-			],
-			"pack": "supermoto",
-			"price": 130
-		},
-		"sm_red_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Red motard seat",
-			"description": "Red gripper seat, black sides.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 130
-		},
-		"adv_rally_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Rally seat",
-			"description": "Long flat rally seat for moving around.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.3,
-					0.3,
-					0.32
-				]
-			},
-			"styles": [
 				"adventure"
 			],
-			"pack": "adventure",
-			"price": 130
-		},
-		"adv_comfort_seat": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Adventure comfort seat",
-			"description": "Two-piece comfort seat, stepped.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "diamond",
-				"accent": [
-					0.52,
-					0.33,
-					0.17
-				]
-			},
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 130
-		},
-		"adv_two_tone": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Two-tone adventure seat",
-			"description": "Black and grey two-piece seat.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "tuck",
-				"accent": [
-					0.3,
-					0.3,
-					0.32
-				]
-			},
-			"styles": [
-				"adventure",
-				"roader"
-			],
-			"pack": "adventure",
+			"pack": "mx",
 			"price": 130
 		},
 		"sport_solo_red": {
@@ -7464,32 +7338,6 @@
 			"styles": [
 				"sport",
 				"roader"
-			],
-			"pack": "sport",
-			"price": 130
-		},
-		"sport_blue_seat": {
-			"mass": 1.4,
-			"style": "sport",
-			"height": 0.02,
-			"comfort": 0.4,
-			"name": "Sport seat, blue",
-			"description": "Blue suede-look seat.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"pattern": "tuck",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				]
-			},
-			"styles": [
-				"sport"
 			],
 			"pack": "sport",
 			"price": 130
@@ -7564,33 +7412,6 @@
 			"pack": "race",
 			"price": 130
 		},
-		"naked_step_seat": {
-			"mass": 1.4,
-			"style": "sport",
-			"height": 0.02,
-			"comfort": 0.4,
-			"name": "Stepped naked seat",
-			"description": "Stepped two-up seat.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "ribs",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				]
-			},
-			"styles": [
-				"naked"
-			],
-			"pack": "naked",
-			"price": 130
-		},
 		"naked_brat": {
 			"mass": 2.5,
 			"style": "bench",
@@ -7625,7 +7446,7 @@
 			"height": 0.02,
 			"comfort": 0.4,
 			"name": "Naked sport seat",
-			"description": "Grey sport seat.",
+			"description": "Sport seat with contrast stitching, in the colours you pick.",
 			"color": [
 				0.3,
 				0.3,
@@ -7644,34 +7465,6 @@
 				"sport"
 			],
 			"pack": "naked",
-			"price": 130
-		},
-		"roader_comfort": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Roader comfort seat",
-			"description": "Stepped comfort seat.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "diamond",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				]
-			},
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
 			"price": 130
 		},
 		"roader_sport_seat": {
@@ -7696,35 +7489,8 @@
 				]
 			},
 			"styles": [
-				"roader"
-			],
-			"pack": "roader",
-			"price": 130
-		},
-		"roader_brown": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Brown roader seat",
-			"description": "Brown stepped seat.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "tuck",
-				"accent": [
-					0.52,
-					0.33,
-					0.17
-				]
-			},
-			"styles": [
 				"roader",
-				"adventure"
+				"naked"
 			],
 			"pack": "roader",
 			"price": 130
@@ -7754,33 +7520,6 @@
 			},
 			"styles": [
 				"tourer"
-			],
-			"pack": "tourer",
-			"price": 130
-		},
-		"tourer_brown": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Brown touring seat",
-			"description": "Brown deep seat.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"pattern": "tuck",
-				"accent": [
-					0.52,
-					0.33,
-					0.17
-				]
-			},
-			"styles": [
-				"tourer",
-				"cruiser"
 			],
 			"pack": "tourer",
 			"price": 130
@@ -8049,27 +7788,6 @@
 			},
 			"styles": [
 				"cafe"
-			],
-			"pack": "cafe",
-			"price": 85
-		},
-		"cafe_black_clip_ons": {
-			"mass": 1.2,
-			"style": "Clip-ons",
-			"width": 590,
-			"rise": -0.12,
-			"cda": -0.04,
-			"name": "Black clip-ons, swept",
-			"description": "Clip-ons with a sharper sweep back. Committed.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"cafe",
-				"race",
-				"sport"
 			],
 			"pack": "cafe",
 			"price": 85
@@ -8436,8 +8154,8 @@
 			"width": 800,
 			"rise": 0.13,
 			"cda": 0.02,
-			"name": "Braced bar with pad, blue",
-			"description": "Classic braced MX bar with blue pad.",
+			"name": "Braced bar with pad",
+			"description": "Classic braced MX bar with a crossbar pad in the colour you pick.",
 			"color": [
 				0.74,
 				0.75,
@@ -8455,7 +8173,8 @@
 				"pull": 0.06
 			},
 			"styles": [
-				"mx"
+				"mx",
+				"supermoto"
 			],
 			"pack": "mx",
 			"price": 85
@@ -8513,36 +8232,6 @@
 			"styles": [
 				"supermoto",
 				"naked"
-			],
-			"pack": "supermoto",
-			"price": 85
-		},
-		"sm_braced_orange": {
-			"mass": 1.5,
-			"style": "MX braced",
-			"width": 790,
-			"rise": 0.1,
-			"cda": 0.02,
-			"name": "Braced bar, orange pad",
-			"description": "Braced bar with an orange pad.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"bend": "moto",
-				"brace": true,
-				"pad": true,
-				"accent": [
-					0.92,
-					0.38,
-					0.04
-				],
-				"pull": 0.05
-			},
-			"styles": [
-				"supermoto"
 			],
 			"pack": "supermoto",
 			"price": 85
@@ -8648,26 +8337,6 @@
 			"pack": "adventure",
 			"price": 85
 		},
-		"sport_gold_clip": {
-			"mass": 1.2,
-			"style": "Clip-ons",
-			"width": 610,
-			"rise": -0.1,
-			"cda": -0.04,
-			"name": "Gold clip-ons",
-			"description": "Gold anodised clip-ons.",
-			"color": [
-				0.82,
-				0.66,
-				0.25
-			],
-			"styles": [
-				"sport",
-				"race"
-			],
-			"pack": "sport",
-			"price": 85
-		},
 		"sport_raised_clip": {
 			"mass": 1.2,
 			"style": "Clip-ons",
@@ -8709,26 +8378,6 @@
 			"pack": "sport",
 			"price": 85
 		},
-		"race_ti_clips": {
-			"mass": 0.6,
-			"style": "Clip-ons",
-			"width": 600,
-			"rise": -0.11,
-			"cda": -0.045,
-			"lightweight": true,
-			"name": "Titanium clip-ons",
-			"description": "Titanium clip-ons.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 85
-		},
 		"race_black_clips": {
 			"mass": 0.6,
 			"style": "Clip-ons",
@@ -8736,8 +8385,8 @@
 			"rise": -0.12,
 			"cda": -0.045,
 			"lightweight": true,
-			"name": "Black race clip-ons",
-			"description": "Black race clip-ons.",
+			"name": "Race clip-ons",
+			"description": "Light race clip-ons, anodised in the colour you pick.",
 			"color": [
 				0.04,
 				0.04,
@@ -8746,26 +8395,6 @@
 			"styles": [
 				"race",
 				"sport"
-			],
-			"pack": "race",
-			"price": 85
-		},
-		"race_blue_clips": {
-			"mass": 0.6,
-			"style": "Clip-ons",
-			"width": 600,
-			"rise": -0.11,
-			"cda": -0.045,
-			"lightweight": true,
-			"name": "Blue race clip-ons",
-			"description": "Blue anodised clip-ons.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"styles": [
-				"race"
 			],
 			"pack": "race",
 			"price": 85
@@ -8888,30 +8517,6 @@
 			"styles": [
 				"roader",
 				"adventure"
-			],
-			"pack": "roader",
-			"price": 85
-		},
-		"roader_gold": {
-			"mass": 1.4,
-			"style": "Flat",
-			"width": 790,
-			"rise": 0.07,
-			"cda": 0.0,
-			"name": "Gold roader bar",
-			"description": "Gold tapered bar.",
-			"color": [
-				0.82,
-				0.66,
-				0.25
-			],
-			"look": {
-				"bend": "tracker",
-				"thick": 0.016,
-				"pull": 0.06
-			},
-			"styles": [
-				"roader"
 			],
 			"pack": "roader",
 			"price": 85
@@ -9194,7 +8799,14 @@
 				0.63,
 				0.65
 			],
-			"type": "Single"
+			"type": "Single",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"supermoto",
+				"mx"
+			]
 		},
 		"single_450": {
 			"name": "450 cc single",
@@ -9214,7 +8826,13 @@
 				0.56,
 				0.58
 			],
-			"type": "Single"
+			"type": "Single",
+			"styles": [
+				"scrambler",
+				"supermoto",
+				"mx",
+				"adventure"
+			]
 		},
 		"twin_700": {
 			"name": "700 cc parallel twin",
@@ -9234,7 +8852,14 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"cafe",
+				"scrambler",
+				"adventure",
+				"roader"
+			]
 		},
 		"vtwin_900": {
 			"name": "900 cc V-twin",
@@ -9254,7 +8879,40 @@
 				0.12,
 				0.13
 			],
-			"type": "V-twin"
+			"type": "V-twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"cafe"
+			]
+		},
+		"triple_660": {
+			"name": "660 cc inline triple",
+			"description": "Three in a row with a 240 degree crank: smooth, with a warbling howl at the top. Light and nimble.",
+			"mass": 36.0,
+			"layout": "triple",
+			"cylinders": 3,
+			"displacement": 660.0,
+			"bore": 74.0,
+			"stroke": 51.1,
+			"torque_per_cc": 0.096,
+			"peak_torque_rpm": 7800.0,
+			"redline": 10800.0,
+			"idle_rpm": 1300.0,
+			"color": [
+				0.55,
+				0.56,
+				0.58
+			],
+			"type": "Inline triple",
+			"styles": [
+				"naked",
+				"roader",
+				"sport",
+				"adventure"
+			]
 		},
 		"triple_850": {
 			"name": "850 cc inline triple",
@@ -9274,10 +8932,45 @@
 				0.26,
 				0.28
 			],
-			"type": "Inline triple"
+			"type": "Inline triple",
+			"styles": [
+				"naked",
+				"roader",
+				"sport",
+				"adventure",
+				"cafe",
+				"tourer"
+			]
+		},
+		"triple_1100": {
+			"name": "1100 cc inline triple",
+			"description": "Three in a row with a 240 degree crank: smooth, with a warbling howl at the top. Big.",
+			"mass": 54.0,
+			"layout": "triple",
+			"cylinders": 3,
+			"displacement": 1100.0,
+			"bore": 80.0,
+			"stroke": 73.0,
+			"torque_per_cc": 0.106,
+			"peak_torque_rpm": 7600.0,
+			"redline": 10500.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "Inline triple",
+			"styles": [
+				"naked",
+				"roader",
+				"tourer",
+				"adventure",
+				"sport"
+			]
 		},
 		"four_1000": {
-			"name": "1000 cc inline four",
+			"name": "1000 cc crossplane inline four",
 			"description": "Screaming superbike motor.",
 			"mass": 46.0,
 			"layout": "inline",
@@ -9295,47 +8988,12 @@
 				0.11
 			],
 			"type": "Inline four",
-			"crank": "crossplane"
-		},
-		"boxer_50": {
-			"name": "50 cc boxer twin",
-			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Learner-sized.",
-			"mass": 12.5,
-			"layout": "boxer",
-			"cylinders": 2,
-			"displacement": 50.0,
-			"bore": 34.6,
-			"stroke": 26.6,
-			"torque_per_cc": 0.095,
-			"peak_torque_rpm": 8700.0,
-			"redline": 13000.0,
-			"idle_rpm": 1600.0,
-			"color": [
-				0.72,
-				0.73,
-				0.75
-			],
-			"type": "Boxer twin"
-		},
-		"boxer_125": {
-			"name": "125 cc boxer twin",
-			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Learner-sized.",
-			"mass": 16.2,
-			"layout": "boxer",
-			"cylinders": 2,
-			"displacement": 125.0,
-			"bore": 46.9,
-			"stroke": 36.1,
-			"torque_per_cc": 0.095,
-			"peak_torque_rpm": 7950.0,
-			"redline": 11900.0,
-			"idle_rpm": 1450.0,
-			"color": [
-				0.72,
-				0.73,
-				0.75
-			],
-			"type": "Boxer twin"
+			"crank": "crossplane",
+			"styles": [
+				"race",
+				"sport",
+				"naked"
+			]
 		},
 		"boxer_350": {
 			"name": "350 cc boxer twin",
@@ -9355,7 +9013,12 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler"
+			]
 		},
 		"boxer_500": {
 			"name": "500 cc boxer twin",
@@ -9375,7 +9038,12 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler"
+			]
 		},
 		"boxer_600": {
 			"name": "600 cc boxer twin",
@@ -9395,7 +9063,12 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler"
+			]
 		},
 		"boxer_750": {
 			"name": "750 cc boxer twin",
@@ -9415,7 +9088,15 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"roader",
+				"tourer",
+				"adventure"
+			]
 		},
 		"boxer_800": {
 			"name": "800 cc boxer twin",
@@ -9435,7 +9116,15 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"roader",
+				"tourer",
+				"adventure"
+			]
 		},
 		"boxer_1000": {
 			"name": "1000 cc boxer twin",
@@ -9455,7 +9144,15 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"roader",
+				"tourer",
+				"adventure"
+			]
 		},
 		"boxer_1100": {
 			"name": "1100 cc boxer twin",
@@ -9475,7 +9172,13 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
+			"type": "Boxer twin",
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader",
+				"scrambler"
+			]
 		},
 		"boxer_1200": {
 			"name": "1200 cc boxer twin",
@@ -9495,67 +9198,13 @@
 				0.73,
 				0.75
 			],
-			"type": "Boxer twin"
-		},
-		"twin_50": {
-			"name": "50 cc twin",
-			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Learner-sized.",
-			"mass": 11.4,
-			"layout": "twin",
-			"cylinders": 2,
-			"displacement": 50.0,
-			"bore": 31.2,
-			"stroke": 32.8,
-			"torque_per_cc": 0.09,
-			"peak_torque_rpm": 8000.0,
-			"redline": 11600.0,
-			"idle_rpm": 1600.0,
-			"color": [
-				0.66,
-				0.67,
-				0.68
-			],
-			"type": "Twin"
-		},
-		"twin_125": {
-			"name": "125 cc twin",
-			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Learner-sized.",
-			"mass": 15.0,
-			"layout": "twin",
-			"cylinders": 2,
-			"displacement": 125.0,
-			"bore": 42.3,
-			"stroke": 44.5,
-			"torque_per_cc": 0.09,
-			"peak_torque_rpm": 7300.0,
-			"redline": 10600.0,
-			"idle_rpm": 1450.0,
-			"color": [
-				0.66,
-				0.67,
-				0.68
-			],
-			"type": "Twin"
-		},
-		"twin_350": {
-			"name": "350 cc twin",
-			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Light and nimble.",
-			"mass": 25.8,
-			"layout": "twin",
-			"cylinders": 2,
-			"displacement": 350.0,
-			"bore": 59.6,
-			"stroke": 62.7,
-			"torque_per_cc": 0.09,
-			"peak_torque_rpm": 6050.0,
-			"redline": 8800.0,
-			"idle_rpm": 1200.0,
-			"color": [
-				0.66,
-				0.67,
-				0.68
-			],
-			"type": "Twin"
+			"type": "Boxer twin",
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader",
+				"scrambler"
+			]
 		},
 		"twin_500": {
 			"name": "500 cc twin",
@@ -9575,7 +9224,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"bobber"
+			]
 		},
 		"twin_600": {
 			"name": "600 cc twin",
@@ -9595,7 +9250,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"bobber"
+			]
 		},
 		"twin_750": {
 			"name": "750 cc twin",
@@ -9615,7 +9276,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"bobber"
+			]
 		},
 		"twin_800": {
 			"name": "800 cc twin",
@@ -9635,7 +9302,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"bobber"
+			]
 		},
 		"twin_1000": {
 			"name": "1000 cc twin",
@@ -9655,7 +9328,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"tourer"
+			]
 		},
 		"twin_1100": {
 			"name": "1100 cc twin",
@@ -9675,7 +9354,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"tourer"
+			]
 		},
 		"twin_1200": {
 			"name": "1200 cc twin",
@@ -9695,87 +9380,13 @@
 				0.67,
 				0.68
 			],
-			"type": "Twin"
-		},
-		"parallel_50": {
-			"name": "50 cc parallel twin",
-			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Learner-sized.",
-			"mass": 10.2,
-			"layout": "parallel",
-			"cylinders": 2,
-			"displacement": 50.0,
-			"bore": 33.2,
-			"stroke": 28.9,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 10150.0,
-			"redline": 14500.0,
-			"idle_rpm": 1600.0,
-			"color": [
-				0.18,
-				0.18,
-				0.2
-			],
-			"type": "Parallel twin"
-		},
-		"parallel_125": {
-			"name": "125 cc parallel twin",
-			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Learner-sized.",
-			"mass": 13.5,
-			"layout": "parallel",
-			"cylinders": 2,
-			"displacement": 125.0,
-			"bore": 45.1,
-			"stroke": 39.2,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 9300.0,
-			"redline": 13300.0,
-			"idle_rpm": 1450.0,
-			"color": [
-				0.18,
-				0.18,
-				0.2
-			],
-			"type": "Parallel twin"
-		},
-		"parallel_350": {
-			"name": "350 cc parallel twin",
-			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Light and nimble.",
-			"mass": 23.4,
-			"layout": "parallel",
-			"cylinders": 2,
-			"displacement": 350.0,
-			"bore": 63.5,
-			"stroke": 55.2,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 7700.0,
-			"redline": 11000.0,
-			"idle_rpm": 1200.0,
-			"color": [
-				0.18,
-				0.18,
-				0.2
-			],
-			"type": "Parallel twin"
-		},
-		"parallel_500": {
-			"name": "500 cc parallel twin",
-			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Light and nimble.",
-			"mass": 30.0,
-			"layout": "parallel",
-			"cylinders": 2,
-			"displacement": 500.0,
-			"bore": 71.5,
-			"stroke": 62.2,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 7250.0,
-			"redline": 10300.0,
-			"idle_rpm": 1150.0,
-			"color": [
-				0.18,
-				0.18,
-				0.2
-			],
-			"type": "Parallel twin"
+			"type": "Twin",
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"tourer"
+			]
 		},
 		"parallel_600": {
 			"name": "600 cc parallel twin",
@@ -9795,7 +9406,14 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"scrambler"
+			]
 		},
 		"parallel_750": {
 			"name": "750 cc parallel twin",
@@ -9815,7 +9433,14 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"cafe",
+				"scrambler",
+				"adventure",
+				"roader"
+			]
 		},
 		"parallel_800": {
 			"name": "800 cc parallel twin",
@@ -9835,7 +9460,14 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"cafe",
+				"scrambler",
+				"adventure",
+				"roader"
+			]
 		},
 		"parallel_1000": {
 			"name": "1000 cc parallel twin",
@@ -9855,7 +9487,15 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"cafe",
+				"classic",
+				"adventure",
+				"tourer",
+				"roader"
+			]
 		},
 		"parallel_1100": {
 			"name": "1100 cc parallel twin",
@@ -9875,7 +9515,15 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"cafe",
+				"classic",
+				"adventure",
+				"tourer",
+				"roader"
+			]
 		},
 		"parallel_1200": {
 			"name": "1200 cc parallel twin",
@@ -9895,107 +9543,15 @@
 				0.18,
 				0.2
 			],
-			"type": "Parallel twin"
-		},
-		"vtwin_50": {
-			"name": "50 cc V-twin",
-			"description": "Two cylinders in a V. Lumpy, torquey and loud. Learner-sized.",
-			"mass": 12.5,
-			"layout": "vtwin",
-			"cylinders": 2,
-			"displacement": 50.0,
-			"bore": 33.7,
-			"stroke": 28.1,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 8400.0,
-			"redline": 13000.0,
-			"idle_rpm": 1600.0,
-			"color": [
-				0.12,
-				0.12,
-				0.13
-			],
-			"type": "V-twin"
-		},
-		"vtwin_125": {
-			"name": "125 cc V-twin",
-			"description": "Two cylinders in a V. Lumpy, torquey and loud. Learner-sized.",
-			"mass": 16.2,
-			"layout": "vtwin",
-			"cylinders": 2,
-			"displacement": 125.0,
-			"bore": 45.7,
-			"stroke": 38.1,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 7700.0,
-			"redline": 11900.0,
-			"idle_rpm": 1450.0,
-			"color": [
-				0.12,
-				0.12,
-				0.13
-			],
-			"type": "V-twin"
-		},
-		"vtwin_350": {
-			"name": "350 cc V-twin",
-			"description": "Two cylinders in a V. Lumpy, torquey and loud. Light and nimble.",
-			"mass": 27.5,
-			"layout": "vtwin",
-			"cylinders": 2,
-			"displacement": 350.0,
-			"bore": 64.4,
-			"stroke": 53.7,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 6400.0,
-			"redline": 9900.0,
-			"idle_rpm": 1200.0,
-			"color": [
-				0.12,
-				0.12,
-				0.13
-			],
-			"type": "V-twin"
-		},
-		"vtwin_500": {
-			"name": "500 cc V-twin",
-			"description": "Two cylinders in a V. Lumpy, torquey and loud. Light and nimble.",
-			"mass": 35.0,
-			"layout": "vtwin",
-			"cylinders": 2,
-			"displacement": 500.0,
-			"bore": 72.6,
-			"stroke": 60.5,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 6000.0,
-			"redline": 9300.0,
-			"idle_rpm": 1150.0,
-			"color": [
-				0.12,
-				0.12,
-				0.13
-			],
-			"type": "V-twin"
-		},
-		"vtwin_600": {
-			"name": "600 cc V-twin",
-			"description": "Two cylinders in a V. Lumpy, torquey and loud. Middleweight.",
-			"mass": 40.0,
-			"layout": "vtwin",
-			"cylinders": 2,
-			"displacement": 600.0,
-			"bore": 77.1,
-			"stroke": 64.3,
-			"torque_per_cc": 0.1,
-			"peak_torque_rpm": 5800.0,
-			"redline": 9000.0,
-			"idle_rpm": 1100.0,
-			"color": [
-				0.12,
-				0.12,
-				0.13
-			],
-			"type": "V-twin"
+			"type": "Parallel twin",
+			"styles": [
+				"naked",
+				"cafe",
+				"classic",
+				"adventure",
+				"tourer",
+				"roader"
+			]
 		},
 		"vtwin_750": {
 			"name": "750 cc V-twin",
@@ -10015,7 +9571,14 @@
 				0.12,
 				0.13
 			],
-			"type": "V-twin"
+			"type": "V-twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"cafe"
+			]
 		},
 		"vtwin_800": {
 			"name": "800 cc V-twin",
@@ -10035,7 +9598,14 @@
 				0.12,
 				0.13
 			],
-			"type": "V-twin"
+			"type": "V-twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"cafe"
+			]
 		},
 		"vtwin_1000": {
 			"name": "1000 cc V-twin",
@@ -10055,7 +9625,14 @@
 				0.12,
 				0.13
 			],
-			"type": "V-twin"
+			"type": "V-twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"cafe"
+			]
 		},
 		"vtwin_1100": {
 			"name": "1100 cc V-twin",
@@ -10075,7 +9652,14 @@
 				0.12,
 				0.13
 			],
-			"type": "V-twin"
+			"type": "V-twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"cafe"
+			]
 		},
 		"vtwin_1200": {
 			"name": "1200 cc V-twin",
@@ -10095,7 +9679,14 @@
 				0.12,
 				0.13
 			],
-			"type": "V-twin"
+			"type": "V-twin",
+			"styles": [
+				"naked",
+				"sport",
+				"adventure",
+				"roader",
+				"cruiser"
+			]
 		},
 		"vtwin_1500": {
 			"name": "1500 cc V-twin",
@@ -10116,7 +9707,13 @@
 				0.13
 			],
 			"type": "V-twin",
-			"breathing": 0.75
+			"breathing": 0.75,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper",
+				"tourer"
+			]
 		},
 		"vtwin_1800": {
 			"name": "1800 cc V-twin",
@@ -10137,10 +9734,232 @@
 				0.13
 			],
 			"type": "V-twin",
-			"breathing": 0.65
+			"breathing": 0.65,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper",
+				"tourer"
+			]
+		},
+		"vtwin45_750": {
+			"name": "750 cc 45° V-twin",
+			"description": "Narrow 45 degree V-twin, the old American way: long-stroke pushrod pots on one crankpin, so it fires unevenly and idles with a loping potato-potato beat. All torque low down, done early. Middleweight.",
+			"mass": 55.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 750.0,
+			"bore": 85.0,
+			"stroke": 66.1,
+			"torque_per_cc": 0.086,
+			"peak_torque_rpm": 4200.0,
+			"redline": 6800.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "45° V-twin",
+			"breathing": 0.85,
+			"v_angle": 45.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin45_883": {
+			"name": "883 cc 45° V-twin",
+			"description": "Narrow 45 degree V-twin, the old American way: long-stroke pushrod pots on one crankpin, so it fires unevenly and idles with a loping potato-potato beat. All torque low down, done early. Middleweight.",
+			"mass": 60.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 883.0,
+			"bore": 76.2,
+			"stroke": 96.8,
+			"torque_per_cc": 0.08,
+			"peak_torque_rpm": 3800.0,
+			"redline": 6000.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "45° V-twin",
+			"breathing": 0.8,
+			"v_angle": 45.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin45_1200": {
+			"name": "1200 cc 45° V-twin",
+			"description": "Narrow 45 degree V-twin, the old American way: long-stroke pushrod pots on one crankpin, so it fires unevenly and idles with a loping potato-potato beat. All torque low down, done early. Big and heavy.",
+			"mass": 74.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1200.0,
+			"bore": 88.9,
+			"stroke": 96.8,
+			"torque_per_cc": 0.085,
+			"peak_torque_rpm": 3600.0,
+			"redline": 6000.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "45° V-twin",
+			"breathing": 0.75,
+			"v_angle": 45.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin45_1450": {
+			"name": "1450 cc 45° V-twin",
+			"description": "Narrow 45 degree V-twin, the old American way: long-stroke pushrod pots on one crankpin, so it fires unevenly and idles with a loping potato-potato beat. All torque low down, done early. Big and heavy.",
+			"mass": 88.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1450.0,
+			"bore": 95.3,
+			"stroke": 101.6,
+			"torque_per_cc": 0.085,
+			"peak_torque_rpm": 3300.0,
+			"redline": 5600.0,
+			"idle_rpm": 900.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "45° V-twin",
+			"breathing": 0.7,
+			"v_angle": 45.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin45_1800": {
+			"name": "1800 cc 45° V-twin",
+			"description": "Narrow 45 degree V-twin, the old American way: long-stroke pushrod pots on one crankpin, so it fires unevenly and idles with a loping potato-potato beat. All torque low down, done early. Huge and heavy.",
+			"mass": 100.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1800.0,
+			"bore": 101.6,
+			"stroke": 111.1,
+			"torque_per_cc": 0.087,
+			"peak_torque_rpm": 3000.0,
+			"redline": 5400.0,
+			"idle_rpm": 850.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "45° V-twin",
+			"breathing": 0.62,
+			"v_angle": 45.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin60_1000": {
+			"name": "1000 cc 60° V-twin",
+			"description": "60 degree V-twin: a wider V than the old American twins, so it fires more evenly and revs harder, but still pulls like a train from low down. Big.",
+			"mass": 60.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1000.0,
+			"bore": 96.0,
+			"stroke": 69.0,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5600.0,
+			"redline": 8500.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "60° V-twin",
+			"breathing": 0.9,
+			"v_angle": 60.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin60_1200": {
+			"name": "1200 cc 60° V-twin",
+			"description": "60 degree V-twin: a wider V than the old American twins, so it fires more evenly and revs harder, but still pulls like a train from low down. Big and heavy.",
+			"mass": 66.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1200.0,
+			"bore": 99.0,
+			"stroke": 78.0,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5200.0,
+			"redline": 8200.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "60° V-twin",
+			"breathing": 0.85,
+			"v_angle": 60.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
+		},
+		"vtwin60_1500": {
+			"name": "1500 cc 60° V-twin",
+			"description": "60 degree V-twin: a wider V than the old American twins, so it fires more evenly and revs harder, but still pulls like a train from low down. Big and heavy.",
+			"mass": 80.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1500.0,
+			"bore": 108.0,
+			"stroke": 82.0,
+			"torque_per_cc": 0.093,
+			"peak_torque_rpm": 4600.0,
+			"redline": 7200.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "60° V-twin",
+			"breathing": 0.8,
+			"v_angle": 60.0,
+			"styles": [
+				"cruiser",
+				"bobber",
+				"chopper"
+			]
 		},
 		"2stroke_50": {
-			"name": "50 cc two-stroke",
+			"name": "50 cc two-stroke single",
 			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Learner-sized.",
 			"mass": 6.4,
 			"layout": "2stroke",
@@ -10157,10 +9976,14 @@
 				0.76,
 				0.78
 			],
-			"type": "Two-stroke"
+			"type": "Two-stroke",
+			"styles": [
+				"mx",
+				"supermoto"
+			]
 		},
 		"2stroke_125": {
-			"name": "125 cc two-stroke",
+			"name": "125 cc two-stroke single",
 			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Learner-sized.",
 			"mass": 8.5,
 			"layout": "2stroke",
@@ -10177,7 +10000,12 @@
 				0.76,
 				0.78
 			],
-			"type": "Two-stroke"
+			"type": "Two-stroke",
+			"styles": [
+				"mx",
+				"supermoto",
+				"race"
+			]
 		},
 		"2stroke_350": {
 			"name": "350 cc two-stroke twin",
@@ -10197,7 +10025,13 @@
 				0.76,
 				0.78
 			],
-			"type": "Two-stroke"
+			"type": "Two-stroke",
+			"styles": [
+				"race",
+				"sport",
+				"cafe",
+				"classic"
+			]
 		},
 		"2stroke_500": {
 			"name": "500 cc two-stroke twin",
@@ -10217,187 +10051,13 @@
 				0.76,
 				0.78
 			],
-			"type": "Two-stroke"
-		},
-		"2stroke_600": {
-			"name": "600 cc two-stroke twin",
-			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Middleweight.",
-			"mass": 21.8,
-			"layout": "2stroke",
-			"cylinders": 2,
-			"displacement": 600.0,
-			"bore": 72.6,
-			"stroke": 72.6,
-			"torque_per_cc": 0.118,
-			"peak_torque_rpm": 8500.0,
-			"redline": 11000.0,
-			"idle_rpm": 1100.0,
-			"color": [
-				0.75,
-				0.76,
-				0.78
-			],
-			"type": "Two-stroke"
-		},
-		"2stroke_750": {
-			"name": "750 cc two-stroke triple",
-			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Middleweight.",
-			"mass": 26.0,
-			"layout": "2stroke",
-			"cylinders": 3,
-			"displacement": 750.0,
-			"bore": 68.3,
-			"stroke": 68.3,
-			"torque_per_cc": 0.118,
-			"peak_torque_rpm": 8150.0,
-			"redline": 10600.0,
-			"idle_rpm": 1050.0,
-			"color": [
-				0.75,
-				0.76,
-				0.78
-			],
-			"type": "Two-stroke"
-		},
-		"2stroke_800": {
-			"name": "800 cc two-stroke triple",
-			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Middleweight.",
-			"mass": 27.4,
-			"layout": "2stroke",
-			"cylinders": 3,
-			"displacement": 800.0,
-			"bore": 69.8,
-			"stroke": 69.8,
-			"torque_per_cc": 0.118,
-			"peak_torque_rpm": 8050.0,
-			"redline": 10400.0,
-			"idle_rpm": 1050.0,
-			"color": [
-				0.75,
-				0.76,
-				0.78
-			],
-			"type": "Two-stroke"
-		},
-		"2stroke_1000": {
-			"name": "1000 cc two-stroke triple",
-			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Big-bore.",
-			"mass": 33.0,
-			"layout": "2stroke",
-			"cylinders": 3,
-			"displacement": 1000.0,
-			"bore": 75.2,
-			"stroke": 75.2,
-			"torque_per_cc": 0.118,
-			"peak_torque_rpm": 7750.0,
-			"redline": 10000.0,
-			"idle_rpm": 1000.0,
-			"color": [
-				0.75,
-				0.76,
-				0.78
-			],
-			"type": "Two-stroke"
-		},
-		"2stroke_1100": {
-			"name": "1100 cc two-stroke triple",
-			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Big-bore.",
-			"mass": 35.8,
-			"layout": "2stroke",
-			"cylinders": 3,
-			"displacement": 1100.0,
-			"bore": 77.6,
-			"stroke": 77.6,
-			"torque_per_cc": 0.118,
-			"peak_torque_rpm": 7600.0,
-			"redline": 9900.0,
-			"idle_rpm": 1000.0,
-			"color": [
-				0.75,
-				0.76,
-				0.78
-			],
-			"type": "Two-stroke"
-		},
-		"2stroke_1200": {
-			"name": "1200 cc two-stroke triple",
-			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Big-bore.",
-			"mass": 38.6,
-			"layout": "2stroke",
-			"cylinders": 3,
-			"displacement": 1200.0,
-			"bore": 79.9,
-			"stroke": 79.9,
-			"torque_per_cc": 0.118,
-			"peak_torque_rpm": 7500.0,
-			"redline": 9700.0,
-			"idle_rpm": 950.0,
-			"color": [
-				0.75,
-				0.76,
-				0.78
-			],
-			"type": "Two-stroke"
-		},
-		"inline_50": {
-			"name": "50 cc inline four",
-			"description": "Four in a row. Smooth, revvy and screams at the top. Learner-sized.",
-			"mass": 14.0,
-			"layout": "inline",
-			"cylinders": 4,
-			"displacement": 50.0,
-			"bore": 27.8,
-			"stroke": 20.6,
-			"torque_per_cc": 0.098,
-			"peak_torque_rpm": 14500.0,
-			"redline": 18000.0,
-			"idle_rpm": 1600.0,
-			"color": [
-				0.1,
-				0.1,
-				0.11
-			],
-			"type": "Inline four"
-		},
-		"inline_125": {
-			"name": "125 cc inline four",
-			"description": "Four in a row. Smooth, revvy and screams at the top. Learner-sized.",
-			"mass": 17.0,
-			"layout": "inline",
-			"cylinders": 4,
-			"displacement": 125.0,
-			"bore": 37.7,
-			"stroke": 27.9,
-			"torque_per_cc": 0.098,
-			"peak_torque_rpm": 13250.0,
-			"redline": 18000.0,
-			"idle_rpm": 1450.0,
-			"color": [
-				0.1,
-				0.1,
-				0.11
-			],
-			"type": "Inline four"
-		},
-		"inline_350": {
-			"name": "350 cc inline four",
-			"description": "Four in a row. Smooth, revvy and screams at the top. Light and nimble.",
-			"mass": 26.0,
-			"layout": "inline",
-			"cylinders": 4,
-			"displacement": 350.0,
-			"bore": 53.2,
-			"stroke": 39.4,
-			"torque_per_cc": 0.098,
-			"peak_torque_rpm": 11000.0,
-			"redline": 15400.0,
-			"idle_rpm": 1200.0,
-			"color": [
-				0.1,
-				0.1,
-				0.11
-			],
-			"type": "Inline four"
+			"type": "Two-stroke",
+			"styles": [
+				"race",
+				"sport",
+				"cafe",
+				"classic"
+			]
 		},
 		"inline_500": {
 			"name": "500 cc inline four",
@@ -10417,7 +10077,12 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"sport",
+				"race",
+				"naked"
+			]
 		},
 		"inline_600": {
 			"name": "600 cc inline four",
@@ -10437,7 +10102,12 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"sport",
+				"race",
+				"naked"
+			]
 		},
 		"inline_750": {
 			"name": "750 cc inline four",
@@ -10457,7 +10127,13 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"classic"
+			]
 		},
 		"inline_800": {
 			"name": "800 cc inline four",
@@ -10477,7 +10153,13 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"classic"
+			]
 		},
 		"inline_1000": {
 			"name": "1000 cc inline four",
@@ -10497,7 +10179,14 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"sport",
+				"race",
+				"naked",
+				"tourer",
+				"roader"
+			]
 		},
 		"inline_1100": {
 			"name": "1100 cc inline four",
@@ -10517,7 +10206,12 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"tourer",
+				"roader",
+				"naked"
+			]
 		},
 		"inline_1200": {
 			"name": "1200 cc inline four",
@@ -10537,10 +10231,34 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"styles": [
+				"tourer",
+				"roader",
+				"naked"
+			]
 		}
 	},
 	"head": {
+		"one_valve_flathead": {
+			"name": "One-valve flathead head",
+			"description": "Old side-valve style: one valve per cylinder down beside the bore, a flat finned lid on top and no cam up there at all. Low compression and soft, but sips fuel, runs cool and is done by the time the others get going.",
+			"mass_per_cyl": 2.2,
+			"valves": 1,
+			"cam": "Mild",
+			"compression": 6.5,
+			"torque_mult": 0.84,
+			"peak_shift": 0.8,
+			"redline_add": -1500.0,
+			"heat": 0.75,
+			"thirst": 0.8,
+			"color": [
+				0.62,
+				0.63,
+				0.64
+			],
+			"price": 180
+		},
 		"two_valve_stock": {
 			"name": "Two-valve stock head",
 			"description": "Simple pushrod-era head. Easy on fuel.",
@@ -11815,7 +11533,10 @@
 				"can": "tri"
 			},
 			"styles": [
-				"mx"
+				"mx",
+				"supermoto",
+				"adventure",
+				"roader"
 			],
 			"pack": "mx",
 			"price": 420
@@ -11868,57 +11589,6 @@
 			"pack": "supermoto",
 			"price": 420
 		},
-		"sm_high_carbon": {
-			"mass": 4.0,
-			"torque_mult": 1.05,
-			"loudness": 1.05,
-			"style": "full",
-			"route": "upswept",
-			"can": "oval",
-			"name": "High carbon motard can",
-			"description": "Upswept header to a carbon can.",
-			"lightweight": true,
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"header": "titanium",
-				"can": "short",
-				"can_finish": "carbon"
-			},
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 520
-		},
-		"sm_tri_black": {
-			"mass": 4.0,
-			"torque_mult": 1.05,
-			"loudness": 1.05,
-			"style": "full",
-			"route": "upswept",
-			"can": "oval",
-			"name": "Black triangle can",
-			"description": "Black ceramic header to a triangle can.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"header": "black",
-				"can": "tri"
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 420
-		},
 		"adv_high_titanium": {
 			"mass": 4.0,
 			"torque_mult": 1.05,
@@ -11940,31 +11610,6 @@
 			},
 			"styles": [
 				"adventure"
-			],
-			"pack": "adventure",
-			"price": 420
-		},
-		"adv_black_tri": {
-			"mass": 4.0,
-			"torque_mult": 1.05,
-			"loudness": 1.05,
-			"style": "full",
-			"route": "upswept",
-			"can": "oval",
-			"name": "Black triangle adventure can",
-			"description": "Black triangle can.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"header": "black",
-				"can": "tri"
-			},
-			"styles": [
-				"adventure",
-				"roader"
 			],
 			"pack": "adventure",
 			"price": 420
@@ -12014,7 +11659,8 @@
 			},
 			"styles": [
 				"sport",
-				"naked"
+				"naked",
+				"roader"
 			],
 			"pack": "sport",
 			"price": 420
@@ -12164,7 +11810,8 @@
 			},
 			"styles": [
 				"naked",
-				"sport"
+				"sport",
+				"roader"
 			],
 			"pack": "naked",
 			"price": 420
@@ -12237,54 +11884,6 @@
 			"styles": [
 				"roader",
 				"adventure"
-			],
-			"pack": "roader",
-			"price": 420
-		},
-		"roader_carbon": {
-			"mass": 7.0,
-			"torque_mult": 1.02,
-			"loudness": 0.8,
-			"style": "slip",
-			"can": "oval",
-			"name": "Carbon roader can",
-			"description": "Carbon round can.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"can_finish": "carbon",
-				"header": "titanium"
-			},
-			"styles": [
-				"roader",
-				"sport"
-			],
-			"pack": "roader",
-			"price": 420
-		},
-		"roader_stubby": {
-			"mass": 7.0,
-			"torque_mult": 1.02,
-			"loudness": 0.8,
-			"style": "slip",
-			"can": "oval",
-			"name": "Stubby roader can",
-			"description": "Short underbelly can.",
-			"route": "stubby",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"can": "stubby",
-				"header": "black"
-			},
-			"styles": [
-				"roader"
 			],
 			"pack": "roader",
 			"price": 420
@@ -12773,7 +12372,9 @@
 				"race",
 				"adventure",
 				"roader",
-				"tourer"
+				"tourer",
+				"supermoto",
+				"naked"
 			]
 		},
 		"chrome_ring_7": {
@@ -13068,89 +12669,6 @@
 			"pack": "scrambler",
 			"price": 95
 		},
-		"mx_number_lamp": {
-			"mass": 0.8,
-			"type": "Halogen",
-			"style": "plate",
-			"size": 0.08,
-			"lumens": 900,
-			"name": "Number plate lamp",
-			"description": "A small square lamp in a number plate.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 95
-		},
-		"sm_plate_lamp": {
-			"mass": 0.8,
-			"type": "Halogen",
-			"style": "plate",
-			"size": 0.08,
-			"lumens": 900,
-			"name": "Motard number lamp, black",
-			"description": "Small lamp in a black plate.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"sm_led_plate": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "LED motard plate",
-			"description": "Modern LED projector in a slim mask.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto",
-				"naked"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"adv_twin_led": {
-			"mass": 1.8,
-			"type": "Halogen, twin",
-			"style": "twin",
-			"size": 0.06,
-			"lumens": 1600,
-			"name": "Twin rally lamps",
-			"description": "Twin round lamps under a rally screen.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"grille": false
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 95
-		},
 		"adv_quad": {
 			"mass": 1.0,
 			"type": "LED",
@@ -13170,53 +12688,12 @@
 			},
 			"styles": [
 				"adventure",
-				"roader"
+				"roader",
+				"sport",
+				"race",
+				"naked"
 			],
 			"pack": "adventure",
-			"price": 95
-		},
-		"sport_led_twin": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Twin LED projectors",
-			"description": "Twin LED projectors.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 95
-		},
-		"sport_quad_led": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Quad LED cluster",
-			"description": "Four LED cells.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "quad"
-			},
-			"styles": [
-				"sport",
-				"race"
-			],
-			"pack": "sport",
 			"price": 95
 		},
 		"naked_round_led": {
@@ -13240,74 +12717,6 @@
 				"cafe"
 			],
 			"pack": "naked",
-			"price": 95
-		},
-		"naked_quad": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Streetfighter quad lamp",
-			"description": "Four LED cells.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "quad"
-			},
-			"styles": [
-				"naked",
-				"sport"
-			],
-			"pack": "naked",
-			"price": 95
-		},
-		"roader_quad": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Roader quad LED",
-			"description": "Quad LED.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "quad"
-			},
-			"styles": [
-				"roader",
-				"adventure"
-			],
-			"pack": "roader",
-			"price": 95
-		},
-		"roader_twin": {
-			"mass": 1.8,
-			"type": "Halogen, twin",
-			"style": "twin",
-			"size": 0.06,
-			"lumens": 1600,
-			"name": "Roader twin lamps",
-			"description": "Twin round lamps.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
 			"price": 95
 		},
 		"tourer_quad": {
@@ -13781,23 +13190,6 @@
 		}
 	},
 	"ecu": {
-		"stock_ecu": {
-			"name": "Stock ECU",
-			"description": "Basic engine control: fuel and ignition maps, nothing else. No rider aids.",
-			"mass": 0.4,
-			"type": "Engine control only",
-			"features": [],
-			"power": 1.0,
-			"rev_add": 0,
-			"aid_level": 0.0,
-			"color": [
-				0.1,
-				0.1,
-				0.11
-			],
-			"tune_range": 0.35,
-			"limiter_add": 0
-		},
 		"remap_ecu": {
 			"name": "Performance remap ECU",
 			"description": "Hotter maps and a higher rev limit. More power, still no aids.",
@@ -13817,17 +13209,39 @@
 			"tune_range": 1.0,
 			"limiter_add": 800
 		},
-		"abs_ecu": {
-			"name": "ABS controller",
-			"description": "Adds anti-lock brakes front and rear. Stamp on the brakes without locking a wheel.",
-			"mass": 0.9,
-			"type": "ABS",
+		"remap2_ecu": {
+			"name": "Performance 2 remap ECU",
+			"description": "The stage-two map: hotter still, with more room at the top. Ten per cent more power, no aids.",
+			"mass": 0.4,
+			"type": "Remapped, stage two",
 			"features": [
-				"abs"
+				"remap"
+			],
+			"power": 1.1,
+			"rev_add": 600,
+			"aid_level": 0.0,
+			"color": [
+				0.55,
+				0.05,
+				0.05
+			],
+			"tune_range": 1.0,
+			"limiter_add": 1000
+		},
+		"ecu_safety": {
+			"name": "ECU Safety",
+			"description": "ABS, traction control, anti-wheelie and lean-angle traction control in one box. Every aid can be switched and set from the bike's dash as well as on the dyno desk.",
+			"mass": 0.9,
+			"type": "ABS, traction, anti-wheelie, lean-angle traction",
+			"features": [
+				"abs",
+				"traction",
+				"anti_wheelie",
+				"lean_traction"
 			],
 			"power": 1.0,
 			"rev_add": 0,
-			"aid_level": 0.6,
+			"aid_level": 0.75,
 			"color": [
 				0.15,
 				0.15,
@@ -13986,7 +13400,7 @@
 			"cda": 0.025,
 			"material": "leather",
 			"name": "Leather saddlebags, studded",
-			"description": "Tall black leather saddlebags with chrome buckles.",
+			"description": "Tall leather saddlebags with buckles.",
 			"color": [
 				0.04,
 				0.04,
@@ -14003,7 +13417,8 @@
 			"styles": [
 				"cruiser",
 				"bobber",
-				"classic"
+				"classic",
+				"tourer"
 			],
 			"pack": "cruiser",
 			"price": 300
@@ -14015,8 +13430,8 @@
 			"litres": 66,
 			"cda": 0.04,
 			"material": "plastic",
-			"name": "Painted hard saddlebags",
-			"description": "Paint-matched hard bags with a rounded lid. The bagger look.",
+			"name": "Hard saddlebags",
+			"description": "Hard bags with a rounded lid and a trim strip along it. The bagger look.",
 			"color": [
 				0.04,
 				0.04,
@@ -14032,138 +13447,10 @@
 			},
 			"styles": [
 				"cruiser",
-				"tourer"
+				"tourer",
+				"roader"
 			],
 			"pack": "cruiser",
-			"price": 300
-		},
-		"adv_alloy_black": {
-			"mass": 8.5,
-			"type": "Hard, aluminium",
-			"style": "alloy",
-			"litres": 82,
-			"cda": 0.05,
-			"material": "metal",
-			"name": "Black aluminium boxes",
-			"description": "Black anodised alloy cases.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 300
-		},
-		"adv_soft_rolls": {
-			"mass": 3.2,
-			"type": "Soft, roll-top",
-			"style": "roll",
-			"litres": 50,
-			"cda": 0.03,
-			"material": "fabric",
-			"name": "Roll-top soft bags, sand",
-			"description": "Sand-coloured roll-top bags.",
-			"color": [
-				0.68,
-				0.58,
-				0.4
-			],
-			"styles": [
-				"adventure",
-				"scrambler"
-			],
-			"pack": "adventure",
-			"price": 300
-		},
-		"roader_hard_cases": {
-			"mass": 6.5,
-			"type": "Hard, plastic",
-			"style": "hard",
-			"litres": 66,
-			"cda": 0.04,
-			"material": "plastic",
-			"name": "Roader hard cases",
-			"description": "Paint-matched hard cases.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"shape": "hard_top",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
-			"price": 300
-		},
-		"tourer_hard_top": {
-			"mass": 6.5,
-			"type": "Hard, plastic",
-			"style": "hard",
-			"litres": 66,
-			"cda": 0.04,
-			"material": "plastic",
-			"name": "Touring hard cases, top-loaders",
-			"description": "Rounded top-loading cases.",
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"shape": "hard_top",
-				"accent": [
-					0.74,
-					0.75,
-					0.77
-				]
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
-			"price": 300
-		},
-		"tourer_leather": {
-			"mass": 4.0,
-			"type": "Soft, leather",
-			"style": "leather",
-			"litres": 30,
-			"cda": 0.025,
-			"material": "leather",
-			"name": "Brown leather touring bags",
-			"description": "Brown leather saddlebags.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"shape": "saddlebag",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				]
-			},
-			"styles": [
-				"tourer",
-				"cruiser",
-				"classic"
-			],
-			"pack": "tourer",
 			"price": 300
 		},
 		"adv_alloy_trunks_silver": {
@@ -14662,7 +13949,8 @@
 			"styles": [
 				"mx",
 				"supermoto",
-				"adventure"
+				"adventure",
+				"tourer"
 			]
 		},
 		"classic_tombstone_guard": {
@@ -14675,8 +13963,8 @@
 				0.3
 			],
 			"material": "metal",
-			"name": "Chrome guard with tombstone lamp",
-			"description": "Full chrome rear guard with the upright tombstone tail lamp.",
+			"name": "Full guard with tombstone lamp",
+			"description": "Full rear guard with the upright tombstone tail lamp.",
 			"color": [
 				0.86,
 				0.87,
@@ -14866,33 +14154,6 @@
 			"pack": "bobber",
 			"price": 110
 		},
-		"chopper_cateye_stub": {
-			"mass": 2.4,
-			"type": "Steel bobbed fender, side plate",
-			"style": "bobber",
-			"light": "bullet",
-			"light_at": [
-				-0.1,
-				0.2
-			],
-			"material": "metal",
-			"name": "Stub fender, cateye lamp, struts",
-			"description": "Short chopped fender on chrome struts with a cateye lamp.",
-			"color": [
-				0.55,
-				0.02,
-				0.04
-			],
-			"look": {
-				"lamp": "cateye",
-				"struts": true
-			},
-			"styles": [
-				"chopper"
-			],
-			"pack": "chopper",
-			"price": 110
-		},
 		"chopper_sissy_fender": {
 			"mass": 2.4,
 			"type": "Steel bobbed fender, side plate",
@@ -14919,34 +14180,6 @@
 				"cruiser"
 			],
 			"pack": "chopper",
-			"price": 110
-		},
-		"cruiser_ribbed_fender": {
-			"mass": 3.0,
-			"type": "Steel, full length",
-			"style": "classic",
-			"light": "lucas",
-			"light_at": [
-				-0.12,
-				0.3
-			],
-			"material": "metal",
-			"name": "Ribbed fender, tombstone lamp",
-			"description": "A long ribbed rear fender with a tombstone lamp.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "tombstone",
-				"struts": true
-			},
-			"styles": [
-				"cruiser",
-				"classic"
-			],
-			"pack": "cruiser",
 			"price": 110
 		},
 		"cruiser_halo_fender": {
@@ -15036,80 +14269,6 @@
 			"pack": "scrambler",
 			"price": 110
 		},
-		"mx_white_fender": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White MX rear fender",
-			"description": "White plastic rear fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 110
-		},
-		"mx_red_fender": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Red MX rear fender",
-			"description": "Red plastic rear fender.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 110
-		},
-		"sm_white_fender": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White motard tail",
-			"description": "White plastic tail with LED lamp.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 110
-		},
 		"sm_sport_tail": {
 			"mass": 1.1,
 			"type": "Plastic undertray, LED strip",
@@ -15138,55 +14297,6 @@
 			"pack": "supermoto",
 			"price": 110
 		},
-		"adv_rack_tail": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Rack tail with LED",
-			"description": "Rear fender with an alloy rack.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 110
-		},
-		"adv_white_tail": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White rally tail",
-			"description": "White rally tail.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 110
-		},
 		"sport_pointed_tail": {
 			"mass": 1.1,
 			"type": "Plastic undertray, LED strip",
@@ -15209,40 +14319,10 @@
 				"cowl": "sport"
 			},
 			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 110
-		},
-		"sport_white_tail": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White pointed tail, blue stripe",
-			"description": "White tail with blue stripe.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"cowl": "sport",
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				]
-			},
-			"styles": [
 				"sport",
-				"race"
+				"race",
+				"roader",
+				"naked"
 			],
 			"pack": "sport",
 			"price": 110
@@ -15279,34 +14359,6 @@
 			"pack": "race",
 			"price": 110
 		},
-		"race_carbon_tail": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Carbon race tail",
-			"description": "Carbon pointed tail.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"cowl": "sport"
-			},
-			"styles": [
-				"race",
-				"sport"
-			],
-			"pack": "race",
-			"price": 110
-		},
 		"naked_ducktail": {
 			"mass": 1.1,
 			"type": "Plastic undertray, LED strip",
@@ -15332,33 +14384,6 @@
 			"styles": [
 				"naked",
 				"cafe"
-			],
-			"pack": "naked",
-			"price": 110
-		},
-		"naked_sport_tail": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Sharp naked tail",
-			"description": "Sharp pointed tail, orange.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"look": {
-				"cowl": "sport"
-			},
-			"styles": [
-				"naked"
 			],
 			"pack": "naked",
 			"price": 110
@@ -15389,60 +14414,6 @@
 				"roader"
 			],
 			"pack": "roader",
-			"price": 110
-		},
-		"roader_red": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Red roader tail",
-			"description": "Red pointed tail.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"cowl": "sport"
-			},
-			"styles": [
-				"roader",
-				"sport"
-			],
-			"pack": "roader",
-			"price": 110
-		},
-		"tourer_halo": {
-			"mass": 3.0,
-			"type": "Steel, full length",
-			"style": "classic",
-			"light": "lucas",
-			"light_at": [
-				-0.12,
-				0.3
-			],
-			"material": "metal",
-			"name": "Touring guard with halo LED",
-			"description": "Full rear guard with ring LED.",
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"lamp": "halo"
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
 			"price": 110
 		},
 		"tourer_rack_tail": {
@@ -15755,7 +14726,8 @@
 			"styles": [
 				"cafe",
 				"bobber",
-				"naked"
+				"naked",
+				"scrambler"
 			]
 		},
 		"sport_mirrors": {
@@ -15907,25 +14879,6 @@
 			"pack": "chopper",
 			"price": 48
 		},
-		"scrambler_bar_end_black": {
-			"mass": 0.5,
-			"type": "Round, bar-end",
-			"style": "bar_end",
-			"cda": 0.003,
-			"name": "Black bar-end mirrors",
-			"description": "Round black bar-end mirrors.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"scrambler",
-				"cafe"
-			],
-			"pack": "scrambler",
-			"price": 48
-		},
 		"sm_folding": {
 			"mass": 0.4,
 			"type": "Angular, long stalks",
@@ -15970,25 +14923,6 @@
 			"pack": "sport",
 			"price": 48
 		},
-		"naked_bar_end": {
-			"mass": 0.5,
-			"type": "Round, bar-end",
-			"style": "bar_end",
-			"cda": 0.003,
-			"name": "Naked bar-end mirrors",
-			"description": "Bar-end mirrors.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"naked",
-				"cafe"
-			],
-			"pack": "naked",
-			"price": 48
-		},
 		"roader_long": {
 			"mass": 0.8,
 			"type": "Rectangular, tall stalks",
@@ -16030,7 +14964,9 @@
 			"styles": [
 				"naked",
 				"roader",
-				"sport"
+				"sport",
+				"supermoto",
+				"adventure"
 			]
 		},
 		"mx_high_fender": {
@@ -16141,7 +15077,8 @@
 			"material": "carbon",
 			"styles": [
 				"sport",
-				"race"
+				"race",
+				"naked"
 			]
 		},
 		"valanced_painted_guard": {
@@ -16150,7 +15087,7 @@
 			"style": "classic",
 			"cover": 1.0,
 			"material": "metal",
-			"name": "Valanced front guard, painted",
+			"name": "Valanced front guard",
 			"description": "Deep valanced front guard painted to match, with a centre rib.",
 			"paint_match": true,
 			"color": [
@@ -16163,7 +15100,8 @@
 			},
 			"styles": [
 				"classic",
-				"cruiser"
+				"cruiser",
+				"tourer"
 			],
 			"pack": "classic",
 			"price": 95
@@ -16292,35 +15230,6 @@
 			"pack": "chopper",
 			"price": 95
 		},
-		"cruiser_full_valance": {
-			"mass": 1.6,
-			"type": "Chromed steel, full length",
-			"style": "classic",
-			"cover": 1.0,
-			"material": "metal",
-			"name": "Full valanced front guard, chrome rib",
-			"description": "Deep valanced guard with a chrome centre rib and stripe.",
-			"paint_match": true,
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"rib": true,
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				]
-			},
-			"styles": [
-				"cruiser",
-				"classic"
-			],
-			"pack": "cruiser",
-			"price": 95
-		},
 		"scrambler_high_steel": {
 			"mass": 0.45,
 			"type": "Plastic, high mount",
@@ -16362,230 +15271,6 @@
 				"classic"
 			],
 			"pack": "scrambler",
-			"price": 95
-		},
-		"mx_white_front": {
-			"mass": 0.45,
-			"type": "Plastic, high mount",
-			"style": "high",
-			"cover": 0.55,
-			"material": "plastic",
-			"name": "White high front fender",
-			"description": "White high-mount fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 95
-		},
-		"mx_yellow_front": {
-			"mass": 0.45,
-			"type": "Plastic, high mount",
-			"style": "high",
-			"cover": 0.55,
-			"material": "plastic",
-			"name": "Yellow high front fender",
-			"description": "Yellow high-mount fender.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 95
-		},
-		"sm_white_beak": {
-			"mass": 0.45,
-			"type": "Plastic, high mount",
-			"style": "high",
-			"cover": 0.55,
-			"material": "plastic",
-			"name": "White motard beak",
-			"description": "White high fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"sm_low_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Low motard hugger",
-			"description": "Low road hugger for a street motard.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"supermoto",
-				"naked"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"adv_high_beak": {
-			"mass": 0.55,
-			"type": "Plastic, high mount, long",
-			"style": "enduro",
-			"cover": 0.7,
-			"material": "plastic",
-			"name": "Adventure beak",
-			"description": "High beak fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 95
-		},
-		"adv_low_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Low adventure guard",
-			"description": "Low road guard for a road-biased adventure bike.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"adventure",
-				"roader"
-			],
-			"pack": "adventure",
-			"price": 95
-		},
-		"sport_red_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Red sport hugger",
-			"description": "Red sport hugger.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 95
-		},
-		"race_white_hugger": {
-			"mass": 0.22,
-			"type": "Carbon fibre, short",
-			"style": "sport",
-			"cover": 0.8,
-			"lightweight": true,
-			"material": "carbon",
-			"name": "White race hugger",
-			"description": "White carbon hugger.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 95
-		},
-		"naked_carbon": {
-			"mass": 0.22,
-			"type": "Carbon fibre, short",
-			"style": "sport",
-			"cover": 0.8,
-			"lightweight": true,
-			"material": "carbon",
-			"name": "Carbon naked hugger",
-			"description": "Carbon hugger.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"styles": [
-				"naked",
-				"sport"
-			],
-			"pack": "naked",
-			"price": 95
-		},
-		"roader_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Roader hugger",
-			"description": "Short hugger.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"styles": [
-				"roader"
-			],
-			"pack": "roader",
-			"price": 95
-		},
-		"tourer_valance": {
-			"mass": 1.6,
-			"type": "Chromed steel, full length",
-			"style": "classic",
-			"cover": 1.0,
-			"material": "metal",
-			"name": "Touring valance guard",
-			"description": "Painted valanced guard.",
-			"paint_match": true,
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"rib": true
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
 			"price": 95
 		}
 	},
@@ -17215,8 +15900,8 @@
 			"material": "plastic"
 		},
 		"battery_cover_chrome": {
-			"name": "Chrome battery cover",
-			"description": "A chrome cover over the battery box and the oil tank. Custom cruiser bling.",
+			"name": "Battery cover",
+			"description": "A cover over the battery box and the oil tank, chrome from the factory. Custom cruiser bling.",
 			"mass": 1.4,
 			"type": "Chrome steel",
 			"style": "chrome",
@@ -17231,103 +15916,6 @@
 				"bobber"
 			],
 			"material": "metal"
-		},
-		"classic_toolbox_panels": {
-			"mass": 1.2,
-			"type": "Steel, painted",
-			"style": "triangle",
-			"paint_match": true,
-			"material": "metal",
-			"name": "Toolbox side panels",
-			"description": "Triangular panels with a toolbox lid on one side, painted to match.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"classic",
-				"cafe",
-				"scrambler"
-			],
-			"pack": "classic",
-			"price": 110
-		},
-		"chopper_chrome_oil": {
-			"mass": 1.4,
-			"type": "Chrome steel",
-			"style": "chrome",
-			"material": "metal",
-			"name": "Chrome horseshoe cover",
-			"description": "A chrome cover over the oil tank and battery.",
-			"color": [
-				0.86,
-				0.87,
-				0.89
-			],
-			"styles": [
-				"chopper",
-				"bobber",
-				"cruiser"
-			],
-			"pack": "chopper",
-			"price": 110
-		},
-		"scrambler_oval_panels": {
-			"mass": 1.2,
-			"type": "Steel, painted",
-			"style": "triangle",
-			"paint_match": true,
-			"material": "metal",
-			"name": "Scrambler side covers, white",
-			"description": "Plain white side covers with a little badge.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"scrambler",
-				"classic"
-			],
-			"pack": "scrambler",
-			"price": 110
-		},
-		"mx_blue_panels": {
-			"mass": 0.7,
-			"type": "Plastic, MX",
-			"style": "mx",
-			"material": "plastic",
-			"name": "Blue MX side panels",
-			"description": "Blue plastic side panels.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 110
-		},
-		"sm_orange_panels": {
-			"mass": 0.7,
-			"type": "Plastic, MX",
-			"style": "mx",
-			"material": "plastic",
-			"name": "Orange side panels",
-			"description": "Orange side panels.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 110
 		}
 	},
 	"rearsets": {
@@ -17871,7 +16459,8 @@
 				0.93
 			],
 			"styles": [
-				"mx"
+				"mx",
+				"supermoto"
 			],
 			"material": "plastic"
 		},
@@ -17911,7 +16500,7 @@
 		},
 		"oval_race_plates": {
 			"name": "Oval race plates",
-			"description": "White oval number plates on the nose and the tail, like a club racer from the sixties.",
+			"description": "Oval number plates on the nose and the tail, like a club racer from the sixties.",
 			"mass": 0.5,
 			"type": "Alloy, oval",
 			"style": "oval",
@@ -17927,7 +16516,7 @@
 		},
 		"flat_track_boards": {
 			"name": "Flat-track number boards",
-			"description": "Big side number boards in a tracker's yellow, with the tail cut short behind them.",
+			"description": "Big side number boards, with the tail cut short behind them.",
 			"mass": 0.7,
 			"type": "Plastic, tracker",
 			"style": "tracker",
@@ -17940,115 +16529,6 @@
 				"supermoto"
 			],
 			"material": "plastic"
-		},
-		"cafe_oval_plates": {
-			"mass": 0.5,
-			"type": "Alloy, oval",
-			"style": "oval",
-			"material": "metal",
-			"name": "Painted oval race plates",
-			"description": "Cream oval number plates for the sides of the tail.",
-			"color": [
-				0.9,
-				0.86,
-				0.74
-			],
-			"styles": [
-				"cafe"
-			],
-			"pack": "cafe",
-			"price": 85
-		},
-		"scrambler_tracker_plates": {
-			"mass": 0.7,
-			"type": "Plastic, tracker",
-			"style": "tracker",
-			"material": "plastic",
-			"name": "Yellow tracker plates",
-			"description": "Yellow flat-track number boards.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 85
-		},
-		"mx_yellow_boards": {
-			"mass": 0.9,
-			"type": "Plastic, front and sides",
-			"style": "mx",
-			"material": "plastic",
-			"name": "Yellow number boards",
-			"description": "Yellow front and side boards.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 85
-		},
-		"mx_white_boards": {
-			"mass": 0.9,
-			"type": "Plastic, front and sides",
-			"style": "mx",
-			"material": "plastic",
-			"name": "White number boards",
-			"description": "White front and side boards.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 85
-		},
-		"sm_white_plates": {
-			"mass": 0.4,
-			"type": "Plastic, front",
-			"style": "front",
-			"material": "plastic",
-			"name": "White motard front plate",
-			"description": "White front number plate.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 85
-		},
-		"race_white_plate": {
-			"mass": 0.4,
-			"type": "Plastic, front",
-			"style": "front",
-			"material": "plastic",
-			"name": "White race front plate",
-			"description": "White front number plate.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 85
 		}
 	},
 	"swingarm": {

@@ -34,6 +34,9 @@ var camera_recentre := true
 ## Riders look into the corner: the head (and a little the shoulders) turn into the inside of a
 ## bend and towards its exit, and so does your view in first person (see RiderStyle.look_yaw).
 var look_into_corner := true
+## Your preferred riding style (see RiderStyle), the last one you picked: every character you
+## play, in any save or anyone's shed, rides that way. "" until you first pick one.
+var rider_style := ""
 ## On foot, the view from behind your shoulder with your whole figure in it, instead of from
 ## your eyes (V, or View on a pad, toggles it; see WalkerView).
 var walk_third_person := false
@@ -131,7 +134,8 @@ const ACTIONS := [
 	["indicate_left", "Indicate left (again to cancel)", ["ride"]], ["indicate_right", "Indicate right (again to cancel)", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["look_back", "Reverse view: hold to look behind", ["ride"]],
-	["ride_mode", "Ride mode: Custom, Sport, Tour, Wet (dashes with ride modes)", ["ride"]],
+	["ride_mode", "Ride mode: Custom, Sport, Tour, Wet (dashes with ride modes); with the rider aids menu up, the aid's next level", ["ride"]],
+	["rider_aids", "Rider aids menu on the dash: the next aid the ECU has (ABS, traction control...), then shut", ["ride"]],
 	["cruise", "Cruise control on / off (dashes with it; the brakes or clutch cancel it)", ["ride"]],
 	["nod", "Nod to a biker (hold: wave)", ["ride"]], ["ride_ping", "Ping (riding or driving)", ["ride"]],
 	["tow", "Adventure: ask a mate for a tow, or let the strap go", ["ride"]],
@@ -208,6 +212,7 @@ func load_settings() -> void:
 			satnav_x = 0.5   # it used to come in the bottom left corner: left there, it moves to the new place
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		look_into_corner = bool(cfg.get_value("riding", "look_into_corner", look_into_corner))
+		rider_style = str(cfg.get_value("riding", "rider_style", rider_style))
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
@@ -251,6 +256,7 @@ func save_settings() -> void:
 	cfg.set_value("riding", "satnav_centred", true)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("riding", "look_into_corner", look_into_corner)
+	cfg.set_value("riding", "rider_style", rider_style)
 	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
@@ -370,6 +376,8 @@ func _setup_inputs() -> void:
 	_bind("look_back", [KEY_X], [JOY_BUTTON_RIGHT_SHOULDER])
 	# The dash's ride mode and cruise control (no pad buttons spare).
 	_bind("ride_mode", [KEY_B], [])
+	# The rider aids menu (B then steps the aid picked on it).
+	_bind("rider_aids", [KEY_Y], [])
 	_bind("cruise", [KEY_O], [])
 	# A nod to another biker (held, a wave with the left hand).
 	_bind("nod", [KEY_N], [JOY_BUTTON_RIGHT_STICK])

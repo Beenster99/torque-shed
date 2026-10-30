@@ -752,6 +752,10 @@ func _run_all() -> void:
 	await _t(&"_test_headlight_catalogue")
 	await _t(&"_test_headlight_builds")
 	await _t(&"_test_headlight_lit")
+	print("Simon's v0.39 round: slimmer twin-spar and monocoque frames, grips on every bar's ends, mirror stalks to the back of the head")
+	await _t(&"_test_fgm_frames")
+	await _t(&"_test_fgm_grips")
+	await _t(&"_test_fgm_mirrors")
 	print("Simon's v0.21.0 round: his starter motor recordings, healthy and struggling, and his two-stroke")
 	await _t(&"_test_sound_starter_files")
 	await _t(&"_test_sound_starter_choice")
@@ -833,6 +837,13 @@ func _run_all() -> void:
 	await _t(&"_test_ghost_pass_through")
 	await _t(&"_test_ghost_remote")
 	await _t(&"_test_ghost_adventure")
+	print("Simon's v0.39.0 round: parts bought in the colours you pick, colour variants merged")
+	await _t(&"_test_part_colour_picker")
+	await _t(&"_test_part_colour_client")
+	await _t(&"_test_part_colour_save")
+	await _t(&"_test_part_colour_retired")
+	await _t(&"_test_part_colour_model")
+	await _t(&"_test_part_colour_random")
 	print("Ride anywhere v2: the place's look and sound (T3, T4) and the road network (T6)")
 	await _t(&"_test_place_look_eight_places")
 	await _t(&"_test_place_look_ground")
@@ -906,6 +917,9 @@ func _run_all() -> void:
 	await _t(&"_test_fields_paddies")
 	await _t(&"_test_fields_blocks_meet")
 	await _t(&"_test_fields_regions")
+	print("Simon's v0.39.0 round: the dyno room's signs down, and its extraction hose hanging from the ceiling over the rig")
+	await _t(&"_test_dyno_tidy_signs")
+	await _t(&"_test_dyno_tidy_hose")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -919,6 +933,30 @@ func _run_all() -> void:
 	await _t(&"_test_coop_positions")
 	await _t(&"_test_coop_call")
 	await _t(&"_test_coop_state")
+	print("Simon's v0.39.0 round: the optional parts a bike is complete and ridable without")
+	await _t(&"_test_optional_parts_list")
+	await _t(&"_test_optional_parts_random_bikes")
+	await _t(&"_test_optional_parts_shed")
+	print("Simon's v0.39.0 round: the ECUs (Performance 2 remap, ECU Safety) and rider aids set on the bike")
+	await _t(&"_test_ecu_safety_catalogue")
+	await _t(&"_test_ecu_safety_lean_traction")
+	await _t(&"_test_ecu_safety_on_bike")
+	await _t(&"_test_ecu_safety_saves")
+	await _t(&"_test_ecu_safety_dash")
+	print("Simon's v0.39.0 menus: no Workshop tab, no Controls list, a compact Gameplay tab")
+	await _t(&"_test_menu_tidy_workshop")
+	await _t(&"_test_menu_tidy_controls")
+	await _t(&"_test_menu_tidy_gameplay")
+	await _t(&"_test_menu_tidy_leave")
+	print("Simon's v0.39.0 round: fewer small engines, one two-stroke family, a flathead head, 45 and 60 degree V-twins, more triples")
+	await _t(&"_test_engine_range_catalogue")
+	await _t(&"_test_engine_range_retired")
+	await _t(&"_test_engine_range_drawn_and_heard")
+	print("Simon's v0.39.0 round: wheels by size, a tread on every tyre, angular tanks, rounded mudguard ends")
+	await _t(&"_test_wtt_wheel_order")
+	await _t(&"_test_wtt_treads")
+	await _t(&"_test_wtt_angular_tanks")
+	await _t(&"_test_wtt_mudguard_ends")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -2445,18 +2483,22 @@ func _test_round5_shed() -> void:
 		"an ordered ramp is left in the yard past the drag strip (%s)" % str(at))
 	check(Shed.check(me, {"a": "grab", "furniture": ordered["id"]}) == "", "you can take hold of it to move it")
 
-	# Six engine layouts in ten sizes each.
-	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+	# Six engine layouts in a range of sizes each (the smallest of most went in v0.39, see
+	# tests/engine_range_tests.gd).
+	var ranges := {"boxer": [350, 500, 600, 750, 800, 1000, 1100, 1200], "twin": [500, 600, 750, 800, 1000, 1100, 1200],
+		"parallel": [600, 750, 800, 1000, 1100, 1200], "vtwin": [750, 800, 1000, 1100, 1200], "2stroke": [50, 125, 350, 500],
+		"inline": [500, 600, 750, 800, 1000, 1100, 1200]}
+	for layout in ranges:
 		var sizes := 0
-		for cc in [50, 125, 350, 500, 600, 750, 800, 1000, 1100, 1200]:
+		for cc in ranges[layout]:
 			var p := PartsDB.get_part("%s_%d" % [layout, cc])
 			if not p.is_empty() and p["layout"] == layout and int(p["displacement"]) == cc:
 				sizes += 1
-		check(sizes == 10, "%s engines come in all ten sizes (%d)" % [layout, sizes])
-	var small := BikeBuild.new({"engine": "parallel_125"})
-	var big := BikeBuild.new({"engine": "parallel_1200"})
-	check(big.hp() > small.hp() * 5.0 and small.redline > big.redline, "a 125 is gutless and revvy next to a 1200 (%.0f vs %.0f hp)" % [small.hp(), big.hp()])
-	check(BikeBuild.new({"engine": "2stroke_125"}).hp() > BikeBuild.new({"engine": "twin_125"}).hp(), "a two-stroke makes more power per cc")
+		check(sizes == ranges[layout].size(), "%s engines come in all %d sizes (%d)" % [layout, ranges[layout].size(), sizes])
+	var small := BikeBuild.new({"engine": "inline_500"})
+	var big := BikeBuild.new({"engine": "inline_1200"})
+	check(big.hp() > small.hp() * 1.5 and small.redline > big.redline, "a 500 is gutless and revvy next to a 1200 (%.0f vs %.0f hp)" % [small.hp(), big.hp()])
+	check(BikeBuild.new({"engine": "2stroke_500"}).hp() > BikeBuild.new({"engine": "twin_500"}).hp(), "a two-stroke makes more power per cc")
 
 
 func _test_round5_models() -> void:
@@ -2533,16 +2575,17 @@ func _test_round5_models() -> void:
 	var eye := m.eye_transform().origin
 	check(eye.y > m._head.y + 0.4 and eye.z > m._head.z, "the first-person eye is up in the rider's helmet (%.2f m above the bars)" % (eye.y - m._head.y))
 	m.queue_free()
-	# Every engine layout draws, from 50 cc to 1200.
-	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+	# Every engine layout draws, its smallest to its biggest.
+	for pair in [["boxer_350", "boxer_1200"], ["twin_500", "twin_1200"], ["parallel_600", "parallel_1200"], ["vtwin_750", "vtwin_1800"],
+			["2stroke_50", "2stroke_500"], ["inline_500", "inline_1200"]]:
 		var sizes := []
-		for cc in [50, 1200]:
+		for id in pair:
 			var em := BikeModel.new()
 			add_child(em)
-			em.build_from(BikeBuild.new({"engine": "%s_%d" % [layout, cc]}))
+			em.build_from(BikeBuild.new({"engine": id}))
 			sizes.append(em.slot_bounds("engine").size.length())
 			em.queue_free()
-		check(sizes[1] > sizes[0] * 1.2, "a 1200 cc %s is drawn bigger than a 50 (%.2f vs %.2f)" % [layout, sizes[1], sizes[0]])
+		check(sizes[1] > sizes[0] * 1.08, "a %s is drawn bigger than a %s (%.2f vs %.2f)" % [PartsDB.part_name(pair[1]), PartsDB.part_name(pair[0]), sizes[1], sizes[0]])
 	var boxer := BikeModel.new()
 	add_child(boxer)
 	boxer.build_from(BikeBuild.new({"engine": "boxer_1000"}))
@@ -2960,7 +3003,7 @@ func _test_round6_riding() -> void:
 	var big := EngineSound.new()
 	add_child(small)
 	add_child(big)
-	small.setup(BikeBuild.new({"engine": "inline_50"}))
+	small.setup(BikeBuild.new({"engine": "2stroke_50"}))
 	big.setup(BikeBuild.new({"engine": "inline_1200"}))
 	await get_tree().process_frame
 	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
@@ -3581,7 +3624,7 @@ func _test_ecu_aid_settings() -> void:
 	var race := BikeBuild.new({"ecu": "race_ecu"})
 	check(sport.tune_block("aid_traction") == "" and sport.tune_block("aid_anti_wheelie") == ""
 		and sport.tune_block("aid_stability").contains("no stability control") and race.tune_block("aid_stability") == ""
-		and BikeBuild.new({"ecu": "stock_ecu"}).tune_block("aid_traction").contains("no traction"),
+		and BikeBuild.new({"ecu": "none"}).tune_block("aid_traction").contains("no traction"),
 		"only the aids the ECU has can be set (sport: traction and anti-wheelie; race: stability too)")
 	check(is_equal_approx(race.aid_strength("traction"), race.ecu_aid) and is_equal_approx(sport.aid_strength("anti_wheelie"), sport.ecu_aid)
 		and sport.aid_strength("stability") == 0.0, "untouched, each aid works as the ECU came from the factory")
@@ -4622,7 +4665,7 @@ func _test_tuning() -> void:
 	var t := Shed.tune_of(faithful)
 	check(is_equal_approx(float(t.get("map", 0.0)), 0.25) and is_equal_approx(float(t.get("psi_r", 0.0)), 2.0)
 		and is_equal_approx(float(t.get("sprocket_r", 0.0)), 50.0), "the tune survives the snapshot (save and co-op sync) %s" % str(t))
-	check(BikeBuild.new({"ecu": "race_ecu"}).tune_range("map").y > BikeBuild.new({"ecu": "stock_ecu"}).tune_range("map").y
+	check(BikeBuild.new({"ecu": "race_ecu"}).tune_range("map").y > BikeBuild.new({"ecu": "none"}).tune_range("map").y
 		and BikeBuild.new({"ecu": "remap_ecu"}).tune_range("limiter").y > 0.0 and stock.tune_range("limiter").y == 0.0,
 		"a remap or race ECU opens up the map and the rev limiter")
 
@@ -6240,7 +6283,7 @@ func _test_whiteboard_moves() -> void:
 	var me := Shed.me()
 	var board := Shed.whiteboard_id()
 	check(board != 0 and Shed.furniture[board]["xf"].origin == Whiteboard.MOUNT and Equipment.is_wall("whiteboard"),
-		"the whiteboard is a wall hanging in its old place on the front wall")
+		"the whiteboard is a wall hanging on the front wall, above the recycling bins")
 	check(Shed.check(me, {"a": "order_furniture", "model": "whiteboard"}).contains("already"), "there's only the one whiteboard")
 	check(not PartsComputer.all_kinds().has("eq:whiteboard"), "it isn't sold")
 	check(Shed.check(me, {"a": "grab", "furniture": board}) == "", "it can be taken down")
@@ -6249,7 +6292,16 @@ func _test_whiteboard_moves() -> void:
 	(old["furniture"] as Dictionary).erase(board)
 	Shed.load_state(old, "Tester")
 	var again := Shed.whiteboard_id()
-	check(again != 0 and Shed.furniture[again]["xf"].origin == Whiteboard.MOUNT, "a save from before keeps it at the old spot")
+	check(again != 0 and Shed.furniture[again]["xf"].origin == Whiteboard.MOUNT, "a save from before it could move gets it above the bins")
+	# A save with it still in its first spot, left of the bins: it moves up above them.
+	Shed.furniture[again]["xf"] = Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.OLD_MOUNT)
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.furniture[Shed.whiteboard_id()]["xf"].origin == Whiteboard.MOUNT, "a board left in its first spot moves above the bins")
+	# It sits over the two recycling bins, clear of their lids and of the roller door.
+	var bins_x := (float(Workshop.BINS["plastic"][0]) + float(Workshop.BINS["metal"][0])) * 0.5
+	var bottom := Whiteboard.MOUNT.y - 1.27 * 0.5
+	check(absf(Whiteboard.MOUNT.x - (Workshop.CENTER.x + bins_x)) < 0.05 and bottom > Workshop.BIN_SIZE.y + 0.05 and bottom < Workshop.BIN_SIZE.y + 0.25
+		and Whiteboard.MOUNT.x + 2.47 * 0.5 < Workshop.CENTER.x - Workshop.DOOR_HALF, "it hangs just above the recycling bins (%s)" % Whiteboard.MOUNT)
 	Shed.stop()
 	# In the game: take it down, hang it on the east wall, and it's still there after a save.
 	var kept := [Settings.time_of_day, Settings.day_night_cycle, Settings.day_length]
@@ -6262,7 +6314,7 @@ func _test_whiteboard_moves() -> void:
 	var w: Walker = main.walker
 	board = Shed.whiteboard_id()
 	var node: Whiteboard = get_tree().get_first_node_in_group("whiteboard")
-	check(node != null and node.global_position.distance_to(Whiteboard.MOUNT) < 0.01, "it hangs where it always did")
+	check(node != null and node.global_position.distance_to(Whiteboard.MOUNT) < 0.01, "it hangs above the recycling bins")
 	Shed.board_request({"a": "board_draw", "id": 501, "c": 2, "w": 6.0, "from": 0, "done": true,
 		"pts": PackedVector2Array([Vector2(100, 100), Vector2(400, 120)])})
 	w.target = {"kind": "board"}
@@ -6584,7 +6636,7 @@ func _test_dyno_kit() -> void:
 	check(Shed.strapped(), "all four straps done up")
 	check(Shed.check(me, {"a": "dyno_strap", "point": 7}) != "", "there are only four strap posts")
 	# The extraction hose: off its hook, over the exhaust.
-	check(Shed.check(me, {"a": "dyno_hose", "to": "bike"}).contains("hook"), "you need the hose in your hands to fit it")
+	check(Shed.check(me, {"a": "dyno_hose", "to": "bike"}).contains("hose down"), "you need the hose in your hands to fit it")
 	Shed.request({"a": "dyno_hose", "to": "held"})
 	check(Shed.hose_holder() == me and Shed.check(me, {"a": "take", "spot": "bench_0"}).contains("hose"),
 		"carrying the hose, your hands are full")
@@ -6746,11 +6798,11 @@ func _test_dyno_room_session() -> void:
 		await _aim_point(w, post.global_position)
 		await _hold_act(main)
 	check(Shed.strapped() and room._strap_nodes.all(func(s): return s.visible), "holding the work button at each post straps it down, and the straps show")
-	# The hose: off the hook, onto the exhaust.
-	w.place(Transform3D(Basis(), DynoRoom.HOSE_HOOK + Vector3(-1.2, -DynoRoom.HOSE_HOOK.y, 0.0)))
-	await _aim_point(w, room.get_node("HoseHook").global_position)
+	# The hose: down from the ceiling, onto the exhaust.
+	w.place(Transform3D(Basis(), Vector3(DynoRoom.HOSE_PARK.x, 0.0, DynoRoom.HOSE_PARK.z + 1.2)))
+	await _aim_point(w, room.get_node("HoseDrop").global_position)
 	await _hold_act(main)
-	check(Shed.hose_holder() == Shed.me(), "the work button at the hook takes the hose")
+	check(Shed.hose_holder() == Shed.me(), "the work button at the hose hanging from the ceiling pulls it down")
 	await _aim_at(main, faithful, "exhaust")
 	await _hold_act(main)
 	for i in 3:
@@ -7719,8 +7771,8 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		for id in PartsDB.by_kind[k]:
 			if PartsDB.spec_line(id) == "":
 				check(false, "%s has a spec line" % id)
-	check(not PartsDB.is_optional("tail") and PartsDB.is_optional("fairing") and PartsDB.is_optional("mirrors"),
-		"every bike needs a tail unit; fairings and mirrors are extras")
+	check(PartsDB.is_optional("tail") and PartsDB.is_optional("fairing") and PartsDB.is_optional("mirrors"),
+		"tail units, fairings and mirrors are all optional (Simon's list)")
 	check(PartsDB.dependents("headlight").has("fairing") and PartsDB.dependents("handlebars").has("mirrors")
 		and PartsDB.dependents("frame").has("tail"), "the fairing comes off before the headlight, the mirrors before the bars")
 	check(PartsDB.part_mounts("mirrors", "fairing_mirrors").has("fairing") and not PartsDB.part_mounts("mirrors", "round_mirrors").has("fairing"),
@@ -13853,8 +13905,8 @@ func _test_style_tags() -> void:
 func _test_filler_parts() -> void:
 	var all_ok := true
 	for s in PartsDB.FILLER_SLOTS:
-		all_ok = all_ok and PartsDB.is_optional(s) and PartsDB.BIKE_SLOTS.has(s) and PartsDB.MOUNTS[s] == ["frame"] and PartsDB.DEFAULT_BUILD[s] == "none"
-	check(all_ok, "indicators, side panels, rearsets, guards and number boards bolt to the frame and are optional")
+		all_ok = all_ok and PartsDB.may_be_empty(s) and PartsDB.BIKE_SLOTS.has(s) and PartsDB.MOUNTS[s] == ["frame"] and PartsDB.DEFAULT_BUILD[s] == "none"
+	check(all_ok, "indicators, side panels, rearsets, guards and number boards bolt to the frame and can be left off")
 	check(PartsDB.dependents("frame").has("rearsets") and PartsDB.LOW_SLOTS.has("guards"), "they come off before the frame, and you crouch for the low ones")
 	for slot in PartsDB.FILLER_SLOTS:
 		check(PartsDB.by_kind[slot].size() >= 5, "%s: at least five to choose from" % PartsDB.KIND_NAMES[slot])
@@ -14144,9 +14196,9 @@ func _test_style_contracts_sales() -> void:
 	var shown: Array = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion()).map(func(c): return str(c.get_meta("part")))
 	check(shown.size() > 0 and shown.size() < PartsDB.by_kind["handlebars"].size() and shown.all(func(id): return PartsDB.styles_of(id).has("chopper")),
 		"the style filter shows only bars that suit a chopper %s" % str(shown))
-	pc._show_kind("engine")
+	pc._show_kind("oil_filter")
 	shown = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())
-	check(shown.size() == PartsDB.by_kind["engine"].size(), "and leaves kinds with no style (engines) alone")
+	check(not PartsComputer.styled_kind("oil_filter") and shown.size() == PartsDB.by_kind["oil_filter"].size(), "and leaves kinds with no style (oil filters) alone")
 	pc.set_fits_bike(proper)
 	pc._show_kind("handlebars")
 	pc._show_part("drag_bar")
@@ -16104,8 +16156,9 @@ func _test_style_packs() -> void:
 		var kinds := {}
 		for id in ids:
 			kinds[PartsDB.kind_of(id)] = true
-		# (About thirty once; fewer since the tanks and fairings came down to ten each in plain paint.)
-		check(ids.size() >= 20 and kinds.size() >= 10, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
+		# (About thirty once; fewer since the tanks and fairings came down to ten each in plain paint,
+		# and fewer again since parts that differed only in colour were merged: see PartColours.)
+		check(ids.size() >= 12 and kinds.size() >= 9, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
 	var bad := []
 	for style in packs:
 		for id in packs[style]:
@@ -21910,10 +21963,13 @@ func _test_detail_session() -> void:
 	var gb := 0.0
 	for i in front:
 		gf += job.e_g[i]
-	for i in side.slice(side.size() / 2):
+	# The other half: past the reach of the pad from the polished half's last points.
+	var reach_z: float = job.e_pos[front[front.size() - 1]].z + DetailJob.PAD if not front.is_empty() else 0.0
+	var back: Array = side.slice(side.size() / 2).filter(func(i): return job.e_pos[i].z > reach_z)
+	for i in back:
 		gb += job.e_g[i]
 	gf /= maxf(front.size(), 1)
-	gb /= maxf(side.size() - front.size(), 1)
+	gb /= maxf(back.size(), 1)
 	check(gf > 0.85 and gb < g0 + 0.05 and float(job.panel(ti)["gloss"]) > g0 and job.e_b.count(1) == 0,
 		"polished half of the tank comes up to a deep gloss and the other half's as it was (%.2f / %.2f, from %.2f), no burn" % [gf, gb, g0])
 	check(job.cues.any(func(c): return str(c["kind"]) == "gloss") or float(job.panel(ti)["gloss"]) < Detail.GLOSS_GOOD, "a panel brought up to a gloss dings")
@@ -23830,6 +23886,20 @@ func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
 
 
+# ---------------------------------------------------------------------------- the tidied dyno room (tests/dyno_room_tidy_tests.gd)
+
+func _dyno_tidy() -> RefCounted:
+	return load("res://tests/dyno_room_tidy_tests.gd").new(self)
+
+
+func _test_dyno_tidy_signs() -> void:
+	_dyno_tidy().test_signs()
+
+
+func _test_dyno_tidy_hose() -> void:
+	_dyno_tidy().test_hose()
+
+
 # ---------------------------------------------------------------------------- rider styles (tests/rider_style_tests.gd)
 
 func _rider_styles() -> RefCounted:
@@ -24424,5 +24494,161 @@ func _test_road_markings_paint() -> void:
 
 func _test_road_signs() -> void:
 	_road_markings().test_signs()
+
+
+
+
+# ---------------------------------------------------------------------------- optional parts (tests/optional_parts_tests.gd)
+
+func _optional_parts() -> RefCounted:
+	return load("res://tests/optional_parts_tests.gd").new(self)
+
+
+func _test_optional_parts_list() -> void:
+	_optional_parts().test_list()
+
+
+func _test_optional_parts_random_bikes() -> void:
+	_optional_parts().test_random_bikes()
+
+
+func _test_optional_parts_shed() -> void:
+	_optional_parts().test_shed()
+
+
+# ---------------------------------------------------------------------------- ECUs and rider aids on the bike (tests/ecu_safety_tests.gd)
+
+func _ecu_safety() -> RefCounted:
+	return load("res://tests/ecu_safety_tests.gd").new(self)
+
+
+func _test_ecu_safety_catalogue() -> void:
+	_ecu_safety().test_catalogue()
+
+
+func _test_ecu_safety_lean_traction() -> void:
+	await _ecu_safety().test_lean_traction()
+
+
+func _test_ecu_safety_on_bike() -> void:
+	_ecu_safety().test_on_bike()
+
+
+func _test_ecu_safety_saves() -> void:
+	_ecu_safety().test_saves()
+
+
+func _test_ecu_safety_dash() -> void:
+	await _ecu_safety().test_dash()
+
+
+# ---------------------------------------------------------------------------- the tidied menus (tests/menu_tidy_tests.gd)
+
+func _menu_tidy() -> RefCounted:
+	return load("res://tests/menu_tidy_tests.gd").new(self)
+
+
+func _test_menu_tidy_workshop() -> void:
+	await _menu_tidy().test_no_workshop()
+
+
+func _test_menu_tidy_controls() -> void:
+	await _menu_tidy().test_no_controls_list()
+
+
+func _test_menu_tidy_gameplay() -> void:
+	await _menu_tidy().test_gameplay_compact()
+
+
+func _test_menu_tidy_leave() -> void:
+	await _menu_tidy().test_leave()
+
+
+# ---------------------------------------------------------------------------- engine range, v0.39 (tests/engine_range_tests.gd)
+
+func _engine_range() -> RefCounted:
+	return load("res://tests/engine_range_tests.gd").new(self)
+
+
+func _test_engine_range_catalogue() -> void:
+	await _engine_range().test_catalogue()
+
+
+func _test_engine_range_retired() -> void:
+	_engine_range().test_retired()
+
+
+func _test_engine_range_drawn_and_heard() -> void:
+	_engine_range().test_drawn_and_heard()
+
+
+# ---------------------------------------------------------------------------- slimmer spars, grips on every bar, mirror stalks (tests/frame_grip_mirror_tests.gd)
+
+func _fgm() -> RefCounted:
+	return load("res://tests/frame_grip_mirror_tests.gd").new(self)
+
+
+func _test_fgm_frames() -> void:
+	_fgm().test_frames()
+
+
+func _test_fgm_grips() -> void:
+	await _fgm().test_grips()
+
+
+func _test_fgm_mirrors() -> void:
+	await _fgm().test_mirrors()
+
+
+# ---------------------------------------------------------------------------- part colours (tests/part_colour_tests.gd)
+
+func _part_colours() -> RefCounted:
+	return load("res://tests/part_colour_tests.gd").new(self)
+
+
+func _test_part_colour_picker() -> void:
+	_part_colours().test_picker()
+
+
+func _test_part_colour_client() -> void:
+	_part_colours().test_client_order()
+
+
+func _test_part_colour_save() -> void:
+	_part_colours().test_save()
+
+
+func _test_part_colour_retired() -> void:
+	_part_colours().test_retired()
+
+
+func _test_part_colour_model() -> void:
+	_part_colours().test_model()
+
+
+func _test_part_colour_random() -> void:
+	_part_colours().test_random_bikes()
+
+
+# ---------------------------------------------------------------------------- wheels, tyres, tanks and mudguards (tests/wheel_tyre_tank_tests.gd)
+
+func _wtt() -> RefCounted:
+	return load("res://tests/wheel_tyre_tank_tests.gd").new(self)
+
+
+func _test_wtt_wheel_order() -> void:
+	_wtt().test_wheel_order()
+
+
+func _test_wtt_treads() -> void:
+	_wtt().test_treads()
+
+
+func _test_wtt_angular_tanks() -> void:
+	_wtt().test_angular_tanks()
+
+
+func _test_wtt_mudguard_ends() -> void:
+	_wtt().test_mudguard_ends()
 
 

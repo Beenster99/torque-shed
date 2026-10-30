@@ -32,7 +32,7 @@ func test_catalogue() -> void:
 ## power through and the back wheel's ABS off; Wet the aids in hardest, the power cut back and the
 ## throttle softened; Custom is the dyno desk's own levels. Ridden flat out, Wet is slower.
 func test_modes() -> void:
-	var plain := BikeBuild.new({"dashboard": "tft_colour", "ecu": "stock_ecu"})
+	var plain := BikeBuild.new({"dashboard": "tft_colour", "ecu": "none"})
 	plain.ride_mode = "wet"
 	check(not plain.has_ride_modes() and plain.mode_power() == 1.0, "no rider aids on the ECU: no ride modes")
 	var b := BikeBuild.new({"dashboard": "tft_colour", "ecu": "sport_ecu"})

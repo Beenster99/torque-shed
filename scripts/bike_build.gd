@@ -95,12 +95,23 @@ const TUNE_LIMITS := {
 	"chain": [10.0, 70.0],         # chain slack, mm (kept on the chain itself)
 	# The ECU's rider aids, where it has them: 0 off, then level 1 (gentle) .. AID_LEVELS (firm).
 	"aid_traction": [0.0, 5.0], "aid_stability": [0.0, 5.0], "aid_anti_wheelie": [0.0, 5.0],
+	"aid_lean_traction": [0.0, 5.0],
+	"aid_abs": [0.0, 1.0],         # ABS is on or off
 	"damper": [-1.0, 1.0],         # steering damper clicker: softer .. firmer
 	"screen": [0.0, 1.0],          # an adjustable screen: right down .. right up (the rider sets it riding)
 }
-## The rider aids the dyno desk sets, aid -> its tune key (see TUNE_LIMITS). Level AID_STOCK is
-## how the ECU comes from the factory; AID_SCALE is how firmly each level steps in next to that.
-const AID_KEYS := {"traction": "aid_traction", "stability": "aid_stability", "anti_wheelie": "aid_anti_wheelie"}
+## The rider aids the dyno desk (and the rider, on the dash: see step_aid) sets, aid -> its tune
+## key (see TUNE_LIMITS), in the order the dash lists them. Level AID_STOCK is how the ECU comes
+## from the factory; AID_SCALE is how firmly each level steps in next to that. ABS is only on or
+## off (AID_SWITCHES), on from the factory.
+const AID_KEYS := {"abs": "aid_abs", "traction": "aid_traction", "lean_traction": "aid_lean_traction",
+	"anti_wheelie": "aid_anti_wheelie", "stability": "aid_stability"}
+const AID_SWITCHES: Array[String] = ["abs"]
+## Lean-angle traction control: the back tyre's slip it allows bolt upright and at full lean
+## (LEAN_TC_FULL), gentlest level and firmest. Leaned over it cuts in far sooner.
+const LEAN_TC_UPRIGHT := Vector2(0.14, 0.09)
+const LEAN_TC_LEANED := Vector2(0.06, 0.02)
+const LEAN_TC_FULL := 0.873   # 50 degrees
 const AID_LEVELS := 5
 const AID_STOCK := 3
 const AID_SCALE: Array[float] = [0.0, 0.4, 0.7, 1.0, 1.25, 1.5]
@@ -115,9 +126,9 @@ const OCTANE := {"unleaded_95": 95.0, "super_98": 98.0, "race_fuel": 102.0}
 ## how quickly the throttle answers (opening, a share a second; 0 straight away) and whether the
 ## ABS looks after the back wheel as well as the front (Sport lets it lock to back it in).
 const RIDE_MODES := {
-	"sport": {"name": "Sport", "traction": 1, "anti_wheelie": 1, "stability": 1, "power": 1.0, "rate": 0.0, "abs_rear": false},
-	"tour": {"name": "Tour", "traction": 3, "anti_wheelie": 3, "stability": 3, "power": 0.92, "rate": 6.0, "abs_rear": true},
-	"wet": {"name": "Wet", "traction": 5, "anti_wheelie": 5, "stability": 5, "power": 0.7, "rate": 2.5, "abs_rear": true},
+	"sport": {"name": "Sport", "traction": 1, "lean_traction": 1, "anti_wheelie": 1, "stability": 1, "power": 1.0, "rate": 0.0, "abs_rear": false},
+	"tour": {"name": "Tour", "traction": 3, "lean_traction": 3, "anti_wheelie": 3, "stability": 3, "power": 0.92, "rate": 6.0, "abs_rear": true},
+	"wet": {"name": "Wet", "traction": 5, "lean_traction": 5, "anti_wheelie": 5, "stability": 5, "power": 0.7, "rate": 2.5, "abs_rear": true},
 }
 ## The order the dash's mode button steps through them: "" is Custom, the dyno desk's own levels.
 const MODE_ORDER: Array[String] = ["", "sport", "tour", "wet"]
@@ -152,7 +163,7 @@ var horn_tones: Array = []     # frequencies of the horn, empty with none fitted
 var horn_style := ""
 var horn_loudness := 0.0
 var horn_sound := ""           # the horn's recordings (an Sfx sound), "" for a synthesised one
-var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
+var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability, lean_traction
 var ecu_aid := 0.0             # how firmly those aids step in, 0..1
 ## The ride mode chosen on the dash (a key of RIDE_MODES) while ridden, "" for none: then the
 ## aids are at the dyno desk's levels. Only counts on a bike with ride modes (has_ride_modes).
@@ -266,6 +277,9 @@ var inertia_add := Vector3.ZERO
 # Engine
 var cylinders := 2
 var layout := "parallel"
+## A V-twin's V in degrees (45, 60 or 90; 0 for other layouts), and the head's valves per cylinder.
+var v_angle := 0.0
+var valves := 4
 var displacement := 700.0
 var peak_torque := 70.0
 var peak_torque_rpm := 7000.0
@@ -364,6 +378,8 @@ func _compute() -> void:
 	var bars := part("handlebars")
 
 	cylinders = int(block["cylinders"])
+	v_angle = float(block.get("v_angle", 90.0)) if str(block.get("layout", "")) == "vtwin" else 0.0
+	valves = int(head.get("valves", 4))
 	main_capacity = tank["capacity"]
 	var fuel := _fluid("tank", "unleaded_95", main_capacity)
 	fuel_litres = fuel["litres"]
@@ -683,24 +699,70 @@ static func _sag(weight: float, rate: float, travel: float, progression: float, 
 
 
 ## Power per kilo with the rider on: the number weight-saving parts improve.
-## Whether the ECU gives this rider aid: "traction", "abs", "anti_wheelie" or "stability".
+## Whether the ECU gives this rider aid: "traction", "abs", "anti_wheelie", "stability" or
+## "lean_traction".
 func has_aid(aid: String) -> bool:
 	return ecu_features.has(aid)
 
 
-## How firmly an aid steps in as it's set on the dyno desk: 0 when the ECU hasn't got it or it's
-## switched off, the ECU's own `ecu_aid` at the factory level, up to 1.2 at the firmest. Aids
-## the desk doesn't set (ABS) are always at the factory level.
+## How firmly an aid steps in as it's set on the dyno desk or the dash: 0 when the ECU hasn't got
+## it or it's switched off, the ECU's own `ecu_aid` at the factory level, up to 1.2 at the
+## firmest. ABS is on or off: on, it's at the factory level.
 func aid_strength(aid: String) -> float:
 	if not has_aid(aid):
 		return 0.0
 	if not AID_KEYS.has(aid):
 		return ecu_aid
-	var level := clampi(roundi(tune_value(str(AID_KEYS[aid]))), 0, AID_LEVELS)
-	var mode := _mode()
-	if not mode.is_empty():
-		level = int(mode[aid])
-	return clampf(ecu_aid * AID_SCALE[level], 0.0, 1.2)
+	if AID_SWITCHES.has(aid):
+		return ecu_aid if aid_level(aid) > 0 else 0.0
+	return clampf(ecu_aid * AID_SCALE[aid_level(aid)], 0.0, 1.2)
+
+
+## The level an aid is at: 0 off, then 1 .. AID_LEVELS (0 or 1 for a switch like ABS). A ride
+## mode sets the levels of the aids it covers; otherwise they're the tune's (Custom).
+func aid_level(aid: String) -> int:
+	if not AID_KEYS.has(aid):
+		return 0
+	var top := 1 if AID_SWITCHES.has(aid) else AID_LEVELS
+	var level := clampi(roundi(tune_value(str(AID_KEYS[aid]))), 0, top)
+	return int(_mode().get(aid, level))
+
+
+## The aids this bike's ECU has that the rider can set, in the dash's order (see AID_KEYS).
+func rider_aids() -> Array[String]:
+	var out: Array[String] = []
+	for aid in AID_KEYS:
+		if has_aid(aid):
+			out.append(aid)
+	return out
+
+
+## The level an aid goes to at the next press on the dash: up a step, and from the firmest back
+## round to off (ABS just on and off).
+func next_aid_level(aid: String) -> int:
+	var top := 1 if AID_SWITCHES.has(aid) else AID_LEVELS
+	return (aid_level(aid) + 1) % (top + 1)
+
+
+## How an aid's level reads on the dash and the dyno desk: "Off", "On", "Level 3 of 5 (factory)".
+static func aid_level_text(aid: String, level: int) -> String:
+	if level <= 0:
+		return "Off"
+	if AID_SWITCHES.has(aid):
+		return "On"
+	return "Level %d of %d%s" % [level, AID_LEVELS, " (factory)" if level == AID_STOCK else ""]
+
+
+## How far the back tyre may spin past the road (a share of the road speed) before lean-angle
+## traction control cuts the power, at this lean (radians either way): about what plain traction
+## control allows bolt upright, tightening the further the bike is leaned over, and tighter at a
+## firmer level. A large number (never cuts in) with the aid off or not fitted.
+func lean_slip_allowance(lean: float) -> float:
+	if not aid_on("lean_traction"):
+		return 10.0
+	var firm := clampf(aid_strength("lean_traction"), 0.0, 1.0)
+	var t := clampf(absf(lean) / LEAN_TC_FULL, 0.0, 1.0)
+	return lerpf(lerpf(LEAN_TC_UPRIGHT.x, LEAN_TC_UPRIGHT.y, firm), lerpf(LEAN_TC_LEANED.x, LEAN_TC_LEANED.y, firm), t)
 
 
 ## A ride mode's name on the dash ("" is Custom: the levels set on the dyno desk).
@@ -728,9 +790,10 @@ func mode_throttle_rate() -> float:
 	return float(_mode().get("rate", 0.0))
 
 
-## Whether the ABS looks after this wheel: always the front, the back unless the ride mode is Sport.
+## Whether the ABS looks after this wheel: always the front, the back unless the ride mode is
+## Sport; neither with it switched off.
 func abs_on(is_front: bool) -> bool:
-	if not has_aid("abs"):
+	if not aid_on("abs"):
 		return false
 	return is_front or bool(_mode().get("abs_rear", true))
 
@@ -1236,8 +1299,10 @@ func tune_default(key: String) -> float:
 			return float(part("final_drive").get("rear", 45.0))
 		"chain":
 			return 30.0
-		"aid_traction", "aid_stability", "aid_anti_wheelie":
+		"aid_traction", "aid_stability", "aid_anti_wheelie", "aid_lean_traction":
 			return float(AID_STOCK)
+		"aid_abs":
+			return 1.0
 	return 0.0
 
 

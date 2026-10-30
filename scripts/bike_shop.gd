@@ -74,7 +74,7 @@ static func options(slot: String, style: String, parts: Dictionary) -> Array:
 	var all: Array = PartsDB.by_kind[kind].map(func(id): return str(id))
 	var suits := all.filter(func(id): return PartsDB.styles_of(id).has(style))
 	var out: Array = suits if suits.size() >= 2 else all.duplicate()
-	if PartsDB.is_optional(slot) and not out.has("none"):
+	if PartsDB.may_be_empty(slot) and not out.has("none"):
 		out.append("none")
 	var now := str(parts.get(slot, ""))
 	if now != "" and not out.has(now):
