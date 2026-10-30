@@ -2399,6 +2399,7 @@ func _draw_fork(build: BikeBuild) -> void:
 	var gold := _mat(Color(0.8, 0.65, 0.2), 1.0, 0.15)
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
 	var fl := build.fork_length
+	var made := false   # the new look's telescopic forks, made in Blender (see _blender_fork)
 	match style:
 		"girder":
 			for side in [-1.0, 1.0]:
@@ -2450,7 +2451,8 @@ func _draw_fork(build: BikeBuild) -> void:
 			var lr := float(lk.get("leg", 1.0))
 			var usd := style == "usd"
 			var lowers := _look_finish(str(lk.get("lowers", "")), gold if usd else black)
-			for side in [-1.0, 1.0]:
+			made = _blender_on() and _blender_fork(lowers, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome))
+			for side in ([] if made else [-1.0, 1.0]):
 				var x: float = lx * side
 				_tube(Vector3(x, 0.02, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55), (0.034 if usd else 0.024) * lr, main_mat, Vector3.ONE, _steer_node)
 				_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + _steer_axis * (fl * 0.5), (0.022 if usd else 0.032) * lr, lowers, Vector3.ONE, _front_hub)
@@ -2462,11 +2464,11 @@ func _draw_fork(build: BikeBuild) -> void:
 				if lk.get("shrouds", false):
 					var cover := _look_finish(str(lk.get("shroud_finish", "chrome")), chrome)
 					_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * 0.2, 0.038 * lr, cover, Vector3.ONE, _steer_node)
-			if lk.get("brace", false):
+			if lk.get("brace", false) and not made:
 				_box(Vector3(0.0, 0.0, 0.0) + _steer_axis * (fl * 0.25), Vector3(lx * 2.0, 0.03, 0.05), main_mat, _front_hub)
 			# Axle clamps at the foot of each slider, pinched by two bolts, and the axle nuts.
 			var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
-			for side in [-1.0, 1.0]:
+			for side in ([] if made else [-1.0, 1.0]):
 				var x: float = lx * side
 				var foot := _box(Vector3(x, 0.0, 0.0), Vector3(0.05 * lr, 0.06, 0.075), lowers, _front_hub)
 				foot.basis = _basis_up(_steer_axis)
@@ -2481,9 +2483,10 @@ func _draw_fork(build: BikeBuild) -> void:
 					var ear := _bend([Vector3(lx * side, -0.03, -0.01) - _steer_axis * 0.04, Vector3((lx + 0.01) * side, -0.07, -0.06), Vector3(0.1 * side, -0.08, -0.115)],
 						0.011, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome), _steer_node, 10)
 					ear.name = "HeadlampEar"
-	var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
-	_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
-	_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
+	if not made:
+		var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
+		_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
+		_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
 	# The front mudguard is a part of its own now: see _draw_front_mudguard.
 
 
@@ -6049,25 +6052,34 @@ func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w :
 	var pistons := int(_part().get("pistons", 2))
 	var cal_size := Vector3(0.045, 0.06 + 0.008 * pistons, 0.07 + 0.01 * pistons)
 	var cal_at := Vector3(x + 0.012, disc_r * 0.62, disc_r * 0.62 if front else -disc_r * 0.62)
-	var cal := _box(cal_at, cal_size, _mat(_col(), 0.5, 0.35), hub)
-	cal.rotation.x = -PI * 0.25 if front else PI * 0.25
-	# Bleed nipple and the two mounting bolts.
-	_mesh_instance(_cylinder(0.005, 0.016), bolt, cal_at + cal.basis * Vector3(0.012, cal_size.y * 0.5 + 0.006, 0.0), hub).basis = cal.basis
-	for k in [-1.0, 1.0]:
-		var b := _mesh_instance(_cylinder(0.008, 0.012), bolt, cal_at + cal.basis * Vector3(cal_size.x * 0.5 + 0.004, 0.0, cal_size.z * 0.35 * k), hub)
-		b.basis = cal.basis * Basis(Vector3.BACK, PI * 0.5)
+	var cal_basis := Basis(Vector3.RIGHT, -PI * 0.25 if front else PI * 0.25)
+	var cal_mat := _mat(_col(), 0.5, 0.35)
+	# The new look's caliper is made in Blender, its pistons, bleed nipple and bolts and all.
+	_blender_mats[_current_slot] = {"": cal_mat, "paint": cal_mat, "anodised": _mat(_col(), 0.8, 0.3), "raw_steel": bolt}
+	if not _blender_on() or _blender_pieces(BlenderParts.path_for("caliper", _part_id()), Transform3D(cal_basis, cal_at), {}, hub).is_empty():
+		var cal := _box(cal_at, cal_size, cal_mat, hub)
+		cal.basis = cal_basis
+		# Bleed nipple and the two mounting bolts.
+		_mesh_instance(_cylinder(0.005, 0.016), bolt, cal_at + cal_basis * Vector3(0.012, cal_size.y * 0.5 + 0.006, 0.0), hub).basis = cal_basis
+		for k in [-1.0, 1.0]:
+			var b := _mesh_instance(_cylinder(0.008, 0.012), bolt, cal_at + cal_basis * Vector3(cal_size.x * 0.5 + 0.004, 0.0, cal_size.z * 0.35 * k), hub)
+			b.basis = cal_basis * Basis(Vector3.BACK, PI * 0.5)
 	if front:
 		# The hose from the bottom yoke down the back of the fork leg to the caliper.
 		var j := _brake_line_joint() + _steer_axis * _build.fork_length
 		var fx := _fork_x() + 0.035
 		var slide := Vector3(fx, 0.0, 0.045) + _steer_axis * (_build.fork_length * 0.42)
-		var hose := _bike_only(_bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal.basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
+		var hose := _bike_only(_bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal_basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
 			0.005, _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4), hub, 8))
 		hose.name = "BrakeHose"
 		_bike_only(_box(slide, Vector3(0.012, 0.025, 0.02), _mat(Color(0.2, 0.2, 0.22), 0.6, 0.4), hub))
 	_current_slot = side + "_pads"
-	var pad := _box(cal_at + Vector3(0.0, 0.0, 0.0) + cal.basis.y * (cal_size.y * 0.5 + 0.012), Vector3(0.035, 0.024, 0.05), _mat(_col(), 0.4, 0.6), hub)
-	pad.basis = cal.basis
+	var pad_at := cal_at + cal_basis.y * (cal_size.y * 0.5 + 0.012)
+	var pad_mat := _mat(_col(), 0.4, 0.6)
+	_blender_mats[_current_slot] = {"": pad_mat, "paint": pad_mat}
+	if not _blender_on() or _blender_pieces(BlenderParts.path_for("pads", _part_id()), Transform3D(cal_basis, pad_at), {}, hub).is_empty():
+		var pad := _box(pad_at, Vector3(0.035, 0.024, 0.05), pad_mat, hub)
+		pad.basis = cal_basis
 
 
 ## Each disc style's face, drawn once: white where there's metal and clear where there isn't
@@ -6268,9 +6280,14 @@ func _draw_shock() -> void:
 	var col := _col()
 	var chrome := _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2)
 	_struts.clear()
+	# The new look's shocks are made in Blender, each stretched between the code's two points.
+	var made := BlenderParts.path_for("shock", _part_id())
+	if not _blender_on() or BlenderParts.part(made).is_empty():
+		made = ""
 	if shock.get("layout", "mono") == "twin":
 		var gas: bool = _part_id() == "twin_shock_gas"
 		var spring_mat := _mat(col, 0.6, 0.3)
+		_blender_mats["shock"] = {"": spring_mat, "paint": spring_mat, "chrome": chrome}
 		var softail := _arm_type() in ["softail", "hardtail"]
 		for side in [-1.0, 1.0]:
 			if softail:
@@ -6278,6 +6295,9 @@ func _draw_shock() -> void:
 				# and the front of the swingarm's triangle, so the back end looks rigid.
 				var front := Vector3(0.07 * side, _pivot.y - 0.03, _pivot.z - 0.28)
 				var arm_end := Vector3(0.07 * side, -0.05, 0.1)
+				if made != "":
+					_blender_strut(made, front, arm_end)
+					continue
 				_strut(front, arm_end, 0.012, chrome)
 				_strut(front.lerp(_pivot + arm_end, 0.1), arm_end + (front - _pivot - arm_end) * 0.35, 0.026, spring_mat)
 				continue
@@ -6288,15 +6308,23 @@ func _draw_shock() -> void:
 			# down further, the way a bobber's does.
 			top.y = minf(top.y, _seat_y - 0.07)
 			var bottom := Vector3(0.12 * side, 0.02, _arm_len - 0.08)
-			_strut(top, bottom, 0.012, chrome)
-			_strut(top + (_pivot + bottom - top) * 0.08, bottom + (top - _pivot - bottom) * 0.25, 0.028, spring_mat)
+			if made != "":
+				_blender_strut(made, top, bottom)
+			else:
+				_strut(top, bottom, 0.012, chrome)
+				_strut(top + (_pivot + bottom - top) * 0.08, bottom + (top - _pivot - bottom) * 0.25, 0.028, spring_mat)
 			if gas:
 				_tube(Vector3(0.155 * side, 0.22, _arm_len - 0.17), Vector3(0.155 * side, 0.32, _arm_len - 0.21), 0.016, chrome, Vector3.ONE, _swingarm)
 	else:
 		var top := Vector3(0.0, _seat_y - 0.14, _pivot.z + 0.02)
 		var bottom := Vector3(0.0, 0.07, 0.14)
-		_strut(top, bottom, 0.016, chrome)
-		_strut(top + (_pivot + bottom - top) * 0.1, bottom + (top - _pivot - bottom) * 0.3, 0.038, _mat(col, 0.3, 0.4))
+		var spring := _mat(col, 0.3, 0.4)
+		_blender_mats["shock"] = {"": spring, "paint": spring, "chrome": chrome, "anodised": _mat(col, 0.8, 0.3)}
+		if made != "":
+			_blender_strut(made, top, bottom)
+		else:
+			_strut(top, bottom, 0.016, chrome)
+			_strut(top + (_pivot + bottom - top) * 0.1, bottom + (top - _pivot - bottom) * 0.3, 0.038, spring)
 
 
 ## A shock absorber part between a point on the frame (`top`, model space) and one on the
@@ -6305,6 +6333,16 @@ func _strut(top: Vector3, bottom: Vector3, radius: float, mat: Material) -> void
 	var low := _pivot + bottom
 	var mi := _tube(top, low, radius, mat)
 	_struts.append({"mi": mi, "top": top, "bottom": bottom, "rest": top.distance_to(low)})
+
+
+## New look: a Blender-made shock (its glb at `path`, from mount_top down to mount_bottom) between
+## `top` and `bottom` as _strut takes them, each of its surfaces stretched from the top as the arm moves.
+func _blender_strut(path: String, top: Vector3, bottom: Vector3) -> void:
+	var rest := ((BlenderParts.part(path)["mounts"] as Dictionary)["bottom"] as Transform3D).origin.length()
+	var low := _pivot + bottom
+	var xf := Transform3D(_basis_up((top - low).normalized()) * Basis.from_scale(Vector3(1.0, top.distance_to(low) / rest, 1.0)), top)
+	for mi in _blender_pieces(path, xf):
+		_struts.append({"mi": mi, "top": top, "bottom": bottom, "rest": rest, "from_top": true})
 
 
 func _update_struts() -> void:
@@ -6316,6 +6354,11 @@ func _update_struts() -> void:
 		var low: Vector3 = _swingarm.transform * (s["bottom"] as Vector3)
 		var dir := low - top
 		var length := dir.length()
+		if s.get("from_top", false):
+			# (A Blender-made shock runs down from its top mount.)
+			mi.position = top
+			mi.basis = _basis_up(-dir / maxf(length, 0.001)) * Basis.from_scale(Vector3(1.0, length / float(s["rest"]), 1.0))
+			continue
 		mi.position = (top + low) * 0.5
 		mi.basis = _basis_up(dir / maxf(length, 0.001)) * Basis.from_scale(Vector3(1.0, length / float(s["rest"]), 1.0))
 
@@ -8543,6 +8586,26 @@ func _blender_mat(slot: String, tag: String, from := "") -> Material:
 	mats[key] = m
 	_blender_mats[slot] = mats
 	return m
+
+
+## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,
+## yokes and shrouds (`shrouds` their finish) from the head on the steering, the sliders, axle
+## clamps, gaiters and brace (`lowers` their finish) from the axle on the front hub, so they slide
+## together as the fork works. False when the fork has no glbs.
+func _blender_fork(lowers: Material, shrouds: Material) -> bool:
+	var upper := BlenderParts.path_for("fork", _part_id() + "_upper")
+	var lower := BlenderParts.path_for("fork", _part_id() + "_lower")
+	if BlenderParts.part(upper).is_empty() or BlenderParts.part(lower).is_empty():
+		return false
+	var main := _mat(_col(), 0.9, 0.2)
+	_blender_mats[_current_slot] = {"": main, "paint": main, "cast_alloy": lowers, "chrome": shrouds,
+		"black_metal": _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35), "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)}
+	# Built at the fork's own length: stretched to the bike's if that's different.
+	var k := _build.fork_length / maxf(float(_part().get("length", _build.fork_length)), 0.01)
+	var along := Basis(Vector3.RIGHT, _steer_axis, Vector3.RIGHT.cross(_steer_axis)) * Basis.from_scale(Vector3(1.0, k, 1.0))
+	_blender_pieces(upper, Transform3D(along, Vector3.ZERO), {}, _steer_node)
+	_blender_pieces(lower, Transform3D(along, Vector3.ZERO), {}, _front_hub)
+	return true
 
 
 ## New look: a wheel's Blender-made rim, spokes and hub (and the rear's cush drive) on its

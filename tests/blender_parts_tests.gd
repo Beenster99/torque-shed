@@ -356,7 +356,18 @@ static func _blender_made(mi) -> bool:
 
 ## The slots the loader draws in their Blender-made shapes (waves 1 and 2 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
-	"front_disc", "rear_disc"]
+	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork"]
+
+
+## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
+## springer and leading-link forks, and a drum brake's arm and shoes (its caliper and pads).
+static func _expects_blender(m: BikeModel, slot: String) -> bool:
+	match slot:
+		"fork":
+			return str(m._build.part("fork").get("style", "conventional")) in ["conventional", "usd"]
+		"front_caliper", "rear_caliper", "front_pads", "rear_pads":
+			return str(m._build.part(slot.get_slice("_", 0) + "_disc").get("style", "")) != "drum"
+	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
 ## The most triangles a new-look bike may draw close up with its Blender-made parts on, and how
@@ -367,7 +378,7 @@ const LOADED_MORE := 60000
 
 
 ## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
-## tyres and brakes where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
+## tyres, brakes, shocks and fork where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
 ## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
 func test_new_look() -> void:
 	var off := []
@@ -389,7 +400,7 @@ func test_new_look() -> void:
 		var m: BikeModel = models["blender"]
 		for slot in m._slot_meshes:
 			var mine := (m._slot_meshes[slot] as Array).filter(_blender_made)
-			if slot in LOADED and mine.is_empty() and not (models["code"] as BikeModel)._slot_meshes[slot].is_empty():
+			if slot in LOADED and mine.is_empty() and not (models["code"] as BikeModel)._slot_meshes[slot].is_empty() and _expects_blender(m, slot):
 				missing.append("%s %s" % [style, slot])
 			if (models["classic"] as BikeModel)._slot_meshes[slot].any(_blender_made):
 				classic_blender.append("%s %s" % [style, slot])
@@ -443,7 +454,7 @@ func test_new_look() -> void:
 				missing.append(str(parts[slot]))
 		m.free()
 	BikeLookNew.lods_now = false
-	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres and brakes, and every one in the catalogue is drawn %s" % [missing])
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks and fork, and every one in the catalogue is drawn %s" % [missing])
 	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
 	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
 	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.
@@ -458,8 +469,9 @@ func test_new_look() -> void:
 	var left := 0
 	for mi in bake.find_children("*", "MeshInstance3D", true, false):
 		var mesh := (mi as MeshInstance3D).mesh
-		# (A tyre stays a mesh of its own, the sidewall lettering hanging off it, as in Classic.)
-		if _blender_made(mi) and (mi as Node).get_child_count() == 0:
+		# (A tyre stays a mesh of its own, the sidewall lettering hanging off it, and a shock's pieces
+		# move with the swingarm, as in Classic.)
+		if _blender_made(mi) and (mi as Node).get_child_count() == 0 and not bake._struts.any(func(st): return st["mi"] == mi):
 			left += 1
 		if mesh == null or (mi as MeshInstance3D).material_override != BikeShader.material():
 			continue
@@ -472,6 +484,26 @@ func test_new_look() -> void:
 		"baked, the Blender-made pieces merge with the rest (%d left, %d draws, %d and %d triangles 30 and 120 m off) and the headers colour with heat"
 		% [left, s["draws"] - s["rider_draws"], s["tris_lod1"], s["tris_lod2"]])
 	bake.free()
+	# A Blender-made shock stays on its mounts as the swingarm moves, twin or mono, and the fork's
+	# sliders go up and down with the wheel.
+	var gap := 0.0
+	var slides := true
+	for style in ["classic", "sport", "cruiser"]:
+		var m := BikeModel.new()
+		m.look = BikeLook.NEW
+		t.add_child(m)
+		m.build_from(BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build(style))))
+		m.update_pose_from(0.0, 0.0, 0.0, 0.06, 0.09, 0.0, 0.0)
+		var struts := m._struts.filter(func(st): return st.get("from_top", false))
+		for st in struts:
+			var mi := st["mi"] as MeshInstance3D
+			var low: Vector3 = m._swingarm.transform * (st["bottom"] as Vector3)
+			gap = maxf(gap, (mi.transform * Vector3(0.0, -float(st["rest"]), 0.0)).distance_to(low))
+			gap = maxf(gap, mi.position.distance_to(st["top"]))
+		var lower: Array = m._slot_meshes["fork"].filter(func(mi): return _blender_made(mi) and (mi as Node).get_parent() == m._front_hub)
+		slides = slides and not struts.is_empty() and (not lower.is_empty() or not _expects_blender(m, "fork"))
+		m.free()
+	check(slides and gap < 0.002, "a Blender shock stays on both its mounts as the arm swings (%.1f mm off at worst), and the fork's sliders ride on the wheel" % [gap * 1000.0])
 	# A can on the left is the right-hand one mirrored, its triangles still facing out.
 	var path := BlenderParts.can_path("turnout")
 	var at := BlenderParts.placed(path, BlenderParts.can_xform(Vector3(-0.15, 0.3, 0.2), Vector3(-0.16, 0.25, 0.7), 0.05, "turnout"))

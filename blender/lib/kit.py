@@ -53,7 +53,7 @@ BUDGETS = {
     # (A tyre glb is one of the 32 sections the game bends round the hoop: 1/32 of a tyre's 8000.)
     "wheel": [10000, 2500, 250], "tyre": [250, 62, 8], "fork": [8000, 2000, 200],
     "swingarm": [5000, 1200, 150], "saddle": [4000, 1000, 150], "tail": [4000, 1000, 150],
-    "shock": [4000, 1000, 100], "disc": [4000, 1000, 100], "caliper": [4000, 1000, 100],
+    "shock": [4000, 1000, 100], "disc": [4000, 1000, 100], "caliper": [4000, 1000, 100], "pads": [4000, 1000, 100],
     "handlebars": [4000, 1000, 100], "dashboard": [4000, 1000, 100], "headlight": [4000, 1000, 100],
     "panniers": [4000, 1000, 100], "top_box": [4000, 1000, 100],
 }
@@ -67,6 +67,7 @@ MOUNTS = {
     "exhaust/can": ["inlet", "outlet"],
     "exhaust/fitting": ["exhaust_port"],
     "wheel": ["axle"],
+    "shock": ["top", "bottom"],
 }
 
 
