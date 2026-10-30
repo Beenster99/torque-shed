@@ -216,6 +216,9 @@ var _slot_shapes := {}
 ## Each bent tube's line and thickness, by its mesh's instance id (see _bend). Kept here rather
 ## than as a meta on the mesh, which would stop _bake_static merging it.
 var _bends := {}
+## Where the exhaust headers leave the head, for the new look's heat colouring (see
+## BikeLookNew.bake).
+var _exhaust_ports: Array = []
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -235,6 +238,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_shared.clear()
 	_slot_shapes.clear()
 	_bends.clear()
+	_exhaust_ports.clear()
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -2167,6 +2171,7 @@ func _draw_exhaust(zr: float) -> void:
 		# The header flange bolted to the port.
 		var flange := _mesh_instance(_cylinder(0.03, 0.01), _mat(Color(0.55, 0.56, 0.58), 1.0, 0.3), port)
 		flange.basis = _basis_up(Vector3(0.0, -0.05, -0.05).normalized() if not (_build.layout == "vtwin" and i == 1) else Vector3.RIGHT)
+	_exhaust_ports = ports.duplicate()
 	var e := _engine_c
 	var s := _eng_s
 	var under := e.y - 0.19 * s
