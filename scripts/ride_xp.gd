@@ -52,8 +52,8 @@ func step(b: Bike, delta: float) -> void:
 	var front: bool = b.wheels[0]["contact"]
 	var rear: bool = b.wheels[1]["contact"]
 	var v := absf(b.speed)
-	if b.is_crashed:
-		# A crash spoils whatever trick was under way.
+	if b.is_crashed or b.freeze:
+		# A crash spoils whatever trick was under way (and a bike held still, as on a ferry's deck, does no tricks).
 		_air = 0.0
 		_landing = -1.0
 		_wheelie = 0.0

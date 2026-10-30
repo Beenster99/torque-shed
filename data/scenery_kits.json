@@ -549,7 +549,7 @@
     "span": 50,
     "sag": 0.015,
     "clear": 5.5,
-    "wire": 0.015
+    "wire": 0.005
    }
   },
   "communication_tower": {
@@ -893,15 +893,129 @@
   "ferry": {
    "round": "D7",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "ferry:ramp",
+    "reach": 3000,
+    "hull": "#1d2430",
+    "upper": "#eeeeea",
+    "funnel": "#c8501e",
+    "stripe": "#2a4f8f",
+    "deck": "#55595a"
+   },
+   "regions": {
+    "british_isles": {
+     "hull": "#141414",
+     "upper": "#f2f2ee",
+     "funnel": "#c62a1f",
+     "stripe": "#c62a1f",
+     "deck": "#5b5f5c"
+    },
+    "western_europe": {
+     "hull": "#1c3b6e",
+     "upper": "#f4f4f0",
+     "funnel": "#f2f2ee",
+     "stripe": "#d92b2b"
+    },
+    "nordic": {
+     "hull": "#b8221d",
+     "upper": "#f5f5f2",
+     "funnel": "#f5f5f2",
+     "stripe": "#14305c"
+    },
+    "eastern_europe": {
+     "hull": "#24456b",
+     "upper": "#ecebe4",
+     "funnel": "#e0b323",
+     "stripe": "#24456b"
+    },
+    "mediterranean": {
+     "hull": "#1b5fa8",
+     "upper": "#fbfbf8",
+     "funnel": "#1b5fa8",
+     "stripe": "#fbfbf8"
+    },
+    "north_africa_middle_east": {
+     "hull": "#2c6e49",
+     "upper": "#efe9da",
+     "funnel": "#c7462a",
+     "stripe": "#2c6e49"
+    },
+    "sub_saharan_africa": {
+     "hull": "#3d3a36",
+     "upper": "#e9e4d6",
+     "funnel": "#e0b21c",
+     "stripe": "#2d7d3a"
+    },
+    "north_america": {
+     "hull": "#20352a",
+     "upper": "#f0efe8",
+     "funnel": "#20352a",
+     "stripe": "#b0892c"
+    },
+    "latin_america": {
+     "hull": "#2167a0",
+     "upper": "#f2efe6",
+     "funnel": "#e3a21c",
+     "stripe": "#c23a2b"
+    },
+    "south_asia": {
+     "hull": "#7a1f1f",
+     "upper": "#efe8d6",
+     "funnel": "#e6b92a",
+     "stripe": "#1f6e4a"
+    },
+    "east_asia": {
+     "hull": "#f0f0ec",
+     "upper": "#f7f7f4",
+     "funnel": "#1e56a3",
+     "stripe": "#1e56a3",
+     "deck": "#4f6b5a"
+    },
+    "south_east_asia": {
+     "hull": "#1d6fa3",
+     "upper": "#f3f1ea",
+     "funnel": "#d23b2a",
+     "stripe": "#f2c230"
+    },
+    "australia_nz": {
+     "hull": "#1d3557",
+     "upper": "#f1f1ec",
+     "funnel": "#e76f2a",
+     "stripe": "#2a9d8f"
+    }
    }
   },
   "ferry_terminal": {
    "round": "D7",
    "default": {
-    "model": "standin:post",
-    "reach": 1500
+    "model": "ferry:hut",
+    "reach": 1500,
+    "hut": "#d8d2c4"
+   },
+   "regions": {
+    "british_isles": {
+     "hut": "#e8e4da"
+    },
+    "nordic": {
+     "hut": "#9c2f22"
+    },
+    "east_asia": {
+     "hut": "#e4e6e8"
+    },
+    "mediterranean": {
+     "hut": "#f2ead8"
+    },
+    "north_america": {
+     "hut": "#c9c2ae"
+    },
+    "south_east_asia": {
+     "hut": "#e9dcc0"
+    },
+    "latin_america": {
+     "hut": "#e8c68f"
+    },
+    "australia_nz": {
+     "hut": "#dcd7c8"
+    }
    }
   },
   "fish_pass": {
@@ -1373,7 +1487,7 @@
     "span": 70,
     "sag": 0.015,
     "clear": 6,
-    "wire": 0.02
+    "wire": 0.007
    },
    "regions": {
     "east_asia": {
@@ -1713,7 +1827,7 @@
     "span": 330,
     "sag": 0.03,
     "clear": 12,
-    "wire": 0.035
+    "wire": 0.02
    },
    "regions": {
     "north_america": {

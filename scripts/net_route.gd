@@ -11,6 +11,10 @@ extends RefCounted
 ## metres along the graph's lines (RealRegion.edge_len); costs are those metres weighed by the ride's style
 ## (RoutePlanner.CLASS_COST), as the planner weighed them, so a way back takes the roads the crew would.
 ##
+## A crossing by ferry (RealPack.ferries, FerryLinks) comes between two steps: the one before ends at the terminal it's
+## boarded at, the one after starts at the terminal it lands at; its metres are counted along the route between them.
+## A way back to the route is found by road only, never past a crossing (each crossing ends a leg).
+##
 ## Everything here is plain data and pure functions of the region: search runs on a worker thread.
 
 ## Bumped whenever how the route is read from the plan changes: it's in the hash every rider's route carries.
@@ -34,6 +38,8 @@ var leg_end := PackedInt32Array()
 ## The steps that reach the destination (the last pin); past it, the run-out.
 var dest_step := 0
 var dest_node := -1
+## The crossings: {the step each comes before: RealPack.ferries' row}.
+var ferry_at := {}
 ## 12 hex of VERSION, the region's hash and the steps: the same on every machine with the same plan.
 var hash := ""
 var _steps_of := {}   # directed key -> PackedInt32Array of the steps that ride it (an edge may be ridden twice)
@@ -46,19 +52,26 @@ static func of_pack(pack: RealPack, r: RealRegion, mode := "main") -> NetRoute:
 	var list: Array[Vector2i] = []
 	for k in range(0, pack.steps.size() - 2, 3):
 		list.append(Vector2i(pack.steps[k + 1], pack.steps[k]))
-	return NetRoute.new(r, list, pack.pin_nodes, pack.run_start, mode)
+	return NetRoute.new(r, list, pack.pin_nodes, pack.run_start, mode, pack.ferries)
 
 
 ## A route over `r` of `steps` (each Vector2i(edge, from node)), through the pins' nodes `pins` (the first is where
 ## it starts), reaching the last pin after `run_start` steps.
-func _init(r: RealRegion, steps: Array[Vector2i], pins := PackedInt32Array(), run_start := -1, mode := "main") -> void:
+func _init(r: RealRegion, steps: Array[Vector2i], pins := PackedInt32Array(), run_start := -1, mode := "main",
+		ferries: Array = []) -> void:
 	region = r
 	costs = costs_of(r, mode)
 	var m := 0.0
 	var c := 0.0
 	var text := "%d|%s" % [VERSION, r.hash]
+	for f: Dictionary in ferries:
+		ferry_at[int(f["step"])] = f
+		text += "|f%d:%s" % [int(f["step"]), str(f["id"])]   # (a route with none hashes as it did)
 	for st in steps:
 		var i := edges.size()
+		if ferry_at.has(i):
+			m += float(ferry_at[i]["m"])
+			c += float(ferry_at[i]["m"]) * FerryLinks.COST_PER_M
 		edges.append(st.x)
 		froms.append(st.y)
 		at_m.append(m)
@@ -90,6 +103,11 @@ func _init(r: RealRegion, steps: Array[Vector2i], pins := PackedInt32Array(), ru
 	if ends.is_empty() or ends[ends.size() - 1] < dest_step:
 		ends.append(dest_step)
 	ends.append(n)
+	# (a crossing ends a leg too: the way back to the route is by road, on this side of the water)
+	for at in ferry_at:
+		if int(at) > 0 and int(at) < n and not ends.has(int(at)):
+			ends.append(int(at))
+	ends.sort()
 	leg_end.resize(n)
 	var e := 0
 	for i in n:
@@ -110,6 +128,20 @@ static func costs_of(r: RealRegion, mode: String) -> PackedFloat64Array:
 ## A directed step's key: edge `edge` entered from node `from`.
 static func key_of(r: RealRegion, edge: int, from: int) -> int:
 	return edge * 2 + (0 if r.edge_a[edge] == from else 1)
+
+
+## The crossing step `i` comes before ({} for none: RealPack.ferries' row).
+func ferry_before(i: int) -> Dictionary:
+	return ferry_at.get(i, {})
+
+
+## The first crossing at or after step `i`: the step it comes before, -1 for none.
+func next_ferry(i: int) -> int:
+	var best := -1
+	for at in ferry_at:
+		if int(at) >= i and (best < 0 or int(at) < best):
+			best = int(at)
+	return best
 
 
 ## The node step `i` ends at.

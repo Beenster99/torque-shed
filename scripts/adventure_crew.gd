@@ -41,7 +41,8 @@ static func builds() -> String:
 	if _builds == "":
 		_builds = builds_of([RoadBlock.VERSION, RoutePlanner.VERSION, PlaceProfile.FORMAT,
 			FileAccess.get_md5(RegionKit.KITS), FileAccess.get_md5(RegionKit.COUNTRIES),
-			SceneryStreamer.VERSION, FileAccess.get_md5(SceneryStreamer.KITS), SceneryStreamer.script_versions(), Net.PROTOCOL])
+			SceneryStreamer.VERSION, FileAccess.get_md5(SceneryStreamer.KITS), SceneryStreamer.script_versions(), Net.PROTOCOL,
+			"ferry%d" % FerryLinks.VERSION])
 	return _builds
 
 
@@ -51,20 +52,23 @@ static func builds_of(parts: Array) -> String:
 
 
 ## The ride hash for `region` with builder hash `with` (this game's by default): the builders, the region's cells
-## (its hash is made of theirs), its place profile and its features (the scenery). Every machine on a network ride must
+## (its hash is made of theirs), its place profile, its features (the scenery) and the ferries joining its roads. Every machine on a network ride must
 ## have the same one.
 static func ride_hash(region: RealRegion, with := "") -> String:
 	if region == null:
 		return ""
 	var profile := str(PlaceProfile.of_region(region).get("hash", ""))
-	return ride_hash_of(with if with != "" else builds(), region.hash, profile, region.features_hash)
+	return ride_hash_of(with if with != "" else builds(), region.hash, profile, region.features_hash, FerryLinks.of(region).hash)
 
 
-## (A region with no features has the ride hash it had before there were any.)
-static func ride_hash_of(builders: String, region_hash: String, profile_hash: String, features_hash := "") -> String:
+## (A region with no features has the ride hash it had before there were any, and one with no ferries the one it had
+## before there were ferries.)
+static func ride_hash_of(builders: String, region_hash: String, profile_hash: String, features_hash := "", ferries_hash := "") -> String:
 	var parts := [builders, region_hash, profile_hash]
 	if features_hash != "":
 		parts.append(features_hash)
+	if ferries_hash != "":
+		parts.append("ferries:" + ferries_hash)
 	return "|".join(parts).sha1_text().substr(0, 12)
 
 
@@ -212,3 +216,108 @@ static func settle(route: Dictionary, result: String) -> String:
 ## client counts down from when the call came in).
 static func seconds_left(since: int) -> int:
 	return maxi(0, ceili(CALL_SECONDS - since / 1000.0))
+
+
+# ---------------------------------------------------------------------------- crossing on a ferry together
+
+## The crew crosses on a ferry together (D7, see FerryCrossing). The sailing lives in Shed.adventure["ferry"]:
+## {} when there's none, else {sail (one more each sailing), id (the route's), from, to (the terminals' junctions),
+## seconds (how long the crossing is: FerryLinks.seconds), aboard {peer: true}, landed {peer: true} (off
+## on the far side), since (the host's msec the first went aboard), departs (the host's msec it left, 0 while it's
+## at the ramp)}. A rider rides onto the ramp to go aboard (adventure_ferry_board); the host lets it go once everyone
+## out on the ride is aboard, or after FERRY_WAIT once half of them are or more (adventure_ferry_tick), as the ride's
+## start waits for the crew; once everyone aboard has landed (adventure_ferry_landed) the host clears it, and the next sailing's boat is at
+## the ramp.
+
+## How long the ferry waits at the ramp for the rest of the crew once someone's aboard (s), and how soon it leaves
+## once all are (s).
+const FERRY_WAIT := 60.0
+const FERRY_ALL_IN := 2.0
+## A sailing whose riders haven't all said they've landed is cleared anyway this many times its length on, and two
+## minutes (a game stuck mid-crossing: one that drops out of the crew is let go of at once).
+const FERRY_LATE := 4.0
+
+
+## The sailing as received ({} for none or junk).
+static func sanitize_ferry(v) -> Dictionary:
+	if not v is Dictionary or int(v.get("sail", 0)) <= 0 or str(v.get("id", "")) == "":
+		return {}
+	var aboard := {}
+	if v.get("aboard") is Dictionary:
+		for p in v["aboard"]:
+			aboard[int(p)] = true
+	var landed := {}
+	if v.get("landed") is Dictionary:
+		for p in v["landed"]:
+			landed[int(p)] = true
+	return {"sail": int(v["sail"]), "id": str(v["id"]), "from": int(v.get("from", -1)), "to": int(v.get("to", -1)),
+		"seconds": clampf(float(v.get("seconds", FerryLinks.CROSS_LEAST)), FerryLinks.CROSS_LEAST, FerryLinks.CROSS_MOST), "aboard": aboard,
+		"landed": landed, "since": int(v.get("since", 0)), "departs": int(v.get("departs", 0))}
+
+
+## Why `peer` can't go aboard the ferry on route `id` from terminal `from` now ("" if they can).
+static func board_check(ferry: Dictionary, peer: int, id: String, from: int, riders: Array) -> String:
+	if not riders.has(peer):
+		return "You're not out on the ride."
+	if id == "" or from < 0:
+		return "There's no ferry there."
+	if ferry.is_empty():
+		return ""
+	if (ferry["aboard"] as Dictionary).has(peer):
+		return "You're aboard already."
+	if int(ferry["departs"]) != 0:
+		return "The ferry's just left: the next one's in a minute or so."
+	if str(ferry["id"]) != id or int(ferry["from"]) != from:
+		return "The crew's boarding another ferry."
+	return ""
+
+
+## `ferry` with `peer` aboard (a new sailing, number `sail`, from `from` to `to` on route `id`, `seconds` long, when
+## there's none), at the host's `now` (msec).
+static func board(ferry: Dictionary, peer: int, id: String, from: int, to: int, seconds: float, sail: int, now: int) -> Dictionary:
+	var out := ferry.duplicate(true)
+	if out.is_empty():
+		out = {"sail": sail, "id": id, "from": from, "to": to, "aboard": {}, "landed": {}, "since": now, "departs": 0,
+			"seconds": clampf(seconds, FerryLinks.CROSS_LEAST, FerryLinks.CROSS_MOST)}
+	(out["aboard"] as Dictionary)[peer] = true
+	return out
+
+
+## Whether the ferry should leave at the host's `now` (msec), with `riders` the peers out on the ride.
+static func should_sail(ferry: Dictionary, riders: Array, now: int) -> bool:
+	if ferry.is_empty() or int(ferry["departs"]) != 0:
+		return false
+	var aboard: Dictionary = ferry["aboard"]
+	var on := 0
+	for p in riders:
+		if aboard.has(p):
+			on += 1
+	if on == 0:
+		return false
+	if on >= riders.size():
+		return now - int(ferry["since"]) >= int(FERRY_ALL_IN * 1000.0) or riders.size() == 1
+	return now - int(ferry["since"]) >= int(FERRY_WAIT * 1000.0) and on * 2 >= riders.size()
+
+
+## Whether sailing `ferry` (`total` s long, FerryCrossing.total_of) is over at the host's `now` (msec): everyone aboard
+## who's still out on the ride (`riders`) has landed, or it's long past.
+static func sailing_over(ferry: Dictionary, riders: Array, now: int, total: float) -> bool:
+	if ferry.is_empty() or int(ferry["departs"]) == 0:
+		return false
+	var landed: Dictionary = ferry["landed"]
+	var all := true
+	for p in ferry["aboard"]:
+		if riders.has(p) and not landed.has(p):
+			all = false
+	return all or now - int(ferry["departs"]) > int((total * FERRY_LATE + 120.0) * 1000.0)
+
+
+## The names of the crew still to come aboard ({peer: {name}} as Shed.crew; `riders` those out on the ride).
+static func ferry_waiting(ferry: Dictionary, crew: Dictionary, riders: Array) -> Array[String]:
+	var out: Array[String] = []
+	if ferry.is_empty():
+		return out
+	for p in riders:
+		if not (ferry["aboard"] as Dictionary).has(p):
+			out.append(str((crew.get(p, {}) as Dictionary).get("name", "a mate")))
+	return out

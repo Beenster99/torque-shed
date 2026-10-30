@@ -1,0 +1,26 @@
+{
+ "format": 1,
+ "release": "2026-10-21.0",
+ "cells": {
+  "586_698": {
+   "hash": "2a617d9945125d52",
+   "bytes": 237755,
+   "url": "https://github.com/Beenster99/torque-shed-world/releases/download/cells-2026-10-21.0-b29_34/c586_698-2a617d9945125d52.zip",
+   "tools": "dfbb167"
+  },
+  "586_699": {
+   "hash": "dbbfef5c0bc64a06",
+   "bytes": 276311,
+   "url": "https://github.com/Beenster99/torque-shed-world/releases/download/cells-2026-10-21.0-b29_34/c586_699-dbbfef5c0bc64a06.zip",
+   "tools": "dfbb167"
+  }
+ },
+ "features": {
+  "586_698": "67563da1224e",
+  "586_699": "3ac1842096d2"
+ },
+ "profiles": {
+  "586_698": "43f111ae1596",
+  "586_699": "1e75a14bbcfe"
+ }
+}

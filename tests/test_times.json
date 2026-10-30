@@ -334,6 +334,8 @@
 	"_test_paint_save": 13,
 	"_test_paint_unlocks": 11,
 	"_test_part_preview": 427,
+	"_test_parts_page_fits": 1500,
+	"_test_parts_page_studio": 600,
 	"_test_parts_computer_organised": 846,
 	"_test_perf_steady": 4200,
 	"_test_performance": 5079,
@@ -664,5 +666,12 @@
 	"_test_history_regions": 12000,
 	"_test_ride_fb_windows": 50,
 	"_test_ride_fb_respawn": 30,
-	"_test_ride_fb_map": 1500
+	"_test_ride_fb_map": 1500,
+	"_test_ferry_links": 60,
+	"_test_ferry_plan": 250,
+	"_test_ferry_nav": 200,
+	"_test_ferry_crew": 5,
+	"_test_ferry_timeline": 15,
+	"_test_ferry_kits": 120,
+	"_test_ferry_lay_out": 60
 }

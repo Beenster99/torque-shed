@@ -7,6 +7,10 @@ extends RefCounted
 ## road to the destination, worked out again whenever you leave it. It says what to do at the junctions coming up from
 ## the network's own junctions (RoadNet.junction_of): which exit off a roundabout, left or right at a tee.
 ##
+## A crossing by ferry on the route (NetRoute.ferry_at) ends the way ahead at its terminal: "Take the ferry" is what
+## there is to say there, and the ferry's line over the water is drawn on from it. Once across (FerryCrossing tells it,
+## landed), the way goes on from the far side.
+##
 ## One per ride (of), for this machine's rider, shared by the sat nav's screens and the HUD's warnings. Where you are
 ## is worked out once a frame, however many of its questions are asked. A new way is found on a worker thread
 ## (NetRoute.search), the old one shown meanwhile.
@@ -292,15 +296,44 @@ func steps_ahead(count := 64) -> Array[Vector2i]:
 	if hit.is_empty() or route == null or status in ["off", "lost", "finding", ""]:
 		return out
 	if status == "on_route":
-		for i in range(progress, mini(route.size(), progress + count)):
+		for i in range(progress, mini(_ferry_stop(progress), progress + count)):
 			out.append(Vector2i(route.edges[i], route.froms[i]))
 		return out
 	for k in range(way_at, way.size()):
 		out.append(way[k])
 	if rejoin >= 0:
-		for i in range(rejoin + 1, mini(route.size(), rejoin + count)):
+		for i in range(rejoin + 1, mini(_ferry_stop(rejoin + 1), rejoin + count)):
 			out.append(Vector2i(route.edges[i], route.froms[i]))
 	return out.slice(0, count)
+
+
+## Where the way ahead from step `i` stops: the next crossing past it (the steps after are over the water), else the
+## route's end.
+func _ferry_stop(i: int) -> int:
+	var f := route.next_ferry(i + 1)
+	return f if f >= 0 else route.size()
+
+
+## The crossing the way ahead ends at (RealPack.ferries' row, with "step"), {} for none.
+func ferry_ahead() -> Dictionary:
+	if route == null or status in ["off", "lost", "finding", ""]:
+		return {}
+	var from := progress if status == "on_route" else (rejoin + 1 if rejoin >= 0 else -1)
+	if from < 0:
+		return {}
+	var f := route.next_ferry(from + 1)
+	return route.ferry_before(f) if f >= 0 else {}
+
+
+## Across the water: the rider's landed at the far terminal of the crossing before step `step` (FerryCrossing).
+func landed(step: int) -> void:
+	if route == null or step < 0 or step >= route.size():
+		return
+	progress = step
+	status = "on_route"
+	_lose_way()
+	_want = false
+	hit = {}
 
 
 ## How far along the first of steps_ahead the rider is, the way it's to be ridden (m).
@@ -358,6 +391,18 @@ func line_ahead(metres: float) -> PackedVector2Array:
 			out.append(p)
 		if gone >= metres:
 			break
+	# (the way ends at a crossing: on over the water along the ferry's line)
+	var f := ferry_ahead()
+	if not f.is_empty() and gone < metres and out.size() > 0:
+		var links := FerryLinks.of(r)
+		var i := links.find(str(f["id"]), int(f["from"]), int(f["to"]))
+		if i >= 0:
+			var water := links.line_from(i, int(f["from"]))
+			for k in range(1, water.size()):
+				gone += water[k].distance_to(out[out.size() - 1])
+				out.append(water[k])
+				if gone >= metres:
+					break
 	return out
 
 
@@ -365,7 +410,7 @@ func line_ahead(metres: float) -> PackedVector2Array:
 ## kind), exit (a roundabout's), turn (radians, + right), distance}, {} for none.
 func next_junction(reach: float) -> Dictionary:
 	var steps := steps_ahead()
-	if steps.size() < 2:
+	if steps.is_empty() or (steps.size() < 2 and ferry_ahead().is_empty()):
 		return {}
 	var r := net.region
 	var d := r.edge_len[steps[0].x] - along()
@@ -377,6 +422,15 @@ func next_junction(reach: float) -> Dictionary:
 			said_here["distance"] = maxf(d, 0.0)
 			return said_here
 		d += r.edge_len[steps[k + 1].x]
+	# (nothing to say on the way to a crossing: take the ferry at the end of the road)
+	var f := ferry_ahead()
+	if not f.is_empty():
+		var to := r.edge_len[steps[0].x] - along()
+		for k in range(1, steps.size()):
+			to += r.edge_len[steps[k].x]
+		if to <= reach:
+			return {"text": "Take the ferry: %s" % str(f["name"]) if str(f["name"]) != "The ferry" else "Take the ferry",
+				"type": "ferry", "exit": 0, "turn": 0.0, "distance": maxf(to, 0.0)}
 	return {}
 
 
