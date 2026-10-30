@@ -1330,6 +1330,15 @@ func _draw_tank() -> void:
 		_bend(path, 0.03, chrome, self, 10)
 		var dial := _mesh_instance(_cylinder(0.035, 0.012), _mat(Color(0.05, 0.05, 0.05), 0.3, 0.3), path[1] + Vector3(0.0, 0.02, 0.0), self)
 		dial.rotation.x = -0.3
+	# A pair of racing stripes over the top, nose to tail, in the second colour it was ordered in
+	# (see PartColours), either side of a console.
+	if _has_accent():
+		var stripe_mat := _mat(_accent(), 0.1, 0.3, 0.6)
+		for ang in ([PI * 0.5 - 0.3, PI * 0.5 + 0.3] if look.get("console", false) else [PI * 0.5 - 0.12, PI * 0.5 + 0.12]):
+			var path := []
+			for s in secs.slice(1, steps):
+				path.append(_on_loft(s, ang, 1.004))
+			_bend(path, 0.009, stripe_mat, self, 4).name = "TankStripe"
 	# Badges on the sides: a chrome oval, a long winged script or none.
 	var badge_s: Dictionary = secs[roundi(steps * 0.3)]
 	var badge := str(look.get("badge", "oval"))
@@ -1401,10 +1410,26 @@ func _look_vec(key: String, default: Vector3) -> Vector3:
 	return Vector3(float(v[0]), float(v[1]), float(v[2])) if v is Array and (v as Array).size() == 3 else default
 
 
-## The part's second colour (stripes, a two-tone top, piping), or `default`.
+## The part's second colour (stripes, a two-tone top, piping): the one it was ordered in (see
+## PartColours), else its look's, else `default`.
 func _accent(default := Color(0.95, 0.93, 0.88)) -> Color:
+	var picked = condition.get(_current_slot, {}).get("color2") if _current_slot != "" else null
+	if picked is Color:
+		return picked
 	var a = _look().get("accent")
 	return Color(float(a[0]), float(a[1]), float(a[2])) if a is Array and (a as Array).size() >= 3 else default
+
+
+## Whether the part has a second colour to draw: its look's, or one it was ordered in.
+func _has_accent() -> bool:
+	return _look().has("accent") or (_current_slot != "" and condition.get(_current_slot, {}).get("color2") is Color)
+
+
+## A look setting that the part can be ordered with another of (an exhaust's "header" finish:
+## see PartColours), or the look's own.
+func _look_trim(key: String) -> String:
+	var picked = condition.get(_current_slot, {}).get("trim") if _current_slot != "" else null
+	return str(picked) if picked is String and str(picked) != "" else str(_look().get(key, ""))
 
 
 ## A profile key list's [half-width, rise, drop] at `u` along it.
@@ -1483,7 +1508,7 @@ func _draw_saddle() -> void:
 	if style == "touring" and not look.has("shape"):
 		var back := _box(Vector3(0.0, y + 0.22, z1 + 0.04), Vector3(0.3, 0.26, 0.06), mat)
 		back.rotation.x = 0.2
-	var seam := _mat(_accent(_col().darkened(0.35)) if look.has("accent") else _col().darkened(0.35), 0.0, 0.7)
+	var seam := _mat(_accent(_col().darkened(0.35)) if _has_accent() else _col().darkened(0.35), 0.0, 0.7)
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15)
 	# Stitching on the top: tuck-and-roll pleats across it, ribs along it or diamond quilting.
 	match str(look.get("pattern", "")):
@@ -2036,7 +2061,7 @@ func _draw_exhaust(zr: float) -> void:
 	var header_mat := chrome if style == "slip" else pipe_mat
 	var can_mat := _mat(_col(), 0.3, 0.3, 0.7) if style == "slip" else pipe_mat
 	# A look can change the headers' finish (chrome, black, titanium, heat wrap...) and the can's.
-	header_mat = _look_finish(str(lk.get("header", "")), header_mat)
+	header_mat = _look_finish(_look_trim("header"), header_mat)
 	can_mat = _look_finish(str(lk.get("can_finish", "")), can_mat)
 	var ports := []
 	for i in _cyls.size():
@@ -3626,7 +3651,7 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 		board.scale = Vector3(1.15, 1.0, 0.75)
 	elif kind == "solo":
 		_box(t + Vector3(0.0, 0.1, 0.2 * ln), Vector3(0.18, 0.08, 0.04), mat)
-	if lk.has("accent"):
+	if _has_accent():
 		# A stripe along the cowl in the second colour.
 		var stripe := []
 		for sec in secs:
@@ -3655,7 +3680,7 @@ func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary) -> void:
 	cowl.name = "TailCowl"
 	for end in [0, rows.size() - 1]:
 		_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO)
-	if lk.has("accent"):
+	if _has_accent():
 		_grid_patch(rows, [0.0, 0.0, 1.0, 1.0], 3.15, 3.7, 0.003, _mat(_accent(), 0.1, 0.35, 0.6))
 
 
@@ -3859,14 +3884,16 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 	w += float(lk.get("wider", 0.0))
 	var radius := r + gap
 	_guard(Vector3.ZERO, radius, w, a0, a1, mat, 10 if style == "classic" else 6, _front_hub)
-	if lk.get("rib", false):
-		# A chrome rib along the crown of the guard.
+	var ribbed: bool = lk.get("rib", false)
+	if ribbed:
+		# A rib along the crown of the guard: chrome, or the second colour it was ordered in.
 		var rib := []
 		for i in 9:
 			var a := lerpf(a0, a1, i / 8.0)
 			rib.append(Vector3(0.0, cos(a), sin(a)) * (radius + 0.008))
-		_bend(rib, 0.006, _mat(Color(0.86, 0.87, 0.89), 1.0, 0.1), _front_hub)
-	if lk.has("accent"):
+		var picked = condition.get(_current_slot, {}).get("color2")
+		_bend(rib, 0.006, _mat(picked, 0.8, 0.2) if picked is Color else _mat(Color(0.86, 0.87, 0.89), 1.0, 0.1), _front_hub).name = "GuardRib"
+	if lk.has("accent") if ribbed else _has_accent():
 		for side in [-0.03, 0.03]:
 			var stripe := []
 			for i in 9:
@@ -3949,7 +3976,7 @@ func _draw_fairing() -> void:
 		var top: Dictionary = secs[1]
 		if shape != "cowl" or screen > 0.05:
 			_screen(top["c"] + Vector3(0.0, float(top["up"]) - 0.01, 0.0), w * 0.8, screen, 0.35 if shape == "batwing" else 0.45, glass, _steer_node)
-		if lk.has("accent"):
+		if _has_accent():
 			var stripe := []
 			for sec in secs:
 				stripe.append((sec["c"] as Vector3) + Vector3(0.0, float(sec["up"]) + 0.003, 0.0))
@@ -3990,7 +4017,7 @@ func _draw_fairing() -> void:
 		shell = _facets(rows, mat)
 	else:
 		shell = _shell(secs, mat, true, -0.75, PI + 0.75)
-	if lk.has("accent"):
+	if _has_accent():
 		var stripe := []
 		for sec in secs:
 			stripe.append((sec["c"] as Vector3) + Vector3(0.0, float(sec["up"]) + 0.003, 0.0))
@@ -4176,7 +4203,7 @@ func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float
 		vent.name = "FairingVent"
 	for vent in _grid_patch(rows, [0.3, 0.28, 0.4, 0.38], 3.15, 3.75, 0.003, dark):
 		vent.name = "FairingVent"
-	if lk.has("accent"):
+	if _has_accent():
 		# A stripe that runs along the top of the character line, the way race liveries do.
 		_grid_patch(rows, [0.08, 0.08, 0.98, 0.9], 2.08, 2.42, 0.004, _mat(_accent(), 0.1, 0.35, 0.6))
 	if lk.get("roundel", false):
@@ -4453,7 +4480,7 @@ func _adventure_fairing(mat: Material, glass: Material, dark: Material, screen: 
 			_tube(base + Vector3(float(crown["w"]) * 0.45 * side, -0.02, 0.02), base + Vector3(float(crown["w"]) * 0.45 * side, 0.0, 0.02) + _screen_dir * (adjust + 0.06),
 				0.006, dark)
 	_screen(base, float(crown["w"]) * 0.7, maxf(screen, 0.28), 0.42, glass, host)
-	if lk.has("accent"):
+	if _has_accent():
 		var stripe := []
 		for sec in secs:
 			stripe.append(_on_loft(sec, -0.3, 1.004))

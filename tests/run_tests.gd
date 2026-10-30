@@ -833,6 +833,13 @@ func _run_all() -> void:
 	await _t(&"_test_ghost_pass_through")
 	await _t(&"_test_ghost_remote")
 	await _t(&"_test_ghost_adventure")
+	print("Simon's v0.39.0 round: parts bought in the colours you pick, colour variants merged")
+	await _t(&"_test_part_colour_picker")
+	await _t(&"_test_part_colour_client")
+	await _t(&"_test_part_colour_save")
+	await _t(&"_test_part_colour_retired")
+	await _t(&"_test_part_colour_model")
+	await _t(&"_test_part_colour_random")
 	print("Ride anywhere v2: the place's look and sound (T3, T4) and the road network (T6)")
 	await _t(&"_test_place_look_eight_places")
 	await _t(&"_test_place_look_ground")
@@ -16104,8 +16111,9 @@ func _test_style_packs() -> void:
 		var kinds := {}
 		for id in ids:
 			kinds[PartsDB.kind_of(id)] = true
-		# (About thirty once; fewer since the tanks and fairings came down to ten each in plain paint.)
-		check(ids.size() >= 20 and kinds.size() >= 10, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
+		# (About thirty once; fewer since the tanks and fairings came down to ten each in plain paint,
+		# and fewer again since parts that differed only in colour were merged: see PartColours.)
+		check(ids.size() >= 12 and kinds.size() >= 9, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
 	var bad := []
 	for style in packs:
 		for id in packs[style]:
@@ -24426,3 +24434,33 @@ func _test_road_signs() -> void:
 	_road_markings().test_signs()
 
 
+
+
+# ---------------------------------------------------------------------------- part colours (tests/part_colour_tests.gd)
+
+func _part_colours() -> RefCounted:
+	return load("res://tests/part_colour_tests.gd").new(self)
+
+
+func _test_part_colour_picker() -> void:
+	_part_colours().test_picker()
+
+
+func _test_part_colour_client() -> void:
+	_part_colours().test_client_order()
+
+
+func _test_part_colour_save() -> void:
+	_part_colours().test_save()
+
+
+func _test_part_colour_retired() -> void:
+	_part_colours().test_retired()
+
+
+func _test_part_colour_model() -> void:
+	_part_colours().test_model()
+
+
+func _test_part_colour_random() -> void:
+	_part_colours().test_random_bikes()

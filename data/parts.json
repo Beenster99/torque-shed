@@ -6752,7 +6752,8 @@
 			},
 			"styles": [
 				"classic",
-				"cruiser"
+				"cruiser",
+				"tourer"
 			],
 			"pack": "classic",
 			"price": 130
@@ -6837,7 +6838,8 @@
 				"cafe",
 				"naked",
 				"scrambler",
-				"bobber"
+				"bobber",
+				"classic"
 			],
 			"pack": "cafe",
 			"price": 130
@@ -7002,7 +7004,9 @@
 			},
 			"styles": [
 				"chopper",
-				"cruiser"
+				"cruiser",
+				"adventure",
+				"roader"
 			],
 			"pack": "chopper",
 			"price": 130
@@ -7030,7 +7034,9 @@
 			},
 			"styles": [
 				"cruiser",
-				"tourer"
+				"tourer",
+				"adventure",
+				"roader"
 			],
 			"pack": "cruiser",
 			"price": 130
@@ -7091,34 +7097,6 @@
 				"bobber"
 			],
 			"pack": "cruiser",
-			"price": 130
-		},
-		"scrambler_ribbed_flat": {
-			"mass": 2.5,
-			"style": "bench",
-			"height": 0.0,
-			"comfort": 0.7,
-			"name": "Flat ribbed scrambler seat",
-			"description": "Long flat seat with ribbed top, tan.",
-			"color": [
-				0.52,
-				0.33,
-				0.17
-			],
-			"look": {
-				"shape": "brat",
-				"pattern": "ribs",
-				"accent": [
-					0.28,
-					0.16,
-					0.09
-				]
-			},
-			"styles": [
-				"scrambler",
-				"classic"
-			],
-			"pack": "scrambler",
 			"price": 130
 		},
 		"scrambler_tracker_seat": {
@@ -7196,223 +7174,10 @@
 			},
 			"styles": [
 				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 130
-		},
-		"mx_blue_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Blue MX seat",
-			"description": "Blue gripper seat with white stripe.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				]
-			},
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 130
-		},
-		"mx_red_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Red MX seat",
-			"description": "Red gripper cover.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 130
-		},
-		"sm_flat_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Flat motard seat",
-			"description": "Long and flat so you can slide around.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.92,
-					0.38,
-					0.04
-				]
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 130
-		},
-		"sm_tracker_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Motard flat-track seat",
-			"description": "Thin with a little hump at the back.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"shape": "flat_track",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
 				"supermoto",
-				"scrambler"
-			],
-			"pack": "supermoto",
-			"price": 130
-		},
-		"sm_red_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Red motard seat",
-			"description": "Red gripper seat, black sides.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 130
-		},
-		"adv_rally_seat": {
-			"mass": 1.6,
-			"style": "enduro",
-			"height": 0.05,
-			"comfort": 0.45,
-			"name": "Rally seat",
-			"description": "Long flat rally seat for moving around.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"pattern": "ribs",
-				"accent": [
-					0.3,
-					0.3,
-					0.32
-				]
-			},
-			"styles": [
 				"adventure"
 			],
-			"pack": "adventure",
-			"price": 130
-		},
-		"adv_comfort_seat": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Adventure comfort seat",
-			"description": "Two-piece comfort seat, stepped.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "diamond",
-				"accent": [
-					0.52,
-					0.33,
-					0.17
-				]
-			},
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 130
-		},
-		"adv_two_tone": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Two-tone adventure seat",
-			"description": "Black and grey two-piece seat.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "tuck",
-				"accent": [
-					0.3,
-					0.3,
-					0.32
-				]
-			},
-			"styles": [
-				"adventure",
-				"roader"
-			],
-			"pack": "adventure",
+			"pack": "mx",
 			"price": 130
 		},
 		"sport_solo_red": {
@@ -7464,32 +7229,6 @@
 			"styles": [
 				"sport",
 				"roader"
-			],
-			"pack": "sport",
-			"price": 130
-		},
-		"sport_blue_seat": {
-			"mass": 1.4,
-			"style": "sport",
-			"height": 0.02,
-			"comfort": 0.4,
-			"name": "Sport seat, blue",
-			"description": "Blue suede-look seat.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"look": {
-				"pattern": "tuck",
-				"accent": [
-					0.93,
-					0.93,
-					0.92
-				]
-			},
-			"styles": [
-				"sport"
 			],
 			"pack": "sport",
 			"price": 130
@@ -7564,33 +7303,6 @@
 			"pack": "race",
 			"price": 130
 		},
-		"naked_step_seat": {
-			"mass": 1.4,
-			"style": "sport",
-			"height": 0.02,
-			"comfort": 0.4,
-			"name": "Stepped naked seat",
-			"description": "Stepped two-up seat.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "ribs",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				]
-			},
-			"styles": [
-				"naked"
-			],
-			"pack": "naked",
-			"price": 130
-		},
 		"naked_brat": {
 			"mass": 2.5,
 			"style": "bench",
@@ -7625,7 +7337,7 @@
 			"height": 0.02,
 			"comfort": 0.4,
 			"name": "Naked sport seat",
-			"description": "Grey sport seat.",
+			"description": "Sport seat with contrast stitching, in the colours you pick.",
 			"color": [
 				0.3,
 				0.3,
@@ -7644,34 +7356,6 @@
 				"sport"
 			],
 			"pack": "naked",
-			"price": 130
-		},
-		"roader_comfort": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Roader comfort seat",
-			"description": "Stepped comfort seat.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "diamond",
-				"accent": [
-					0.72,
-					0.07,
-					0.05
-				]
-			},
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
 			"price": 130
 		},
 		"roader_sport_seat": {
@@ -7696,35 +7380,8 @@
 				]
 			},
 			"styles": [
-				"roader"
-			],
-			"pack": "roader",
-			"price": 130
-		},
-		"roader_brown": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Brown roader seat",
-			"description": "Brown stepped seat.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"shape": "stepped",
-				"pattern": "tuck",
-				"accent": [
-					0.52,
-					0.33,
-					0.17
-				]
-			},
-			"styles": [
 				"roader",
-				"adventure"
+				"naked"
 			],
 			"pack": "roader",
 			"price": 130
@@ -7754,33 +7411,6 @@
 			},
 			"styles": [
 				"tourer"
-			],
-			"pack": "tourer",
-			"price": 130
-		},
-		"tourer_brown": {
-			"mass": 4.0,
-			"style": "touring",
-			"height": 0.01,
-			"comfort": 1.0,
-			"name": "Brown touring seat",
-			"description": "Brown deep seat.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"pattern": "tuck",
-				"accent": [
-					0.52,
-					0.33,
-					0.17
-				]
-			},
-			"styles": [
-				"tourer",
-				"cruiser"
 			],
 			"pack": "tourer",
 			"price": 130
@@ -8049,27 +7679,6 @@
 			},
 			"styles": [
 				"cafe"
-			],
-			"pack": "cafe",
-			"price": 85
-		},
-		"cafe_black_clip_ons": {
-			"mass": 1.2,
-			"style": "Clip-ons",
-			"width": 590,
-			"rise": -0.12,
-			"cda": -0.04,
-			"name": "Black clip-ons, swept",
-			"description": "Clip-ons with a sharper sweep back. Committed.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"cafe",
-				"race",
-				"sport"
 			],
 			"pack": "cafe",
 			"price": 85
@@ -8436,8 +8045,8 @@
 			"width": 800,
 			"rise": 0.13,
 			"cda": 0.02,
-			"name": "Braced bar with pad, blue",
-			"description": "Classic braced MX bar with blue pad.",
+			"name": "Braced bar with pad",
+			"description": "Classic braced MX bar with a crossbar pad in the colour you pick.",
 			"color": [
 				0.74,
 				0.75,
@@ -8455,7 +8064,8 @@
 				"pull": 0.06
 			},
 			"styles": [
-				"mx"
+				"mx",
+				"supermoto"
 			],
 			"pack": "mx",
 			"price": 85
@@ -8513,36 +8123,6 @@
 			"styles": [
 				"supermoto",
 				"naked"
-			],
-			"pack": "supermoto",
-			"price": 85
-		},
-		"sm_braced_orange": {
-			"mass": 1.5,
-			"style": "MX braced",
-			"width": 790,
-			"rise": 0.1,
-			"cda": 0.02,
-			"name": "Braced bar, orange pad",
-			"description": "Braced bar with an orange pad.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"look": {
-				"bend": "moto",
-				"brace": true,
-				"pad": true,
-				"accent": [
-					0.92,
-					0.38,
-					0.04
-				],
-				"pull": 0.05
-			},
-			"styles": [
-				"supermoto"
 			],
 			"pack": "supermoto",
 			"price": 85
@@ -8648,26 +8228,6 @@
 			"pack": "adventure",
 			"price": 85
 		},
-		"sport_gold_clip": {
-			"mass": 1.2,
-			"style": "Clip-ons",
-			"width": 610,
-			"rise": -0.1,
-			"cda": -0.04,
-			"name": "Gold clip-ons",
-			"description": "Gold anodised clip-ons.",
-			"color": [
-				0.82,
-				0.66,
-				0.25
-			],
-			"styles": [
-				"sport",
-				"race"
-			],
-			"pack": "sport",
-			"price": 85
-		},
 		"sport_raised_clip": {
 			"mass": 1.2,
 			"style": "Clip-ons",
@@ -8709,26 +8269,6 @@
 			"pack": "sport",
 			"price": 85
 		},
-		"race_ti_clips": {
-			"mass": 0.6,
-			"style": "Clip-ons",
-			"width": 600,
-			"rise": -0.11,
-			"cda": -0.045,
-			"lightweight": true,
-			"name": "Titanium clip-ons",
-			"description": "Titanium clip-ons.",
-			"color": [
-				0.74,
-				0.75,
-				0.77
-			],
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 85
-		},
 		"race_black_clips": {
 			"mass": 0.6,
 			"style": "Clip-ons",
@@ -8736,8 +8276,8 @@
 			"rise": -0.12,
 			"cda": -0.045,
 			"lightweight": true,
-			"name": "Black race clip-ons",
-			"description": "Black race clip-ons.",
+			"name": "Race clip-ons",
+			"description": "Light race clip-ons, anodised in the colour you pick.",
 			"color": [
 				0.04,
 				0.04,
@@ -8746,26 +8286,6 @@
 			"styles": [
 				"race",
 				"sport"
-			],
-			"pack": "race",
-			"price": 85
-		},
-		"race_blue_clips": {
-			"mass": 0.6,
-			"style": "Clip-ons",
-			"width": 600,
-			"rise": -0.11,
-			"cda": -0.045,
-			"lightweight": true,
-			"name": "Blue race clip-ons",
-			"description": "Blue anodised clip-ons.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"styles": [
-				"race"
 			],
 			"pack": "race",
 			"price": 85
@@ -8888,30 +8408,6 @@
 			"styles": [
 				"roader",
 				"adventure"
-			],
-			"pack": "roader",
-			"price": 85
-		},
-		"roader_gold": {
-			"mass": 1.4,
-			"style": "Flat",
-			"width": 790,
-			"rise": 0.07,
-			"cda": 0.0,
-			"name": "Gold roader bar",
-			"description": "Gold tapered bar.",
-			"color": [
-				0.82,
-				0.66,
-				0.25
-			],
-			"look": {
-				"bend": "tracker",
-				"thick": 0.016,
-				"pull": 0.06
-			},
-			"styles": [
-				"roader"
 			],
 			"pack": "roader",
 			"price": 85
@@ -11815,7 +11311,10 @@
 				"can": "tri"
 			},
 			"styles": [
-				"mx"
+				"mx",
+				"supermoto",
+				"adventure",
+				"roader"
 			],
 			"pack": "mx",
 			"price": 420
@@ -11868,57 +11367,6 @@
 			"pack": "supermoto",
 			"price": 420
 		},
-		"sm_high_carbon": {
-			"mass": 4.0,
-			"torque_mult": 1.05,
-			"loudness": 1.05,
-			"style": "full",
-			"route": "upswept",
-			"can": "oval",
-			"name": "High carbon motard can",
-			"description": "Upswept header to a carbon can.",
-			"lightweight": true,
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"header": "titanium",
-				"can": "short",
-				"can_finish": "carbon"
-			},
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 520
-		},
-		"sm_tri_black": {
-			"mass": 4.0,
-			"torque_mult": 1.05,
-			"loudness": 1.05,
-			"style": "full",
-			"route": "upswept",
-			"can": "oval",
-			"name": "Black triangle can",
-			"description": "Black ceramic header to a triangle can.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"header": "black",
-				"can": "tri"
-			},
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 420
-		},
 		"adv_high_titanium": {
 			"mass": 4.0,
 			"torque_mult": 1.05,
@@ -11940,31 +11388,6 @@
 			},
 			"styles": [
 				"adventure"
-			],
-			"pack": "adventure",
-			"price": 420
-		},
-		"adv_black_tri": {
-			"mass": 4.0,
-			"torque_mult": 1.05,
-			"loudness": 1.05,
-			"style": "full",
-			"route": "upswept",
-			"can": "oval",
-			"name": "Black triangle adventure can",
-			"description": "Black triangle can.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"header": "black",
-				"can": "tri"
-			},
-			"styles": [
-				"adventure",
-				"roader"
 			],
 			"pack": "adventure",
 			"price": 420
@@ -12014,7 +11437,8 @@
 			},
 			"styles": [
 				"sport",
-				"naked"
+				"naked",
+				"roader"
 			],
 			"pack": "sport",
 			"price": 420
@@ -12164,7 +11588,8 @@
 			},
 			"styles": [
 				"naked",
-				"sport"
+				"sport",
+				"roader"
 			],
 			"pack": "naked",
 			"price": 420
@@ -12237,54 +11662,6 @@
 			"styles": [
 				"roader",
 				"adventure"
-			],
-			"pack": "roader",
-			"price": 420
-		},
-		"roader_carbon": {
-			"mass": 7.0,
-			"torque_mult": 1.02,
-			"loudness": 0.8,
-			"style": "slip",
-			"can": "oval",
-			"name": "Carbon roader can",
-			"description": "Carbon round can.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"can_finish": "carbon",
-				"header": "titanium"
-			},
-			"styles": [
-				"roader",
-				"sport"
-			],
-			"pack": "roader",
-			"price": 420
-		},
-		"roader_stubby": {
-			"mass": 7.0,
-			"torque_mult": 1.02,
-			"loudness": 0.8,
-			"style": "slip",
-			"can": "oval",
-			"name": "Stubby roader can",
-			"description": "Short underbelly can.",
-			"route": "stubby",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"can": "stubby",
-				"header": "black"
-			},
-			"styles": [
-				"roader"
 			],
 			"pack": "roader",
 			"price": 420
@@ -12773,7 +12150,9 @@
 				"race",
 				"adventure",
 				"roader",
-				"tourer"
+				"tourer",
+				"supermoto",
+				"naked"
 			]
 		},
 		"chrome_ring_7": {
@@ -13068,89 +12447,6 @@
 			"pack": "scrambler",
 			"price": 95
 		},
-		"mx_number_lamp": {
-			"mass": 0.8,
-			"type": "Halogen",
-			"style": "plate",
-			"size": 0.08,
-			"lumens": 900,
-			"name": "Number plate lamp",
-			"description": "A small square lamp in a number plate.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 95
-		},
-		"sm_plate_lamp": {
-			"mass": 0.8,
-			"type": "Halogen",
-			"style": "plate",
-			"size": 0.08,
-			"lumens": 900,
-			"name": "Motard number lamp, black",
-			"description": "Small lamp in a black plate.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"sm_led_plate": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "LED motard plate",
-			"description": "Modern LED projector in a slim mask.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto",
-				"naked"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"adv_twin_led": {
-			"mass": 1.8,
-			"type": "Halogen, twin",
-			"style": "twin",
-			"size": 0.06,
-			"lumens": 1600,
-			"name": "Twin rally lamps",
-			"description": "Twin round lamps under a rally screen.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"grille": false
-			},
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 95
-		},
 		"adv_quad": {
 			"mass": 1.0,
 			"type": "LED",
@@ -13170,53 +12466,12 @@
 			},
 			"styles": [
 				"adventure",
-				"roader"
+				"roader",
+				"sport",
+				"race",
+				"naked"
 			],
 			"pack": "adventure",
-			"price": 95
-		},
-		"sport_led_twin": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Twin LED projectors",
-			"description": "Twin LED projectors.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 95
-		},
-		"sport_quad_led": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Quad LED cluster",
-			"description": "Four LED cells.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "quad"
-			},
-			"styles": [
-				"sport",
-				"race"
-			],
-			"pack": "sport",
 			"price": 95
 		},
 		"naked_round_led": {
@@ -13240,74 +12495,6 @@
 				"cafe"
 			],
 			"pack": "naked",
-			"price": 95
-		},
-		"naked_quad": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Streetfighter quad lamp",
-			"description": "Four LED cells.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "quad"
-			},
-			"styles": [
-				"naked",
-				"sport"
-			],
-			"pack": "naked",
-			"price": 95
-		},
-		"roader_quad": {
-			"mass": 1.0,
-			"type": "LED",
-			"style": "projector",
-			"size": 0.08,
-			"lumens": 3000,
-			"lightweight": true,
-			"name": "Roader quad LED",
-			"description": "Quad LED.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "quad"
-			},
-			"styles": [
-				"roader",
-				"adventure"
-			],
-			"pack": "roader",
-			"price": 95
-		},
-		"roader_twin": {
-			"mass": 1.8,
-			"type": "Halogen, twin",
-			"style": "twin",
-			"size": 0.06,
-			"lumens": 1600,
-			"name": "Roader twin lamps",
-			"description": "Twin round lamps.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
 			"price": 95
 		},
 		"tourer_quad": {
@@ -13986,7 +13173,7 @@
 			"cda": 0.025,
 			"material": "leather",
 			"name": "Leather saddlebags, studded",
-			"description": "Tall black leather saddlebags with chrome buckles.",
+			"description": "Tall leather saddlebags with buckles.",
 			"color": [
 				0.04,
 				0.04,
@@ -14003,7 +13190,8 @@
 			"styles": [
 				"cruiser",
 				"bobber",
-				"classic"
+				"classic",
+				"tourer"
 			],
 			"pack": "cruiser",
 			"price": 300
@@ -14015,8 +13203,8 @@
 			"litres": 66,
 			"cda": 0.04,
 			"material": "plastic",
-			"name": "Painted hard saddlebags",
-			"description": "Paint-matched hard bags with a rounded lid. The bagger look.",
+			"name": "Hard saddlebags",
+			"description": "Hard bags with a rounded lid and a trim strip along it. The bagger look.",
 			"color": [
 				0.04,
 				0.04,
@@ -14032,138 +13220,10 @@
 			},
 			"styles": [
 				"cruiser",
-				"tourer"
+				"tourer",
+				"roader"
 			],
 			"pack": "cruiser",
-			"price": 300
-		},
-		"adv_alloy_black": {
-			"mass": 8.5,
-			"type": "Hard, aluminium",
-			"style": "alloy",
-			"litres": 82,
-			"cda": 0.05,
-			"material": "metal",
-			"name": "Black aluminium boxes",
-			"description": "Black anodised alloy cases.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 300
-		},
-		"adv_soft_rolls": {
-			"mass": 3.2,
-			"type": "Soft, roll-top",
-			"style": "roll",
-			"litres": 50,
-			"cda": 0.03,
-			"material": "fabric",
-			"name": "Roll-top soft bags, sand",
-			"description": "Sand-coloured roll-top bags.",
-			"color": [
-				0.68,
-				0.58,
-				0.4
-			],
-			"styles": [
-				"adventure",
-				"scrambler"
-			],
-			"pack": "adventure",
-			"price": 300
-		},
-		"roader_hard_cases": {
-			"mass": 6.5,
-			"type": "Hard, plastic",
-			"style": "hard",
-			"litres": 66,
-			"cda": 0.04,
-			"material": "plastic",
-			"name": "Roader hard cases",
-			"description": "Paint-matched hard cases.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"look": {
-				"shape": "hard_top",
-				"accent": [
-					0.04,
-					0.04,
-					0.045
-				]
-			},
-			"styles": [
-				"roader",
-				"tourer"
-			],
-			"pack": "roader",
-			"price": 300
-		},
-		"tourer_hard_top": {
-			"mass": 6.5,
-			"type": "Hard, plastic",
-			"style": "hard",
-			"litres": 66,
-			"cda": 0.04,
-			"material": "plastic",
-			"name": "Touring hard cases, top-loaders",
-			"description": "Rounded top-loading cases.",
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"shape": "hard_top",
-				"accent": [
-					0.74,
-					0.75,
-					0.77
-				]
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
-			"price": 300
-		},
-		"tourer_leather": {
-			"mass": 4.0,
-			"type": "Soft, leather",
-			"style": "leather",
-			"litres": 30,
-			"cda": 0.025,
-			"material": "leather",
-			"name": "Brown leather touring bags",
-			"description": "Brown leather saddlebags.",
-			"color": [
-				0.28,
-				0.16,
-				0.09
-			],
-			"look": {
-				"shape": "saddlebag",
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				]
-			},
-			"styles": [
-				"tourer",
-				"cruiser",
-				"classic"
-			],
-			"pack": "tourer",
 			"price": 300
 		},
 		"adv_alloy_trunks_silver": {
@@ -14662,7 +13722,8 @@
 			"styles": [
 				"mx",
 				"supermoto",
-				"adventure"
+				"adventure",
+				"tourer"
 			]
 		},
 		"classic_tombstone_guard": {
@@ -14675,8 +13736,8 @@
 				0.3
 			],
 			"material": "metal",
-			"name": "Chrome guard with tombstone lamp",
-			"description": "Full chrome rear guard with the upright tombstone tail lamp.",
+			"name": "Full guard with tombstone lamp",
+			"description": "Full rear guard with the upright tombstone tail lamp.",
 			"color": [
 				0.86,
 				0.87,
@@ -14866,33 +13927,6 @@
 			"pack": "bobber",
 			"price": 110
 		},
-		"chopper_cateye_stub": {
-			"mass": 2.4,
-			"type": "Steel bobbed fender, side plate",
-			"style": "bobber",
-			"light": "bullet",
-			"light_at": [
-				-0.1,
-				0.2
-			],
-			"material": "metal",
-			"name": "Stub fender, cateye lamp, struts",
-			"description": "Short chopped fender on chrome struts with a cateye lamp.",
-			"color": [
-				0.55,
-				0.02,
-				0.04
-			],
-			"look": {
-				"lamp": "cateye",
-				"struts": true
-			},
-			"styles": [
-				"chopper"
-			],
-			"pack": "chopper",
-			"price": 110
-		},
 		"chopper_sissy_fender": {
 			"mass": 2.4,
 			"type": "Steel bobbed fender, side plate",
@@ -14919,34 +13953,6 @@
 				"cruiser"
 			],
 			"pack": "chopper",
-			"price": 110
-		},
-		"cruiser_ribbed_fender": {
-			"mass": 3.0,
-			"type": "Steel, full length",
-			"style": "classic",
-			"light": "lucas",
-			"light_at": [
-				-0.12,
-				0.3
-			],
-			"material": "metal",
-			"name": "Ribbed fender, tombstone lamp",
-			"description": "A long ribbed rear fender with a tombstone lamp.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"lamp": "tombstone",
-				"struts": true
-			},
-			"styles": [
-				"cruiser",
-				"classic"
-			],
-			"pack": "cruiser",
 			"price": 110
 		},
 		"cruiser_halo_fender": {
@@ -15036,80 +14042,6 @@
 			"pack": "scrambler",
 			"price": 110
 		},
-		"mx_white_fender": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White MX rear fender",
-			"description": "White plastic rear fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 110
-		},
-		"mx_red_fender": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Red MX rear fender",
-			"description": "Red plastic rear fender.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 110
-		},
-		"sm_white_fender": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White motard tail",
-			"description": "White plastic tail with LED lamp.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 110
-		},
 		"sm_sport_tail": {
 			"mass": 1.1,
 			"type": "Plastic undertray, LED strip",
@@ -15138,55 +14070,6 @@
 			"pack": "supermoto",
 			"price": 110
 		},
-		"adv_rack_tail": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Rack tail with LED",
-			"description": "Rear fender with an alloy rack.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"adventure",
-				"tourer"
-			],
-			"pack": "adventure",
-			"price": 110
-		},
-		"adv_white_tail": {
-			"mass": 0.9,
-			"type": "Plastic high fender",
-			"style": "enduro",
-			"light": "led",
-			"light_at": [
-				-0.03,
-				0.4
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White rally tail",
-			"description": "White rally tail.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 110
-		},
 		"sport_pointed_tail": {
 			"mass": 1.1,
 			"type": "Plastic undertray, LED strip",
@@ -15209,40 +14092,10 @@
 				"cowl": "sport"
 			},
 			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 110
-		},
-		"sport_white_tail": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "White pointed tail, blue stripe",
-			"description": "White tail with blue stripe.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"look": {
-				"cowl": "sport",
-				"accent": [
-					0.08,
-					0.22,
-					0.62
-				]
-			},
-			"styles": [
 				"sport",
-				"race"
+				"race",
+				"roader",
+				"naked"
 			],
 			"pack": "sport",
 			"price": 110
@@ -15279,34 +14132,6 @@
 			"pack": "race",
 			"price": 110
 		},
-		"race_carbon_tail": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Carbon race tail",
-			"description": "Carbon pointed tail.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"look": {
-				"cowl": "sport"
-			},
-			"styles": [
-				"race",
-				"sport"
-			],
-			"pack": "race",
-			"price": 110
-		},
 		"naked_ducktail": {
 			"mass": 1.1,
 			"type": "Plastic undertray, LED strip",
@@ -15332,33 +14157,6 @@
 			"styles": [
 				"naked",
 				"cafe"
-			],
-			"pack": "naked",
-			"price": 110
-		},
-		"naked_sport_tail": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Sharp naked tail",
-			"description": "Sharp pointed tail, orange.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"look": {
-				"cowl": "sport"
-			},
-			"styles": [
-				"naked"
 			],
 			"pack": "naked",
 			"price": 110
@@ -15389,60 +14187,6 @@
 				"roader"
 			],
 			"pack": "roader",
-			"price": 110
-		},
-		"roader_red": {
-			"mass": 1.1,
-			"type": "Plastic undertray, LED strip",
-			"style": "tidy",
-			"light": "strip",
-			"light_at": [
-				0.06,
-				0.35
-			],
-			"material": "plastic",
-			"lightweight": true,
-			"name": "Red roader tail",
-			"description": "Red pointed tail.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"look": {
-				"cowl": "sport"
-			},
-			"styles": [
-				"roader",
-				"sport"
-			],
-			"pack": "roader",
-			"price": 110
-		},
-		"tourer_halo": {
-			"mass": 3.0,
-			"type": "Steel, full length",
-			"style": "classic",
-			"light": "lucas",
-			"light_at": [
-				-0.12,
-				0.3
-			],
-			"material": "metal",
-			"name": "Touring guard with halo LED",
-			"description": "Full rear guard with ring LED.",
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"lamp": "halo"
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
 			"price": 110
 		},
 		"tourer_rack_tail": {
@@ -15755,7 +14499,8 @@
 			"styles": [
 				"cafe",
 				"bobber",
-				"naked"
+				"naked",
+				"scrambler"
 			]
 		},
 		"sport_mirrors": {
@@ -15907,25 +14652,6 @@
 			"pack": "chopper",
 			"price": 48
 		},
-		"scrambler_bar_end_black": {
-			"mass": 0.5,
-			"type": "Round, bar-end",
-			"style": "bar_end",
-			"cda": 0.003,
-			"name": "Black bar-end mirrors",
-			"description": "Round black bar-end mirrors.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"scrambler",
-				"cafe"
-			],
-			"pack": "scrambler",
-			"price": 48
-		},
 		"sm_folding": {
 			"mass": 0.4,
 			"type": "Angular, long stalks",
@@ -15970,25 +14696,6 @@
 			"pack": "sport",
 			"price": 48
 		},
-		"naked_bar_end": {
-			"mass": 0.5,
-			"type": "Round, bar-end",
-			"style": "bar_end",
-			"cda": 0.003,
-			"name": "Naked bar-end mirrors",
-			"description": "Bar-end mirrors.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"naked",
-				"cafe"
-			],
-			"pack": "naked",
-			"price": 48
-		},
 		"roader_long": {
 			"mass": 0.8,
 			"type": "Rectangular, tall stalks",
@@ -16030,7 +14737,9 @@
 			"styles": [
 				"naked",
 				"roader",
-				"sport"
+				"sport",
+				"supermoto",
+				"adventure"
 			]
 		},
 		"mx_high_fender": {
@@ -16141,7 +14850,8 @@
 			"material": "carbon",
 			"styles": [
 				"sport",
-				"race"
+				"race",
+				"naked"
 			]
 		},
 		"valanced_painted_guard": {
@@ -16150,7 +14860,7 @@
 			"style": "classic",
 			"cover": 1.0,
 			"material": "metal",
-			"name": "Valanced front guard, painted",
+			"name": "Valanced front guard",
 			"description": "Deep valanced front guard painted to match, with a centre rib.",
 			"paint_match": true,
 			"color": [
@@ -16163,7 +14873,8 @@
 			},
 			"styles": [
 				"classic",
-				"cruiser"
+				"cruiser",
+				"tourer"
 			],
 			"pack": "classic",
 			"price": 95
@@ -16292,35 +15003,6 @@
 			"pack": "chopper",
 			"price": 95
 		},
-		"cruiser_full_valance": {
-			"mass": 1.6,
-			"type": "Chromed steel, full length",
-			"style": "classic",
-			"cover": 1.0,
-			"material": "metal",
-			"name": "Full valanced front guard, chrome rib",
-			"description": "Deep valanced guard with a chrome centre rib and stripe.",
-			"paint_match": true,
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"look": {
-				"rib": true,
-				"accent": [
-					0.82,
-					0.66,
-					0.25
-				]
-			},
-			"styles": [
-				"cruiser",
-				"classic"
-			],
-			"pack": "cruiser",
-			"price": 95
-		},
 		"scrambler_high_steel": {
 			"mass": 0.45,
 			"type": "Plastic, high mount",
@@ -16362,230 +15044,6 @@
 				"classic"
 			],
 			"pack": "scrambler",
-			"price": 95
-		},
-		"mx_white_front": {
-			"mass": 0.45,
-			"type": "Plastic, high mount",
-			"style": "high",
-			"cover": 0.55,
-			"material": "plastic",
-			"name": "White high front fender",
-			"description": "White high-mount fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 95
-		},
-		"mx_yellow_front": {
-			"mass": 0.45,
-			"type": "Plastic, high mount",
-			"style": "high",
-			"cover": 0.55,
-			"material": "plastic",
-			"name": "Yellow high front fender",
-			"description": "Yellow high-mount fender.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 95
-		},
-		"sm_white_beak": {
-			"mass": 0.45,
-			"type": "Plastic, high mount",
-			"style": "high",
-			"cover": 0.55,
-			"material": "plastic",
-			"name": "White motard beak",
-			"description": "White high fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto",
-				"mx"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"sm_low_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Low motard hugger",
-			"description": "Low road hugger for a street motard.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"supermoto",
-				"naked"
-			],
-			"pack": "supermoto",
-			"price": 95
-		},
-		"adv_high_beak": {
-			"mass": 0.55,
-			"type": "Plastic, high mount, long",
-			"style": "enduro",
-			"cover": 0.7,
-			"material": "plastic",
-			"name": "Adventure beak",
-			"description": "High beak fender.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"adventure"
-			],
-			"pack": "adventure",
-			"price": 95
-		},
-		"adv_low_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Low adventure guard",
-			"description": "Low road guard for a road-biased adventure bike.",
-			"color": [
-				0.04,
-				0.04,
-				0.045
-			],
-			"styles": [
-				"adventure",
-				"roader"
-			],
-			"pack": "adventure",
-			"price": 95
-		},
-		"sport_red_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Red sport hugger",
-			"description": "Red sport hugger.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"sport"
-			],
-			"pack": "sport",
-			"price": 95
-		},
-		"race_white_hugger": {
-			"mass": 0.22,
-			"type": "Carbon fibre, short",
-			"style": "sport",
-			"cover": 0.8,
-			"lightweight": true,
-			"material": "carbon",
-			"name": "White race hugger",
-			"description": "White carbon hugger.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"race"
-			],
-			"pack": "race",
-			"price": 95
-		},
-		"naked_carbon": {
-			"mass": 0.22,
-			"type": "Carbon fibre, short",
-			"style": "sport",
-			"cover": 0.8,
-			"lightweight": true,
-			"material": "carbon",
-			"name": "Carbon naked hugger",
-			"description": "Carbon hugger.",
-			"color": [
-				0.05,
-				0.05,
-				0.06
-			],
-			"styles": [
-				"naked",
-				"sport"
-			],
-			"pack": "naked",
-			"price": 95
-		},
-		"roader_hugger": {
-			"mass": 0.6,
-			"type": "Plastic, short",
-			"style": "hugger",
-			"cover": 0.75,
-			"paint_match": true,
-			"material": "plastic",
-			"name": "Roader hugger",
-			"description": "Short hugger.",
-			"color": [
-				0.3,
-				0.3,
-				0.32
-			],
-			"styles": [
-				"roader"
-			],
-			"pack": "roader",
-			"price": 95
-		},
-		"tourer_valance": {
-			"mass": 1.6,
-			"type": "Chromed steel, full length",
-			"style": "classic",
-			"cover": 1.0,
-			"material": "metal",
-			"name": "Touring valance guard",
-			"description": "Painted valanced guard.",
-			"paint_match": true,
-			"color": [
-				0.04,
-				0.07,
-				0.2
-			],
-			"look": {
-				"rib": true
-			},
-			"styles": [
-				"tourer"
-			],
-			"pack": "tourer",
 			"price": 95
 		}
 	},
@@ -17215,8 +15673,8 @@
 			"material": "plastic"
 		},
 		"battery_cover_chrome": {
-			"name": "Chrome battery cover",
-			"description": "A chrome cover over the battery box and the oil tank. Custom cruiser bling.",
+			"name": "Battery cover",
+			"description": "A cover over the battery box and the oil tank, chrome from the factory. Custom cruiser bling.",
 			"mass": 1.4,
 			"type": "Chrome steel",
 			"style": "chrome",
@@ -17231,103 +15689,6 @@
 				"bobber"
 			],
 			"material": "metal"
-		},
-		"classic_toolbox_panels": {
-			"mass": 1.2,
-			"type": "Steel, painted",
-			"style": "triangle",
-			"paint_match": true,
-			"material": "metal",
-			"name": "Toolbox side panels",
-			"description": "Triangular panels with a toolbox lid on one side, painted to match.",
-			"color": [
-				0.72,
-				0.07,
-				0.05
-			],
-			"styles": [
-				"classic",
-				"cafe",
-				"scrambler"
-			],
-			"pack": "classic",
-			"price": 110
-		},
-		"chopper_chrome_oil": {
-			"mass": 1.4,
-			"type": "Chrome steel",
-			"style": "chrome",
-			"material": "metal",
-			"name": "Chrome horseshoe cover",
-			"description": "A chrome cover over the oil tank and battery.",
-			"color": [
-				0.86,
-				0.87,
-				0.89
-			],
-			"styles": [
-				"chopper",
-				"bobber",
-				"cruiser"
-			],
-			"pack": "chopper",
-			"price": 110
-		},
-		"scrambler_oval_panels": {
-			"mass": 1.2,
-			"type": "Steel, painted",
-			"style": "triangle",
-			"paint_match": true,
-			"material": "metal",
-			"name": "Scrambler side covers, white",
-			"description": "Plain white side covers with a little badge.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"scrambler",
-				"classic"
-			],
-			"pack": "scrambler",
-			"price": 110
-		},
-		"mx_blue_panels": {
-			"mass": 0.7,
-			"type": "Plastic, MX",
-			"style": "mx",
-			"material": "plastic",
-			"name": "Blue MX side panels",
-			"description": "Blue plastic side panels.",
-			"color": [
-				0.08,
-				0.22,
-				0.62
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 110
-		},
-		"sm_orange_panels": {
-			"mass": 0.7,
-			"type": "Plastic, MX",
-			"style": "mx",
-			"material": "plastic",
-			"name": "Orange side panels",
-			"description": "Orange side panels.",
-			"color": [
-				0.92,
-				0.38,
-				0.04
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 110
 		}
 	},
 	"rearsets": {
@@ -17871,7 +16232,8 @@
 				0.93
 			],
 			"styles": [
-				"mx"
+				"mx",
+				"supermoto"
 			],
 			"material": "plastic"
 		},
@@ -17911,7 +16273,7 @@
 		},
 		"oval_race_plates": {
 			"name": "Oval race plates",
-			"description": "White oval number plates on the nose and the tail, like a club racer from the sixties.",
+			"description": "Oval number plates on the nose and the tail, like a club racer from the sixties.",
 			"mass": 0.5,
 			"type": "Alloy, oval",
 			"style": "oval",
@@ -17927,7 +16289,7 @@
 		},
 		"flat_track_boards": {
 			"name": "Flat-track number boards",
-			"description": "Big side number boards in a tracker's yellow, with the tail cut short behind them.",
+			"description": "Big side number boards, with the tail cut short behind them.",
 			"mass": 0.7,
 			"type": "Plastic, tracker",
 			"style": "tracker",
@@ -17940,115 +16302,6 @@
 				"supermoto"
 			],
 			"material": "plastic"
-		},
-		"cafe_oval_plates": {
-			"mass": 0.5,
-			"type": "Alloy, oval",
-			"style": "oval",
-			"material": "metal",
-			"name": "Painted oval race plates",
-			"description": "Cream oval number plates for the sides of the tail.",
-			"color": [
-				0.9,
-				0.86,
-				0.74
-			],
-			"styles": [
-				"cafe"
-			],
-			"pack": "cafe",
-			"price": 85
-		},
-		"scrambler_tracker_plates": {
-			"mass": 0.7,
-			"type": "Plastic, tracker",
-			"style": "tracker",
-			"material": "plastic",
-			"name": "Yellow tracker plates",
-			"description": "Yellow flat-track number boards.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 85
-		},
-		"mx_yellow_boards": {
-			"mass": 0.9,
-			"type": "Plastic, front and sides",
-			"style": "mx",
-			"material": "plastic",
-			"name": "Yellow number boards",
-			"description": "Yellow front and side boards.",
-			"color": [
-				0.95,
-				0.74,
-				0.08
-			],
-			"styles": [
-				"mx"
-			],
-			"pack": "mx",
-			"price": 85
-		},
-		"mx_white_boards": {
-			"mass": 0.9,
-			"type": "Plastic, front and sides",
-			"style": "mx",
-			"material": "plastic",
-			"name": "White number boards",
-			"description": "White front and side boards.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"mx",
-				"supermoto"
-			],
-			"pack": "mx",
-			"price": 85
-		},
-		"sm_white_plates": {
-			"mass": 0.4,
-			"type": "Plastic, front",
-			"style": "front",
-			"material": "plastic",
-			"name": "White motard front plate",
-			"description": "White front number plate.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 85
-		},
-		"race_white_plate": {
-			"mass": 0.4,
-			"type": "Plastic, front",
-			"style": "front",
-			"material": "plastic",
-			"name": "White race front plate",
-			"description": "White front number plate.",
-			"color": [
-				0.93,
-				0.93,
-				0.92
-			],
-			"styles": [
-				"supermoto"
-			],
-			"pack": "supermoto",
-			"price": 85
 		}
 	},
 	"swingarm": {

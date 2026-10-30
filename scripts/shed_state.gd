@@ -720,6 +720,10 @@ func is_complete(bike_id: int) -> bool:
 func condition_of(item: Dictionary) -> Dictionary:
 	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
+	# The second colour it was ordered in (piping, a stripe...) and its headers (see PartColours).
+	for key in ["color2", "trim"]:
+		if item.has(key):
+			cond[key] = item[key]
 	# Where the dirt is on it, region by region (see Dirt).
 	if item.get("grime") is PackedByteArray:
 		cond["grime"] = item["grime"]
@@ -1442,7 +1446,12 @@ func paint_text(item: Dictionary) -> String:
 		return "%s (%s, %d coat%s)" % [mix["name"], PaintMix.effect_name(str(mix.get("effect", "solid"))).to_lower(),
 			int(item.get("mix_coats", 1)), "" if int(item.get("mix_coats", 1)) == 1 else "s"]
 	var n := paint_name(item["color"])
-	return n.capitalize() if f == "" else "%s %s" % [str(FINISH_NAMES.get(f, f.capitalize())), n]
+	var main := n.capitalize() if f == "" else "%s %s" % [str(FINISH_NAMES.get(f, f.capitalize())), n]
+	# "Red, white piping": the second colour it was ordered in, where it has one.
+	var second := PartColours.second_of(str(item.get("part", "")))
+	if item.get("color2") is Color and second != "" and second != "header":
+		main += ", %s %s" % [paint_name(item["color2"]), str(PartColours.SECOND_NAMES[second]).to_lower()]
+	return main
 
 
 ## The palette colour closest to `c`.
@@ -2680,6 +2689,10 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown part."
 			if not delivery_room(str(action["part"])):
 				return "The delivery area outside is full, racking and all. Bring some boxes in first."
+			if action.has("look"):
+				var bad := PartColours.check(str(action["part"]), action["look"])
+				if bad != "":
+					return bad
 			var cost := Money.buy_price(str(action["part"]), peer)
 			if cost > garage_money:
 				return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
@@ -3601,6 +3614,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var cost := Money.buy_price(part_id, peer)
 			charge_garage(cost, "Bought %s" % PartsDB.part_name(part_id))
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
+			# In the colours picked at the parts computer, as if the factory had painted it so.
+			PartColours.apply(items[item_id], action.get("look", {}))
 			items[item_id]["paid"] = cost   # for the cost of a bike it's fitted to (see Sales)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
@@ -4916,6 +4931,7 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 		"rider": 0, "bay": bay, "xf": Workshop.bay_transform(bay), "original": parts.duplicate(), "stand": "", "pusher": 0}
 	bikes[id] = bike
 	var cond := {}
+	var style := str(PartsDB.detect_style(parts).get("style", ""))
 	for slot in PartsDB.BIKE_SLOTS:
 		if parts[slot] == "none":
 			bike["slots"][slot] = 0
@@ -4934,6 +4950,10 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 		else:
 			var painted: bool = slot in ["tank", "fairing"] or bool(PartsDB.get_part(parts[slot]).get("paint_match", false))
 			item_id = _aged_item(parts[slot], age, paint_color if painted else null)
+		# Its colours, leaning to the bike's style and paint (its own roll, so the bike's other
+		# rolls come out as they always have).
+		var painted_too: bool = slot in ["tank", "fairing"] or bool(PartsDB.get_part(parts[slot]).get("paint_match", false))
+		PartColours.apply(items[item_id], PartColours.random_look(parts[slot], style, paint_color, painted_too, hash([id, slot, bike_name])))
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
 		bike["bolted"][slot] = true
@@ -5064,8 +5084,7 @@ func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: Stri
 	for slot in colors:
 		var it := item_on(id, str(slot))
 		if it != 0 and colors[slot] is Dictionary and colors[slot].get("color") is Color:
-			items[it]["color"] = colors[slot]["color"]
-			items[it]["finish"] = str(colors[slot].get("finish", ""))
+			PartColours.apply(items[it], colors[slot], true)
 	bike["geo"] = GeoGizmo.sanitize(plan.get("geo", {}))
 	bike["bay"] = bay
 	bike["xf"] = place["xf"]
@@ -5482,7 +5501,7 @@ func blueprint_of(bike_id: int) -> Dictionary:
 		var on := item_on(bike_id, slot)
 		if on != 0:
 			parts[slot] = str(items[on]["part"])
-			colors[slot] = {"color": items[on]["color"], "finish": str(items[on].get("finish", ""))}
+			colors[slot] = PartColours.look_of(items[on])
 		elif PartsDB.is_optional(slot):
 			parts[slot] = "none"
 		else:
@@ -5531,6 +5550,7 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 		var look: Dictionary = colors.get(row["slot"], {})
 		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
 		items[item_id]["paid"] = cost
+		PartColours.apply(items[item_id], look)
 		items[item_id]["finish"] = str(look.get("finish", ""))
 		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
 		items[item_id]["by"] = orderer_name(peer)
@@ -5988,7 +6008,7 @@ func _deliver_on_order(delta: float) -> void:
 			i += 1
 			continue
 		on_order.remove_at(i)
-		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")), o.get("used", {}))
+		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")), o.get("used", {}), o)
 		sent += 1
 	if sent > 0:
 		_mark_dirty()
@@ -5997,8 +6017,9 @@ func _deliver_on_order(delta: float) -> void:
 
 ## Host: a new part, boxed (fluids as they are) and put in the delivery area, with what was paid
 ## for it and who ordered it on the note; with `used` ({rust, dirt, wear}, see used_cond) a used
-## one in that state, unboxed. Returns its id, or 0 when there's no room for it.
-func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", used = {}) -> int:
+## one in that state, unboxed; `look` its second colour and headers (see PartColours). Returns its
+## id, or 0 when there's no room for it.
+func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", used = {}, look = {}) -> int:
 	if not delivery_room(part):
 		return 0
 	var cond := used_cond(used)
@@ -6006,6 +6027,10 @@ func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", 
 		color if color is Color else null)
 	items[item_id]["paid"] = paid
 	items[item_id]["finish"] = finish
+	var extra := PartColours.clean(look)
+	for key in ["color2", "trim"]:
+		if extra.has(key):
+			items[item_id][key] = extra[key]
 	# Used parts come as they are, not boxed.
 	items[item_id]["boxed"] = not PartsDB.is_fluid(part) and cond.is_empty()
 	items[item_id]["by"] = by if by != "" else "the crew"

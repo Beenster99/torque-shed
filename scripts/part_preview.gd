@@ -59,14 +59,15 @@ func _init() -> void:
 
 
 ## Puts a catalogue part on the turntable (or nothing for "", or anything that isn't a part).
-func show_part(part_id: String) -> void:
+func show_part(part_id: String, cond := {}) -> void:
 	if part_id == "" or PartsDB.get_part(part_id).is_empty():
 		clear()
 		return
-	var key := "part:" + part_id
+	# `cond` is how it's drawn: the colours picked for it at the parts computer (see PartColours).
+	var key := "part:" + part_id + ("" if cond.is_empty() else ":%d" % hash(cond))
 	if key == showing:
 		return
-	_put(BikeModel.part_display(part_id, {}), key)
+	_put(BikeModel.part_display(part_id, cond), key)
 
 
 ## Puts a loose item from the shed on the turntable, as it is now (boxed, rusty, with its tyre...).
