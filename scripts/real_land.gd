@@ -271,10 +271,11 @@ func set_roads(net: Object) -> void:
 	hold = false
 
 
-## Whether a near block's land (with its collision) is laid out under route-frame (x, z).
+## Whether a near block's land (with all its collision) is laid out under route-frame (x, z).
 func holds(x: float, z: float) -> bool:
 	var key := Vector2i(floori(x / BLOCK), floori(z / BLOCK))
-	return _blocks.has(key) and _blocks[key]["mi"] != null and (_blocks[key]["mi"] as Node).has_node("Ground")
+	return _blocks.has(key) and _blocks[key]["mi"] != null and (_blocks[key]["mi"] as Node).has_node("Ground") \
+		and not _pieces.has(_blocks[key]["mi"])
 
 
 ## Whether the road is within ROAD_NEAR of the middle of block `key`. The blocks it's near are marked in one go along

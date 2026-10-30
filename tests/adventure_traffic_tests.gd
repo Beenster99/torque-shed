@@ -49,7 +49,7 @@ static func _at(tr: AdventureTraffic, spot: Dictionary, list: Array, lat := -1.5
 ## Steps the traffic `seconds` on in `dt` steps (as the physics would).
 static func _run(tr: AdventureTraffic, seconds: float, dt := 0.1) -> void:
 	for i in int(seconds / dt):
-		tr._physics_process(dt)
+		_tick(tr, dt)
 
 
 ## A seed whose road (the whole of Rides.plan(km)) has a village at least `after` m in: [seed, the village's site].
@@ -60,6 +60,13 @@ static func _with_village(km: float, after := 3000.0) -> Array:
 			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0:
 				return [seed, st]
 	return []
+
+
+## A tick of the traffic's game, then a drawn frame of it (AdventureTraffic draws in _process, which a test driving
+## its ticks by hand doesn't get).
+static func _tick(tr: AdventureTraffic, delta: float) -> void:
+	tr._physics_process(delta)
+	tr._process(delta)
 
 
 func _free(tr: AdventureTraffic) -> void:
@@ -103,12 +110,12 @@ func test_density() -> void:
 	for place in [["open", open_s], ["village", vs]]:
 		tr.stream.clear()
 		_at(tr, spot, [place[1]])
-		tr._physics_process(0.1)
+		_tick(tr, 0.1)
 		var wanted := tr.stream.wanted()
 		var near := 0.0
 		var samples := 0
 		for i in 1800:
-			tr._physics_process(0.1)
+			_tick(tr, 0.1)
 			if i > 300 and i % 10 == 0:
 				samples += 1
 				for d in tr.stream.vehicles:
@@ -140,7 +147,7 @@ func test_density() -> void:
 	_at(tr, spot, [30.0])
 	var behind := 0
 	for i in 600:
-		tr._physics_process(0.1)
+		_tick(tr, 0.1)
 		for d in tr.stream.vehicles:
 			if float(d["s"]) < 0.0:
 				behind += 1
@@ -189,7 +196,7 @@ func test_climb() -> void:
 	tr.stream.find(id)["pace"] = 1.0
 	var slow := INF
 	for i in 120:
-		tr._physics_process(0.1)
+		_tick(tr, 0.1)
 		var d := tr.stream.find(id)
 		if not d.is_empty() and float(d["s"]) > at + 30.0 and float(d["s"]) < at + 100.0:
 			slow = minf(slow, float(d["v"]))
@@ -216,7 +223,7 @@ func test_bus() -> void:
 	var dir := int(v[2])
 	# Riding in towards the village.
 	_at(tr, spot, [stop_s - 500.0])
-	tr._physics_process(0.1)
+	_tick(tr, 0.1)
 	var waiting := {}
 	for d in tr.stream.vehicles:
 		if str(d["kind"]) == "coach" and d.get("bus", false) and absf(float(d["s"]) - stop_s) < 12.0:
@@ -224,7 +231,7 @@ func test_bus() -> void:
 	check(not waiting.is_empty() and int(waiting["dir"]) == dir and float(waiting["v"]) == 0.0,
 		"a bus is stood at %s's stop as you come in" % str(found[1]["name"]))
 	if not waiting.is_empty():
-		tr._physics_process(2.0)
+		_tick(tr, 2.0)
 		var where := tr.stream.slot(int(waiting["seed"]))
 		var hw := tr.world.route.width_at_s(stop_s) * 0.5
 		var stop_xf := tr.world.transform_at(stop_s, float(found[1]["side"]) * (hw + 0.9 + 2.6))
@@ -241,7 +248,7 @@ func test_bus() -> void:
 	var stood := 0.0
 	var gone := false
 	for i in 900:
-		tr._physics_process(0.1)
+		_tick(tr, 0.1)
 		var d := tr.stream.find(id)
 		if d.is_empty():
 			break
@@ -277,7 +284,7 @@ func test_blockers() -> void:
 		var id := tr.stream.spawn_at("saloon", s - dir * 150.0, dir, 15.0)
 		var gap := INF
 		for i in 1200:
-			tr._physics_process(0.05)
+			_tick(tr, 0.05)
 			var d := tr.stream.find(id)
 			if d.is_empty():
 				break
@@ -301,7 +308,7 @@ func test_origin() -> void:
 	var seen := 0
 	var on_road := false
 	for i in 1500:
-		tr._physics_process(0.1)
+		_tick(tr, 0.1)
 		for d in tr.stream.vehicles:
 			seen += 1
 			if not on_road and not d.has("arm") and not d.get("kerb", false):
@@ -319,7 +326,7 @@ func test_origin() -> void:
 		d["v"] = 0.0
 		d["pace"] = 0.0
 	var shift := tr.world.shift_origin_to(spot["ps"][0] + Vector3(1500.0, 0.0, -900.0))
-	tr._physics_process(0.02)
+	_tick(tr, 0.02)
 	var worst := 0.0
 	for d in tr.stream.vehicles:
 		if not before.has(int(d["seed"])):
@@ -351,7 +358,7 @@ func test_takeover() -> void:
 	d["lat"] = hw + 1.5
 	d["aux"] = 3
 	d["ind"] = -1
-	tr._physics_process(0.1)
+	_tick(tr, 0.1)
 	var held := st.slot(id)
 	var hit := tr.world.locate_local((d["body"] as Node3D).global_position)
 	check(bool(held["scripted"]) and absf(float(held["s"]) - s - 300.0) < 0.01 and absf(float(hit["lat"]) - (hw + 1.5)) < 0.1 and (d["body"] as TrafficVehicle).aux == 3,
@@ -369,12 +376,12 @@ func test_takeover() -> void:
 	client.queue_free()
 	# Far from everyone it's kept while it's taken over.
 	_at(tr, spot, [s + 3000.0])
-	tr._physics_process(0.1)
+	_tick(tr, 0.1)
 	check(not st.find(id).is_empty(), "kept while taken over, however far off")
 	_at(tr, spot, [s])
 	st.release(id)
 	for i in 100:
-		tr._physics_process(0.1)
+		_tick(tr, 0.1)
 	var back := st.slot(id)
 	check(not back.is_empty() and not bool(back["scripted"]) and float(back["v"]) > 8.0 and float(back["lat"]) > 0.5 and float(back["lat"]) < hw,
 		"handed back, it drives on in its own lane (%.1f m/s, %.1f m off the middle)" % [float(back.get("v", 0.0)), float(back.get("lat", 0.0))])

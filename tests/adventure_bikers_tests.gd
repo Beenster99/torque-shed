@@ -55,6 +55,13 @@ static func _at(tr: AdventureTraffic, spot: Dictionary, list: Array, lat := -1.5
 	spot["ps"] = list.map(func(s): return tr.world.transform_at(float(s), lat).origin)
 
 
+## A tick of the traffic's game, then a drawn frame of it (AdventureTraffic draws in _process, which a test driving
+## its ticks by hand doesn't get).
+static func _tick(tr: AdventureTraffic, delta: float) -> void:
+	tr._physics_process(delta)
+	tr._process(delta)
+
+
 func _free(tr: AdventureTraffic) -> void:
 	tr.world.queue_free()
 	await _frames(2)
@@ -96,7 +103,7 @@ static func _ride(tr: AdventureTraffic, spot: Dictionary, ss: Array, v, seconds:
 			var vk: float = v.call(time) if v is Callable else float(v)
 			ss[k] = float(ss[k]) + vk * dt
 		_at(tr, spot, ss, lat)
-		tr._physics_process(dt)
+		_tick(tr, dt)
 		time += dt
 		if each.is_valid() and each.call(time):
 			return true
@@ -391,7 +398,7 @@ func test_sync() -> void:
 		pack.append_array(host.bikers.pack())
 		pack.append_array([AdventureJunctions.clock, AdventureTraffic.CLOCK_TAG])
 		client._on_net(pack)
-		client._physics_process(0.1)
+		_tick(client, 0.1)
 		if client.stream.vehicles.size() != host.stream.vehicles.size():
 			bad[0] = "the traffic: %d vehicles, the host's %d" % [client.stream.vehicles.size(), host.stream.vehicles.size()]
 		if time < 0.5:
