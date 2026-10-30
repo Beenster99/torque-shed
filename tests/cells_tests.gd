@@ -373,6 +373,7 @@ func test_fetch() -> void:
 	check(str(why[0]).contains("isn't the region the index names") and RealRegion.cell_dir(Vector2i(577, 712)) == "",
 		"a cell whose bytes aren't what the index says is turned away: %s" % str(why[0]))
 	host.stop()
+	AdventurePlans.wait_all()   # (the plan worked out on a worker: collected, or the pool holds it as the game closes)
 	RegionStore._remove_tree(store)
 	CellStore.index_url = CellStore.INDEX_URL
 	CellStore.dir = "user://cells"
