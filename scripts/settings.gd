@@ -34,6 +34,9 @@ var camera_recentre := true
 ## Riders look into the corner: the head (and a little the shoulders) turn into the inside of a
 ## bend and towards its exit, and so does your view in first person (see RiderStyle.look_yaw).
 var look_into_corner := true
+## Your preferred riding style (see RiderStyle), the last one you picked: every character you
+## play, in any save or anyone's shed, rides that way. "" until you first pick one.
+var rider_style := ""
 ## On foot, the view from behind your shoulder with your whole figure in it, instead of from
 ## your eyes (V, or View on a pad, toggles it; see WalkerView).
 var walk_third_person := false
@@ -208,6 +211,7 @@ func load_settings() -> void:
 			satnav_x = 0.5   # it used to come in the bottom left corner: left there, it moves to the new place
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		look_into_corner = bool(cfg.get_value("riding", "look_into_corner", look_into_corner))
+		rider_style = str(cfg.get_value("riding", "rider_style", rider_style))
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
@@ -251,6 +255,7 @@ func save_settings() -> void:
 	cfg.set_value("riding", "satnav_centred", true)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("riding", "look_into_corner", look_into_corner)
+	cfg.set_value("riding", "rider_style", rider_style)
 	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
