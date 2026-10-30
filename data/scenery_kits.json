@@ -223,8 +223,9 @@
   "caldera_rim": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:rim",
+    "reach": 3000,
+    "rim": "basalt"
    }
   },
   "canal": {
@@ -294,8 +295,23 @@
   "cave_entrance": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:cave",
+    "reach": 1500,
+    "stone": "limestone"
+   },
+   "regions": {
+    "nordic": {
+     "stone": "granite"
+    },
+    "east_asia": {
+     "stone": "granite"
+    },
+    "north_africa_middle_east": {
+     "stone": "sandstone"
+    },
+    "australia_nz": {
+     "stone": "sandstone"
+    }
    }
   },
   "cemetery": {
@@ -342,8 +358,35 @@
   "cliff": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:cliff",
+    "reach": 3000,
+    "stone": "granite"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "stone": "sandstone"
+    },
+    "australia_nz": {
+     "stone": "sandstone"
+    },
+    "sub_saharan_africa": {
+     "stone": "sandstone"
+    },
+    "western_europe": {
+     "stone": "limestone"
+    },
+    "nordic": {
+     "stone": "granite"
+    },
+    "east_asia": {
+     "stone": "granite"
+    }
    }
   },
   "communication_line": {
@@ -389,8 +432,11 @@
   "crater": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:crater",
+    "reach": 2000,
+    "rim": "rock",
+    "ash": false,
+    "crater_r": 40
    }
   },
   "dam": {
@@ -563,8 +609,33 @@
   "dune": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:dune",
+    "reach": 2500,
+    "sand": "pale",
+    "swell": 4,
+    "marram": true,
+    "countries": {
+     "IS": {
+      "sand": "black"
+     }
+    }
+   },
+   "regions": {
+    "north_africa_middle_east": {
+     "sand": "gold",
+     "marram": false
+    },
+    "sub_saharan_africa": {
+     "sand": "red",
+     "marram": false
+    },
+    "south_asia": {
+     "sand": "gold",
+     "marram": false
+    },
+    "australia_nz": {
+     "sand": "gold"
+    }
    }
   },
   "fence": {
@@ -658,8 +729,9 @@
   "glacier": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:glacier",
+    "reach": 4000,
+    "swell": 6
    }
   },
   "golf_bunker": {
@@ -1092,8 +1164,54 @@
   "peak": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:peak",
+    "reach": 3000,
+    "summit": "cairn",
+    "stone": "granite",
+    "countries": {
+     "CH": {
+      "summit": "cross"
+     },
+     "AT": {
+      "summit": "cross"
+     },
+     "DE": {
+      "summit": "cross"
+     },
+     "IT": {
+      "summit": "cross"
+     },
+     "LI": {
+      "summit": "cross"
+     },
+     "SI": {
+      "summit": "cross"
+     },
+     "PL": {
+      "summit": "cross"
+     },
+     "SK": {
+      "summit": "cross"
+     }
+    }
+   },
+   "regions": {
+    "british_isles": {
+     "summit": "trig",
+     "stone": "gritstone"
+    },
+    "east_asia": {
+     "summit": "post"
+    },
+    "latin_america": {
+     "summit": "cross"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "stone": "sandstone"
+    }
    }
   },
   "picnic_table": {
@@ -1644,8 +1762,33 @@
   "reef": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:reef",
+    "reach": 2500,
+    "sea": true,
+    "stone": "reef"
+   },
+   "regions": {
+    "south_east_asia": {
+     "stone": "coral"
+    },
+    "australia_nz": {
+     "stone": "coral"
+    },
+    "latin_america": {
+     "stone": "coral"
+    },
+    "south_asia": {
+     "stone": "coral"
+    },
+    "sub_saharan_africa": {
+     "stone": "coral"
+    },
+    "east_asia": {
+     "stone": "coral"
+    },
+    "north_america": {
+     "stone": "coral"
+    }
    }
   },
   "region_border": {
@@ -1673,8 +1816,26 @@
   "ridge": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:ridge",
+    "reach": 2000,
+    "stone": "granite"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "gritstone"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "stone": "sandstone"
+    },
+    "australia_nz": {
+     "stone": "sandstone"
+    },
+    "sub_saharan_africa": {
+     "stone": "sandstone"
+    }
    }
   },
   "roller_coaster": {
@@ -1694,8 +1855,72 @@
   "saddle": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:pass",
+    "reach": 2000,
+    "sign": "board",
+    "cairn": "granite",
+    "countries": {
+     "FR": {
+      "sign": "col"
+     },
+     "BE": {
+      "sign": "col"
+     },
+     "LU": {
+      "sign": "col"
+     },
+     "MC": {
+      "sign": "col"
+     },
+     "AD": {
+      "sign": "col"
+     },
+     "ES": {
+      "sign": "col"
+     },
+     "PT": {
+      "sign": "col"
+     },
+     "CH": {
+      "sign": "passhoehe"
+     },
+     "AT": {
+      "sign": "passhoehe"
+     },
+     "DE": {
+      "sign": "passhoehe"
+     },
+     "LI": {
+      "sign": "passhoehe"
+     },
+     "SI": {
+      "sign": "passhoehe"
+     },
+     "IT": {
+      "sign": "passo"
+     },
+     "SM": {
+      "sign": "passo"
+     }
+    }
+   },
+   "regions": {
+    "british_isles": {
+     "sign": "cairn",
+     "cairn": "gritstone"
+    },
+    "east_asia": {
+     "sign": "toge"
+    },
+    "mediterranean": {
+     "cairn": "limestone"
+    },
+    "north_africa_middle_east": {
+     "cairn": "sandstone"
+    },
+    "nordic": {
+     "cairn": "granite"
+    }
    }
   },
   "sally_port": {
@@ -1715,15 +1940,30 @@
   "scree": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:scree",
+    "reach": 2000,
+    "stone": "granite"
+   },
+   "regions": {
+    "british_isles": {
+     "stone": "schist"
+    },
+    "mediterranean": {
+     "stone": "limestone"
+    },
+    "western_europe": {
+     "stone": "limestone"
+    },
+    "north_africa_middle_east": {
+     "stone": "sandstone"
+    }
    }
   },
   "shingle": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:shingle",
+    "reach": 2500
    }
   },
   "silo": {
@@ -1867,8 +2107,10 @@
   "volcano": {
    "round": "D4",
    "default": {
-    "model": "standin:post",
-    "reach": 3000
+    "model": "wild:volcano",
+    "reach": 4000,
+    "rim": "basalt",
+    "crater_r": 140
    }
   },
   "wall": {

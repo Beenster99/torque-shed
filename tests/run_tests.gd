@@ -886,6 +886,13 @@ func _run_all() -> void:
 	await _t(&"_test_skyline_lines")
 	await _t(&"_test_skyline_block")
 	await _t(&"_test_skyline_regions")
+	print("Ride Anywhere v2, phase D round 2: mountains and wild ground (passes, peaks, cliffs, ice, sand, reefs)")
+	await _t(&"_test_wild_kits")
+	await _t(&"_test_wild_pass")
+	await _t(&"_test_wild_peaks_and_caves")
+	await _t(&"_test_wild_cliff")
+	await _t(&"_test_wild_areas")
+	await _t(&"_test_wild_regions")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -22860,6 +22867,34 @@ func _test_water_blocks_meet() -> void:
 
 func _test_water_regions() -> void:
 	_water().test_regions()
+
+
+func _wild() -> RefCounted:
+	return load("res://tests/wild_tests.gd").new(self)
+
+
+func _test_wild_kits() -> void:
+	_wild().test_kits()
+
+
+func _test_wild_pass() -> void:
+	_wild().test_pass()
+
+
+func _test_wild_peaks_and_caves() -> void:
+	_wild().test_peaks_and_caves()
+
+
+func _test_wild_cliff() -> void:
+	_wild().test_cliff()
+
+
+func _test_wild_areas() -> void:
+	_wild().test_areas()
+
+
+func _test_wild_regions() -> void:
+	_wild().test_regions()
 
 
 func _skyline() -> RefCounted:
