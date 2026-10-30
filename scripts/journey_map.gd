@@ -158,6 +158,8 @@ static func journey_text(pack: RealPack) -> String:
 		lines.append("Along " + (", ".join(roads.slice(0, -1)) + " and " + str(roads[-1]) if roads.size() > 1 else str(roads[0])) + ".")
 	if int(pack.summary.get("climb_m", 0)) > 0:
 		lines.append("%d metres of climbing, up to %d m above the sea." % [int(pack.summary["climb_m"]), int(pack.summary["top_m"])])
+	for f: Dictionary in pack.ferries:
+		lines.append(FerryCrossing.panel_line(f))
 	var stops: PackedStringArray = []
 	for kind in ["fuel", "cafe", "inn"]:
 		var n := pack.pois_of(kind).size()

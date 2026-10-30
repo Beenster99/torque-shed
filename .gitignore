@@ -8,3 +8,5 @@ mono_crash.*
 .claude/worktrees/
 *.orig
 *.rej
+# CellStore keeps when each cell was last used beside the cells (a run writes it)
+tests/fixtures/*/used.json

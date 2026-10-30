@@ -88,6 +88,8 @@ var diary: DiaryBook
 ## shed isn't here.
 var crew_at := {}
 var _join_at = null          # the mate's region-frame point you joined a ride in progress by, or null
+## Crossing on a ferry on the network ride (FerryCrossing), or null.
+var ferry: FerryCrossing
 var _call_label: Label       # the crew's "leave the route?" call
 var _call_seen := {}         # call id -> ticks when it came in here (the count down is from then)
 var _tick_at := 0            # ticks: when the host last settled a call
@@ -275,6 +277,10 @@ func enter() -> void:
 	world.origin_shifted.connect(_on_shift)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
 	world.add_child(AdventureTraffic.new())   # cars, vans, lorries and buses both ways
+	if world.roads != null:
+		ferry = FerryCrossing.new()   # the crew's boat at a ferry's ramp, and crossing on it (D7)
+		ferry.setup(self)
+		world.add_child(ferry)
 	_sleep_town(true)
 	# A ride well under way: by a mate, wherever they are. Otherwise at the start (or where you slept). Just joined the
 	# session, the mates out on the ride may not have been heard from yet: a moment's wait for them.
@@ -398,6 +404,9 @@ func _unload() -> void:
 		world.origin_shifted.disconnect(_on_shift)
 		world.queue_free()
 		world = null
+	if ferry != null and main != null and main.bike != null and ferry.holding():
+		main.bike.freeze = false   # (home from the deck: the bike's its own again)
+	ferry = null
 	trip_id = 0
 	_sleep_town(false)
 	Daylight.adventure_rate = 0.0
@@ -642,7 +651,9 @@ func _physics_process(delta: float) -> void:
 	var p: Vector3 = focus_points()[0]
 	world.follow(p)
 	var hit := world.locate_local(p, "own")
-	if main.bike and not hit.is_empty():
+	if ferry != null and ferry.holding():
+		pass   # (on a ferry: the bike's held on its deck)
+	elif main.bike and not hit.is_empty():
 		_keep_on_road(hit)
 	elif main.walker and not hit.is_empty():
 		_keep_walker(hit)
@@ -659,7 +670,8 @@ func _physics_process(delta: float) -> void:
 	if _hud_timer <= 0.0 and (not hit.is_empty() or world.roads != null):
 		_hud_timer = 0.25
 		var waiting := crew_waiting()
-		_hud.text = hud_text(s) if waiting.is_empty() else "Waiting at the start for %s to get the road ready..." % " and ".join(waiting)
+		var aboard := ferry.hud_text() if ferry != null else ""
+		_hud.text = aboard if aboard != "" else (hud_text(s) if waiting.is_empty() else "Waiting at the start for %s to get the road ready..." % " and ".join(waiting))
 		_hud.visible = true
 		_crew.text = crew_text()
 		_crew.visible = _crew.text != ""
@@ -1151,9 +1163,10 @@ func crew_waiting() -> Array[String]:
 	return out
 
 
-## Whether this rider is held at the start, waiting for the crew (see crew_waiting; Main brakes the bike).
+## Whether this rider is held at the start, waiting for the crew (see crew_waiting), or aboard a ferry (FerryCrossing):
+## Main brakes the bike.
 func crew_hold() -> bool:
-	return not crew_waiting().is_empty()
+	return not crew_waiting().is_empty() or (ferry != null and ferry.holding())
 
 
 ## The title card (the destination's name, the ride, how long it took) and the photo.

@@ -31,7 +31,10 @@ extends RefCounted
 ## adventure_builds {builds} (each player as they join the shed: their game's builder hash, kept in Shed.crew, and
 ## the crew told when it isn't the host's); adventure_route_call {kind: "leave" or "rejoin"} (any rider: asks the
 ## crew), adventure_route_vote {id, yes} (any rider: their answer) and adventure_route_tick (the host, settling a
-## call whose time is up): see AdventureCrew.
+## call whose time is up): see AdventureCrew. adventure_ferry_board {id, from, to, seconds} (a rider at a ferry's ramp:
+## aboard), adventure_ferry_landed {sail} (a rider off on the far side) and adventure_ferry_tick (the host: lets it go
+## when the crew's aboard, clears it once they've all landed): the crew's sailing is Shed.adventure "ferry"
+## (AdventureCrew, FerryCrossing).
 
 const MIN_KM := 5.0
 const MAX_KM := 400.0
@@ -177,9 +180,17 @@ static func check(peer: int, action: Dictionary) -> String:
 			if not active():
 				return "There's no adventure on."
 			return AdventureCrew.vote_check(_route(), peer, int(action.get("id", 0)), riders_out())
-		"adventure_route_tick":
+		"adventure_route_tick", "adventure_ferry_tick":
 			if not _is_host(peer) or not active():
 				return "Only the host keeps time."
+		"adventure_ferry_landed":
+			if not active():
+				return "There's no adventure on."
+		"adventure_ferry_board":
+			if not active():
+				return "There's no adventure on."
+			return AdventureCrew.board_check(AdventureCrew.sanitize_ferry(Shed.adventure.get("ferry", {})), peer,
+				str(action.get("id", "")), int(action.get("from", -1)), riders_out())
 		_:
 			return "Unknown adventure action."
 	return ""
@@ -304,6 +315,38 @@ static func apply(peer: int, action: Dictionary) -> String:
 			return _settle_route(route)
 		"adventure_route_tick":
 			return _settle_route(_route())
+		"adventure_ferry_board":
+			var ferry := AdventureCrew.sanitize_ferry(Shed.adventure.get("ferry", {}))
+			var sail := int(Shed.adventure.get("ferry_sails", 0)) + (1 if ferry.is_empty() else 0)
+			Shed.adventure["ferry_sails"] = sail
+			Shed.adventure["ferry"] = AdventureCrew.board(ferry, peer, str(action.get("id", "")), int(action.get("from", -1)),
+				int(action.get("to", -1)), float(action.get("seconds", 0.0)), sail, Time.get_ticks_msec())
+			return _ferry_tick()
+		"adventure_ferry_tick":
+			return _ferry_tick()
+		"adventure_ferry_landed":
+			var ferry := AdventureCrew.sanitize_ferry(Shed.adventure.get("ferry", {}))
+			if not ferry.is_empty() and int(ferry["sail"]) == int(action.get("sail", 0)):
+				(ferry["landed"] as Dictionary)[peer] = true
+				Shed.adventure["ferry"] = ferry
+			return _ferry_tick()
+	return ""
+
+
+## The host lets the ferry go when the crew's aboard (AdventureCrew.should_sail), and clears a sailing that's over.
+static func _ferry_tick() -> String:
+	var ferry := AdventureCrew.sanitize_ferry(Shed.adventure.get("ferry", {}))
+	if ferry.is_empty():
+		return ""
+	var now := Time.get_ticks_msec()
+	if int(ferry["departs"]) != 0:
+		if AdventureCrew.sailing_over(ferry, riders_out(), now, FerryCrossing.total_of(ferry)):
+			Shed.adventure["ferry"] = {}
+		return ""
+	if AdventureCrew.should_sail(ferry, riders_out(), now):
+		ferry["departs"] = maxi(now, 1)
+		Shed.adventure["ferry"] = ferry
+		return "*The ferry's leaving." if riders_out().size() > 1 else ""
 	return ""
 
 
