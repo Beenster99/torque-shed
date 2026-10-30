@@ -146,8 +146,9 @@ func test_retired() -> void:
 		for old in PartsDB.RETIRED_PARTS[kind]:
 			count += 1
 			var keep: String = PartsDB.RETIRED_PARTS[kind][old]
-			if not PartsDB.get_part(old).is_empty() or PartsDB.kind_of(keep) != kind or PartsDB.current_id(old) != keep \
-					or not PartsDB.RETIRED_COLOURS.has(old):
+			# Parts retired for other reasons (engines, ECUs) carry no colour; "none" is no part at all.
+			if not PartsDB.get_part(old).is_empty() or (keep != "none" and PartsDB.kind_of(keep) != kind) or PartsDB.current_id(old) != keep \
+					or (PartsDB.RETIRED_COLOURS.has(old) != not ["engine", "ecu"].has(kind)):
 				check(false, "%s maps to a %s that's in the catalogue (%s), and is gone itself" % [old, kind, keep])
 	check(count >= 40, "%d colour variants are merged into the parts they were the same shape as" % count)
 	check(PartsDB.sanitize_build({"saddle": "mx_red_seat", "handlebars": "cafe_black_clip_ons"})["saddle"] == "mx_ribbed_seat",

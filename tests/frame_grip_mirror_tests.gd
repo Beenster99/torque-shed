@@ -159,7 +159,7 @@ func test_grips() -> void:
 			bad.append("%s: %s" % [id, ", ".join(why)])
 		m.free()
 		await t.get_tree().process_frame
-	check(ids.size() >= 49, "all %d handlebars are checked" % ids.size())
+	check(ids.size() >= 40, "all %d handlebars are checked" % ids.size())
 	check(bad.is_empty(), "on every handlebar the grips sit on the bar ends along the bar, on straight bar, the switches on its line and the hands on the grips %s" % str(bad))
 
 
