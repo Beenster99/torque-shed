@@ -219,15 +219,35 @@ func test_mirrors() -> void:
 	check(rounds == 0, "no stalk has to go round the rim of its mirror to get behind it (%d)" % rounds)
 
 
+## Whether a stalk `r` thick from `a` to `b` passes through any of the triangles in `faces`: its
+## middle line or any of four lines along its skin.
+static func _through(a: Vector3, b: Vector3, r: float, faces: PackedVector3Array) -> bool:
+	var d := (b - a).normalized()
+	var u := d.cross(Vector3.UP if absf(d.y) < 0.9 else Vector3.RIGHT).normalized()
+	var w := d.cross(u)
+	for off in [Vector3.ZERO, u * r, -u * r, w * r, -w * r]:
+		for i in range(0, faces.size(), 3):
+			if Geometry3D.segment_intersects_triangle(a + off, b + off, faces[i], faces[i + 1], faces[i + 2]) != null:
+				return true
+	return false
+
+
 ## What's wrong with the mirrors on `m` (see test_mirrors).
 func _mirror_faults(m: BikeModel, kind: String) -> Array:
 	var why := []
 	if m.mirrors.size() != 2:
 		return ["%d mirrors" % m.mirrors.size()]
-	var master := []   # the brake master cylinder's pieces, as boxes in steering space
+	var master := []   # the code-built brake master cylinder's pieces, as boxes in steering space
+	var shaped := PackedVector3Array()   # and a Blender-made one's triangles (its box is far looser than its shape)
 	for mi in m._slot_meshes.get("front_master", []):
 		if is_instance_valid(mi) and mi is MeshInstance3D and (mi as Node).get_parent() == m._steer_node and not str((mi as Node).name).begins_with("Brake"):
-			master.append((mi as MeshInstance3D).transform * (mi as MeshInstance3D).mesh.get_aabb())
+			var mesh := (mi as MeshInstance3D).mesh
+			if mesh is ArrayMesh:
+				var xf := (mi as MeshInstance3D).transform
+				for v in mesh.get_faces():
+					shaped.append(xf * v)
+			else:
+				master.append((mi as MeshInstance3D).transform * mesh.get_aabb())
 	for mr: Dictionary in m.mirrors:
 		var path: PackedVector3Array = mr["stalk"]
 		var r := float(mr["stalk_r"])
@@ -279,4 +299,6 @@ func _mirror_faults(m: BikeModel, kind: String) -> Array:
 							why.append("stalk through the brake master cylinder at %s (box %s)" % [q, box])
 							break
 			run += seg
+			if side > 0.0 and not shaped.is_empty() and _through(path[i], path[i + 1], r, shaped):
+				why.append("stalk through the brake master cylinder from %s to %s" % [path[i], path[i + 1]])
 	return why

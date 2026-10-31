@@ -5,7 +5,7 @@ extends Node
 ##   xvfb-run -a godot --path . res://tests/bike_look_shots.tscn -- --out=/tmp/look [--styles=cafe,sport] [--close]
 ## --close takes them close up on the engine and exhaust, for the finishes; a well-worn bike
 ## (hot-coloured headers) comes too. --bare leaves the rider off, to see the tank and seat.
-## --front takes them close on the nose of the fairing, for its edges.
+## --front takes them close on the nose of the fairing, for its edges; --bars on the handlebars.
 ## Writes <style>_classic.png, <style>_new.png and diff.json (mean and worst pixel difference, 0..255).
 var out_dir := "/tmp/look"
 var styles: Array = []
@@ -13,6 +13,7 @@ var cam: Camera3D
 var close := false
 var bare := false
 var front := false
+var bars := false
 
 
 func _ready() -> void:
@@ -28,6 +29,8 @@ func _ready() -> void:
 			bare = true
 		elif a == "--front":
 			front = true
+		elif a == "--bars":
+			bars = true
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(960, 600)
 	var env := WorldEnvironment.new()
@@ -63,6 +66,9 @@ func _ready() -> void:
 	if close:
 		cam.global_position = Vector3(1.15, 0.85, -0.95)
 		cam.look_at(Vector3(0.1, 0.5, -0.15), Vector3.UP)
+	elif bars:
+		cam.global_position = Vector3(0.05, 1.4, 0.15)
+		cam.look_at(Vector3(0.22, 0.95, -0.55), Vector3.UP)
 	elif front:
 		cam.global_position = Vector3(0.75, 1.05, -1.75)
 		cam.look_at(Vector3(0.05, 0.75, -0.55), Vector3.UP)
