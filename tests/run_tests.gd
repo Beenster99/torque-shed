@@ -145,6 +145,7 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_pipes")
 	await _t(&"_test_blender_parts_tyres")
 	await _t(&"_test_blender_parts_wheels")
+	await _t(&"_test_blender_parts_fairings")
 	await _t(&"_test_blender_parts_fallback")
 	await _t(&"_test_blender_parts_new_look")
 	print("The shed")
@@ -24870,6 +24871,10 @@ func _test_blender_parts_tyres() -> void:
 
 func _test_blender_parts_wheels() -> void:
 	_blender_parts().test_wheels()
+
+
+func _test_blender_parts_fairings() -> void:
+	_blender_parts().test_fairings()
 
 
 func _test_blender_parts_fallback() -> void:

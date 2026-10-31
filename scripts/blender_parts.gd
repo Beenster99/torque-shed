@@ -270,6 +270,259 @@ static func section_along(path: String, pts: Array, ups: Array, width: float, ti
 	return out
 
 
+## The rings of points ShapeKit.loft lays an open shell through (`sections` from `a0` round to
+## `a1`), the same points, for shell to give a thickness and edges.
+static func loft_rows(sections: Array, ring: int, a0: float, a1: float) -> Array:
+	var rows := []
+	var count := sections.size()
+	var span := a1 - a0
+	var steps := maxi(4, roundi(ring * span / TAU))
+	for i in count:
+		var s: Dictionary = sections[i]
+		var c: Vector3 = s["c"]
+		var prev: Vector3 = (sections[maxi(i - 1, 0)] as Dictionary)["c"]
+		var next: Vector3 = (sections[mini(i + 1, count - 1)] as Dictionary)["c"]
+		var t := next - prev
+		t.x = 0.0
+		t = t.normalized() if t.length() > 0.0001 else Vector3.BACK
+		var up := t.cross(Vector3.RIGHT).normalized()
+		var w := float(s.get("w", 0.1))
+		var hu := float(s.get("up", 0.1))
+		var hd := float(s.get("down", hu))
+		var e := 2.0 / float(s.get("n", 2.4))
+		var bw := float(s.get("bw", 1.0))
+		var pts := PackedVector3Array()
+		for j in steps + 1:
+			var a := a0 + span * j / steps
+			var ca := cos(a)
+			var sa := sin(a)
+			var x := signf(ca) * pow(absf(ca), e) * w * (bw if sa < 0.0 else 1.0)
+			var y := signf(sa) * pow(absf(sa), e) * (hu if sa > 0.0 else hd)
+			pts.append(c + Vector3.RIGHT * x + up * y)
+		rows.append(pts)
+	return rows
+
+
+## An open shell the code drew paper thin (`code`: ShapeKit.loft or facets, its outer face then
+## its inside face) through `rows` (each a PackedVector3Array, in order across), given the
+## thickness of the edge section at `path` (fairing/edge/<kind>.glb): the inside face set in by
+## it, and the section run round every edge between the two faces. Null when there's no glb.
+static func shell(code: Mesh, rows: Array, path: String) -> ArrayMesh:
+	var p := part(path)
+	if p.is_empty() or rows.size() < 2 or code == null or code.get_surface_count() == 0:
+		return null
+	var edge: Mesh = p["lods"][0]
+	var thick := -edge.get_aabb().position.y
+	var arrays := code.surface_get_arrays(0)
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var half := v.size() / 2
+	for k in half:
+		v[half + k] += n[half + k] * thick
+	var normals := _grid_normals(rows, code)
+	var edges := _grid_edges(rows)
+	var ev := PackedVector3Array()
+	var en := PackedVector3Array()
+	var euv := PackedVector2Array()
+	var ei := PackedInt32Array()
+	var e_arrays := edge.surface_get_arrays(0)
+	for e in edges:
+		var line: Array = e[0]
+		var inner: Array = e[1]
+		for k in line.size() - 1:
+			var a: Vector3 = rows[line[k].x][line[k].y]
+			var b: Vector3 = rows[line[k + 1].x][line[k + 1].y]
+			if a.distance_squared_to(b) < 1e-8:
+				continue
+			var na: Vector3 = normals[line[k].x][line[k].y]
+			var nb: Vector3 = normals[line[k + 1].x][line[k + 1].y]
+			var hint: Vector3 = ((rows[inner[k].x][inner[k].y] as Vector3) + (rows[inner[k + 1].x][inner[k + 1].y] as Vector3)) * 0.5
+			var out_dir := (a + b) * 0.5 - hint
+			var up := (na + nb).normalized()
+			if up.cross(b - a).dot(out_dir) < 0.0:
+				var swap := a
+				a = b
+				b = swap
+				var swap_n := na
+				na = nb
+				nb = swap_n
+			_along(e_arrays, a, b, na, nb, ev, en, euv, ei)
+	var base := v.size()
+	v.append_array(ev)
+	n.append_array(en)
+	uv.append_array(euv)
+	for k in ei:
+		idx.append(k + base)
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = v
+	out[Mesh.ARRAY_NORMAL] = n
+	out[Mesh.ARRAY_TEX_UV] = uv
+	out[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	mesh.surface_set_material(0, edge.surface_get_material(0))
+	return mesh
+
+
+## Each point's normal on the grid `rows`, from the faces round it, turned the way the outer face
+## of the code's mesh of it looks (its first half: see shell).
+static func _grid_normals(rows: Array, code: Mesh) -> Array:
+	# (The code's first vertex, outer face, is the grid's first point, on the loft and the facets alike.)
+	var outer: Vector3 = code.surface_get_arrays(0)[Mesh.ARRAY_NORMAL][0]
+	var count := rows.size()
+	var width: int = (rows[0] as PackedVector3Array).size()
+	var normals := []
+	for i in count:
+		var row := []
+		row.resize(width)
+		row.fill(Vector3.ZERO)
+		normals.append(row)
+	for i in count - 1:
+		for j in width - 1:
+			var a: Vector3 = rows[i][j]
+			var fn := ((rows[i][j + 1] as Vector3) - a).cross((rows[i + 1][j] as Vector3) - a)
+			fn += ((rows[i + 1][j + 1] as Vector3) - (rows[i + 1][j] as Vector3)).cross((rows[i + 1][j + 1] as Vector3) - (rows[i][j + 1] as Vector3))
+			for q in [[i, j], [i, j + 1], [i + 1, j], [i + 1, j + 1]]:
+				normals[q[0]][q[1]] += fn
+	var turn := -1.0 if (normals[0][0] as Vector3).dot(outer) < 0.0 else 1.0
+	for i in count:
+		for j in width:
+			normals[i][j] = ((normals[i][j] as Vector3) * turn).normalized()
+	return normals
+
+
+## The grid's four edges, each [its points, the points next in from them] as Vector2i(row,
+## across): the first row, the last row, the first point across and the last.
+static func _grid_edges(rows: Array) -> Array:
+	var count := rows.size()
+	var width: int = (rows[0] as PackedVector3Array).size()
+	var edges := [[[], []], [[], []], [[], []], [[], []]]
+	for j in width:
+		edges[0][0].append(Vector2i(0, j))
+		edges[0][1].append(Vector2i(1, j))
+		edges[1][0].append(Vector2i(count - 1, j))
+		edges[1][1].append(Vector2i(count - 2, j))
+	for i in count:
+		edges[2][0].append(Vector2i(i, 0))
+		edges[2][1].append(Vector2i(i, 1))
+		edges[3][0].append(Vector2i(i, width - 1))
+		edges[3][1].append(Vector2i(i, width - 2))
+	return edges
+
+
+## Where fasteners go round a shell (as for shell): along each of the grid's `which` edges (0 the
+## first row, 1 the last, 2 the first point across, 3 the last), every `spacing` m and `inset` m in
+## from it, clear of its ends; each a transform with Y out of the surface and Z along the edge.
+static func edge_spots(rows: Array, code: Mesh, which: Array, spacing: float, inset: float) -> Array:
+	var out := []
+	if rows.size() < 2 or code == null or code.get_surface_count() == 0:
+		return out
+	var normals := _grid_normals(rows, code)
+	var edges := _grid_edges(rows)
+	for w: int in which:
+		var line: Array = edges[w][0]
+		var inner: Array = edges[w][1]
+		var lengths := [0.0]
+		for k in range(1, line.size()):
+			lengths.append(float(lengths[k - 1]) + (rows[line[k].x][line[k].y] as Vector3).distance_to(rows[line[k - 1].x][line[k - 1].y]))
+		var total: float = lengths[-1]
+		if total < spacing:
+			continue
+		var count := floori(total / spacing)
+		var gap := (total - spacing * (count - 1)) * 0.5
+		var k := 1
+		for c in count:
+			var at := gap + spacing * c
+			while k < line.size() - 1 and float(lengths[k]) < at:
+				k += 1
+			var f := clampf((at - float(lengths[k - 1])) / maxf(float(lengths[k]) - float(lengths[k - 1]), 0.0001), 0.0, 1.0)
+			var a: Vector3 = rows[line[k - 1].x][line[k - 1].y]
+			var b: Vector3 = rows[line[k].x][line[k].y]
+			var p := a.lerp(b, f)
+			var hint: Vector3 = (rows[inner[k - 1].x][inner[k - 1].y] as Vector3).lerp(rows[inner[k].x][inner[k].y], f)
+			var up: Vector3 = (normals[line[k - 1].x][line[k - 1].y] as Vector3).lerp(normals[line[k].x][line[k].y], f).normalized()
+			var into := hint - p
+			into = (into - up * into.dot(up))
+			if into.length() < inset * 1.5:
+				continue
+			var along := (b - a).normalized()
+			along = (along - up * along.dot(up)).normalized()
+			out.append(Transform3D(Basis(up.cross(along), up, along), p + into.normalized() * inset))
+	return out
+
+
+## A part's surfaces ([[Mesh, Material], ...] as surfaces gives them) drawn once at each of
+## `xforms`, all in one mesh a surface.
+static func copies(path: String, xforms: Array) -> Array:
+	var out := []
+	if xforms.is_empty():
+		return out
+	for s in surfaces(path):
+		var arrays := (s[0] as Mesh).surface_get_arrays(0)
+		var sv: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var sn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var suv = arrays[Mesh.ARRAY_TEX_UV]
+		var si = arrays[Mesh.ARRAY_INDEX]
+		var v := PackedVector3Array()
+		var n := PackedVector3Array()
+		var uv := PackedVector2Array()
+		var idx := PackedInt32Array()
+		for x: Transform3D in xforms:
+			var base := v.size()
+			for k in sv.size():
+				v.append(x * sv[k])
+				n.append((x.basis * sn[k]).normalized())
+				uv.append(suv[k] if suv != null else Vector2.ZERO)
+			if si == null:
+				for k in sv.size():
+					idx.append(base + k)
+			else:
+				for k in si:
+					idx.append(base + k)
+		var a := []
+		a.resize(Mesh.ARRAY_MAX)
+		a[Mesh.ARRAY_VERTEX] = v
+		a[Mesh.ARRAY_NORMAL] = n
+		a[Mesh.ARRAY_TEX_UV] = uv
+		a[Mesh.ARRAY_INDEX] = idx
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a)
+		am.surface_set_material(0, s[1])
+		out.append([am, s[1]])
+	return out
+
+
+## One stretch of an edge section (its surface's `arrays`) laid from `a` to `b`, out along the
+## normal crossed with the edge, added to the lists.
+static func _along(arrays: Array, a: Vector3, b: Vector3, na: Vector3, nb: Vector3, verts: PackedVector3Array,
+		normals: PackedVector3Array, uvs: PackedVector2Array, idx: PackedInt32Array) -> void:
+	var sv: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var sn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var suv = arrays[Mesh.ARRAY_TEX_UV]
+	var si = arrays[Mesh.ARRAY_INDEX]
+	var along := b - a
+	var length := along.length()
+	along /= length
+	var base := verts.size()
+	for k in sv.size():
+		var f := clampf(sv[k].z, 0.0, 1.0)
+		var up := na.lerp(nb, f)
+		up = (up - along * up.dot(along)).normalized()
+		var across := up.cross(along).normalized()
+		verts.append(a.lerp(b, f) + across * sv[k].x + up * sv[k].y)
+		normals.append((across * sn[k].x + up * sn[k].y + along * sn[k].z).normalized())
+		uvs.append(suv[k] if suv != null else Vector2.ZERO)
+	if si == null:
+		for k in sv.size():
+			idx.append(base + k)
+	else:
+		for k in si:
+			idx.append(base + k)
+
+
 ## Every vertex of a part's `lod` mesh, in the space `xform` puts it in.
 static func points(path: String, xform: Transform3D, lod := 0) -> PackedVector3Array:
 	var out := PackedVector3Array()
