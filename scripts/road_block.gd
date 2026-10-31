@@ -8,10 +8,12 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 19
+const VERSION := 20
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
+## How far (m) a join's disc lies under the roads it joins (_join_y): out of sight where it overlaps them.
+const JOIN_SINK := 0.01
 ## A building stands at least this far past a road's verge (m), pushed back to it from as much as NUDGE_M over, or it's
 ## left out (_clear_of_roads).
 const CLEAR := 1.0
@@ -1544,7 +1546,8 @@ func _signals(kit: Dictionary) -> Array:
 
 
 ## Where two roads join end to end (no junction) at an angle or with different widths, a disc of road at the node
-## fills the wedge between their ends.
+## fills the wedge between their ends. It leans with the road (_join_y): a flat disc on a hill stood up out of the road
+## on its downhill side, an oval slice of road up to a foot high across the carriageway (Simon, v0.42.0).
 func _join_caps() -> void:
 	var r := net.region
 	var o := anchor()
@@ -1562,9 +1565,25 @@ func _join_caps() -> void:
 		var surf := r.surface_of(e0)
 		var col: Color = AdventureSurface.ROAD_COLOR.get(surf, AdventureSurface.ROAD_COLOR["tarmac"])
 		var at := net.point_at(e0, 0.0 if r.edge_a[e0] == node else net.length_of(e0))   # (the join, on the smoothed line)
-		var c := Vector3(at.x, net.node_y(node), at.y)
+		var c := Vector3(at.x, _join_y(e0, e1, at, net.node_y(node)), at.y)
 		var ring := []
 		for k in 12:
 			var t := TAU * k / 12.0
-			ring.append(c + Vector3(sin(t), 0.0, -cos(t)) * w * 0.5 - o)
+			var p := at + Vector2(sin(t), -cos(t)) * w * 0.5
+			ring.append(Vector3(p.x, _join_y(e0, e1, p, c.y), p.y) - o)
 		_fan(_deck_of(surf), surf, col, c - o, ring, true)
+
+
+## The height of a join's disc (_join_caps) at `p` (region frame): the lower of the two roads' crowned surfaces there
+## (each at the nearest point along it), JOIN_SINK under it, so on a hill the disc leans with the road and only shows in
+## the wedge between their ends, never standing up out of the road as a flat slice; `flat` where the heights aren't in.
+func _join_y(e0: int, e1: int, p: Vector2, flat: float) -> float:
+	var y := INF
+	for e in [e0, e1]:
+		var pr := net.project(e, p.x, p.y)
+		var s := clampf(float(pr[0]), 0.0, net.length_of(e))
+		var f := clampf(float(pr[1]) / maxf(net.width_of(e) * 0.5, 0.1), -1.0, 1.0)
+		var ry := net.road_y(e, s)
+		if not is_nan(ry):
+			y = minf(y, ry + RoadNet.CROWN * (1.0 - f * f))
+	return y - JOIN_SINK if y < INF else flat

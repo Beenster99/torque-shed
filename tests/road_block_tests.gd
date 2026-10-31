@@ -443,6 +443,42 @@ func test_heights() -> void:
 	check(step < 0.03, "and its arms run onto its deck without a step (%.3f m past their own slope at most)" % step)
 
 
+## Where two roads join end to end at a bend on a hill, the disc filling the wedge between their ends leans with the
+## road: it never stands up out of the road as a flat slice (Simon's "elliptical road slices", v0.42.0).
+func test_join_caps() -> void:
+	var hill := func(x: float, _z: float) -> float: return 20.0 + x * 0.1
+	var net := RoadNet.new(graph([[100, 100], [300, 100], [450, 250]], [[0, 1, "primary"], [1, 2, "primary"]]), hill)
+	check(net.region.adjacent[1].size() == 2 and net.junction_of(1).is_empty(), "two roads meeting end to end at a bend: no junction")
+	var b := RoadBlock.build(net, RoadBlock.key_of(300.0, 100.0))
+	var faces := PackedVector3Array()
+	for surf: String in b.arrays["deck"]:
+		var g: Dictionary = b.arrays["deck"][surf]
+		for i: int in g["i"]:
+			faces.append((g["v"] as PackedVector3Array)[i] + b.anchor())
+	var proud := 0.0
+	var at := Vector2.ZERO
+	var w := net.width_of(0) * 0.5
+	for dz in range(-8, 9):
+		for dx in range(-8, 9):
+			var p := Vector2(300.0 + dx * 0.5, 100.0 + dz * 0.5)
+			var y := _deck_y(faces, p)
+			if is_nan(y):
+				continue
+			# (the surface of the road it's nearer: off the end of the other, that one's end is no guide)
+			var road := NAN
+			var near := INF
+			for e in [0, 1]:
+				var pr := net.project(e, p.x, p.y)
+				if float(pr[2]) < near:
+					near = float(pr[2])
+					var f := clampf(float(pr[1]) / w, -1.0, 1.0)
+					road = net.road_y(e, clampf(float(pr[0]), 0.0, net.length_of(e))) + RoadNet.CROWN * (1.0 - f * f)
+			if y - road > proud:
+				proud = y - road
+				at = p
+	check(proud < 0.02, "on a 1 in 10 hill the join's disc is nowhere above the road (%.3f m at most, at %s)" % [proud, str(at)])
+
+
 ## The highest of `faces`' (triangles, region frame) heights at `p`, or NAN where none is.
 static func _deck_y(faces: PackedVector3Array, p: Vector2) -> float:
 	var best := NAN

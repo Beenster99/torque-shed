@@ -669,6 +669,9 @@ func _physics_process(delta: float) -> void:
 	_hud_timer -= delta
 	if _hud_timer <= 0.0 and (not hit.is_empty() or world.roads != null):
 		_hud_timer = 0.25
+		# The road you're riding along, for a crash off it to be put back on (AdventureWorld.ridden_road).
+		if main.bike and world.roads != null and not main.bike.is_crashed and main.bike.speed > Bike.RIDDEN_SPEED:
+			world.note_ridden(main.bike.global_position, main.bike.heading_ridden)
 		var waiting := crew_waiting()
 		var aboard := ferry.hud_text() if ferry != null else ""
 		_hud.text = aboard if aboard != "" else (hud_text(s) if waiting.is_empty() else "Waiting at the start for %s to get the road ready..." % " and ".join(waiting))
@@ -894,7 +897,7 @@ func step_off_spot(ground: Vector3, heading: float) -> Vector3:
 
 ## Where a crash picks you up (Bike.respawn_at): off the road, back on it at the nearest point
 ## along it, on your side and facing on towards the destination (AdventureWorld.back_on_road; on the road network, on
-## the way you were riding); on the road, or not out on an adventure, null: where you lie, as in town (on the network's
+## the road you were riding along, the way you were riding it); on the road, or not out on an adventure, null: where you lie, as in town (on the network's
 ## road, where you lie but turned to face along it the way you were riding).
 func respawn_spot(p: Vector3):
 	if world == null:

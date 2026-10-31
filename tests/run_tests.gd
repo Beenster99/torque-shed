@@ -22914,6 +22914,10 @@ func _test_road_blocks() -> void:
 	_roads().test_blocks()
 
 
+func _test_road_join_caps() -> void:
+	_roads().test_join_caps()
+
+
 func _test_road_cell() -> void:
 	_roads().test_cell()
 
