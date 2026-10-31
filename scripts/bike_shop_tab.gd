@@ -105,7 +105,9 @@ func show_mode(m: String) -> void:
 		for s in PartsDB.STYLES:
 			st.add_item(PartsDB.style_name(s))
 		st.select(PartsDB.STYLES.find(style))
-		st.item_selected.connect(func(i): _new_style(PartsDB.STYLES[i]); show_mode("new"))
+		# Deferred: rebuilding the list frees this very button, which mustn't happen while it is still
+		# sending the signal (that crashed the game, v0.42.0).
+		st.item_selected.connect(func(i): _new_style(PartsDB.STYLES[i]); show_mode("new"), CONNECT_DEFERRED)
 		_left.add_child(st)
 		_left.add_child(UITheme.label("PARTS", 14, UITheme.ACCENT))
 		for slot in BikeShop.CONFIG_SLOTS:
@@ -121,7 +123,7 @@ func show_mode(m: String) -> void:
 			for id in opts:
 				ob.add_item("None" if id == "none" else PartsDB.part_name(str(id)))
 			ob.select(maxi(0, opts.find(str(parts.get(slot, "none")))))
-			ob.item_selected.connect(func(i): set_part(slot, str(opts[i])))
+			ob.item_selected.connect(func(i): set_part(slot, str(opts[i])), CONNECT_DEFERRED)   # (deferred, as Style)
 			row.add_child(ob)
 			_left.add_child(row)
 		_left.add_child(UITheme.label("COLOURS", 14, UITheme.ACCENT))
