@@ -11309,6 +11309,12 @@ func _test_engine_idle_recorded() -> void:
 		"the recording loops, padded so it comes round without a click")
 	check(absf(bank.idle_rpm - 720.0) < 1.0 and absf(bank.idle_rms - 0.1) < 0.02, "its rpm and loudness are known (%.0f rpm, %.3f)" %
 		[bank.idle_rpm, bank.idle_rms])
+	# Measuring it is quick: no hitch when the first bike of a kind turns up (a biker joining a ride).
+	wav.remove_meta("rms")
+	var t0 := Time.get_ticks_usec()
+	EngineBank.new(spec).load_idle(EngineBank.idle_recording(spec))
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	check(ms < 60.0, "and it's measured in a moment, no hitch (%.1f ms)" % ms)
 	# Ticking over, the recording is the sound; with the revs up, the made sound takes over.
 	var es := EngineSound.new()
 	add_child(es)

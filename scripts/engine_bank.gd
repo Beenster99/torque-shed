@@ -187,11 +187,13 @@ func load_idle(path: String) -> void:
 	idle_rpm = base.substr(base.rfind("_") + 1).to_float()
 	if not wav.has_meta("rms"):
 		# Every fourth sample is plenty to know how loud it is (measured the once, like the padding).
+		# (wav.data hands back a copy each time it's read: read it the once, not per sample.)
+		var data := wav.data
 		var e := 0.0
 		var n := 0
 		var frames := int(wav.loop_end) * (2 if wav.stereo else 1)
 		for i in range(0, frames, 4):
-			var v := wav.data.decode_s16(i * 2) / 32768.0
+			var v := data.decode_s16(i * 2) / 32768.0
 			e += v * v
 			n += 1
 		wav.set_meta("rms", sqrt(e / maxi(n, 1)))
