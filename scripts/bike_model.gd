@@ -2194,8 +2194,9 @@ func _draw_cooling() -> void:
 					var fin := _box(c["base"] + c["up"] * (-0.07 + i * 0.035), Vector3(0.14, 0.01, 0.15), mat)
 					fin.basis = _cyl_basis(c["up"])
 		"oil":
-			_box(Vector3(0.0, _engine_c.y + 0.2, front_z + 0.04), Vector3(0.24, 0.1, 0.035), core)
-			_box(Vector3(0.0, _engine_c.y + 0.2, front_z + 0.02), Vector3(0.26, 0.12, 0.01), mat)
+			if _blender_tagged("radiator/oil_cooler.glb", Transform3D(Basis.IDENTITY, Vector3(0.0, _engine_c.y + 0.2, front_z + 0.035)), {"black_metal": core, "paint": mat}).is_empty():
+				_box(Vector3(0.0, _engine_c.y + 0.2, front_z + 0.04), Vector3(0.24, 0.1, 0.035), core)
+				_box(Vector3(0.0, _engine_c.y + 0.2, front_z + 0.02), Vector3(0.26, 0.12, 0.01), mat)
 			for side in [-1.0, 1.0]:
 				_tube(Vector3(0.1 * side, _engine_c.y + 0.15, front_z + 0.04), _engine_c + Vector3(0.08 * side, -0.05, -0.17), 0.007, mat)
 		"radiator", "race":
@@ -2204,15 +2205,16 @@ func _draw_cooling() -> void:
 			var h := 0.34 if big else 0.28
 			var c := Vector3(0.0, _engine_c.y + 0.25, front_z)
 			var rb := Basis(Vector3.RIGHT, -0.25)
-			# The core: fine fins and tubes.
-			var rad := _box(c, Vector3(w, h, 0.05), _tex(core, "core", 14.0))
-			rad.basis = rb
-			rad.name = "RadiatorCore"
-			# The side tanks and the top and bottom of the surround.
-			for sx in [-1.0, 1.0]:
-				_box(c + rb * Vector3((w * 0.5 + 0.012) * sx, 0.0, 0.0), Vector3(0.024, h + 0.02, 0.055), mat).basis = rb
-			for sy in [-1.0, 1.0]:
-				_box(c + rb * Vector3(0.0, (h * 0.5 + 0.01) * sy, 0.0), Vector3(w + 0.03, 0.02, 0.05), mat).basis = rb
+			# The core: fine fins and tubes, and the side tanks and the top and bottom of the surround.
+			var fins := _tex(core, "core", 14.0)
+			if _blender_tagged("radiator/core.glb", Transform3D(rb * Basis.from_scale(Vector3(w, h, 1.0)), c), {"black_metal": fins, "paint": mat}, {"black_metal": "RadiatorCore"}).is_empty():
+				var rad := _box(c, Vector3(w, h, 0.05), fins)
+				rad.basis = rb
+				rad.name = "RadiatorCore"
+				for sx in [-1.0, 1.0]:
+					_box(c + rb * Vector3((w * 0.5 + 0.012) * sx, 0.0, 0.0), Vector3(0.024, h + 0.02, 0.055), mat).basis = rb
+				for sy in [-1.0, 1.0]:
+					_box(c + rb * Vector3(0.0, (h * 0.5 + 0.01) * sy, 0.0), Vector3(w + 0.03, 0.02, 0.05), mat).basis = rb
 			# A grille in front: slim slats across the core.
 			var grille := _mat(Color(0.12, 0.12, 0.13), 0.7, 0.4)
 			for k in 7:
@@ -3317,6 +3319,23 @@ func _blender_lamp(glb: String, xform: Transform3D, shell: Material, lens: Mater
 	return not pieces.is_empty()
 
 
+## New look: a Blender-made part at `path` (under BlenderParts.ROOT) put on at `xform` in `parent`
+## (the bike by default), each surface in `over`'s material for its tag (else the usual one) and
+## named from `names` by tag ("Fitting" for the rest). Returns its meshes: none when the look is
+## Classic or there's no glb.
+func _blender_tagged(path: String, xform: Transform3D, over: Dictionary, names := {}, parent: Node3D = null) -> Array:
+	if not _blender_on():
+		return []
+	var pieces := _blender_pieces(BlenderParts.ROOT + path, xform, over, self if parent == null else parent)
+	for mi in pieces:
+		var nm := "Fitting"
+		for tag in names:
+			if over.has(tag) and (mi as MeshInstance3D).material_override == over[tag]:
+				nm = names[tag]
+		(mi as Node).name = nm
+	return pieces
+
+
 ## The modern Speed Triple's pair: two slim, angular LED lamps either side of the middle,
 ## swept back and raised at their outer ends like narrowed eyes, each with a daytime running
 ## light along its brow that's lit whenever the ignition is on (look "brow" false leaves it
@@ -3558,42 +3577,73 @@ func _draw_panniers(build: BikeBuild, zr: float) -> void:
 	for side in [-1.0, 1.0]:
 		var depth := 0.15 * k
 		var c := Vector3(side * (w + depth * 0.5), top - 0.17 * k, zr - 0.08)
-		match str(_look().get("shape", p.get("style", "hard"))):
-			"saddlebag":
-				# Cruiser saddlebags: tall leather boxes with a rounded bottom and a domed lid.
-				var body := _shell([{"c": c + Vector3(0.0, 0.0, -0.2 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.15 * k, "n": 3.0},
-					{"c": c + Vector3(0.0, 0.0, 0.0), "w": depth * 0.5, "up": 0.16 * k, "down": 0.17 * k, "n": 3.0},
-					{"c": c + Vector3(0.0, 0.02, 0.2 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.1 * k, "n": 3.0}], mat)
-				body.name = "Saddlebag"
-				_box(c + Vector3(side * 0.005, 0.15 * k, 0.0), Vector3(depth + 0.02, 0.03, 0.42 * k), _mat(_col().darkened(0.25), 0.0, 0.7))
-				for z in [-0.1, 0.1]:
-					_box(c + Vector3(side * (depth * 0.5 + 0.008), 0.05 * k, z * k), Vector3(0.006, 0.14 * k, 0.025), _mat(_accent(Color(0.8, 0.7, 0.4)), 0.9, 0.3))
-			"hard_top", "hard":
-				# Touring hard cases with a rounded top and a lid seam.
-				var body := _shell([{"c": c + Vector3(0.0, 0.0, -0.22 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.17 * k, "n": 4.0},
-					{"c": c, "w": depth * 0.5, "up": 0.18 * k, "down": 0.17 * k, "n": 4.0},
-					{"c": c + Vector3(0.0, 0.0, 0.22 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.17 * k, "n": 4.0}], mat)
-				body.name = "Case"
-				_box(c + Vector3(side * (depth * 0.5 + 0.002), 0.06 * k, 0.0), Vector3(0.006, 0.012, 0.42 * k), _mat(_accent(Color(0.1, 0.1, 0.11)), 0.5, 0.4))
-			"roll":
-				_roll_pannier(c, depth, k, mat, side, Vector3(side * w, top, c.z))
-			"soft":
-				_throw_over(c, depth, k, mat, side, Vector3(side * w, top, c.z))
-			"alloy":
-				_alu_case(c, Vector3(depth, 0.34 * k, 0.46 * k), mat, Vector3(side, 0.0, 0.0))
-			"leather":
-				_box(c, Vector3(depth, 0.3 * k, 0.4 * k), mat)
-				var flap := _box(c + Vector3(side * 0.01, 0.1 * k, 0.0), Vector3(depth + 0.02, 0.12 * k, 0.42 * k), mat)
-				flap.rotation.z = -side * 0.05
-				for z in [-0.1, 0.1]:
-					_box(c + Vector3(side * (depth * 0.5 + 0.012), 0.04 * k, z * k), Vector3(0.006, 0.12 * k, 0.02),
-						_mat(Color(0.8, 0.7, 0.4), 0.9, 0.3))
-			_:
-				_box(c, Vector3(depth, 0.34 * k, 0.46 * k), mat)
-				_box(c + Vector3(0.0, 0.17 * k + 0.012, 0.0), Vector3(depth + 0.01, 0.025, 0.47 * k), _mat(_col().darkened(0.3), 0.5, 0.4))
-				_box(c + Vector3(side * (depth * 0.5 + 0.004), 0.08 * k, 0.0), Vector3(0.006, 0.02, 0.1), rack)
+		var shape := str(_look().get("shape", p.get("style", "hard")))
+		if not _blender_pannier(shape, c, k, side, mat):
+			_code_pannier(shape, c, depth, k, side, Vector3(side * w, top, c.z), mat, rack)
 		_tube(Vector3(side * w, top, _pivot.z + 0.1), Vector3(side * w, top, zr + 0.16), 0.008, rack)
 		_tube(Vector3(side * w, top, zr + 0.16), Vector3(side * w, top - 0.3 * k, zr + 0.12), 0.008, rack)
+
+
+## New look: one pannier of `shape` in its Blender-made shapes (luggage/*.glb, see
+## blender/parts/luggage/luggage.py) round `c`, `k` its size and `side` the side it hangs on.
+## False when there's no glb for it (the roll-top and throw-over bags stay as the code draws them).
+func _blender_pannier(shape: String, c: Vector3, k: float, side: float, mat: Material) -> bool:
+	if not _blender_on():
+		return false
+	var xf := Transform3D(Basis.from_scale(Vector3(side * k, k, k)), c)
+	match shape:
+		"saddlebag", "leather":
+			return not _blender_tagged("luggage/saddlebag.glb", xf, {"paint": mat, "paint_2": _mat(_col().darkened(0.25), 0.0, 0.7),
+				"polished_alloy": _mat(_accent(Color(0.8, 0.7, 0.4)), 0.9, 0.3)}, {"paint": "Saddlebag"}).is_empty()
+		"alloy":
+			_alu_case(c, Vector3(0.15, 0.34, 0.46) * k, mat, Vector3(side, 0.0, 0.0))
+			return true
+		"roll", "soft":
+			return false
+	var pieces := _blender_tagged("luggage/hard_case.glb", xf, {"paint": mat, "plastic": _mat(Color(0.05, 0.05, 0.055), 0.1, 0.6)}, {"paint": "Case"})
+	if pieces.is_empty():
+		return false
+	if shape in ["hard_top", "hard"]:
+		_box(c + Vector3(side * (0.15 * k * 0.5 + 0.002), 0.06 * k, 0.0), Vector3(0.006, 0.012, 0.42 * k), _mat(_accent(Color(0.1, 0.1, 0.11)), 0.5, 0.4))
+	return true
+
+
+## The code-built pannier of `shape` round `c` (see _draw_panniers).
+func _code_pannier(shape: String, c: Vector3, depth: float, k: float, side: float, rail: Vector3, mat: Material, rack: Material) -> void:
+	match shape:
+		"saddlebag":
+			# Cruiser saddlebags: tall leather boxes with a rounded bottom and a domed lid.
+			var body := _shell([{"c": c + Vector3(0.0, 0.0, -0.2 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.15 * k, "n": 3.0},
+				{"c": c + Vector3(0.0, 0.0, 0.0), "w": depth * 0.5, "up": 0.16 * k, "down": 0.17 * k, "n": 3.0},
+				{"c": c + Vector3(0.0, 0.02, 0.2 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.1 * k, "n": 3.0}], mat)
+			body.name = "Saddlebag"
+			_box(c + Vector3(side * 0.005, 0.15 * k, 0.0), Vector3(depth + 0.02, 0.03, 0.42 * k), _mat(_col().darkened(0.25), 0.0, 0.7))
+			for z in [-0.1, 0.1]:
+				_box(c + Vector3(side * (depth * 0.5 + 0.008), 0.05 * k, z * k), Vector3(0.006, 0.14 * k, 0.025), _mat(_accent(Color(0.8, 0.7, 0.4)), 0.9, 0.3))
+		"hard_top", "hard":
+			# Touring hard cases with a rounded top and a lid seam.
+			var body := _shell([{"c": c + Vector3(0.0, 0.0, -0.22 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.17 * k, "n": 4.0},
+				{"c": c, "w": depth * 0.5, "up": 0.18 * k, "down": 0.17 * k, "n": 4.0},
+				{"c": c + Vector3(0.0, 0.0, 0.22 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.17 * k, "n": 4.0}], mat)
+			body.name = "Case"
+			_box(c + Vector3(side * (depth * 0.5 + 0.002), 0.06 * k, 0.0), Vector3(0.006, 0.012, 0.42 * k), _mat(_accent(Color(0.1, 0.1, 0.11)), 0.5, 0.4))
+		"roll":
+			_roll_pannier(c, depth, k, mat, side, rail)
+		"soft":
+			_throw_over(c, depth, k, mat, side, rail)
+		"alloy":
+			_alu_case(c, Vector3(depth, 0.34 * k, 0.46 * k), mat, Vector3(side, 0.0, 0.0))
+		"leather":
+			_box(c, Vector3(depth, 0.3 * k, 0.4 * k), mat)
+			var flap := _box(c + Vector3(side * 0.01, 0.1 * k, 0.0), Vector3(depth + 0.02, 0.12 * k, 0.42 * k), mat)
+			flap.rotation.z = -side * 0.05
+			for z in [-0.1, 0.1]:
+				_box(c + Vector3(side * (depth * 0.5 + 0.012), 0.04 * k, z * k), Vector3(0.006, 0.12 * k, 0.02),
+					_mat(Color(0.8, 0.7, 0.4), 0.9, 0.3))
+		_:
+			_box(c, Vector3(depth, 0.34 * k, 0.46 * k), mat)
+			_box(c + Vector3(0.0, 0.17 * k + 0.012, 0.0), Vector3(depth + 0.01, 0.025, 0.47 * k), _mat(_col().darkened(0.3), 0.5, 0.4))
+			_box(c + Vector3(side * (depth * 0.5 + 0.004), 0.08 * k, 0.0), Vector3(0.006, 0.02, 0.1), rack)
 
 
 ## A top box on a rack behind the seat, on a mounting plate: a rounded plastic case (a 30 L, or
@@ -3653,6 +3703,12 @@ func _plastic_case(at: Vector3, size: Vector3, lid_mat: Material, backrest: bool
 	var tub_mat := _mat(Color(0.05, 0.05, 0.055), 0.0, 0.55)
 	var dark := _mat(Color(0.02, 0.02, 0.022), 0.0, 0.8)
 	var seam := 0.5 * h
+	var k := h / 0.26
+	if not _blender_tagged("luggage/top_case.glb", Transform3D(Basis.from_scale(Vector3.ONE * k), at), {"paint": lid_mat, "plastic": tub_mat}, {"plastic": "Tub", "paint": "Lid"}).is_empty():
+		_case_reflector(at, w, d, h, seam)
+		if backrest:
+			_blender_tagged("luggage/backrest.glb", Transform3D(Basis.from_scale(Vector3.ONE * k), at), {"leather": _tex(_mat(Color(0.07, 0.07, 0.07), 0.0, 0.8), "grain")}, {"leather": "Backrest"})
+		return
 	var tub := []
 	for s in [[0.0, 0.86, 0.84], [0.04, 0.95, 0.94], [0.12, 1.0, 1.0], [0.5, 1.0, 1.0]]:
 		tub.append({"c": at + Vector3(0.0, s[0] * h, 0.0), "w": w * s[1], "up": d * s[2], "down": d * s[2] * 1.03, "n": 3.6})
@@ -3663,12 +3719,8 @@ func _plastic_case(at: Vector3, size: Vector3, lid_mat: Material, backrest: bool
 	_shell(lid, lid_mat).name = "Lid"
 	_shell([{"c": at + Vector3(0.0, seam, 0.0), "w": w * 1.006, "up": d * 1.006, "down": d * 1.036, "n": 3.6},
 		{"c": at + Vector3(0.0, seam + 0.02 * h, 0.0), "w": w * 1.006, "up": d * 1.006, "down": d * 1.036, "n": 3.6}], dark).name = "Seam"
-	var bz := d * 1.03
-	# A wide red reflector across the back of the tub, and the lock and latch over the seam.
-	_box(at + Vector3(0.0, seam - 0.09 * h, bz + 0.002), Vector3(w * 1.3, 0.035 * h / 0.26, 0.008), _lamp(Color(0.9, 0.1, 0.05), 0.6, "ign"))
-	_box(at + Vector3(0.0, seam + 0.01 * h, bz + 0.006), Vector3(0.08, 0.045, 0.014), _mat(Color(0.12, 0.12, 0.13), 0.3, 0.5))
-	var lock := _mesh_instance(_cylinder(0.009, 0.01, -1.0, 12), _mat(Color(0.82, 0.83, 0.85), 1.0, 0.2), at + Vector3(0.0, seam + 0.012 * h, bz + 0.014))
-	lock.rotation.x = PI * 0.5
+	_box(at + Vector3(0.0, seam + 0.01 * h, d * 1.03 + 0.006), Vector3(0.08, 0.045, 0.014), _mat(Color(0.12, 0.12, 0.13), 0.3, 0.5))
+	_case_reflector(at, w, d, h, seam)
 	for x in [-1.0, 1.0]:
 		var hinge := _mesh_instance(_cylinder(0.008, 0.05, -1.0, 10), dark, at + Vector3(x * w * 0.5, seam + 0.01 * h, -d - 0.004))
 		hinge.rotation.z = PI * 0.5
@@ -3678,6 +3730,14 @@ func _plastic_case(at: Vector3, size: Vector3, lid_mat: Material, backrest: bool
 			{"c": at + Vector3(0.0, 0.78 * h, -d - 0.008), "w": 0.11, "up": 0.0, "down": 0.03, "n": 3.0}],
 			_tex(_mat(Color(0.07, 0.07, 0.07), 0.0, 0.8), "grain"))
 		pad.name = "Backrest"
+
+
+## A plastic top case's wide red reflector across the back of the tub and the lock over the seam.
+func _case_reflector(at: Vector3, w: float, d: float, h: float, seam: float) -> void:
+	var bz := d * 1.03
+	_box(at + Vector3(0.0, seam - 0.09 * h, bz + 0.002), Vector3(w * 1.3, 0.035 * h / 0.26, 0.008), _lamp(Color(0.9, 0.1, 0.05), 0.6, "ign"))
+	var lock := _mesh_instance(_cylinder(0.009, 0.01, -1.0, 12), _mat(Color(0.82, 0.83, 0.85), 1.0, 0.2), at + Vector3(0.0, seam + 0.012 * h, bz + 0.014))
+	lock.rotation.x = PI * 0.5
 
 
 ## An aluminium adventure case centred on `c`: flat riveted panels with rolled edges, a pressed
@@ -3691,12 +3751,21 @@ func _alu_case(c: Vector3, size: Vector3, mat: Material, face: Vector3) -> void:
 	var bottom := c.y - h * 0.5
 	var corner := _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6)
 	var steel := _mat(Color(0.8, 0.81, 0.83), 1.0, 0.25)
+	var hx := size.x * 0.5 + 0.002
+	var hz := size.z * 0.5 + 0.002
+	# New look: the Blender-made body and lid (luggage/alu_*.glb), the latches and reflector as below.
+	var glb := "alu_pannier" if absf(face.x) > 0.5 else "alu_top"
+	var k := size.y / (0.34 if absf(face.x) > 0.5 else 0.26)
+	var xf := Transform3D(Basis.from_scale(Vector3(k * (-1.0 if face.x < -0.5 else 1.0), k, k)), c)
+	var over := {"paint": mat, "plastic": corner, "raw_steel": steel}
+	if not _blender_tagged("luggage/%s.glb" % glb, xf, over, {"paint": "Body"}).is_empty():
+		_blender_tagged("luggage/%s_lid.glb" % glb, xf, over, {"paint": "Lid"})
+		_alu_latches(c, size, face, bottom, body_h, hx, hz, steel)
+		return
 	_box(Vector3(c.x, bottom + body_h * 0.5, c.z), Vector3(size.x, body_h, size.z), mat).name = "Body"
 	_box(Vector3(c.x, bottom + body_h + 0.005, c.z), Vector3(size.x - 0.006, 0.012, size.z - 0.006), corner)
 	var lid_y := bottom + body_h + 0.01 + lid_h * 0.5
 	_box(Vector3(c.x, lid_y, c.z), Vector3(size.x + 0.008, lid_h, size.z + 0.008), mat).name = "Lid"
-	var hx := size.x * 0.5 + 0.002
-	var hz := size.z * 0.5 + 0.002
 	# Rolled edges up every corner and round the lid and the base.
 	for x in [-1.0, 1.0]:
 		for z in [-1.0, 1.0]:
@@ -3727,7 +3796,17 @@ func _alu_case(c: Vector3, size: Vector3, mat: Material, face: Vector3) -> void:
 			for y in [bottom + 0.035, bottom + body_h - 0.02]:
 				var r := _mesh_instance(_cylinder(0.004, 0.004, -1.0, 6), rivet, Vector3(c.x, y, c.z) + out + along * t * (span - 0.08) + f * 0.002)
 				r.basis = _basis_up(f)
-	# Latches over the seam and a reflector, on the face that opens.
+	_alu_latches(c, size, face, bottom, body_h, hx, hz, steel)
+	# A folding carry handle on the lid.
+	var top := lid_y + lid_h * 0.5
+	var hs := Vector3(face.x, 0.0, face.z).abs()
+	var hl := (Vector3(1.0, 0.0, 1.0) - hs) * minf(size.x, size.z) * 0.22 + hs * 0.0
+	_bend([Vector3(c.x, top, c.z) - hl, Vector3(c.x, top + 0.022, c.z) - hl * 0.8, Vector3(c.x, top + 0.022, c.z) + hl * 0.8,
+		Vector3(c.x, top, c.z) + hl], 0.008, corner)
+
+
+## An aluminium case's latches over the seam and its reflector, on the face that opens (see _alu_case).
+func _alu_latches(c: Vector3, size: Vector3, face: Vector3, bottom: float, body_h: float, hx: float, hz: float, steel: Material) -> void:
 	var fo := Vector3(face.x * hx, 0.0, face.z * hz)
 	var side := Vector3(face.z, 0.0, face.x).abs()
 	var fspan := size.z if absf(face.x) > 0.5 else size.x
@@ -3738,18 +3817,14 @@ func _alu_case(c: Vector3, size: Vector3, mat: Material, face: Vector3) -> void:
 		_box(at + face * 0.016 + Vector3(0.0, -0.012, 0.0), Vector3(0.025, 0.04, 0.025) * (side + Vector3.UP) + face.abs() * 0.006, steel)
 	_box(Vector3(c.x, bottom + body_h * 0.72, c.z) + fo + face * 0.003, side * fspan * 0.4 + Vector3(0.0, 0.022, 0.0) + face.abs() * 0.005,
 		_lamp(Color(0.9, 0.1, 0.05), 0.4, "ign"))
-	# A folding carry handle on the lid.
-	var top := lid_y + lid_h * 0.5
-	var hs := Vector3(face.x, 0.0, face.z).abs()
-	var hl := (Vector3(1.0, 0.0, 1.0) - hs) * minf(size.x, size.z) * 0.22 + hs * 0.0
-	_bend([Vector3(c.x, top, c.z) - hl, Vector3(c.x, top + 0.022, c.z) - hl * 0.8, Vector3(c.x, top + 0.022, c.z) + hl * 0.8,
-		Vector3(c.x, top, c.z) + hl], 0.008, corner)
 
 
 ## A wooden crate on the rack, `at` the middle of its base: corner posts, slatted sides with gaps
 ## between the boards, a solid floor and an open top.
 func _crate(at: Vector3, size: Vector3, mat: Material) -> void:
 	var dark := _mat(_col().darkened(0.25), 0.0, 0.9)
+	if not _blender_tagged("luggage/crate.glb", Transform3D(Basis.from_scale(Vector3.ONE * size.y / 0.26), at), {"paint": mat, "paint_2": dark}, {"paint": "Crate"}).is_empty():
+		return
 	var w := size.x * 0.5
 	var d := size.z * 0.5
 	_box(at + Vector3(0.0, 0.008, 0.0), Vector3(size.x, 0.016, size.z), dark)
@@ -3777,6 +3852,10 @@ func _trunk(at: Vector3, size: Vector3, mat: Material) -> void:
 	var h := size.y
 	var welt := _mat(_col().darkened(0.35), 0.0, 0.8)
 	var brass := _mat(_accent(Color(0.8, 0.66, 0.3)), 0.9, 0.3)
+	var xf := Transform3D(Basis.from_scale(Vector3.ONE * h / 0.26), at)
+	if not _blender_tagged("luggage/trunk.glb", xf, {"paint": mat, "paint_2": welt, "polished_alloy": brass}, {"paint": "Trunk"}).is_empty():
+		_blender_tagged("luggage/trunk_lid.glb", xf, {"paint": mat}, {"paint": "Lid"})
+		return
 	var body := []
 	for s in [[0.0, 0.95], [0.03, 1.0], [0.66, 1.0]]:
 		body.append({"c": at + Vector3(0.0, s[0] * h, 0.0), "w": w * s[1], "up": d * s[1], "down": d * s[1], "n": 6.0})
@@ -3925,13 +4004,19 @@ func _draw_fog_lights() -> void:
 	var b: Array = p.get("beam", [1.0, 0.9, 0.8])
 	var lens := _lamp(Color(b[0], b[1], b[2]), 2.0, "fog")
 	var style := str(p.get("style", "round"))
+	var over := {"paint": shell, "lens_white": lens}
 	if style == "bar":
 		var mid := -_steer_axis * 0.2 + Vector3(0.0, 0.0, -0.1)
+		if not _blender_tagged("fog/bar.glb", Transform3D(Basis.IDENTITY, mid), over, {"lens_white": "FogLens"}, _steer_node).is_empty():
+			return
 		_box(mid, Vector3(0.34, 0.045, 0.05), shell, _steer_node)
 		_box(mid + Vector3(0.0, 0.0, -0.026), Vector3(0.31, 0.03, 0.004), lens, _steer_node)
 		return
 	for x in [-1.0, 1.0]:
 		var at := -_steer_axis * 0.34 + Vector3(0.15 * x, 0.0, -0.06)
+		var glb: String = style if style in ["cube", "rally"] else "round"
+		if not _blender_tagged("fog/%s.glb" % glb, Transform3D(Basis.IDENTITY, at), over, {"lens_white": "FogLens"}, _steer_node).is_empty():
+			continue
 		match style:
 			"cube":
 				_box(at, Vector3(0.06, 0.06, 0.06), shell, _steer_node)
@@ -6037,14 +6122,17 @@ func _draw_steering_damper() -> void:
 			_tube(to_steer * front, eye_at, 0.006, rod_mat, Vector3.ONE, _steer_node)
 			_mesh_instance(_sphere(0.011), dark, eye_at, _steer_node)
 		"rotary":
-			var puck := _mesh_instance(_cylinder(0.035, 0.022), mat, Vector3(0.0, 0.04, 0.05), _steer_node)
-			puck.basis = Basis(Vector3.RIGHT, atan2(_steer_axis.z, _steer_axis.y))   # flat on the yoke
-			_mesh_instance(_cylinder(0.008, 0.012), dark, Vector3(0.0, 0.057, 0.05), _steer_node)
+			var flat := Basis(Vector3.RIGHT, atan2(_steer_axis.z, _steer_axis.y))   # flat on the yoke
+			if _blender_tagged("damper/rotary.glb", Transform3D(flat, Vector3(0.0, 0.04, 0.05)), {"paint": mat, "black_metal": dark}, {}, _steer_node).is_empty():
+				var puck := _mesh_instance(_cylinder(0.035, 0.022), mat, Vector3(0.0, 0.04, 0.05), _steer_node)
+				puck.basis = flat
+				_mesh_instance(_cylinder(0.008, 0.012), dark, Vector3(0.0, 0.057, 0.05), _steer_node)
 			# The link back to its bracket on the frame.
 			_tube(_head + Vector3(0.0, 0.02, 0.06), _head + Vector3(0.0, 0.0, 0.16), 0.006, rod_mat)
 		_:
-			_mesh_instance(_cylinder(0.022, 0.018), mat, _head_bottom + Vector3(0.0, -0.05, 0.02))
-			_mesh_instance(_cylinder(0.006, 0.05), rod_mat, _head_bottom + Vector3(0.0, -0.02, 0.02))
+			if _blender_tagged("damper/friction.glb", Transform3D(Basis.IDENTITY, _head_bottom + Vector3(0.0, -0.05, 0.02)), {"paint": rod_mat, "black_metal": mat}).is_empty():
+				_mesh_instance(_cylinder(0.022, 0.018), mat, _head_bottom + Vector3(0.0, -0.05, 0.02))
+				_mesh_instance(_cylinder(0.006, 0.05), rod_mat, _head_bottom + Vector3(0.0, -0.02, 0.02))
 
 
 ## Lever guards: a hoop off the bar end that curves round in front of the lever's tip, so a
@@ -9282,7 +9370,8 @@ func _tube(a: Vector3, b: Vector3, radius: float, mat: Material, stretch := Vect
 ## Whether a tube of the part being drawn is the new look's Blender-made tube (the frame's, the
 ## swingarm's, the bars' and the rearsets').
 func _frame_blender() -> bool:
-	return _current_slot in ["frame", "swingarm", "handlebars", "rearsets", "side_stand", "centre_stand", "rear_master"] and _blender_on()
+	return _current_slot in ["frame", "swingarm", "handlebars", "rearsets", "side_stand", "centre_stand", "rear_master", "steering_damper",
+		"guards", "lever_guards", "panniers", "top_box"] and _blender_on()
 
 
 ## How the fitted frame places a mounting point (see build_from), or `default`.

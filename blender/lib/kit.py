@@ -68,6 +68,8 @@ BUDGETS = {
     "indicator": [1500, 400, 60], "tail_light": [1500, 400, 80], "mirror": [1500, 400, 60],
     # (A sprocket, a strip of chain, a stand's foot or pivot, a horn.)
     "final_drive": [3000, 800, 60], "chain": [1500, 400, 40], "stand": [1500, 400, 40], "horn": [1500, 400, 60],
+    # (A pannier or top box, a fog lamp, a radiator, a steering damper.)
+    "luggage": [6000, 1500, 150], "fog": [1500, 400, 60], "radiator": [4000, 1000, 100], "damper": [1500, 400, 40],
 }
 SMALL_BUDGET = [1500, 400, 0]
 
