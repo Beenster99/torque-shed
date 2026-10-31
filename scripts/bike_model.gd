@@ -5444,6 +5444,8 @@ func _draw_side_panels() -> void:
 	var h := clampf((_seat_y - _pivot.y) * 0.62, 0.1, 0.24)
 	for side in [-1.0, 1.0]:
 		var at := c + Vector3(0.115 * side, 0.0, 0.0)
+		if _blender_side_panel(style, at, h, side, mat):
+			continue
 		match style:
 			"oval":
 				var disc := _mesh_instance(_cylinder(h * 0.5, 0.012), mat, at, self)
@@ -8699,6 +8701,21 @@ func _blender_cowl(kind: String, ln: float, mat: Material) -> MeshInstance3D:
 		return null
 	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(Vector3(1.0, 1.0, ln)), _tail), {"": mat})
 	return pieces[0] if not pieces.is_empty() else null
+
+
+## New look: one side panel in its Blender-made shape (side_panels/<style>.glb, see
+## blender/parts/side_panels/panels.py) at `at`, drawn for a panel 0.2 m tall and scaled to `h`,
+## mirrored on the left (`side` -1). False when the style has no glb (the oval number boards).
+func _blender_side_panel(style: String, at: Vector3, h: float, side: float, mat: Material) -> bool:
+	var path := BlenderParts.path_for("side_panels", style)
+	if not _blender_on() or BlenderParts.part(path).is_empty():
+		return false
+	var k := h / 0.2
+	var sc := Vector3(side, k, k if style == "chrome" else 1.0)
+	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(sc), at), {"": mat, "paint": mat})
+	if style == "triangle" and not pieces.is_empty():
+		(pieces[0] as Node).name = "SideCover"
+	return true
 
 
 ## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,
