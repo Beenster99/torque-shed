@@ -57,7 +57,8 @@ static func _tank_bag(m: BikeModel) -> void:
 		var h := height * lerpf(0.7, 1.0, sin(minf(u * 1.4, 1.0) * PI * 0.5))
 		secs.append({"c": Vector3(0.0, top.x + h * 0.5, z), "w": w, "up": h * 0.5, "down": h * 0.5,
 			"n": 2.2 if style == "ring" else 3.0})
-	m._shell(secs, mat).name = "TankBag"
+	if not _blender_bag(m, z0, length, height, k, mat):
+		m._shell(secs, mat).name = "TankBag"
 	var mid: Dictionary = secs[n / 2]
 	var top_y := float((mid["c"] as Vector3).y) + float(mid["up"])
 	if p.get("map", false):
@@ -105,6 +106,57 @@ static func _tank_bag(m: BikeModel) -> void:
 			ring.name = "TankRing"
 
 
+## New look: the tank bag's Blender-made body (kit/tank_bag.glb, see blender/parts/kit/adventure.py,
+## drawn 260 mm long, 100 mm a side and 100 mm tall) laid on the tank from `z0` back `length`, as
+## _tank_bag lofts its own: each cross-section sat on the tank's top where it is along it, as wide
+## as the tank there allows (or the bag's `k`), `height` tall and square to the line through the
+## sections' middles. False when there's no glb.
+static func _blender_bag(m: BikeModel, z0: float, length: float, height: float, k: float, mat: Material) -> bool:
+	var path := BlenderParts.ROOT + "kit/tank_bag.glb"
+	if not m._blender_on() or BlenderParts.part(path).is_empty():
+		return false
+	# The middle line, as _tank_bag's sections run (u 0 to 1 along the bag).
+	var mid := func(u: float) -> Vector3:
+		var z := z0 + length * clampf(u, 0.0, 1.0)
+		return Vector3(0.0, m.tank_top_at(z).x + height * 0.5 * lerpf(0.7, 1.0, sin(minf(clampf(u, 0.0, 1.0) * 1.4, 1.0) * PI * 0.5)), z)
+	var bent := []
+	for srf in BlenderParts.surfaces(path):
+		var arrays := (srf[0] as Mesh).surface_get_arrays(0)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		for i in v.size():
+			var u := v[i].z / 0.26
+			var c: Vector3 = mid.call(u)
+			var t: Vector3 = (mid.call(u + 0.2) as Vector3) - (mid.call(u - 0.2) as Vector3)
+			var up := t.cross(Vector3.RIGHT).normalized()
+			var top := m.tank_top_at(c.z)
+			var sx := minf(top.y * 0.82, 0.13 * k) / 0.1
+			var sy := height / 0.1
+			# (The glb's own middle line at u: half its height there.)
+			var own := 0.05 * lerpf(0.7, 1.0, sin(minf(clampf(u, 0.0, 1.0) * 1.4, 1.0) * PI * 0.5))
+			v[i] = c + Vector3.RIGHT * v[i].x * sx + up * (v[i].y - own) * sy
+			var nn := n[i] / Vector3(sx, sy, length / 0.26)
+			n[i] = Basis(Vector3.RIGHT, up, Vector3.RIGHT.cross(up)) * nn.normalized()
+		arrays[Mesh.ARRAY_VERTEX] = v
+		arrays[Mesh.ARRAY_NORMAL] = n
+		arrays[Mesh.ARRAY_TANGENT] = null
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		am.surface_set_material(0, srf[1])
+		bent.append([am, srf[1]])
+	for mi in m._blender_meshes(bent, Transform3D.IDENTITY, {"fabric": mat, "paint_2": m._mat(m._col().darkened(0.25), 0.0, 0.8)}):
+		(mi as Node).name = "TankBag" if (mi as MeshInstance3D).material_override == mat else "Fitting"
+	return true
+
+
+## New look: one of the kit's Blender-made pieces (kit/<glb>.glb, see blender/parts/kit/adventure.py)
+## at `xform` in `parent` (the bike when null), each tag in `over`'s material, the piece in `mat`
+## named `name`. False when there's no glb.
+static func _blender_piece(m: BikeModel, glb: String, xform: Transform3D, over: Dictionary, name: String, parent: Node3D = null) -> bool:
+	var tag := "paint" if over.has("paint") else str(over.keys()[0])
+	return not m._blender_tagged("kit/%s.glb" % glb, xform, over, {tag: name}, parent).is_empty()
+
+
 ## An auxiliary fuel tank by its style: a flat steel can on a bracket, a slim alloy cell along the
 ## rail, a moulded tank behind the seat, a pair of rally tanks low either side of the engine, or a
 ## soft bladder strapped across the back. Each with its filler cap.
@@ -125,31 +177,36 @@ static func _aux_tank(m: BikeModel, build: BikeBuild, zr: float) -> void:
 		"can":
 			var c := Vector3(-(w + 0.06), m._seat_y - 0.24, zr - 0.36)
 			var size := Vector3(0.075, 0.26, 0.2) * k
-			m._box(c, size, mat).name = "FuelCan"
-			# The pressed X on its face, the handle on top and the spout.
-			for s in [-1.0, 1.0]:
-				var x := m._box(c + Vector3(-size.x * 0.5 - 0.002, 0.0, 0.0), Vector3(0.004, size.y * 0.9, 0.012), m._mat(m._col().darkened(0.2), 0.6, 0.4))
-				x.rotation.x = 0.65 * s
-			m._box(c + Vector3(0.0, size.y * 0.5 + 0.015, -size.z * 0.15), Vector3(0.025, 0.02, size.z * 0.5), mat)
-			var spout := m._mesh_instance(m._cylinder(0.015, 0.03), cap_mat, c + Vector3(0.0, size.y * 0.5 + 0.015, size.z * 0.35))
-			spout.rotation.x = -0.6
+			if not _blender_piece(m, "fuel_can", Transform3D(Basis.from_scale(Vector3.ONE * k), c),
+					{"paint": mat, "paint_2": m._mat(m._col().darkened(0.2), 0.6, 0.4), "black_metal": cap_mat}, "FuelCan"):
+				m._box(c, size, mat).name = "FuelCan"
+				# The pressed X on its face, the handle on top and the spout.
+				for s in [-1.0, 1.0]:
+					var x := m._box(c + Vector3(-size.x * 0.5 - 0.002, 0.0, 0.0), Vector3(0.004, size.y * 0.9, 0.012), m._mat(m._col().darkened(0.2), 0.6, 0.4))
+					x.rotation.x = 0.65 * s
+				m._box(c + Vector3(0.0, size.y * 0.5 + 0.015, -size.z * 0.15), Vector3(0.025, 0.02, size.z * 0.5), mat)
+				var spout := m._mesh_instance(m._cylinder(0.015, 0.03), cap_mat, c + Vector3(0.0, size.y * 0.5 + 0.015, size.z * 0.35))
+				spout.rotation.x = -0.6
 			# The bracket off the rail.
 			m._tube(c + Vector3(0.03, size.y * 0.3, 0.0), Vector3(-w, m._seat_y - 0.04, c.z), 0.007, steel)
 			m._tube(c + Vector3(0.03, -size.y * 0.45, 0.0), Vector3(-w + 0.02, c.y - size.y * 0.45, c.z + 0.1), 0.007, steel)
 		"cell":
 			var a := Vector3(-(w + 0.05), m._seat_y - 0.09, zr - 0.5)
 			var b := Vector3(-(w + 0.05), m._seat_y - 0.09, zr - 0.02)
-			var cell := m._tube(a, b, 0.055 * k, mat)
-			cell.name = "FuelCell"
-			m._mesh_instance(m._sphere(0.055 * k), mat, a)
-			m._mesh_instance(m._sphere(0.055 * k), mat, b)
-			m._mesh_instance(m._cylinder(0.018, 0.025), cap_mat, a.lerp(b, 0.3) + Vector3(0.0, 0.055 * k, 0.0))
+			if not _blender_piece(m, "fuel_cell", Transform3D(Basis.from_scale(Vector3(k, k, 1.0)), (a + b) * 0.5), {"paint": mat, "black_metal": cap_mat}, "FuelCell"):
+				var cell := m._tube(a, b, 0.055 * k, mat)
+				cell.name = "FuelCell"
+				m._mesh_instance(m._sphere(0.055 * k), mat, a)
+				m._mesh_instance(m._sphere(0.055 * k), mat, b)
+				m._mesh_instance(m._cylinder(0.018, 0.025), cap_mat, a.lerp(b, 0.3) + Vector3(0.0, 0.055 * k, 0.0))
 			for u in [0.2, 0.8]:
 				var at := a.lerp(b, u)
 				m._tube(at + Vector3(0.04, 0.0, 0.0), Vector3(-w, m._seat_y - 0.04, at.z), 0.006, steel)
 			m._bike_only(m._tube(a.lerp(b, 0.05) + Vector3(0.03, -0.04, 0.0), Vector3(-0.08, m.tank_top_at(m._tank_front() + 0.3).x - 0.12, m._pivot.z), 0.005, cap_mat))
 		"rear":
 			var c := Vector3(0.0, m._seat_y - 0.06, m._tail.z - 0.02)
+			if _blender_piece(m, "rear_tank", Transform3D(Basis.from_scale(Vector3.ONE * k), c), {"paint": mat, "black_metal": cap_mat}, "RearTank"):
+				return
 			var secs := []
 			for i in 5:
 				var u := i / 4.0
@@ -160,22 +217,24 @@ static func _aux_tank(m: BikeModel, build: BikeBuild, zr: float) -> void:
 		"twin":
 			for side in [-1.0, 1.0]:
 				var c := Vector3(side * (m._block_w * 0.5 + 0.11), m._engine_c.y + 0.06, m._engine_c.z - 0.14)
-				var secs := []
-				for i in 5:
-					var u := i / 4.0
-					secs.append({"c": c + Vector3(0.0, lerpf(-0.04, 0.06, u), lerpf(-0.1, 0.12, u) * k),
-						"w": 0.05 * k * lerpf(0.7, 1.0, sin(u * PI)), "up": lerpf(0.12, 0.08, u) * k, "down": lerpf(0.06, 0.12, u) * k, "n": 2.4})
-				m._shell(secs, mat).name = "SideTank"
-				m._mesh_instance(m._cylinder(0.018, 0.02), cap_mat, c + Vector3(0.0, 0.18 * k, 0.04))
+				if not _blender_piece(m, "side_tank", Transform3D(Basis.from_scale(Vector3.ONE * k), c), {"paint": mat, "black_metal": cap_mat}, "SideTank"):
+					var secs := []
+					for i in 5:
+						var u := i / 4.0
+						secs.append({"c": c + Vector3(0.0, lerpf(-0.04, 0.06, u), lerpf(-0.1, 0.12, u) * k),
+							"w": 0.05 * k * lerpf(0.7, 1.0, sin(u * PI)), "up": lerpf(0.12, 0.08, u) * k, "down": lerpf(0.06, 0.12, u) * k, "n": 2.4})
+					m._shell(secs, mat).name = "SideTank"
+					m._mesh_instance(m._cylinder(0.018, 0.02), cap_mat, c + Vector3(0.0, 0.18 * k, 0.04))
 				m._bike_only(m._tube(c + Vector3(-side * 0.04, -0.06, 0.08), m._engine_c + Vector3(side * 0.06, 0.1, 0.0), 0.005, cap_mat))
 		_:
 			# A soft bladder strapped across the back of the seat.
 			var c := Vector3(0.0, m._seat_y + 0.06, m._tail.z - 0.08)
-			var body := m._mesh_instance(m._capsule(0.05 * k, 0.36 * k), mat, c)
-			body.rotation.z = PI * 0.5
-			body.scale = Vector3(1.0, 1.0, 1.6)
-			body.name = "Bladder"
-			m._mesh_instance(m._cylinder(0.016, 0.025), cap_mat, c + Vector3(0.12 * k, 0.05 * k, 0.0))
+			if not _blender_piece(m, "bladder", Transform3D(Basis.from_scale(Vector3.ONE * k), c), {"paint": mat, "black_metal": cap_mat}, "Bladder"):
+				var body := m._mesh_instance(m._capsule(0.05 * k, 0.36 * k), mat, c)
+				body.rotation.z = PI * 0.5
+				body.scale = Vector3(1.0, 1.0, 1.6)
+				body.name = "Bladder"
+				m._mesh_instance(m._cylinder(0.016, 0.025), cap_mat, c + Vector3(0.12 * k, 0.05 * k, 0.0))
 			for x in [-0.08, 0.08]:
 				m._strip(c + Vector3(x, 0.055 * k, -0.06), c + Vector3(x, -0.06, -0.09), 0.02, 0.003, m._mat(Color(0.8, 0.35, 0.08), 0.0, 0.8))
 
@@ -194,6 +253,8 @@ static func _toolbox(m: BikeModel, build: BikeBuild, zr: float) -> void:
 	var w := build.rear_tyre_width * 0.5 + 0.12
 	match str(p.get("style", "box")):
 		"roll":
+			if _blender_piece(m, "tool_roll", Transform3D(Basis.IDENTITY, Vector3(0.0, -0.22, -0.1)), {"leather": m._tex(mat, "grain"), "paint_2": dark, "chrome": steel}, "ToolRoll", m._steer_node):
+				return
 			var roll := m._mesh_instance(m._cylinder(0.035, 0.22, -1.0, 16), m._tex(mat, "grain"), Vector3(0.0, -0.22, -0.1), m._steer_node)
 			roll.rotation.z = PI * 0.5
 			roll.name = "ToolRoll"
@@ -203,15 +264,18 @@ static func _toolbox(m: BikeModel, build: BikeBuild, zr: float) -> void:
 		"tube":
 			var a := Vector3(-(w + 0.03), -0.03, zr - 0.42)
 			var b := Vector3(-(w + 0.03), -0.03, zr - 0.08)
-			m._tube(a, b, 0.045, mat).name = "ToolTube"
-			var cap := m._tube(b, b + Vector3(0.0, 0.0, 0.03), 0.05, dark)
-			cap.name = "TubeCap"
+			if not _blender_piece(m, "tool_tube", Transform3D(Basis.IDENTITY, a), {"paint": mat, "black_metal": dark}, "ToolTube"):
+				m._tube(a, b, 0.045, mat).name = "ToolTube"
+				var cap := m._tube(b, b + Vector3(0.0, 0.0, 0.03), 0.05, dark)
+				cap.name = "TubeCap"
 			for u in [0.25, 0.75]:
 				var at := a.lerp(b, u)
 				m._tube(at + Vector3(0.04, 0.0, 0.0), Vector3(-w + 0.02, at.y + 0.08, at.z), 0.006, steel)
 		"bash":
 			var c := Vector3(0.0, m._engine_c.y - 0.22 * m._eng_s - 0.04, m._engine_c.z + 0.02)
 			var size := Vector3(0.16, 0.06, 0.28)
+			if _blender_piece(m, "bash_box", Transform3D(Basis.IDENTITY, c), {"paint": mat, "black_metal": dark}, "BashBox"):
+				return
 			m._box(c, size, mat).name = "BashBox"
 			m._box(c + Vector3(0.0, -size.y * 0.5 - 0.002, 0.0), Vector3(size.x + 0.04, 0.006, size.z + 0.04), mat)
 			for s in [-1.0, 1.0]:
@@ -220,6 +284,9 @@ static func _toolbox(m: BikeModel, build: BikeBuild, zr: float) -> void:
 			var big := str(p.get("style", "")) == "case"
 			var size := Vector3(0.1, 0.15, 0.26) if big else Vector3(0.08, 0.12, 0.22)
 			var c := Vector3(-(w + size.x * 0.5 + 0.01), -0.06, zr - 0.36)
+			if _blender_piece(m, "toolbox", Transform3D(Basis.from_scale(size / Vector3(0.08, 0.12, 0.22)), c), {"paint": mat, "black_metal": dark, "chrome": steel}, "Toolbox"):
+				m._tube(c + Vector3(size.x * 0.5, size.y * 0.4, 0.0), Vector3(-w + 0.02, m._seat_y - 0.1, c.z + 0.05), 0.007, steel)
+				return
 			m._box(c, size, mat).name = "Toolbox"
 			m._box(c + Vector3(0.0, size.y * 0.5 + 0.006, 0.0), Vector3(size.x + 0.008, 0.012, size.z + 0.008), mat)
 			# A latch and lock on the face, ribs and the bracket to the rail.
@@ -273,9 +340,11 @@ static func _satnav(m: BikeModel) -> void:
 	# The arm from the mount up to the back of the unit.
 	m._tube(mount, at - tilt.y * 0.02, 0.008, dark, Vector3.ONE, m._steer_node)
 	m._mesh_instance(m._sphere(0.014), dark, mount, m._steer_node)
-	var body := m._box(at, Vector3(sw + 0.022, 0.026, sh + 0.022), housing, m._steer_node)
-	body.basis = tilt
-	body.name = "SatnavBody"
+	if not _blender_piece(m, "satnav", Transform3D(tilt * Basis.from_scale(Vector3((sw + 0.022) / 0.122, 1.0, (sh + 0.022) / 0.087)), at),
+			{"paint": housing, "black_metal": dark}, "SatnavBody", m._steer_node):
+		var body := m._box(at, Vector3(sw + 0.022, 0.026, sh + 0.022), housing, m._steer_node)
+		body.basis = tilt
+		body.name = "SatnavBody"
 	if p.has("accent"):
 		var a: Array = p["accent"]
 		var trim := m._box(at - tilt.y * 0.004, Vector3(sw + 0.03, 0.012, sh + 0.03), m._mat(Color(a[0], a[1], a[2]), 0.1, 0.5), m._steer_node)
@@ -352,9 +421,11 @@ static func _phone(m: BikeModel, p: Dictionary) -> void:
 	m._steer_node.add_child(cradle)
 	m._satnav_cradle = cradle
 	m._satnav_rest = at
-	m._box(Vector3.ZERO, half * 2.0, phone_mat, cradle).name = "Phone"
-	# The camera bump on its back, and the buttons along the top edge.
-	m._box(Vector3(half.x * 0.55, half.y * 0.45, -half.z - 0.0015), Vector3(0.022, 0.022, 0.003), phone_mat, cradle)
+	if not _blender_piece(m, "phone", Transform3D(Basis.from_scale(Vector3(half.x / 0.068, half.y / 0.0435, 1.0)), Vector3.ZERO), {"black_metal": phone_mat}, "Phone", cradle):
+		m._box(Vector3.ZERO, half * 2.0, phone_mat, cradle).name = "Phone"
+		# The camera bump on its back.
+		m._box(Vector3(half.x * 0.55, half.y * 0.45, -half.z - 0.0015), Vector3(0.022, 0.022, 0.003), phone_mat, cradle)
+	# The buttons along the top edge.
 	m._box(Vector3(half.x * 0.3, half.y + 0.0008, 0.0), Vector3(0.018, 0.0016, 0.003), phone_mat, cradle)
 	# The back plate, the jaws gripping each end with a lip over the glass, and the hooks under it.
 	m._box(Vector3(0.0, 0.0, -half.z - 0.004), Vector3(half.x * 1.2, half.y * 1.4, 0.006), case_mat, cradle).name = "CradlePlate"

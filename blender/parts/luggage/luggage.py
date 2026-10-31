@@ -17,6 +17,9 @@ panniers (the game scales them evenly by its k for other sizes), in the game's a
 - "luggage/crate.glb": a wooden crate from the middle of its base: posts, slats with gaps, floor.
 - "luggage/trunk.glb": a leather trunk from the middle of its base, with its welt, straps over
   the lid, brass corners and lock plate; "luggage/trunk_lid.glb" its domed lid.
+- "luggage/roll_bag.glb": the roll bag strapped across the top rack, round its middle.
+- "luggage/roll_pannier.glb" and "luggage/throw_over.glb": the soft panniers, a roll-top dry bag and
+  a canvas throw-over, round their middles on the right (+X).
 
 Tags: paint (the part's colour), paint_2 (its darker trim: a crate's posts, a trunk's welt and
 straps, a saddlebag's flap), plastic (tubs, corners, latches), polished_alloy (buckles and brass),
@@ -213,9 +216,78 @@ def trunk(lod):
     return kit.join(parts, "trunk")
 
 
+def across(name, secs, segs, tag, at=(0.0, 0.0, 0.0)):
+    """A loft across the game's X through (x, half depth in Z, up, down, n) sections round game `at`."""
+    ob = kit.loft(name, [(x, hz, up, dn, n) for x, hz, up, dn, n in secs], segs, tag)
+    # (A loft runs along Blender Y; turned a quarter about Z, its Y becomes Blender -X.)
+    ob.rotation_euler = (0.0, 0.0, -math.pi * 0.5)
+    ob.location = g(*at)
+    return ob
+
+
+def roll_bag(lod):
+    """The top box's roll bag, 560 by 240 by 270 mm, lying across the rack round its middle, with
+    its rolled ends standing up at each end (the game adds the clips and straps)."""
+    segs = [24, 12, 6][lod]
+    shape = [[-1.0, 0.03, 0.72], [-0.92, 0.4, 0.86], [-0.8, 0.9, 0.97], [-0.6, 1.0, 1.0], [0.0, 1.03, 1.02], [0.6, 1.0, 1.0],
+        [0.8, 0.9, 0.97], [0.92, 0.4, 0.86], [1.0, 0.03, 0.72]]
+    if lod == 2:
+        shape = [shape[0], shape[2], shape[6], shape[8]]
+    elif lod == 1:
+        shape = [shape[0], shape[1], shape[2], shape[4], shape[6], shape[7], shape[8]]
+    r = 0.12
+    parts = [across("bag", [(f * 0.27, 0.135 * w, r * h, r * h, 2.3) for f, w, h in shape], segs, "paint")]
+    for x in (-1.0, 1.0):
+        s = [16, 8, 4][lod]
+        parts.append(upright_at("rolled", [(-0.09, 0.026, 0.026, 2.0), (0.09, 0.026, 0.026, 2.0)], s, "paint", (x * 0.292, 0.0, 0.0)))
+        if lod < 2:
+            parts.append(upright_at("inner", [(-0.095, 0.02, 0.02, 2.0), (0.095, 0.02, 0.02, 2.0)], s, "paint_2", (x * 0.3, 0.0, 0.0)))
+    if lod == 0:
+        # The welded seam along its underside, and the reflective patch's welt.
+        parts.append(across("seam", [(-0.2, 0.004, 0.003, 0.003, 2.0), (0.2, 0.004, 0.003, 0.003, 2.0)], 6, "paint_2", at=(0.0, -0.121, 0.0)))
+    return kit.join(parts, "roll_bag")
+
+
+def upright_at(name, secs, segs, tag, at):
+    ob = upright(name, secs, segs, tag)
+    ob.location = g(*at)
+    return ob
+
+
+def roll_pannier(lod):
+    """A roll-top soft pannier, 150 by 300 by 420 mm round its middle, on the right (+X; the game
+    mirrors it), its top rolled down into a tube a little to the outside."""
+    segs = [24, 12, 6][lod]
+    shape = [[0.0, 0.75, 0.85], [0.06, 0.96, 0.97], [0.5, 1.0, 1.0], [0.86, 0.9, 0.97], [1.0, 0.45, 0.95]]
+    if lod == 2:
+        shape = [shape[0], shape[2], shape[4]]
+    parts = [upright("bag", [(-0.15 + f * 0.3, 0.075 * w, 0.21 * d, 2.8) for f, w, d in shape], segs, "paint")]
+    parts.append(along("rolled", [(-0.1995, 0.03, 0.03, 0.03, 2.0), (0.1995, 0.03, 0.03, 0.03, 2.0)], [16, 8, 4][lod], "paint", at=(0.018, 0.172)))
+    if lod < 2:
+        # The darker base panel, and the rolled tube's folded end.
+        parts.append(upright("base", [(-0.151, 0.058, 0.18, 2.8), (-0.125, 0.073, 0.205, 2.8)], segs, "paint_2"))
+        for z in (-1.0, 1.0):
+            parts.append(along("fold", [(z * 0.2 - 0.004, 0.033, 0.033, 0.033, 2.0), (z * 0.2 + 0.004, 0.033, 0.033, 0.033, 2.0)], 8, "paint_2", at=(0.018, 0.172)))
+    return kit.join(parts, "roll_pannier")
+
+
+def throw_over(lod):
+    """A canvas throw-over pannier, 150 by 300 by 400 mm round its middle (the game adds its flap,
+    straps and yoke), with piping round its top."""
+    segs = [24, 12, 6][lod]
+    shape = [[0.0, 0.7, 0.8], [0.08, 0.95, 0.96], [0.55, 1.0, 1.0], [1.0, 0.85, 0.97]]
+    if lod == 2:
+        shape = [shape[0], shape[2], shape[3]]
+    parts = [upright("bag", [(-0.15 + f * 0.3, 0.075 * w, 0.2 * d, 3.0) for f, w, d in shape], segs, "paint")]
+    if lod < 2:
+        parts.append(upright("piping", [(0.14, 0.066, 0.196, 3.0), (0.15, 0.066, 0.196, 3.0)], segs, "paint_2"))
+        parts.append(upright("piping", [(-0.14, 0.055, 0.162, 3.0), (-0.13, 0.073, 0.195, 3.0)], segs, "paint_2"))
+    return kit.join(parts, "throw_over")
+
+
 def parts():
     out = []
-    for name, build in (("hard_case", hard_case), ("saddlebag", saddlebag), ("top_case", top_case), ("backrest", backrest), ("crate", crate), ("trunk", trunk), ("trunk_lid", trunk_lid),
+    for name, build in (("hard_case", hard_case), ("saddlebag", saddlebag), ("top_case", top_case), ("backrest", backrest), ("crate", crate), ("trunk", trunk), ("trunk_lid", trunk_lid), ("roll_bag", roll_bag), ("roll_pannier", roll_pannier), ("throw_over", throw_over),
             ("alu_pannier", lambda lod: alu_case("alu_pannier", (0.15, 0.34, 0.46), (1, 0), lod)),
             ("alu_pannier_lid", lambda lod: alu_case("alu_pannier_lid", (0.15, 0.34, 0.46), (1, 0), lod, True)),
             ("alu_top", lambda lod: alu_case("alu_top", (0.36, 0.26, 0.34), (0, 1), lod)),

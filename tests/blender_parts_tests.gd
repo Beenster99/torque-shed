@@ -548,7 +548,7 @@ func test_headlights() -> void:
 		var lamp := str(m._build.part("headlight").get("look", {}).get("lamp", m._build.part("headlight").get("style", "round")))
 		if (models["classic"] as BikeModel)._slot_meshes.get("headlight", []).any(_blender_made):
 			out.append("%s Blender-made in Classic" % id)
-		if made.is_empty() != (lamp in ["nacelle", "triple"]):
+		if made.is_empty():
 			out.append("%s (%s): %d Blender-made pieces" % [id, lamp, made.size()])
 		var heads: Array = m._lamps.filter(func(l): return l["group"] == "head").map(func(l): return l["mat"])
 		var glass := made.filter(func(mi): return str((mi as Node).name).begins_with("Lens"))
@@ -693,7 +693,7 @@ func test_add_ons() -> void:
 					(models[k] as Node).free()
 				continue
 			builds += 1
-			var expect := not (style in ["roll", "soft", "fins", "twin", "linear"])
+			var expect := not (style in ["fins", "twin", "linear"])
 			var made := (m._slot_meshes.get(slot, []) as Array).filter(_blender_made)
 			if expect and made.is_empty():
 				out.append("%s (%s): none Blender-made" % [id, style])
@@ -715,11 +715,56 @@ func test_add_ons() -> void:
 	check(out.is_empty() and builds > 20, "every pannier, top box, fog lamp, radiator and steering damper (%d) in the new look wears its Blender-made shapes in the code-built one's place, the fog lamps still lit; Classic's are the code's %s" % [builds, str(out.slice(0, 6))])
 
 
-## The slots the loader draws in their Blender-made shapes (waves 1 to 4 so far).
+## The last small parts (wave 4g): in the new look every air filter and airbox, oil filter, ECU,
+## set of number boards (the race number still printed on them), tank bag, extra fuel tank,
+## toolbox and sat nav (the screen still live) wears its Blender-made shapes in the code-built
+## one's place; Classic's are the code's.
+func test_kit_parts() -> void:
+	var out := []
+	var builds := 0
+	for slot in ["air_filter", "oil_filter", "ecu", "number_boards", "tank_bag", "aux_tank", "toolbox", "satnav"]:
+		for style in ["naked", "cruiser"] if slot == "air_filter" else ["adventure"]:
+			for id in PartsDB.by_kind.get(slot, []):
+				var parts := Contracts.style_build(style)
+				parts[slot] = id
+				var models := {}
+				for k in ["classic", "code", "new"]:
+					var m := BikeModel.new()
+					m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+					BlenderParts.on = k != "code"
+					t.add_child(m)
+					m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+					models[k] = m
+				BlenderParts.on = true
+				var m: BikeModel = models["new"]
+				if str(m._build.parts.get(slot, "")) == str(id):
+					builds += 1
+					var made := (m._slot_meshes.get(slot, []) as Array).filter(_blender_made)
+					if made.is_empty():
+						out.append("%s on a %s: none Blender-made" % [id, style])
+					if (models["classic"] as BikeModel)._slot_meshes.get(slot, []).any(_blender_made):
+						out.append("%s: Blender-made in Classic" % id)
+					if slot == "number_boards" and str(m._build.part(slot).get("style", "")) != "shrouds" and not made.any(func(mi): return (mi as Node).get_children().any(func(c): return c is Label3D)):
+						out.append("%s: no number on its boards" % id)
+					if slot == "satnav" and m.satnav_screen() == null:
+						out.append("%s: no screen" % id)
+					var a := (models["code"] as BikeModel).slot_bounds(slot)
+					var b := m.slot_bounds(slot)
+					var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
+						(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
+					if d > LOADED_GIVE:
+						out.append("%s on a %s %.3f m off" % [id, style, d])
+				for k in models:
+					(models[k] as Node).free()
+	check(out.is_empty() and builds > 30, "every filter, ECU, number board, tank bag, extra tank, toolbox and sat nav (%d) in the new look wears its Blender-made shapes in the code-built one's place; Classic's are the code's %s" % [builds, str(out.slice(0, 8))])
+
+
+## The slots the loader draws in their Blender-made shapes (waves 1 to 4).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
 	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight", "indicators", "dashboard", "mirrors",
-	"final_drive", "chain", "side_stand", "horn", "rear_master", "panniers", "top_box", "fog_lights", "cooling", "steering_damper"]
+	"final_drive", "chain", "side_stand", "horn", "rear_master", "panniers", "top_box", "fog_lights", "cooling", "steering_damper",
+	"air_filter", "oil_filter", "ecu", "number_boards", "tank_bag", "aux_tank", "toolbox", "satnav"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
@@ -736,8 +781,6 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 			return str(m._build.part("tail").get("style", "classic")) != "tidy" or m._build.part("tail").get("look", {}).has("cowl")
 		"side_panels":
 			return str(m._build.part("side_panels").get("style", "triangle")) != "oval"
-		"headlight":
-			return not str(m._build.part("headlight").get("look", {}).get("lamp", "")) in ["nacelle", "triple"]
 		"cooling":
 			return not str(m._build.part("cooling").get("style", "fins")) in ["fins", "twin"]
 	return true
