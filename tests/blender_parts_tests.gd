@@ -354,9 +354,9 @@ static func _blender_made(mi) -> bool:
 	return mesh.get_surface_count() > 0 and BlenderParts.TAGS.has(BlenderParts.tag_of(mesh.surface_get_material(0)))
 
 
-## The slots the loader draws in their Blender-made shapes (waves 1 and 2 so far).
+## The slots the loader draws in their Blender-made shapes (waves 1 to 3 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
-	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork"]
+	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
@@ -370,6 +370,9 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
+## A tank's: the code's loft leans its end sections with the dip of its middle line, where the
+## Blender-made tank's stand upright, so a deep tank's ends sit a few centimetres apart.
+const TANK_GIVE := 0.05
 ## The most triangles a new-look bike may draw close up with its Blender-made parts on, and how
 ## many more than with the code-built shapes alone (the parts agreement's budgets per part,
 ## added up for the parts loaded so far).
@@ -378,7 +381,7 @@ const LOADED_MORE := 60000
 
 
 ## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
-## tyres, brakes, shocks and fork where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
+## tyres, brakes, shocks, fork, tank and seat where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
 ## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
 func test_new_look() -> void:
 	var off := []
@@ -418,7 +421,7 @@ func test_new_look() -> void:
 			var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
 				(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
 			worst[slot] = maxf(float(worst.get(slot, 0.0)), d)
-			if d > LOADED_GIVE:
+			if d > (TANK_GIVE if slot == "tank" else LOADED_GIVE):
 				off.append("%s %s %.3f" % [style, slot, d])
 		if m._exhaust_ports.size() != (models["code"] as BikeModel)._exhaust_ports.size() or m._exhaust_ports.is_empty():
 			off.append("%s ports" % style)
@@ -454,7 +457,7 @@ func test_new_look() -> void:
 				missing.append(str(parts[slot]))
 		m.free()
 	BikeLookNew.lods_now = false
-	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks and fork, and every one in the catalogue is drawn %s" % [missing])
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank and seat, and every one in the catalogue is drawn %s" % [missing])
 	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
 	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
 	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.
