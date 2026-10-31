@@ -3842,6 +3842,18 @@ func _draw_tail(build: BikeBuild) -> void:
 	face.name = "TailLight"
 
 
+## The lofted seat cowls and tail sections a tail unit's look can ask for (see _tail_cowl), each
+## as [z back from the end of the subframe, half-width, up, down, lift, squareness] along it.
+const TAIL_COWLS := {
+	"ducktail": [[-0.14, 0.12, 0.03, 0.04, 0.0, 3.0], [0.04, 0.12, 0.05, 0.05, 0.01, 3.0], [0.2, 0.1, 0.05, 0.05, 0.05, 3.0], [0.32, 0.09, 0.03, 0.02, 0.11, 3.5]],
+	"hump": [[-0.12, 0.13, 0.03, 0.04, 0.0, 2.6], [-0.02, 0.13, 0.11, 0.05, 0.0, 2.6], [0.14, 0.12, 0.1, 0.05, 0.0, 2.6], [0.28, 0.1, 0.05, 0.05, 0.0, 3.0], [0.33, 0.07, 0.02, 0.03, 0.0, 3.0]],
+	"solo": [[-0.1, 0.12, 0.02, 0.04, 0.0, 2.2], [0.02, 0.13, 0.14, 0.05, 0.0, 2.2], [0.14, 0.12, 0.12, 0.05, 0.0, 2.2], [0.24, 0.09, 0.04, 0.04, 0.0, 2.2]],
+	"tracker": [[-0.14, 0.13, 0.03, 0.05, 0.0, 4.0], [0.1, 0.13, 0.03, 0.05, 0.0, 4.0], [0.3, 0.12, 0.03, 0.05, 0.0, 4.0]],
+	"sport": [[-0.16, 0.13, 0.05, 0.06, 0.0, 2.8], [0.04, 0.11, 0.05, 0.07, 0.04, 2.8], [0.22, 0.07, 0.04, 0.05, 0.1, 2.8], [0.36, 0.025, 0.015, 0.02, 0.15, 2.5]],
+	"racing": [[-0.14, 0.13, 0.03, 0.05, 0.0, 2.6], [0.0, 0.13, 0.12, 0.06, 0.02, 2.6], [0.16, 0.1, 0.09, 0.06, 0.06, 2.6], [0.32, 0.03, 0.02, 0.03, 0.12, 2.4]],
+}
+
+
 ## A lofted seat cowl or tail section from a look: "ducktail" (kicking up at the end), "hump"
 ## (a cafe racer hump), "solo" (a round solo cowl with a back stop), "tracker" (a flat-track
 ## tail with an oval number board on the end), "sport" (a sharp tail rising to a point) or
@@ -3849,29 +3861,18 @@ func _draw_tail(build: BikeBuild) -> void:
 func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 	var t := _tail
 	var ln := float(lk.get("length", 1.0))
-	var keys := []   # [z, half-width, up, down, lift, squareness]
-	match kind:
-		"ducktail":
-			keys = [[-0.14, 0.12, 0.03, 0.04, 0.0, 3.0], [0.04, 0.12, 0.05, 0.05, 0.01, 3.0], [0.2, 0.1, 0.05, 0.05, 0.05, 3.0], [0.32, 0.09, 0.03, 0.02, 0.11, 3.5]]
-		"hump":
-			keys = [[-0.12, 0.13, 0.03, 0.04, 0.0, 2.6], [-0.02, 0.13, 0.11, 0.05, 0.0, 2.6], [0.14, 0.12, 0.1, 0.05, 0.0, 2.6], [0.28, 0.1, 0.05, 0.05, 0.0, 3.0], [0.33, 0.07, 0.02, 0.03, 0.0, 3.0]]
-		"solo":
-			keys = [[-0.1, 0.12, 0.02, 0.04, 0.0, 2.2], [0.02, 0.13, 0.14, 0.05, 0.0, 2.2], [0.14, 0.12, 0.12, 0.05, 0.0, 2.2], [0.24, 0.09, 0.04, 0.04, 0.0, 2.2]]
-		"tracker":
-			keys = [[-0.14, 0.13, 0.03, 0.05, 0.0, 4.0], [0.1, 0.13, 0.03, 0.05, 0.0, 4.0], [0.3, 0.12, 0.03, 0.05, 0.0, 4.0]]
-		"sport":
-			keys = [[-0.16, 0.13, 0.05, 0.06, 0.0, 2.8], [0.04, 0.11, 0.05, 0.07, 0.04, 2.8], [0.22, 0.07, 0.04, 0.05, 0.1, 2.8], [0.36, 0.025, 0.015, 0.02, 0.15, 2.5]]
-		"racing":
-			keys = [[-0.14, 0.13, 0.03, 0.05, 0.0, 2.6], [0.0, 0.13, 0.12, 0.06, 0.02, 2.6], [0.16, 0.1, 0.09, 0.06, 0.06, 2.6], [0.32, 0.03, 0.02, 0.03, 0.12, 2.4]]
-		_:
-			return
+	var keys: Array = TAIL_COWLS.get(kind, [])
+	if keys.is_empty():
+		return
 	if kind in ["sport", "racing"]:
-		_facet_cowl(keys, ln, mat, lk)
+		_facet_cowl(keys, ln, mat, lk, kind)
 		return
 	var secs := []
 	for k in keys:
 		secs.append({"c": t + Vector3(0.0, float(k[4]), float(k[0]) * ln), "w": k[1], "up": k[2], "down": k[3], "n": k[5]})
-	var cowl := _shell(secs, mat)
+	var cowl := _blender_cowl(kind, ln, mat)
+	if cowl == null:
+		cowl = _shell(secs, mat)
 	cowl.name = "TailCowl"
 	if kind == "tracker":
 		var board := _mesh_instance(_cylinder(0.12, 0.012), _mat(_accent(Color(0.95, 0.95, 0.92)), 0.0, 0.5), t + Vector3(0.0, 0.07, 0.31 * ln))
@@ -3890,7 +3891,7 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 ## A sports or race tail (keys as in _tail_cowl) built from flat panels to match the full
 ## fairings: a tucked-in underside, a sharp crease along each flank, a ridged top, tapering to
 ## a point, with the accent colour as a stripe along the upper flank.
-func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary) -> void:
+func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary, kind := "") -> void:
 	var rows := []
 	for k in keys.size():
 		var a: Array = keys[k]
@@ -3904,10 +3905,12 @@ func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary) -> void:
 			var c := _tail + Vector3(0.0, lerpf(float(a[4]), float(b[4]), f), z)
 			rows.append(PackedVector3Array([c + Vector3(0.0, -down, 0.0), c + Vector3(w * 0.62, -down, 0.0), c + Vector3(w, lerpf(-down, up, 0.4), 0.0),
 				c + Vector3(w * 0.72, up * 0.82, 0.0), c + Vector3(w * 0.3, up, 0.0), c + Vector3(0.0, up + 0.008, 0.0)]))
-	var cowl := _facets(rows, mat)
+	var cowl := _blender_cowl(kind, ln, mat)
+	if cowl == null:
+		cowl = _facets(rows, mat)
+		for end in [0, rows.size() - 1]:
+			_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO)
 	cowl.name = "TailCowl"
-	for end in [0, rows.size() - 1]:
-		_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO)
 	if _has_accent():
 		_grid_patch(rows, [0.0, 0.0, 1.0, 1.0], 3.15, 3.7, 0.003, _mat(_accent(), 0.1, 0.35, 0.6))
 
@@ -8685,6 +8688,17 @@ func _blender_seat(shape: String, y: float, z0: float, z1: float, sc: Vector3, m
 		if cover == null and (mi as MeshInstance3D).material_override == mat:
 			cover = mi
 	return cover
+
+
+## New look: a tail unit's Blender-made seat cowl or tail section (tail/cowl/<kind>.glb, see
+## blender/parts/tail/cowls.py) from the end of the subframe, stretched back by `ln`. Null when
+## there's no glb.
+func _blender_cowl(kind: String, ln: float, mat: Material) -> MeshInstance3D:
+	var path := BlenderParts.ROOT + "tail/cowl/%s.glb" % kind
+	if not _blender_on() or BlenderParts.part(path).is_empty():
+		return null
+	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(Vector3(1.0, 1.0, ln)), _tail), {"": mat})
+	return pieces[0] if not pieces.is_empty() else null
 
 
 ## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,
