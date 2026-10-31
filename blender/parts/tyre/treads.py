@@ -21,6 +21,10 @@ H_REF = 0.1                # m: the reference tyre's height off the bead
 SECTIONS = 32              # sections round a tyre
 TREADS = ["slick", "rib", "touring", "sport", "cruiser", "trail", "sipes", "knobs", "blocks", "studs"]
 OFFROAD = ["knobs", "blocks", "studs"]
+# The treads with a groove round the middle of the crown, and how far out (in the tyre's half
+# widths) the crown's points either side of it stand.
+CENTRE_GROOVE = ["rib", "cruiser"]
+CENTRE_EDGE = 0.09
 
 DETAIL = [
     {"along": 6, "crown": 10, "wall": 4},
@@ -47,6 +51,11 @@ def profile(tread, d):
         c = math.cos(th) ** (2.0 / sq)
         s = math.sin(th) ** (2.0 / sq)
         crown.append((c, bulge + (top - bulge) * s))
+    if tread in CENTRE_GROOVE and d["crown"] >= DETAIL[0]["crown"]:
+        # A point either side just off the middle, so the centre groove is a narrow cut rather than
+        # a V across the whole middle of the crown (a wide one on a fat tyre looked like a gap).
+        th = math.acos(CENTRE_EDGE ** (sq / 2.0))
+        crown.insert(len(crown) - 1, (CENTRE_EDGE, bulge + (top - bulge) * math.sin(th) ** (2.0 / sq)))
     right = side + crown
     left = [(-x, y) for x, y in reversed(right[:-1])]
     pts = left + right
