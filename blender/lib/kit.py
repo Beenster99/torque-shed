@@ -64,6 +64,8 @@ BUDGETS = {
     "weld": [600, 150, 40], "frame_fitting": [1500, 400, 120],
     # (A controls glb is one lever, grip, switch block, clamp or footrest piece.)
     "controls": [1500, 400, 120],
+    # (Indicators, rear lights, the clocks' housings and mirror heads: small lamps and shells.)
+    "indicator": [1500, 400, 60], "tail_light": [1500, 400, 80], "mirror": [1500, 400, 60],
 }
 SMALL_BUDGET = [1500, 400, 0]
 
