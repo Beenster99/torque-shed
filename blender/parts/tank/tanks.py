@@ -62,13 +62,14 @@ def smooth_ring(shape, s, segs):
     u, cy, w, up, down = s
     e = 2.0 / shape["n"]
     bw = shape["bw"]
-    # The underside tucked in towards the nose, clear of what sits on the engine under it.
-    tuck = 1.0 - 0.22 * (1.0 - smoothstep(0.0, 0.7, u))
+    # The underside tucked in towards the nose, clear of what sits on the engine under it: more
+    # the further down, so the flanks stay upright.
+    tuck = 0.3 * (1.0 - smoothstep(0.0, 0.7, u))
     pts = []
     for j in range(segs):
         a = -math.pi * 0.5 + 2.0 * math.pi * j / segs
         ca, sa = math.cos(a), math.sin(a)
-        x = math.copysign(abs(ca) ** e, ca) * w * (bw * tuck if sa < 0.0 else 1.0)
+        x = math.copysign(abs(ca) ** e, ca) * w * (bw * (1.0 + tuck * sa) if sa < 0.0 else 1.0)
         y = math.copysign(abs(sa) ** e, sa) * (up if sa > 0.0 else down)
         pts.append(g(x, cy + y, u))
     return pts
