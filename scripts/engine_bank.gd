@@ -9,6 +9,11 @@ extends RefCounted
 
 const MAX_BANKS := 10
 const SAMPLE_ROOTS := ["user://engine_samples", "res://audio/engines"]
+## Recordings of real bikes ticking over (Simon's), one loop per kind of engine, named
+## <key>_<rpm>.wav: the key is the most specific of <layout>_<crank>_<exhaust>, <layout>_<crank>,
+## <layout>_<exhaust> or <layout>, and the rpm is the speed it was recorded at. Made with
+## tools/idle_loop.py. A bike with one plays it around idle in place of the made sound.
+const IDLE_ROOTS := ["user://engine_samples/idle", "res://audio/engines/idle"]
 
 static var _banks := {}       # signature -> EngineBank
 
@@ -23,6 +28,11 @@ var bake_ms := 0.0            # how long the whole bank took to bake
 var recorded := false         # the loops come from recordings (see load_samples)
 var recorded_shots: Array = []   # one-shot kinds that come from recordings
 var exhaust_only := false     # recorded loops of the whole bike, with no engine-side layers of their own
+var idle_loop: AudioStreamWAV   # a recording of a real bike of this kind ticking over, or null
+var idle_rpm := 0.0           # the rpm it was recorded at
+var idle_rms := 0.0           # its loudness (RMS, 0..1)
+var idle_made_rms := Vector2.ZERO   # the made idle's loudness, exhaust side and engine side (off the throttle)
+var _idle_bucket := -1         # the made bucket nearest idle, whose loudness the recording matches
 var _mutex := Mutex.new()
 var _done: Array = []         # finished work waiting for the main thread: [kind, key, index, samples]
 var _task := -1
@@ -52,6 +62,8 @@ static func for_spec(engine_spec: Dictionary) -> EngineBank:
 	var folder := sample_folder(engine_spec)
 	if folder != "":
 		bank.load_samples(folder)
+	if not bank.recorded:
+		bank.load_idle(idle_recording(engine_spec))
 	bank.start_bake()
 	return bank
 
@@ -137,6 +149,61 @@ func load_samples(dir: String) -> void:
 		streams[layer] = st
 	baked = PackedInt32Array(range(keys.size()))
 	recorded = true
+
+
+## The idle recording for this engine, if there is one: the path of the most specific match
+## under IDLE_ROOTS (see there), or "".
+static func idle_recording(engine_spec: Dictionary) -> String:
+	var keys := ["%s_%s_%s" % [engine_spec["layout"], engine_spec["crank"], engine_spec["exhaust"]],
+		"%s_%s" % [engine_spec["layout"], engine_spec["crank"]],
+		"%s_%s" % [engine_spec["layout"], engine_spec["exhaust"]], str(engine_spec["layout"])]
+	for root in IDLE_ROOTS:
+		if not DirAccess.dir_exists_absolute(root):
+			continue
+		var found := {}   # key -> file
+		for f in DirAccess.get_files_at(root):
+			var file := f.trim_suffix(".import").trim_suffix(".remap")
+			if file.get_extension().to_lower() != "wav":
+				continue
+			var base := file.get_basename()
+			var cut := base.rfind("_")
+			if cut > 0 and base.substr(cut + 1).is_valid_float():
+				found[base.substr(0, cut)] = file
+		for key in keys:
+			if found.has(key):
+				return root.path_join(found[key])
+	return ""
+
+
+## Uses the recording at `path` (see idle_recording) for this engine's idle.
+func load_idle(path: String) -> void:
+	if path == "":
+		return
+	var wav := _load_wav(path, true)
+	if wav == null or wav.format != AudioStreamWAV.FORMAT_16_BITS or wav.data.size() < 1000:
+		return
+	idle_loop = wav
+	var base := path.get_file().get_basename()
+	idle_rpm = base.substr(base.rfind("_") + 1).to_float()
+	if not wav.has_meta("rms"):
+		# Every fourth sample is plenty to know how loud it is (measured the once, like the padding).
+		var e := 0.0
+		var n := 0
+		var frames := int(wav.loop_end) * (2 if wav.stereo else 1)
+		for i in range(0, frames, 4):
+			var v := wav.data.decode_s16(i * 2) / 32768.0
+			e += v * v
+			n += 1
+		wav.set_meta("rms", sqrt(e / maxi(n, 1)))
+	idle_rms = float(wav.get_meta("rms"))
+	_idle_bucket = bake_order()[0]
+
+
+static func _rms(x: PackedFloat32Array) -> float:
+	var e := 0.0
+	for v in x:
+		e += v * v
+	return sqrt(e / maxi(x.size(), 1))
 
 
 static func _load_wav(path: String, loop: bool) -> AudioStreamWAV:
@@ -281,6 +348,8 @@ func poll() -> void:
 			for layer in samples:
 				loops[layer][i] = samples[layer]
 				streams[layer][i] = EngineSynth.to_stream(bytes[layer], true)
+			if i == _idle_bucket:
+				idle_made_rms = Vector2(_rms(samples["ex_off"]), _rms(samples["in_off"]))
 			baked.append(i)
 			baked.sort()
 		else:
