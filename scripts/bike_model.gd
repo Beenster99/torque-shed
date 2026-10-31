@@ -3174,7 +3174,8 @@ func _draw_rear_master() -> void:
 	var mat := _mat(_col(), 0.6, 0.35)
 	var at := Vector3(0.15, 0.06, _pivot.z - 0.04)
 	_tube(at, at + Vector3(0.0, 0.1, 0.03), 0.014, mat)
-	_mesh_instance(_cylinder(0.02, 0.04), mat, at + Vector3(0.0, 0.16, 0.08))
+	if not _blender_on() or _blender_pieces(BlenderParts.ROOT + "controls/rear_master.glb", Transform3D(Basis.IDENTITY, at + Vector3(0.0, 0.16, 0.08)), {"paint": mat}).is_empty():
+		_mesh_instance(_cylinder(0.02, 0.04), mat, at + Vector3(0.0, 0.16, 0.08))
 
 
 ## The headlight on the fork: round, a café bucket, twin lamps, twin bug-eyes, an old-school
@@ -3459,6 +3460,8 @@ func _draw_horn() -> void:
 	var mat := _mat(_col(), 0.8, 0.25)
 	var dark := _mat(Color(0.06, 0.06, 0.07), 0.3, 0.5)
 	var at := _head_bottom + Vector3(0.0, -0.1, 0.07)
+	if _blender_horn(str(p.get("style", "disc")), p, at, mat, dark):
+		return
 	match str(p.get("style", "disc")):
 		"snail":
 			for x in [-0.045, 0.045]:
@@ -3491,6 +3494,40 @@ func _draw_horn() -> void:
 			disc.rotation.x = PI * 0.5
 			var grille := _mesh_instance(_cylinder(0.03, 0.006), dark, at + Vector3(0.0, 0.0, -0.017))
 			grille.rotation.x = PI * 0.5
+
+
+## New look: the horn `style` of part `p` in its Blender-made shapes (horn/*.glb, see
+## blender/parts/horn/horns.py) at `at`, where _draw_horn puts the code-built one. False when
+## there's no glb.
+func _blender_horn(style: String, p: Dictionary, at: Vector3, mat: Material, dark: Material) -> bool:
+	if not _blender_on():
+		return false
+	var root := BlenderParts.ROOT + "horn/"
+	var over := {"paint": mat, "black_metal": dark}
+	var placed := []
+	match style:
+		"snail":
+			for x in [-0.045, 0.045]:
+				placed += _blender_pieces(root + "snail.glb", Transform3D(Basis.IDENTITY, at + Vector3(x, 0.0, 0.0)), over)
+		"air":
+			var n := int(p.get("tones", [1, 1]).size())
+			for i in n:
+				var length := 0.12 + 0.03 * i
+				placed += _blender_pieces(root + "trumpet.glb", Transform3D(Basis.from_scale(Vector3(1.0, 1.0, length)), at + Vector3((i - (n - 1) * 0.5) * 0.04, 0.0, -0.1 * length)), over)
+			placed += _blender_pieces(root + "compressor.glb", Transform3D(Basis.IDENTITY, at + Vector3(0.0, -0.03, 0.04)), over)
+		"melody":
+			for i in 5:
+				var length := 0.08 + 0.02 * i
+				placed += _blender_pieces(root + "trumpet.glb", Transform3D(Basis.from_scale(Vector3(0.022 / 0.03, 0.022 / 0.03, length)),
+					at + Vector3((i - 2) * 0.026, 0.0, -0.03 + 0.2 * length)), over)
+		"klaxon":
+			placed = _blender_pieces(root + "klaxon.glb", Transform3D(Basis.IDENTITY, at), over)
+		"bulb":
+			over["polished_alloy"] = _mat(Color(0.78, 0.6, 0.25), 0.9, 0.2)
+			placed = _blender_pieces(root + "bulb.glb", Transform3D(Basis.IDENTITY, at), over)
+		_:
+			placed = _blender_pieces(root + "disc.glb", Transform3D(Basis.IDENTITY, at), over)
+	return not placed.is_empty()
 
 
 ## The ECU: a small box tucked under the side panel, below the front of the seat.
@@ -6063,6 +6100,12 @@ func _draw_side_stand(build: BikeBuild) -> void:
 	else:
 		foot = pivot + Vector3(-0.03, -0.04, length * 0.95)
 	_tube(pivot, foot, 0.012, mat)
+	if _blender_on():
+		var feet := _blender_pieces(BlenderParts.ROOT + "stand/foot.glb", Transform3D(Basis.IDENTITY, foot), {"paint": mat})
+		if not feet.is_empty():
+			(feet[0] as Node).name = "StandFoot"
+			_blender_pieces(BlenderParts.ROOT + "stand/pivot.glb", Transform3D(Basis.IDENTITY, pivot), {"paint": mat})
+			return
 	var pad := _box(foot, Vector3(0.05, 0.012, 0.07), mat)
 	pad.name = "StandFoot"
 	_box(pivot, Vector3(0.03, 0.04, 0.04), mat)
@@ -6082,7 +6125,8 @@ func _draw_centre_stand(build: BikeBuild) -> void:
 		var top := Vector3(0.1 * side, -0.06, z)
 		var foot := top + (Vector3(0.02 * side, -reach, -0.02) if stand_pose == "centre" else Vector3(0.0, -0.08, reach * 0.9))
 		_tube(top, foot, 0.013, mat)
-		_box(foot, Vector3(0.05, 0.012, 0.06), mat)
+		if not _blender_on() or _blender_pieces(BlenderParts.ROOT + "stand/foot.glb", Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.06 / 0.07)), foot), {"paint": mat}).is_empty():
+			_box(foot, Vector3(0.05, 0.012, 0.06), mat)
 	var bar_z := z - 0.02 if stand_pose == "centre" else z + reach * 0.9
 	var bar_y := -0.06 - reach if stand_pose == "centre" else -0.14
 	_tube(Vector3(-0.1, bar_y + 0.04, bar_z), Vector3(0.1, bar_y + 0.04, bar_z), 0.01, mat)
@@ -6672,16 +6716,19 @@ func _draw_final_drive(zr: float) -> void:
 	var front_r := sprocket_radius(int(fd.get("front", 15)))
 	var rear_r := sprocket_radius(int(fd.get("rear", 45)))
 	var sprocket_mat := _mat(_col(), 0.9, 0.35)
-	var front_sp := _mesh_instance(_cylinder(front_r, 0.012, -1.0, int(fd.get("front", 15))), sprocket_mat, Vector3(-0.13, 0.0, 0.0), _swingarm)
-	front_sp.rotation.z = PI * 0.5
-	var rear_sp := _mesh_instance(_cylinder(rear_r, 0.008, -1.0, int(fd.get("rear", 45))), sprocket_mat, Vector3(-0.12, 0.0, 0.0), _rear_wheel)
-	rear_sp.rotation.z = PI * 0.5
-	# Lightening holes and the bolts holding it to the cush drive.
 	var holes := _mat(Color(0.06, 0.06, 0.06), 0.2, 0.7)
-	for k in 5:
-		var a := TAU * k / 5.0
-		var hole := _mesh_instance(_cylinder(rear_r * 0.12, 0.0085), holes, Vector3(-0.12, cos(a) * rear_r * 0.72, sin(a) * rear_r * 0.72), _rear_wheel)
-		hole.rotation.z = PI * 0.5
+	var over := {"paint": sprocket_mat, "black_metal": holes}
+	if not _blender_on() or _blender_pieces(BlenderParts.ROOT + "final_drive/front_%d.glb" % int(fd.get("front", 15)), Transform3D(Basis.IDENTITY, Vector3(-0.13, 0.0, 0.0)), over, _swingarm).is_empty():
+		var front_sp := _mesh_instance(_cylinder(front_r, 0.012, -1.0, int(fd.get("front", 15))), sprocket_mat, Vector3(-0.13, 0.0, 0.0), _swingarm)
+		front_sp.rotation.z = PI * 0.5
+	if not _blender_on() or _blender_pieces(BlenderParts.ROOT + "final_drive/rear_%d.glb" % int(fd.get("rear", 45)), Transform3D(Basis.IDENTITY, Vector3(-0.12, 0.0, 0.0)), over, _rear_wheel).is_empty():
+		var rear_sp := _mesh_instance(_cylinder(rear_r, 0.008, -1.0, int(fd.get("rear", 45))), sprocket_mat, Vector3(-0.12, 0.0, 0.0), _rear_wheel)
+		rear_sp.rotation.z = PI * 0.5
+		# Lightening holes and the bolts holding it to the cush drive.
+		for k in 5:
+			var a := TAU * k / 5.0
+			var hole := _mesh_instance(_cylinder(rear_r * 0.12, 0.0085), holes, Vector3(-0.12, cos(a) * rear_r * 0.72, sin(a) * rear_r * 0.72), _rear_wheel)
+			hole.rotation.z = PI * 0.5
 	_current_slot = "chain"
 	if _part_id() == "" or _part_id() == "none":
 		return
@@ -6690,13 +6737,30 @@ func _draw_final_drive(zr: float) -> void:
 	var slack := float(condition.get("chain", {}).get("slack", 30.0))
 	var chain_mat := _mat(_col().lerp(Color(0.4, 0.22, 0.1), clampf(0.7 - lube, 0.0, 0.7)), 0.8, lerpf(0.75, 0.4, lube))
 	# The top run, tight from the top of one sprocket to the top of the other.
-	_tube(Vector3(-0.125, front_r, 0.0), Vector3(-0.125, rear_r, _arm_len), 0.006, chain_mat, Vector3.ONE, _swingarm)
 	var sag := clampf((slack - 20.0) / 1000.0, 0.0, 0.07)
 	var a := Vector3(-0.125, -front_r, 0.0)
 	var b := Vector3(-0.125, -rear_r, _arm_len)
 	var low := (a + b) * 0.5 + Vector3(0.0, -sag, 0.0)
-	_tube(a, low, 0.006, chain_mat, Vector3.ONE, _swingarm)
-	_tube(low, b, 0.006, chain_mat, Vector3.ONE, _swingarm)
+	for run in [[Vector3(-0.125, front_r, 0.0), Vector3(-0.125, rear_r, _arm_len)], [a, low], [low, b]]:
+		if not _blender_chain(run[0], run[1], chain_mat):
+			_tube(run[0], run[1], 0.006, chain_mat, Vector3.ONE, _swingarm)
+
+
+## New look: one straight run of chain from `a` to `b` (in the swingarm's space), strips of
+## Blender-made links (chain/run.glb, see blender/parts/chain/chain.py) laid end to end along it,
+## the last one cut short by squashing it to fit. False when there's no glb.
+const CHAIN_RUN := 8.0 * CHAIN_PITCH
+func _blender_chain(a: Vector3, b: Vector3, mat: Material) -> bool:
+	if not _blender_on():
+		return false
+	var d := b - a
+	var n := maxi(1, ceili(d.length() / CHAIN_RUN - 0.05))
+	var dir := d.normalized()
+	var basis := Basis(Vector3.RIGHT, dir.cross(Vector3.RIGHT), dir * (d.length() / (n * CHAIN_RUN)))
+	for i in n:
+		if _blender_pieces(BlenderParts.ROOT + "chain/run.glb", Transform3D(basis, a + d * (float(i) / n)), {"": mat}, _swingarm).is_empty():
+			return false
+	return true
 
 
 func _draw_shock() -> void:
@@ -9218,7 +9282,7 @@ func _tube(a: Vector3, b: Vector3, radius: float, mat: Material, stretch := Vect
 ## Whether a tube of the part being drawn is the new look's Blender-made tube (the frame's, the
 ## swingarm's, the bars' and the rearsets').
 func _frame_blender() -> bool:
-	return _current_slot in ["frame", "swingarm", "handlebars", "rearsets"] and _blender_on()
+	return _current_slot in ["frame", "swingarm", "handlebars", "rearsets", "side_stand", "centre_stand", "rear_master"] and _blender_on()
 
 
 ## How the fitted frame places a mounting point (see build_from), or `default`.

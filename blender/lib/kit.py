@@ -66,6 +66,8 @@ BUDGETS = {
     "controls": [1500, 400, 120],
     # (Indicators, rear lights, the clocks' housings and mirror heads: small lamps and shells.)
     "indicator": [1500, 400, 60], "tail_light": [1500, 400, 80], "mirror": [1500, 400, 60],
+    # (A sprocket, a strip of chain, a stand's foot or pivot, a horn.)
+    "final_drive": [3000, 800, 60], "chain": [1500, 400, 40], "stand": [1500, 400, 40], "horn": [1500, 400, 60],
 }
 SMALL_BUDGET = [1500, 400, 0]
 

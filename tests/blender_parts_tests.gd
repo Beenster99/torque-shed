@@ -623,10 +623,50 @@ func test_lamps() -> void:
 	check(out.is_empty() and builds > 30, "every indicator, rear light, set of clocks and pair of mirrors (%d) in the new look wears its Blender-made housing in the code-built one's place, lights, needles and glasses kept; Classic's are the code's %s" % [builds, str(out.slice(0, 6))])
 
 
+## The small parts (wave 4e): in the new look every final drive's sprockets, the chain, both
+## stands, every horn and the rear master cylinder wear their Blender-made shapes in the
+## code-built ones' place; Classic's are the code's.
+func test_small_parts() -> void:
+	var out := []
+	var builds := 0
+	var base := Contracts.style_build("classic")
+	base["centre_stand"] = PartsDB.by_kind["centre_stand"][0]
+	for slot in ["final_drive", "chain", "side_stand", "centre_stand", "horn"]:
+		for id in PartsDB.by_kind.get(slot, []):
+			var parts := base.duplicate()
+			parts[slot] = id
+			var models := {}
+			for k in ["classic", "code", "new"]:
+				var m := BikeModel.new()
+				m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+				BlenderParts.on = k != "code"
+				t.add_child(m)
+				m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+				models[k] = m
+			BlenderParts.on = true
+			builds += 1
+			var m: BikeModel = models["new"]
+			for s in [slot, "rear_master"]:
+				if (m._slot_meshes.get(s, []) as Array).filter(_blender_made).is_empty() and not (models["code"] as BikeModel)._slot_meshes.get(s, []).is_empty():
+					out.append("%s %s: none Blender-made" % [id, s])
+				if (models["classic"] as BikeModel)._slot_meshes.get(s, []).any(_blender_made):
+					out.append("%s %s: Blender-made in Classic" % [id, s])
+				var a := (models["code"] as BikeModel).slot_bounds(s)
+				var b := m.slot_bounds(s)
+				var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
+					(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
+				if d > LOADED_GIVE:
+					out.append("%s %s %.3f m off" % [id, s, d])
+			for k in models:
+				(models[k] as Node).free()
+	check(out.is_empty() and builds > 15, "every final drive, chain, stand and horn (%d), and the rear master cylinder, in the new look wear their Blender-made shapes in the code-built ones' place; Classic's are the code's %s" % [builds, str(out.slice(0, 6))])
+
+
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 4 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
-	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight", "indicators", "dashboard", "mirrors"]
+	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight", "indicators", "dashboard", "mirrors",
+	"final_drive", "chain", "side_stand", "horn", "rear_master"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
