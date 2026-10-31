@@ -150,6 +150,7 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_controls")
 	await _t(&"_test_blender_parts_headlights")
 	await _t(&"_test_blender_parts_lamps")
+	await _t(&"_test_blender_parts_small_parts")
 	await _t(&"_test_blender_parts_fallback")
 	await _t(&"_test_blender_parts_new_look")
 	print("The shed")
@@ -24895,6 +24896,10 @@ func _test_blender_parts_headlights() -> void:
 
 func _test_blender_parts_lamps() -> void:
 	_blender_parts().test_lamps()
+
+
+func _test_blender_parts_small_parts() -> void:
+	_blender_parts().test_small_parts()
 
 
 func _test_blender_parts_fallback() -> void:
