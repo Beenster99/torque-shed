@@ -62,6 +62,8 @@ BUDGETS = {
     "fairing_edge": [100, 60, 20], "fastener": [240, 100, 50],
     # (A weld glb is one bead round one tube end; a frame fitting a small bolted-on piece.)
     "weld": [600, 150, 40], "frame_fitting": [1500, 400, 120],
+    # (A controls glb is one lever, grip, switch block, clamp or footrest piece.)
+    "controls": [1500, 400, 120],
 }
 SMALL_BUDGET = [1500, 400, 0]
 
