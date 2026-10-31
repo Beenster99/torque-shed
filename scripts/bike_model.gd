@@ -2853,8 +2853,9 @@ func _draw_dashboard() -> void:
 			var dials := [{"x": -0.06, "what": "speed"}, {"x": 0.06, "what": "rpm"}] if twin else [{"x": 0.0, "what": "speed"}]
 			for d in dials:
 				var c: Vector3 = at + Vector3(d["x"], 0.0, 0.0)
-				var dial := _mesh_instance(_cylinder(0.05, 0.05), housing, c, _steer_node)
-				dial.basis = tilt
+				if not _blender_dash("dial", Transform3D(tilt, c), housing):
+					var dial := _mesh_instance(_cylinder(0.05, 0.05), housing, c, _steer_node)
+					dial.basis = tilt
 				var face := _mesh_instance(_cylinder(0.043, 0.004), face_mat, c + tilt.y * 0.026, _steer_node)
 				face.basis = tilt
 				_add_face(c + tilt.y * 0.028, tilt, 0.04, 0.04, true)
@@ -2874,8 +2875,9 @@ func _draw_dashboard() -> void:
 		"lcd", "tft":
 			var tft: bool = p.get("style") == "tft"
 			var size := Vector3(0.2, 0.03, 0.12) if tft else Vector3(0.16, 0.03, 0.09)
-			var body := _box(at, size, housing, _steer_node)
-			body.basis = tilt
+			if not _blender_dash("tft" if tft else "lcd", Transform3D(tilt, at), housing):
+				var body := _box(at, size, housing, _steer_node)
+				body.basis = tilt
 			var screen := _box(at + tilt.y * 0.016, Vector3(size.x - 0.02, 0.004, size.z - 0.02),
 				_lamp(Color(0.05, 0.12, 0.25) if tft else Color(0.42, 0.55, 0.42), 1.0, "ign"), _steer_node)
 			screen.basis = tilt
@@ -2884,8 +2886,9 @@ func _draw_dashboard() -> void:
 			if tft:
 				_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -size.z * 0.5 - 0.008), tilt, 0.14)
 		_:
-			var body := _box(at, Vector3(0.22, 0.03, 0.09), housing, _steer_node)
-			body.basis = tilt
+			if not _blender_dash("bar", Transform3D(tilt, at), housing):
+				var body := _box(at, Vector3(0.22, 0.03, 0.09), housing, _steer_node)
+				body.basis = tilt
 			var screen := _box(at + tilt.y * 0.016 + tilt * Vector3(0.0, 0.0, 0.012), Vector3(0.18, 0.004, 0.05),
 				_lamp(Color(0.03, 0.03, 0.04), 0.6, "ign"), _steer_node)
 			screen.basis = tilt
@@ -2893,6 +2896,14 @@ func _draw_dashboard() -> void:
 			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019 + tilt * Vector3(0.0, 0.0, 0.012))
 			_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -0.028), tilt, 0.18)
 	_lift_clear_of_bars(at)
+
+
+## New look: a clock's Blender-made housing (dashboard/<glb>.glb, see blender/parts/dashboard/clocks.py)
+## at `xform` in steering space, in the dashboard's `housing` colour. False when there's no glb.
+func _blender_dash(glb: String, xform: Transform3D, housing: Material) -> bool:
+	if not _blender_on():
+		return false
+	return not _blender_pieces(BlenderParts.ROOT + "dashboard/%s.glb" % glb, xform, {"paint": housing}, _steer_node).is_empty()
 
 
 ## Raises the clocks, if need be, until the bars (and what's on them) hide none of their faces
@@ -4000,50 +4011,70 @@ func _draw_tail(build: BikeBuild) -> void:
 	var lens := _lamp(Color(1.0, 0.05, 0.02), TAIL_ENERGY, "tail")
 	_stop_at = lamp + Vector3(0.0, 0.0, 0.05)
 	var face: MeshInstance3D
-	match str(lk.get("lamp", p.get("light", "round"))):
-		"tombstone":
-			var chrome := _mat(Color(0.86, 0.87, 0.89), 1.0, 0.1)
-			_box(lamp, Vector3(0.1, 0.06, 0.05), chrome)
-			var dome := _mesh_instance(_cylinder(0.05, 0.05), chrome, lamp + Vector3(0.0, 0.03, 0.0))
-			dome.rotation.x = PI * 0.5
-			face = _box(lamp + Vector3(0.0, 0.01, 0.027), Vector3(0.085, 0.07, 0.006), lens)
-		"cateye":
-			var body := _mesh_instance(_capsule(0.022, 0.13), _mat(Color(0.86, 0.87, 0.89), 1.0, 0.1), lamp)
-			body.rotation.z = PI * 0.5
-			face = _mesh_instance(_capsule(0.018, 0.11), lens, lamp + Vector3(0.0, 0.0, 0.012))
-			face.rotation.z = PI * 0.5
-			face.scale = Vector3(1.0, 1.0, 0.5)
-		"twin":
-			for x in [-0.045, 0.045]:
-				var can := _mesh_instance(_cylinder(0.026, 0.035), black, lamp + Vector3(x, 0.0, 0.0))
+	var kind := str(lk.get("lamp", p.get("light", "round")))
+	face = _blender_tail_light(kind, lamp, lens, black)
+	if face == null:
+		match kind:
+			"tombstone":
+				var chrome := _mat(Color(0.86, 0.87, 0.89), 1.0, 0.1)
+				_box(lamp, Vector3(0.1, 0.06, 0.05), chrome)
+				var dome := _mesh_instance(_cylinder(0.05, 0.05), chrome, lamp + Vector3(0.0, 0.03, 0.0))
+				dome.rotation.x = PI * 0.5
+				face = _box(lamp + Vector3(0.0, 0.01, 0.027), Vector3(0.085, 0.07, 0.006), lens)
+			"cateye":
+				var body := _mesh_instance(_capsule(0.022, 0.13), _mat(Color(0.86, 0.87, 0.89), 1.0, 0.1), lamp)
+				body.rotation.z = PI * 0.5
+				face = _mesh_instance(_capsule(0.018, 0.11), lens, lamp + Vector3(0.0, 0.0, 0.012))
+				face.rotation.z = PI * 0.5
+				face.scale = Vector3(1.0, 1.0, 0.5)
+			"twin":
+				for x in [-0.045, 0.045]:
+					var can := _mesh_instance(_cylinder(0.026, 0.035), black, lamp + Vector3(x, 0.0, 0.0))
+					can.rotation.x = PI * 0.5
+					var f := _mesh_instance(_cylinder(0.023, 0.006), lens, lamp + Vector3(x, 0.0, 0.019))
+					f.rotation.x = PI * 0.5
+					if x > 0.0:
+						face = f
+			"halo":
+				face = _mesh_instance(_torus(0.034, 0.006), lens, lamp)
+				face.rotation.x = PI * 0.5
+				_mesh_instance(_cylinder(0.03, 0.02), black, lamp - Vector3(0.0, 0.0, 0.01)).rotation.x = PI * 0.5
+			"lucas":
+				_box(lamp, Vector3(0.12, 0.07, 0.07), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15))
+				face = _box(lamp + Vector3(0.0, 0.0, 0.037), Vector3(0.1, 0.05, 0.008), lens)
+			"strip":
+				face = _box(lamp, Vector3(0.14, 0.022, 0.01), lens)
+			"bullet":
+				var shell := _mesh_instance(_sphere(0.03), black, lamp)
+				shell.scale = Vector3(1.0, 1.0, 1.5)
+				face = _mesh_instance(_cylinder(0.025, 0.006), lens, lamp + Vector3(0.0, 0.0, 0.043))
+				face.rotation.x = PI * 0.5
+			"led":
+				_box(lamp - Vector3(0.0, 0.0, 0.01), Vector3(0.07, 0.035, 0.03), black)
+				face = _box(lamp + Vector3(0.0, 0.0, 0.006), Vector3(0.06, 0.025, 0.006), lens)
+			_:
+				var can := _mesh_instance(_cylinder(0.036, 0.04), black, lamp)
 				can.rotation.x = PI * 0.5
-				var f := _mesh_instance(_cylinder(0.023, 0.006), lens, lamp + Vector3(x, 0.0, 0.019))
-				f.rotation.x = PI * 0.5
-				if x > 0.0:
-					face = f
-		"halo":
-			face = _mesh_instance(_torus(0.034, 0.006), lens, lamp)
-			face.rotation.x = PI * 0.5
-			_mesh_instance(_cylinder(0.03, 0.02), black, lamp - Vector3(0.0, 0.0, 0.01)).rotation.x = PI * 0.5
-		"lucas":
-			_box(lamp, Vector3(0.12, 0.07, 0.07), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15))
-			face = _box(lamp + Vector3(0.0, 0.0, 0.037), Vector3(0.1, 0.05, 0.008), lens)
-		"strip":
-			face = _box(lamp, Vector3(0.14, 0.022, 0.01), lens)
-		"bullet":
-			var shell := _mesh_instance(_sphere(0.03), black, lamp)
-			shell.scale = Vector3(1.0, 1.0, 1.5)
-			face = _mesh_instance(_cylinder(0.025, 0.006), lens, lamp + Vector3(0.0, 0.0, 0.043))
-			face.rotation.x = PI * 0.5
-		"led":
-			_box(lamp - Vector3(0.0, 0.0, 0.01), Vector3(0.07, 0.035, 0.03), black)
-			face = _box(lamp + Vector3(0.0, 0.0, 0.006), Vector3(0.06, 0.025, 0.006), lens)
-		_:
-			var can := _mesh_instance(_cylinder(0.036, 0.04), black, lamp)
-			can.rotation.x = PI * 0.5
-			face = _mesh_instance(_cylinder(0.032, 0.006), lens, lamp + Vector3(0.0, 0.0, 0.022))
-			face.rotation.x = PI * 0.5
+				face = _mesh_instance(_cylinder(0.032, 0.006), lens, lamp + Vector3(0.0, 0.0, 0.022))
+				face.rotation.x = PI * 0.5
 	face.name = "TailLight"
+
+
+## New look: the rear light's Blender-made lamp (tail_light/<kind>.glb, see
+## blender/parts/tail_light/tail_lights.py) at `lamp`, its glass in the tail lamp's `lens` (so it
+## lights as the tail and stop lamp) and its black housing in `black`. Returns the glass, named
+## TailLight by the caller, or null when there's no glb.
+func _blender_tail_light(kind: String, lamp: Vector3, lens: Material, black: Material) -> MeshInstance3D:
+	if not _blender_on():
+		return null
+	var glb: String = kind if kind in ["tombstone", "cateye", "twin", "halo", "lucas", "strip", "bullet", "led"] else "round"
+	var glass: MeshInstance3D = null
+	for mi in _blender_pieces(BlenderParts.ROOT + "tail_light/%s.glb" % glb, Transform3D(Basis.IDENTITY, lamp), {"lens_red": lens, "plastic": black}):
+		if (mi as MeshInstance3D).material_override == lens:
+			glass = mi
+		else:
+			(mi as Node).name = "TailLamp"
+	return glass
 
 
 ## The lofted seat cowls and tail sections a tail unit's look can ask for (see _tail_cowl), each
@@ -5449,9 +5480,14 @@ func _mirror_clamp(side: float, mat: Material) -> Vector3:
 	c.x *= signf(side)
 	along.x *= signf(side)
 	var up := (Vector3.UP - along * along.y).normalized()
-	var collar := _mesh_instance(_cylinder(_bar_r + 0.005, 0.022), mat, c, _steer_node)
-	collar.basis = _basis_up(along)
-	collar.name = "MirrorClamp"
+	var clamp := _blender_pieces(BlenderParts.ROOT + "mirror/clamp.glb", Transform3D(_basis_up(along) * Basis.from_scale(Vector3(_bar_r + 0.005, 1.0, _bar_r + 0.005)), c),
+		{"paint": mat}, _steer_node) if _blender_on() else []
+	for mi in clamp:
+		(mi as Node).name = "MirrorClamp"
+	if clamp.is_empty():
+		var collar := _mesh_instance(_cylinder(_bar_r + 0.005, 0.022), mat, c, _steer_node)
+		collar.basis = _basis_up(along)
+		collar.name = "MirrorClamp"
 	var top := c + up * (_bar_r + 0.012)
 	_tube(c, top, 0.009, mat, Vector3.ONE, _steer_node)
 	return top
@@ -5535,14 +5571,20 @@ func _mirror_head(at: Vector3, size: Vector2, mat: Material, glass: Material, pa
 	head.basis = _mirror_aim(at, parent)
 	var face: MeshInstance3D
 	var dims: Vector2
+	var shell := _blender_pieces(BlenderParts.ROOT + "mirror/%s.glb" % ("round" if size.y <= 0.0 else "rect"),
+		Transform3D(Basis.from_scale(Vector3(size.x, size.x if size.y <= 0.0 else size.y, 1.0)), Vector3.ZERO), {"paint": mat}, head) if _blender_on() else []
+	for mi in shell:
+		(mi as Node).name = "MirrorShell"
 	if size.y <= 0.0:
-		var shell := _mesh_instance(_cylinder(size.x, 0.02), mat, Vector3.ZERO, head)
-		shell.rotation.x = PI * 0.5
+		if shell.is_empty():
+			var back := _mesh_instance(_cylinder(size.x, 0.02), mat, Vector3.ZERO, head)
+			back.rotation.x = PI * 0.5
 		face = _mesh_instance(_cylinder(size.x * 0.88, 0.002), glass, Vector3(0.0, 0.0, 0.011), head)
 		face.rotation.x = PI * 0.5
 		dims = Vector2.ONE * size.x * 1.76
 	else:
-		_box(Vector3.ZERO, Vector3(size.x, size.y, 0.02), mat, head)
+		if shell.is_empty():
+			_box(Vector3.ZERO, Vector3(size.x, size.y, 0.02), mat, head)
 		dims = Vector2(size.x - 0.01, size.y - 0.01)
 		face = _box(Vector3(0.0, 0.0, 0.011), Vector3(dims.x, dims.y, 0.002), glass, head)
 	face.name = "MirrorGlass"
@@ -5636,6 +5678,8 @@ func _indicator_set(style: String, ends: Array, colour := Color(0, 0, 0, 0)) -> 
 			var base := Vector3(0.08 * side, -0.05, -0.08) if front else rear + Vector3(0.05 * side, -0.02, -0.04)
 			var face := -1.0 if front else 1.0   # the lens looks forward at the front, back at the rear
 			var tip := base + Vector3(reach * side, 0.0, 0.0)
+			if _blender_indicator(style, base, tip, front, side, amber, body, black, parent):
+				continue
 			match style:
 				"flush":
 					tip = Vector3(0.075 * side, -0.08, -0.17) if front else rear + Vector3(0.06 * side, 0.0, 0.0)
@@ -5658,6 +5702,30 @@ func _indicator_set(style: String, ends: Array, colour := Color(0, 0, 0, 0)) -> 
 					_tube(base, tip, 0.007, black, Vector3.ONE, parent)
 					_box(tip, Vector3(0.045, 0.032, 0.03), black, parent)
 					_box(tip + Vector3(0.0, 0.0, 0.016 * face), Vector3(0.042, 0.03, 0.006), amber, parent)
+
+
+## New look: one indicator's Blender-made head (indicator/<style>.glb, see
+## blender/parts/indicator/indicators.py) at `tip`, looking forward at the front and back at the
+## rear, on the code's stalk from `base` (a flush one sits in the bodywork with none). False when
+## there's no glb.
+func _blender_indicator(style: String, base: Vector3, tip: Vector3, front: bool, side: float, amber: Material, body: Material, black: Material, parent: Node3D) -> bool:
+	if not _blender_on():
+		return false
+	var glb: String = style if style in ["flush", "bullet", "mini", "touring"] else "stalk"
+	if style == "flush":
+		tip = Vector3(0.075 * side, -0.08, -0.17) if front else tail_light_position() + Vector3(0.06 * side, 0.0, 0.0)
+		if not front and tail_light_position() == Vector3.ZERO:
+			tip = _tail + Vector3(0.0, -0.04, 0.12) + Vector3(0.06 * side, 0.0, 0.0)
+	var over := {"lens_amber": amber, "plastic": black, "paint": body}
+	if style == "bullet":
+		over["chrome"] = body
+	var pieces := _blender_pieces(BlenderParts.ROOT + "indicator/%s.glb" % glb, Transform3D(Basis.IDENTITY if front else Basis(Vector3.UP, PI), tip), over, parent)
+	if pieces.is_empty():
+		return false
+	if style != "flush":
+		var r: float = {"bullet": 0.005, "mini": 0.004, "touring": 0.008}.get(style, 0.007)
+		_tube(base, tip, r, body if style == "bullet" else black, Vector3.ONE, parent)
+	return true
 
 
 ## Where the race numbers go on boards and plates: the same number all over one bike.
