@@ -31,6 +31,9 @@ const BEHIND := 600.0
 const REMOTE_BEHIND := 1500.0
 ## A crash this far past the road's edge (m) is off it: you're picked up back on the road.
 const OFF_ROAD := 1.0
+## On the road network a crash off the road is put back on the road last ridden (ridden_road) when it lies within this
+## far (m) of it, rather than whichever road happens to be nearest where the bike came to rest.
+const RIDDEN_REACH := 120.0
 const MAX_TASKS := 2
 ## How long a frame spends putting a built chunk into the world (ms): a piece at a time (see
 ## AdventureChunk.step), at least one a frame, more while they fit in this.
@@ -94,6 +97,9 @@ var _ready_data := {}    # chunk -> built data waiting to be committed
 var _committing := {}    # the chunk going into the world a piece at a time (AdventureChunk.begin), or {}
 var _hints := {}         # who -> the knot they were last found near
 var _own_s := 0.0
+## The network road you were last riding along: {edge, way (1 riding from its a end to its b end, -1 the other way)},
+## kept by note_ridden while you ride; {} before any. A crash off the road is put back on it facing on the same way.
+var ridden_road := {}
 
 
 ## What the worker threads hand back, guarded by its mutex (not the node, which may go first).
@@ -374,14 +380,29 @@ func back_on_road(p: Vector3, heading := NAN):
 	return transform_at(s, keep_at(p) * route.width_at_s(s) * 0.25)
 
 
-## back_on_road on the network ride: the nearest road's half the country drives on, facing along it the way that's
-## nearer `heading` (a to b without one). On the road it's picked up where it lies, turned to face along the road
-## that way (in a junction, `heading` itself); null with no heading.
+## Notes the network road a bike at local `p`, ridden on `heading` (Bike.heading_ridden), is riding along
+## (ridden_road), and which way along it. Off any road it keeps the last one.
+func note_ridden(p: Vector3, heading: float) -> void:
+	if roads == null or roads.net == null or is_nan(heading):
+		return
+	var xz := route_xz(p)
+	var hit := roads.net.locate(xz[0], xz[1], int(ridden_road.get("edge", -1)), false)
+	if hit.is_empty() or not bool(hit["on_road"]) or absf(float(hit["lat"])) > float(hit["width"]) * 0.5:
+		return
+	var way := 1 if absf(angle_difference(heading, -float(hit["heading"]))) <= PI * 0.5 else -1
+	ridden_road = {"edge": int(hit["edge"]), "way": way}
+
+
+## back_on_road on the network ride: off the road, back on the road last ridden (ridden_road, when it's within
+## RIDDEN_REACH) facing on the way you were riding it, else on the nearest road facing along it the way that's nearer
+## `heading` (a to b without one); on the half the country drives on either way. On the road it's picked up where it
+## lies, turned to face along the road that way (in a junction, `heading` itself); null with no heading.
 func _back_on_network(p: Vector3, heading := NAN):
 	var xz := route_xz(p)
 	var hit := roads.net.locate(xz[0], xz[1])
+	var back = _back_on_ridden(p)
 	if hit.is_empty():
-		return null
+		return back
 	var h := float(hit["heading"])   # (a bearing: clockwise from north, so it's -h as a heading)
 	if not is_nan(heading) and absf(angle_difference(heading, -h)) > PI * 0.5:
 		h = fposmod(h + PI, TAU)
@@ -389,10 +410,31 @@ func _back_on_network(p: Vector3, heading := NAN):
 		if is_nan(heading):
 			return null
 		return Transform3D(Basis(Vector3.UP, heading if int(hit["node"]) >= 0 else -h), p + Vector3.UP * 0.3)
+	if back != null:
+		return back
 	var ei := int(hit["edge"])
 	var s := float(hit["s"])
 	var at := roads.net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (keep_at(p) * float(hit["width"]) * 0.25)
 	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(at.x, roads.net.road_y(ei, s) + RoadNet.CROWN, at.y))
+
+
+## Off the road at local `p`: back on the road last ridden (ridden_road), at the nearest point along it, on the half
+## the country drives on and facing on the way it was being ridden. null with none, or it's over RIDDEN_REACH away.
+func _back_on_ridden(p: Vector3):
+	var net := roads.net
+	var ei := int(ridden_road.get("edge", -1))
+	if ei < 0 or ei >= net.region.edge_count():
+		return null
+	var xz := route_xz(p)
+	var pr := net.project(ei, xz[0], xz[1])
+	if float(pr[2]) > net.width_of(ei) * 0.5 + RIDDEN_REACH:
+		return null
+	var s := clampf(float(pr[0]), 0.0, net.length_of(ei))
+	var h := net.heading_at(ei, s)
+	if int(ridden_road["way"]) < 0:
+		h = fposmod(h + PI, TAU)
+	var at := net.point_at(ei, s) + Vector2(cos(h), sin(h)) * (keep_at(p) * net.width_of(ei) * 0.25)
+	return Transform3D(Basis(Vector3.UP, -h), to_local_pos(at.x, net.road_y(ei, s) + RoadNet.CROWN, at.y))
 
 
 ## Where player `slot` starts: two by two behind the start banner, on the half of the road the

@@ -58,8 +58,8 @@ func test_windows() -> void:
 	WindowLights.set_share(0.0)
 
 
-## A respawn on the road network: off the road, back on its nearest road facing the way you were riding along it
-## (on your side), whichever way the road's drawn; on the road, where you lie but turned to face along the road the way
+## A respawn on the road network: off the road, back on the road you were riding along (else the nearest) facing the
+## way you were riding it (on your side), whichever way the road's drawn; on the road, where you lie but turned to face along the road the way
 ## you were going; with no heading to go by, where you lie as before.
 func test_respawn() -> void:
 	var w := AdventureWorld.new()
@@ -82,6 +82,31 @@ func test_respawn() -> void:
 	check(c is Transform3D and (fwd.call(c) as Vector3).x < -0.99 and (c as Transform3D).origin.distance_to(lying) < 0.5,
 		"on the road: where you lie, turned to face along it the way you were going (%s)" % str(c))
 	check(w.back_on_road(lying) == null, "and with no heading, where you lie as before")
+	w.roads.free()
+	w.free()
+	# Off the road it's the road you were riding along that you're put back on, facing the way you were riding it: not
+	# the nearest road where the bike came to rest (a road beside it, the other leg of a hairpin), nor whichever way the
+	# tumble left it heading, and even when it came to rest out of reach of any road.
+	w = AdventureWorld.new()
+	w.roads = RoadStreamer.new()
+	w.roads.net = RoadNet.new(Roads.graph([[-500, 0], [500, 0], [500, -40], [-500, -40]],
+		[[0, 1, "primary"], [2, 3, "primary"]]), func(_x, _z): return 10.0)
+	w.note_ridden(Vector3(0.0, 10.0, -1.5), east)
+	check(int(w.ridden_road.get("edge", -1)) == 0 and int(w.ridden_road.get("way", 0)) == 1, "riding east along the first road: noted (%s)" % str(w.ridden_road))
+	w.note_ridden(Vector3(60.0, 10.0, 25.0), west)
+	check(int(w.ridden_road.get("edge", -1)) == 0, "off any road it keeps the last one")
+	var near_other := Vector3(100.0, 10.0, -30.0)
+	var d = w.back_on_road(near_other, PI)
+	check(d is Transform3D and absf((d as Transform3D).origin.z) < 4.0 and (fwd.call(d) as Vector3).x > 0.99,
+		"crashed nearer the road beside it: back on the one you were riding, facing on east (%s)" % str(d))
+	check(d is Transform3D and (d as Transform3D).origin.z < 0.0, "on the left half, as at home")
+	var far := Vector3(200.0, 10.0, 70.0)
+	var e = w.back_on_road(far, west)
+	check(e is Transform3D and absf((e as Transform3D).origin.z) < 4.0 and (fwd.call(e) as Vector3).x > 0.99,
+		"came to rest out of reach of any road: still back on it, facing on east (%s)" % str(e))
+	w.ridden_road = {}
+	check(w.back_on_road(near_other, west) is Transform3D and absf((w.back_on_road(near_other, west) as Transform3D).origin.z + 40.0) < 4.0,
+		"with no road ridden yet, the nearest as before")
 	w.roads.free()
 	w.free()
 	# The bike keeps the way it was ridden, for the respawn: not whichever way the crash left it lying.
