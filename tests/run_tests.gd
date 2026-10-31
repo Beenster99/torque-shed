@@ -22038,7 +22038,15 @@ func _test_detail_session() -> void:
 	w.detail._send_updates()
 	await get_tree().physics_frame
 	var shed_g := Detail.data(Shed.items[Shed.item_on(bike, "tank")])
-	var cell_f := job.e_cell[front[0]]
+	# The region most of the polished points are in (the very front of the nose, rounding away, gets
+	# the least of the pad).
+	var in_cell := {}
+	for i in front:
+		in_cell[job.e_cell[i]] = int(in_cell.get(job.e_cell[i], 0)) + 1
+	var cell_f: int = job.e_cell[front[0]] if not front.is_empty() else 0
+	for c in in_cell:
+		if in_cell[c] > in_cell[cell_f]:
+			cell_f = c
 	check(shed_g["g"][cell_f] > 200 and shed_g["u"][cell_f] == 1, "and the shed hears: the polished regions are glossy there (%d)" % shed_g["g"][cell_f])
 	# Held still in one place, pressing hard: it burns through.
 	var hold: int = side[side.size() - 1]
