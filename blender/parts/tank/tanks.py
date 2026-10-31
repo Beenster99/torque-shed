@@ -9,8 +9,9 @@ between the head stock and the seat, scales it for the tank's capacity and tilts
 top tube (BlenderParts.tank_xform). Its filler cap, badges, stripes and pads are still the game's,
 laid on the same loft sections.
 
-Over the code's shape: smoother sections, gently rounded ends, a tunnel under the middle where the
-top tube runs, and the seam where the pressings are welded running down each side. All `paint`."""
+Over the code's shape: smoother sections, gently rounded ends, the underside tucked in towards the
+nose (clear of carburettors and air filters under it), a tunnel under the middle where the top tube
+runs, and the seam where the pressings are welded running down each side. All `paint`."""
 
 import math
 
@@ -66,11 +67,13 @@ def smooth_ring(shape, s, segs, shrink=1.0):
     e = 2.0 / shape["n"]
     bw = shape["bw"]
     t = tunnel(u, down)
+    # The underside tucked in towards the nose, clear of what sits on the engine under it.
+    tuck = 1.0 - 0.22 * (1.0 - smoothstep(0.0, 0.7, u))
     pts = []
     for j in range(segs):
         a = -math.pi * 0.5 + 2.0 * math.pi * j / segs
         ca, sa = math.cos(a), math.sin(a)
-        x = math.copysign(abs(ca) ** e, ca) * w * (bw if sa < 0.0 else 1.0) * shrink
+        x = math.copysign(abs(ca) ** e, ca) * w * (bw * tuck if sa < 0.0 else 1.0) * shrink
         y = math.copysign(abs(sa) ** e, sa) * (up if sa > 0.0 else down) * shrink
         if sa < 0.0 and t > 0.0:
             # The tunnel: the underside pushed up either side of the middle, over the top tube.
@@ -124,7 +127,7 @@ def body(shape, lod):
                 u, cy, w, up, down = s
                 a = -0.42
                 e = 2.0 / shape["n"]
-                x = abs(math.cos(a)) ** e * w * shape["bw"] * 1.004
+                x = abs(math.cos(a)) ** e * w * shape["bw"] * (1.0 - 0.22 * (1.0 - smoothstep(0.0, 0.7, u))) * 1.004
                 y = -(abs(math.sin(a)) ** e) * down * 1.004
                 pts.append(g(x * side, cy + y, u))
             parts.append(kit.sweep("seam", pts, 0.0022, 5, "paint"))
