@@ -151,6 +151,7 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_headlights")
 	await _t(&"_test_blender_parts_lamps")
 	await _t(&"_test_blender_parts_small_parts")
+	await _t(&"_test_blender_parts_add_ons")
 	await _t(&"_test_blender_parts_fallback")
 	await _t(&"_test_blender_parts_new_look")
 	print("The shed")
@@ -18971,7 +18972,8 @@ func _test_luggage_looks() -> void:
 			"roll":
 				shaped = names.has("RollBag") and names.count("RolledEnd") == 2
 			"crate":
-				shaped = names.size() >= 14
+				# (Boards and posts as the code builds them, or the new look's Blender-made crate.)
+				shaped = names.size() >= 14 or names.has("Crate")
 			"trunk":
 				shaped = names.has("Trunk") and names.has("Lid")
 		check(shaped and not pill and box.get_center().z > model._tail.z and box.size.y > 0.15,
@@ -24900,6 +24902,10 @@ func _test_blender_parts_lamps() -> void:
 
 func _test_blender_parts_small_parts() -> void:
 	_blender_parts().test_small_parts()
+
+
+func _test_blender_parts_add_ons() -> void:
+	_blender_parts().test_add_ons()
 
 
 func _test_blender_parts_fallback() -> void:

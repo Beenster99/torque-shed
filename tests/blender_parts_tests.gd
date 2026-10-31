@@ -662,11 +662,64 @@ func test_small_parts() -> void:
 	check(out.is_empty() and builds > 15, "every final drive, chain, stand and horn (%d), and the rear master cylinder, in the new look wear their Blender-made shapes in the code-built ones' place; Classic's are the code's %s" % [builds, str(out.slice(0, 6))])
 
 
+## The add-ons (wave 4f): in the new look every pannier and top box (but the roll and throw-over
+## bags), fog lamp, radiator and oil cooler, and the rotary and friction steering dampers wear
+## their Blender-made shapes in the code-built ones' place, the fog lamps' glasses still lit as
+## fog lamps; Classic's are the code's.
+func test_add_ons() -> void:
+	var out := []
+	var builds := 0
+	var base := Contracts.style_build("tourer")
+	for slot in ["panniers", "top_box", "fog_lights", "cooling", "steering_damper"]:
+		for id in PartsDB.by_kind.get(slot, []):
+			var p := PartsDB.get_part(id)
+			var style := str(p.get("look", {}).get("shape", p.get("style", "")))
+			var parts := base.duplicate()
+			parts[slot] = id
+			if slot == "cooling":
+				parts["engine"] = "four_1000"
+			var models := {}
+			for k in ["classic", "code", "new"]:
+				var m := BikeModel.new()
+				m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+				BlenderParts.on = k != "code"
+				t.add_child(m)
+				m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+				models[k] = m
+			BlenderParts.on = true
+			var m: BikeModel = models["new"]
+			if str(m._build.parts.get(slot, "")) != str(id):
+				for k in models:
+					(models[k] as Node).free()
+				continue
+			builds += 1
+			var expect := not (style in ["roll", "soft", "fins", "twin", "linear"])
+			var made := (m._slot_meshes.get(slot, []) as Array).filter(_blender_made)
+			if expect and made.is_empty():
+				out.append("%s (%s): none Blender-made" % [id, style])
+			if (models["classic"] as BikeModel)._slot_meshes.get(slot, []).any(_blender_made):
+				out.append("%s: Blender-made in Classic" % id)
+			if slot == "fog_lights":
+				var fogs: Array = m._lamps.filter(func(l): return l["group"] == "fog").map(func(l): return l["mat"])
+				var glass := made.filter(func(mi): return str((mi as Node).name).begins_with("FogLens"))
+				if glass.is_empty() or not glass.all(func(mi): return fogs.has((mi as MeshInstance3D).material_override)):
+					out.append("%s: its glasses not the fog lamps'" % id)
+			var a := (models["code"] as BikeModel).slot_bounds(slot)
+			var b := m.slot_bounds(slot)
+			var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
+				(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
+			if d > LOADED_GIVE:
+				out.append("%s %.3f m off" % [id, d])
+			for k in models:
+				(models[k] as Node).free()
+	check(out.is_empty() and builds > 20, "every pannier, top box, fog lamp, radiator and steering damper (%d) in the new look wears its Blender-made shapes in the code-built one's place, the fog lamps still lit; Classic's are the code's %s" % [builds, str(out.slice(0, 6))])
+
+
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 4 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
 	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight", "indicators", "dashboard", "mirrors",
-	"final_drive", "chain", "side_stand", "horn", "rear_master"]
+	"final_drive", "chain", "side_stand", "horn", "rear_master", "panniers", "top_box", "fog_lights", "cooling", "steering_damper"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
@@ -685,6 +738,8 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 			return str(m._build.part("side_panels").get("style", "triangle")) != "oval"
 		"headlight":
 			return not str(m._build.part("headlight").get("look", {}).get("lamp", "")) in ["nacelle", "triple"]
+		"cooling":
+			return not str(m._build.part("cooling").get("style", "fins")) in ["fins", "twin"]
 	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
