@@ -206,6 +206,30 @@ static func placed(path: String, xform: Transform3D) -> Array:
 	return [surfaces(path, true), Transform3D(xform.basis * Basis.from_scale(Vector3(-1.0, 1.0, 1.0)), xform.origin)]
 
 
+## `surfaces` (as surfaces gives them) with `xform` put into their vertices, for a part drawn
+## sheared (a tank tilted along its frame line): a sheared node's bounds take in the corners of
+## its sheared box, well outside the part, where these are drawn untransformed and bound tight.
+static func baked_in(surfaces: Array, xform: Transform3D) -> Array:
+	var out := []
+	var turn := xform.basis.inverse().transposed()
+	for s in surfaces:
+		var arrays := (s[0] as Mesh).surface_get_arrays(0)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		for i in v.size():
+			v[i] = xform * v[i]
+		for i in n.size():
+			n[i] = (turn * n[i]).normalized()
+		arrays[Mesh.ARRAY_VERTEX] = v
+		arrays[Mesh.ARRAY_NORMAL] = n
+		arrays[Mesh.ARRAY_TANGENT] = null
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		am.surface_set_material(0, s[1])
+		out.append([am, s[1]])
+	return out
+
+
 ## Every vertex of a part's `lod` mesh, in the space `xform` puts it in.
 static func points(path: String, xform: Transform3D, lod := 0) -> PackedVector3Array:
 	var out := PackedVector3Array()

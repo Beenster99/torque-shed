@@ -1361,7 +1361,9 @@ func _draw_tank() -> void:
 		var down: float = k[2] * size * sc.z
 		secs.append({"c": Vector3(0.0, base_y + down, z), "w": k[0] * size * sc.y, "up": k[1] * size * sc.z, "down": down,
 			"n": shape["n"], "bw": shape["bw"]})
-	var body := _facet_tank(secs, shape, mat) if facet else _shell(secs, mat)
+	var body := _blender_tank(shape_key if TANK_SHAPES.has(shape_key) else style, a, b, front, length, size, sc, mat)
+	if body == null:
+		body = _facet_tank(secs, shape, mat) if facet else _shell(secs, mat)
 	body.name = "TankBody"
 	_tank_secs = secs
 	if look.get("panels", false):
@@ -1596,7 +1598,10 @@ func _draw_saddle() -> void:
 		# The rail rises from the front of the seat to the tail with the frame.
 		var rail_y := y + lerpf(0.0, _tail.y - (_seat_y - 0.02), (z - z0) / maxf(_tail.z - z0, 0.01)) * 0.5
 		secs.append({"c": Vector3(0.0, rail_y + k[3] * sc.z, z), "w": k[0] * sc.y, "up": k[1] * sc.z, "down": k[2], "n": shape["n"], "bw": 0.85})
-	var pad := _shell(secs, mat)
+	var shape_key := str(look.get("shape", style))
+	var pad := _blender_seat(shape_key if SEAT_SHAPES.has(shape_key) else ("bench" if not SEAT_SHAPES.has(style) else style), y, z0, z1, sc, mat)
+	if pad == null:
+		pad = _shell(secs, mat)
 	pad.name = "SeatPad"
 	if style == "touring" and not look.has("shape"):
 		var back := _box(Vector3(0.0, y + 0.22, z1 + 0.04), Vector3(0.3, 0.26, 0.06), mat)
@@ -8586,6 +8591,38 @@ func _blender_mat(slot: String, tag: String, from := "") -> Material:
 	mats[key] = m
 	_blender_mats[slot] = mats
 	return m
+
+
+## New look: the tank's Blender-made body (tank/<shape>.glb, see blender/parts/tank/tanks.py), drawn
+## 1 m long at a 15 litre tank's size from the frame line under its nose: stretched to `length`
+## from `front`, scaled for its `size` and look's `sc`, and tilted to follow the line from `a` to
+## `b` as _draw_tank's own loft does. Returns its paintwork, or null when there's no glb.
+func _blender_tank(shape: String, a: Vector3, b: Vector3, front: float, length: float, size: float, sc: Vector3, mat: Material) -> MeshInstance3D:
+	var path := BlenderParts.path_for("tank", shape)
+	if not _blender_on() or BlenderParts.part(path).is_empty():
+		return null
+	var slope := (b.y - a.y) / maxf(b.z - a.z, 0.01)
+	var base := Vector3(0.0, a.y + slope * (front - a.z), front)
+	var fit := Basis(Vector3(size * sc.y, 0.0, 0.0), Vector3(0.0, size * sc.z, 0.0), Vector3(0.0, slope * length, length))
+	var pieces := _blender_meshes(BlenderParts.baked_in(BlenderParts.surfaces(path), Transform3D(fit, base)), Transform3D.IDENTITY, {"": mat})
+	return pieces[0] if not pieces.is_empty() else null
+
+
+## New look: the seat's Blender-made cover and pan (saddle/<shape>.glb, see
+## blender/parts/saddle/seats.py), drawn 1 m long from the rail under its nose: stretched from `z0`
+## to `z1`, widened and raised by its look's `sc` and tilted up with the rails from `y` as
+## _draw_saddle's own loft is. Returns the cover, or null when there's no glb.
+func _blender_seat(shape: String, y: float, z0: float, z1: float, sc: Vector3, mat: Material) -> MeshInstance3D:
+	var path := BlenderParts.path_for("saddle", shape)
+	if not _blender_on() or BlenderParts.part(path).is_empty():
+		return null
+	var rise := (_tail.y - (_seat_y - 0.02)) * 0.5 / maxf(_tail.z - z0, 0.01)
+	var fit := Basis(Vector3(sc.y, 0.0, 0.0), Vector3(0.0, sc.z, 0.0), Vector3(0.0, rise * (z1 - z0), z1 - z0))
+	var cover: MeshInstance3D = null
+	for mi in _blender_meshes(BlenderParts.baked_in(BlenderParts.surfaces(path), Transform3D(fit, Vector3(0.0, y, z0))), Transform3D.IDENTITY, {"leather": mat}):
+		if cover == null and (mi as MeshInstance3D).material_override == mat:
+			cover = mi
+	return cover
 
 
 ## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,

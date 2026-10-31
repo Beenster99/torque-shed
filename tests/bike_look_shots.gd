@@ -4,12 +4,13 @@ extends Node
 ## brushed-alloy bike, with how far apart the two pictures are:
 ##   xvfb-run -a godot --path . res://tests/bike_look_shots.tscn -- --out=/tmp/look [--styles=cafe,sport] [--close]
 ## --close takes them close up on the engine and exhaust, for the finishes; a well-worn bike
-## (hot-coloured headers) comes too.
+## (hot-coloured headers) comes too. --bare leaves the rider off, to see the tank and seat.
 ## Writes <style>_classic.png, <style>_new.png and diff.json (mean and worst pixel difference, 0..255).
 var out_dir := "/tmp/look"
 var styles: Array = []
 var cam: Camera3D
 var close := false
+var bare := false
 
 
 func _ready() -> void:
@@ -21,6 +22,8 @@ func _ready() -> void:
 			styles = Array(a.trim_prefix("--styles=").split(","))
 		elif a == "--close":
 			close = true
+		elif a == "--bare":
+			bare = true
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(960, 600)
 	var env := WorldEnvironment.new()
@@ -81,7 +84,7 @@ func _ready() -> void:
 			m.look = look
 			m.baked = true
 			add_child(m)
-			m.build_from(BikeBuild.new(PartsDB.sanitize_build(c[1])), Color(0.7, 0.12, 0.1), {}, c[2])
+			m.build_from(BikeBuild.new(PartsDB.sanitize_build(c[1])), Color(0.7, 0.12, 0.1), {}, c[2], not bare)
 			m.position = Vector3(0.0, -m.foot_ground_y(), 0.0)
 			for i in 6:
 				await get_tree().process_frame

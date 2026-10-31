@@ -367,3 +367,73 @@ def sweep(name, points, radii, segs, tag, squash=1.0, caps=True, side=None):
         bm.faces.new(list(reversed(rings[-1])))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return _new_object(name, bm, tag)
+
+
+def skin(name, rings, tag, caps=True, closed=True):
+    """A solid through `rings` of points (each the same count, in order round the part): quads
+    between neighbouring rings, each ring closed round on itself unless not `closed`, and the two
+    end rings capped. Normals point out."""
+    bm = bmesh.new()
+    vs = [[bm.verts.new(p) for p in r] for r in rings]
+    n = len(vs[0])
+    for a, b in zip(vs, vs[1:]):
+        for i in range(n if closed else n - 1):
+            j = (i + 1) % n
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+    if caps:
+        bm.faces.new(vs[0])
+        bm.faces.new(list(reversed(vs[-1])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return _new_object(name, bm, tag)
+
+
+def sharp_along(ob, axis=1):
+    """Marks every edge of `ob` that runs some way along `axis` (Y by default) sharp, and the
+    rest left as join set them: a shell folded from flat panels, creased at every fold."""
+    me = ob.data
+    attr = me.attributes.get("sharp_edge") or me.attributes.new("sharp_edge", "BOOLEAN", "EDGE")
+    for e in me.edges:
+        a, b = me.vertices[e.vertices[0]].co, me.vertices[e.vertices[1]].co
+        if abs(a[axis] - b[axis]) > 1e-5:
+            attr.data[e.index].value = True
+
+
+def gd_const(name, script="scripts/bike_model.gd"):
+    """A dictionary constant from the game's code (BikeModel's TANK_SHAPES, say), so a part
+    script draws from the same numbers as the code it stands in for."""
+    import json
+    import os
+    import re
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", script)
+    with open(path) as f:
+        text = f.read()
+    start = text.index("const %s := {" % name) + len("const %s := " % name)
+    depth = 0
+    for i in range(start, len(text)):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        if depth == 0:
+            body = text[start:i + 1]
+            break
+    body = "\n".join(line.split("#")[0] for line in body.split("\n"))
+    body = re.sub(r",(\s*[}\]])", r"\1", body)
+    return json.loads(body)
+
+
+def cap(name, ring, tag, flip=False):
+    """One flat face closing `ring` (an end of a skin left open), facing round its points'
+    order, or the other way when `flip`."""
+    bm = bmesh.new()
+    vs = [bm.verts.new(p) for p in (reversed(ring) if flip else ring)]
+    bm.faces.new(vs)
+    return _new_object(name, bm, tag)
+
+
+def weld(ob, dist=1e-6):
+    """Merges `ob`'s pieces where they meet (skins and caps built apart) into one closed shell,
+    its normals pointing out."""
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=dist)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(ob.data)
+    bm.free()
