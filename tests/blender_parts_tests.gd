@@ -522,10 +522,53 @@ func test_controls() -> void:
 			m.free()
 	check(out.is_empty() and builds.size() > 20, "every handlebar, front master and set of rearsets (%d) in the new look wears its Blender-made bar, grips, switch gear, levers, master cylinder and pegs on the code's layout; Classic's are the code's %s" % [builds.size(), str(out.slice(0, 6))])
 
+## The headlights (wave 4c): in the new look every lamp but the nacelle's cowl and the triple's
+## angular pair wears its Blender-made body and glass, each glass still the lamp's own lit
+## material (so it lights with the switch) and named Lens as the code's, in the code-built one's
+## place; Classic's are the code's.
+func test_headlights() -> void:
+	var out := []
+	var base := Contracts.style_build("naked")
+	base["fairing"] = "none"
+	var ids: Array = PartsDB.by_kind.get("headlight", [])
+	for id in ids:
+		var parts := base.duplicate()
+		parts["headlight"] = id
+		var models := {}
+		for k in ["classic", "code", "new"]:
+			var m := BikeModel.new()
+			m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+			BlenderParts.on = k != "code"
+			t.add_child(m)
+			m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+			models[k] = m
+		BlenderParts.on = true
+		var m: BikeModel = models["new"]
+		var made := (m._slot_meshes.get("headlight", []) as Array).filter(_blender_made)
+		var lamp := str(m._build.part("headlight").get("look", {}).get("lamp", m._build.part("headlight").get("style", "round")))
+		if (models["classic"] as BikeModel)._slot_meshes.get("headlight", []).any(_blender_made):
+			out.append("%s Blender-made in Classic" % id)
+		if made.is_empty() != (lamp in ["nacelle", "triple"]):
+			out.append("%s (%s): %d Blender-made pieces" % [id, lamp, made.size()])
+		var heads: Array = m._lamps.filter(func(l): return l["group"] == "head").map(func(l): return l["mat"])
+		var glass := made.filter(func(mi): return str((mi as Node).name).begins_with("Lens"))
+		if not made.is_empty() and (glass.is_empty() or not glass.all(func(mi): return heads.has((mi as MeshInstance3D).material_override))):
+			out.append("%s: %d glasses, not all the lamp's" % [id, glass.size()])
+		var a := (models["code"] as BikeModel).slot_bounds("headlight")
+		var b := m.slot_bounds("headlight")
+		var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
+			(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
+		if d > LOADED_GIVE:
+			out.append("%s %.3f m off" % [id, d])
+		for k in models:
+			(models[k] as Node).free()
+	check(out.is_empty() and ids.size() > 20, "every headlight (%d) in the new look wears its Blender-made lamp, its glass the lamp's lit one, in the code-built one's place; Classic's are the code's %s" % [ids.size(), str(out.slice(0, 6))])
+
+
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 4 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
-	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets"]
+	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
@@ -542,6 +585,8 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 			return str(m._build.part("tail").get("style", "classic")) != "tidy" or m._build.part("tail").get("look", {}).has("cowl")
 		"side_panels":
 			return str(m._build.part("side_panels").get("style", "triangle")) != "oval"
+		"headlight":
+			return not str(m._build.part("headlight").get("look", {}).get("lamp", "")) in ["nacelle", "triple"]
 	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035

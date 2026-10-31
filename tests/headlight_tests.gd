@@ -145,7 +145,9 @@ func test_builds() -> void:
 	var xl := _model({"headlight": "square_xl"})
 	var cb: Array = chrome.find_children("Bezel*", "", true, false)
 	var xb: Array = xl.find_children("Bezel*", "", true, false)
-	check(cb.size() == 4 and xb.size() == 4 and ((cb[0] as MeshInstance3D).material_override as StandardMaterial3D).metallic > 0.9
+	# (Four bars round the code-built glass; the new look's Blender-made lamp has its bezel in one piece.)
+	var bars := 1 if BikeLook.is_new(chrome) and BlenderParts.on else 4
+	check(cb.size() == bars and xb.size() == bars and ((cb[0] as MeshInstance3D).material_override as StandardMaterial3D).metallic > 0.9
 		and ((xb[0] as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.v < 0.2, "the square lamps have a bezel round the glass: chrome, or black on the XL")
 	check(xl.slot_bounds("headlight").size.x > chrome.slot_bounds("headlight").size.x * 1.1 and chrome.slot_bounds("headlight").size.x > 0.17,
 		"the extra-large square lamp is bigger again (%.2f m wide against %.2f m)" % [xl.slot_bounds("headlight").size.x, chrome.slot_bounds("headlight").size.x])
