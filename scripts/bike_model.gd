@@ -226,6 +226,9 @@ var _exhaust_ports: Array = []
 ## The new look's Blender-made shapes (see _blender_pieces): slot -> {surface tag: the material
 ## that kind of surface takes on this bike's part}, filled as they're met.
 var _blender_mats := {}
+## New look: the cross-section (blender/parts/guard) the mudguard being drawn is bent from, ""
+## for the code's flat plates: see _guard_mesh.
+var _guard_section := ""
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -248,6 +251,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_hoops.clear()
 	_exhaust_ports.clear()
 	_blender_mats.clear()
+	_guard_section = ""
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -3721,6 +3725,7 @@ func _draw_tail(build: BikeBuild) -> void:
 	var r := build.rear_radius
 	var w := build.rear_tyre_width + 0.05
 	var lk := _look()
+	_guard_section = {"classic": "valanced", "enduro": "plastic"}.get(str(p.get("style", "classic")), "steel")
 	if lk.has("cowl") and not _fit_only:
 		_tail_cowl(str(lk["cowl"]), mat, lk)
 	if lk.get("struts", false):
@@ -3773,6 +3778,8 @@ func _draw_tail(build: BikeBuild) -> void:
 			var tip := _plank_tip(planks[1], true, mat)
 			if tip:
 				_rear_guard.append(tip)
+			for plank in planks:
+				_guard_blade(plank)
 			_number_plate(lamp + Vector3(0.0, -0.07, -0.01), Vector2(0.13, 0.08), -0.3, plate)
 		_:
 			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 2.0, mat, 10))
@@ -3835,6 +3842,18 @@ func _draw_tail(build: BikeBuild) -> void:
 	face.name = "TailLight"
 
 
+## The lofted seat cowls and tail sections a tail unit's look can ask for (see _tail_cowl), each
+## as [z back from the end of the subframe, half-width, up, down, lift, squareness] along it.
+const TAIL_COWLS := {
+	"ducktail": [[-0.14, 0.12, 0.03, 0.04, 0.0, 3.0], [0.04, 0.12, 0.05, 0.05, 0.01, 3.0], [0.2, 0.1, 0.05, 0.05, 0.05, 3.0], [0.32, 0.09, 0.03, 0.02, 0.11, 3.5]],
+	"hump": [[-0.12, 0.13, 0.03, 0.04, 0.0, 2.6], [-0.02, 0.13, 0.11, 0.05, 0.0, 2.6], [0.14, 0.12, 0.1, 0.05, 0.0, 2.6], [0.28, 0.1, 0.05, 0.05, 0.0, 3.0], [0.33, 0.07, 0.02, 0.03, 0.0, 3.0]],
+	"solo": [[-0.1, 0.12, 0.02, 0.04, 0.0, 2.2], [0.02, 0.13, 0.14, 0.05, 0.0, 2.2], [0.14, 0.12, 0.12, 0.05, 0.0, 2.2], [0.24, 0.09, 0.04, 0.04, 0.0, 2.2]],
+	"tracker": [[-0.14, 0.13, 0.03, 0.05, 0.0, 4.0], [0.1, 0.13, 0.03, 0.05, 0.0, 4.0], [0.3, 0.12, 0.03, 0.05, 0.0, 4.0]],
+	"sport": [[-0.16, 0.13, 0.05, 0.06, 0.0, 2.8], [0.04, 0.11, 0.05, 0.07, 0.04, 2.8], [0.22, 0.07, 0.04, 0.05, 0.1, 2.8], [0.36, 0.025, 0.015, 0.02, 0.15, 2.5]],
+	"racing": [[-0.14, 0.13, 0.03, 0.05, 0.0, 2.6], [0.0, 0.13, 0.12, 0.06, 0.02, 2.6], [0.16, 0.1, 0.09, 0.06, 0.06, 2.6], [0.32, 0.03, 0.02, 0.03, 0.12, 2.4]],
+}
+
+
 ## A lofted seat cowl or tail section from a look: "ducktail" (kicking up at the end), "hump"
 ## (a cafe racer hump), "solo" (a round solo cowl with a back stop), "tracker" (a flat-track
 ## tail with an oval number board on the end), "sport" (a sharp tail rising to a point) or
@@ -3842,29 +3861,18 @@ func _draw_tail(build: BikeBuild) -> void:
 func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 	var t := _tail
 	var ln := float(lk.get("length", 1.0))
-	var keys := []   # [z, half-width, up, down, lift, squareness]
-	match kind:
-		"ducktail":
-			keys = [[-0.14, 0.12, 0.03, 0.04, 0.0, 3.0], [0.04, 0.12, 0.05, 0.05, 0.01, 3.0], [0.2, 0.1, 0.05, 0.05, 0.05, 3.0], [0.32, 0.09, 0.03, 0.02, 0.11, 3.5]]
-		"hump":
-			keys = [[-0.12, 0.13, 0.03, 0.04, 0.0, 2.6], [-0.02, 0.13, 0.11, 0.05, 0.0, 2.6], [0.14, 0.12, 0.1, 0.05, 0.0, 2.6], [0.28, 0.1, 0.05, 0.05, 0.0, 3.0], [0.33, 0.07, 0.02, 0.03, 0.0, 3.0]]
-		"solo":
-			keys = [[-0.1, 0.12, 0.02, 0.04, 0.0, 2.2], [0.02, 0.13, 0.14, 0.05, 0.0, 2.2], [0.14, 0.12, 0.12, 0.05, 0.0, 2.2], [0.24, 0.09, 0.04, 0.04, 0.0, 2.2]]
-		"tracker":
-			keys = [[-0.14, 0.13, 0.03, 0.05, 0.0, 4.0], [0.1, 0.13, 0.03, 0.05, 0.0, 4.0], [0.3, 0.12, 0.03, 0.05, 0.0, 4.0]]
-		"sport":
-			keys = [[-0.16, 0.13, 0.05, 0.06, 0.0, 2.8], [0.04, 0.11, 0.05, 0.07, 0.04, 2.8], [0.22, 0.07, 0.04, 0.05, 0.1, 2.8], [0.36, 0.025, 0.015, 0.02, 0.15, 2.5]]
-		"racing":
-			keys = [[-0.14, 0.13, 0.03, 0.05, 0.0, 2.6], [0.0, 0.13, 0.12, 0.06, 0.02, 2.6], [0.16, 0.1, 0.09, 0.06, 0.06, 2.6], [0.32, 0.03, 0.02, 0.03, 0.12, 2.4]]
-		_:
-			return
+	var keys: Array = TAIL_COWLS.get(kind, [])
+	if keys.is_empty():
+		return
 	if kind in ["sport", "racing"]:
-		_facet_cowl(keys, ln, mat, lk)
+		_facet_cowl(keys, ln, mat, lk, kind)
 		return
 	var secs := []
 	for k in keys:
 		secs.append({"c": t + Vector3(0.0, float(k[4]), float(k[0]) * ln), "w": k[1], "up": k[2], "down": k[3], "n": k[5]})
-	var cowl := _shell(secs, mat)
+	var cowl := _blender_cowl(kind, ln, mat)
+	if cowl == null:
+		cowl = _shell(secs, mat)
 	cowl.name = "TailCowl"
 	if kind == "tracker":
 		var board := _mesh_instance(_cylinder(0.12, 0.012), _mat(_accent(Color(0.95, 0.95, 0.92)), 0.0, 0.5), t + Vector3(0.0, 0.07, 0.31 * ln))
@@ -3883,7 +3891,7 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 ## A sports or race tail (keys as in _tail_cowl) built from flat panels to match the full
 ## fairings: a tucked-in underside, a sharp crease along each flank, a ridged top, tapering to
 ## a point, with the accent colour as a stripe along the upper flank.
-func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary) -> void:
+func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary, kind := "") -> void:
 	var rows := []
 	for k in keys.size():
 		var a: Array = keys[k]
@@ -3897,10 +3905,12 @@ func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary) -> void:
 			var c := _tail + Vector3(0.0, lerpf(float(a[4]), float(b[4]), f), z)
 			rows.append(PackedVector3Array([c + Vector3(0.0, -down, 0.0), c + Vector3(w * 0.62, -down, 0.0), c + Vector3(w, lerpf(-down, up, 0.4), 0.0),
 				c + Vector3(w * 0.72, up * 0.82, 0.0), c + Vector3(w * 0.3, up, 0.0), c + Vector3(0.0, up + 0.008, 0.0)]))
-	var cowl := _facets(rows, mat)
+	var cowl := _blender_cowl(kind, ln, mat)
+	if cowl == null:
+		cowl = _facets(rows, mat)
+		for end in [0, rows.size() - 1]:
+			_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO)
 	cowl.name = "TailCowl"
-	for end in [0, rows.size() - 1]:
-		_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO)
 	if _has_accent():
 		_grid_patch(rows, [0.0, 0.0, 1.0, 1.0], 3.15, 3.7, 0.003, _mat(_accent(), 0.1, 0.35, 0.6))
 
@@ -3925,6 +3935,12 @@ func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: 
 		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat, parent)
 		seg.rotation.x = a
 		out.append(seg)
+		var pts := []
+		var ups := []
+		for k in 3:
+			ups.append(Vector3(0.0, cos(a + step * (k - 1) * 0.5), sin(a + step * (k - 1) * 0.5)))
+			pts.append(c + ups[k] * radius)
+		_guard_mesh(seg, pts, ups, width)
 	# The leading end rounded off, carrying on round the wheel. (The back end stays tucked in
 	# behind the fork, clear of the engine and what's on its front.)
 	for end in [[a0, -1.0]]:
@@ -4030,6 +4046,7 @@ func _guard_tip(path: Array, ups: Array, width: float, thick: float, mat: Materi
 	var mi := _mesh_instance(st.commit(), mat, Vector3.ZERO, parent)
 	mi.transform = xf
 	mi.name = "GuardTip"
+	_guard_mesh(mi, path, normals, width, true)
 	return mi
 
 
@@ -4066,6 +4083,12 @@ func _rear_arc(radius: float, width: float, a0: float, a1: float, mat: Material,
 		var seg := _box(at, Vector3(width, 0.012, d.length() * 1.1), mat)
 		seg.rotation.x = atan2(-d.y, d.z)
 		out.append(seg)
+		var pts := []
+		var ups := []
+		for k in 3:
+			pts.append(_rear_guard_at(a + step * (k - 1) * 0.5, radius))
+			ups.append((pts[k] - Vector3(0.0, 0.0, _build.wheelbase * 0.5)).normalized())
+		_guard_mesh(seg, pts, ups, width)
 		first = minf(first, a - step * 0.5)
 		last = maxf(last, a + step * 0.5)
 	if out.is_empty():
@@ -4153,6 +4176,40 @@ func _plank(a: Vector3, b: Vector3, width: float, thick: float, mat: Material, p
 	return plank
 
 
+## New look: a piece of mudguard (a plate round the wheel, a flat blade or a rounded tip, laid
+## out by the code) redrawn as the Blender-made section `_guard_section` bent along `pts` with its
+## face out along `ups` (both in the piece's parent's space), `width` across, narrowing to a point
+## for a `tip`. Its box stays the flat plate's, so the guard's fit checks (the tyre under it, the
+## number plate) still go by the plate the code laid out.
+func _guard_mesh(piece: MeshInstance3D, pts: Array, ups: Array, width: float, tip := false) -> void:
+	if _guard_section == "" or not _blender_on():
+		return
+	var inv := piece.transform.affine_inverse()
+	var local_pts := []
+	var local_ups := []
+	for i in pts.size():
+		local_pts.append(inv * (pts[i] as Vector3))
+		local_ups.append(inv.basis * (ups[i] as Vector3))
+	var mesh := BlenderParts.section_along(BlenderParts.ROOT + "guard/%s%s.glb" % [_guard_section, "_tip" if tip else ""], local_pts, local_ups, width, tip)
+	if mesh == null:
+		return
+	mesh.custom_aabb = piece.mesh.get_aabb()
+	piece.mesh = mesh
+
+
+## A flat mudguard blade (as _plank made it) redrawn as the Blender-made section (see _guard_mesh).
+func _guard_blade(plank) -> void:
+	if not is_instance_valid(plank) or not plank.mesh is BoxMesh:
+		return
+	var size: Vector3 = (plank.mesh as BoxMesh).size
+	var pts := []
+	var ups := []
+	for k in 3:
+		pts.append(plank.transform * Vector3(0.0, 0.0, size.z * (k - 1) * 0.5))
+		ups.append(plank.transform.basis.y.normalized())
+	_guard_mesh(plank, pts, ups, size.x)
+
+
 ## The front mudguard. Low ones follow the tyre on the fork legs, so they ride up and down with
 ## the wheel: a short hugger, a carbon sport hugger, a slim cafe blade, a bobbed blade or a long
 ## valanced classic on stays. High ones (MX and enduro) bolt under the bottom yoke and stay put
@@ -4179,6 +4236,8 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 	var r := build.front_radius
 	var w := build.front_tyre_width + 0.03
 	var style := str(p.get("style", "hugger"))
+	# (New look: pressed steel or moulded plastic, bent round as the code lays it out.)
+	_guard_section = "valanced" if style == "classic" else ("plastic" if material == "plastic" and style in ["high", "enduro"] else "steel")
 	if style in ["high", "enduro"]:
 		# Under the bottom yoke, sweeping forward and up into a beak; the enduro one is longer
 		# at the back and has a lip at the front.
@@ -4192,13 +4251,17 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 		var mid := base + Vector3(0.0, 0.0, -0.08)
 		var nose := base + Vector3(0.0, 0.06, -0.3 if long else -0.34)
 		var tail_plank := _plank(back, base, w + 0.02, 0.012, mat, _steer_node)
-		_plank(base, mid, w + 0.01, 0.012, mat, _steer_node)
+		var blades := [tail_plank, _plank(base, mid, w + 0.01, 0.012, mat, _steer_node)]
 		var beak := _plank(mid, nose, w, 0.012, mat, _steer_node)
+		blades.append(beak)
 		if long:
 			beak = _plank(nose, nose + Vector3(0.0, -0.05, -0.03), w * 0.8, 0.012, mat, _steer_node)
+			blades.append(beak)
 		# Rounded ends, front and back, rather than square-cut ones.
 		_plank_tip(beak, true, mat)
 		_plank_tip(tail_plank, false, mat)
+		for blade in blades:
+			_guard_blade(blade)
 		for side in [-1.0, 1.0]:
 			_tube(base + Vector3(0.05 * side, 0.0, 0.0), yoke + Vector3(0.05 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
 		return
@@ -4248,8 +4311,8 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 				var a := lerpf(a0, a1, i / 8.0)
 				stripe.append(Vector3(side, 0.0, 0.0) + Vector3(0.0, cos(a), sin(a)) * (radius + 0.007))
 			_bend(stripe, 0.004, _mat(_accent(), 0.1, 0.35, 0.6), _front_hub)
-	if style == "classic":
-		# Deep valances down each side of the tyre.
+	if style == "classic" and not (_blender_on() and BlenderParts.part(BlenderParts.ROOT + "guard/valanced.glb").size() > 0):
+		# Deep valances down each side of the tyre (the new look's valanced section has its own).
 		for side in [-1.0, 1.0]:
 			var step := (a1 - a0) / 8.0
 			for i in 8:
@@ -5381,6 +5444,8 @@ func _draw_side_panels() -> void:
 	var h := clampf((_seat_y - _pivot.y) * 0.62, 0.1, 0.24)
 	for side in [-1.0, 1.0]:
 		var at := c + Vector3(0.115 * side, 0.0, 0.0)
+		if _blender_side_panel(style, at, h, side, mat):
+			continue
 		match style:
 			"oval":
 				var disc := _mesh_instance(_cylinder(h * 0.5, 0.012), mat, at, self)
@@ -8155,7 +8220,9 @@ func dash_hidden_from(eye: Vector3) -> float:
 ## half-size axes].
 func _obb(mi: MeshInstance3D, grow := 0.0) -> Array:
 	var xf := _local_xform(mi)
-	var box := mi.mesh.get_aabb().grow(grow)
+	# (A mudguard piece the new look redrew keeps the code's flat plate as its box: see _guard_mesh.)
+	var box := (mi.mesh as ArrayMesh).custom_aabb if mi.mesh is ArrayMesh and (mi.mesh as ArrayMesh).custom_aabb.has_volume() else mi.mesh.get_aabb()
+	box = box.grow(grow)
 	return [xf * box.get_center(), xf.basis.x * box.size.x * 0.5, xf.basis.y * box.size.y * 0.5, xf.basis.z * box.size.z * 0.5]
 
 
@@ -8623,6 +8690,32 @@ func _blender_seat(shape: String, y: float, z0: float, z1: float, sc: Vector3, m
 		if cover == null and (mi as MeshInstance3D).material_override == mat:
 			cover = mi
 	return cover
+
+
+## New look: a tail unit's Blender-made seat cowl or tail section (tail/cowl/<kind>.glb, see
+## blender/parts/tail/cowls.py) from the end of the subframe, stretched back by `ln`. Null when
+## there's no glb.
+func _blender_cowl(kind: String, ln: float, mat: Material) -> MeshInstance3D:
+	var path := BlenderParts.ROOT + "tail/cowl/%s.glb" % kind
+	if not _blender_on() or BlenderParts.part(path).is_empty():
+		return null
+	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(Vector3(1.0, 1.0, ln)), _tail), {"": mat})
+	return pieces[0] if not pieces.is_empty() else null
+
+
+## New look: one side panel in its Blender-made shape (side_panels/<style>.glb, see
+## blender/parts/side_panels/panels.py) at `at`, drawn for a panel 0.2 m tall and scaled to `h`,
+## mirrored on the left (`side` -1). False when the style has no glb (the oval number boards).
+func _blender_side_panel(style: String, at: Vector3, h: float, side: float, mat: Material) -> bool:
+	var path := BlenderParts.path_for("side_panels", style)
+	if not _blender_on() or BlenderParts.part(path).is_empty():
+		return false
+	var k := h / 0.2
+	var sc := Vector3(side, k, k if style == "chrome" else 1.0)
+	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(sc), at), {"": mat, "paint": mat})
+	if style == "triangle" and not pieces.is_empty():
+		(pieces[0] as Node).name = "SideCover"
+	return true
 
 
 ## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,

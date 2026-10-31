@@ -230,6 +230,46 @@ static func baked_in(surfaces: Array, xform: Transform3D) -> Array:
 	return out
 
 
+## A cross-section part (a mudguard's: see blender/parts/guard/guards.py, running 0 to 1 along +Z,
+## -0.5 to 0.5 across) bent along `pts`, its up `ups` at each, `width` across: each vertex goes
+## the share of the way along the line its Z gives, out across by its X and up by its Y. A `tip`
+## narrows to a point at the far end in a half-ellipse. Null when there's no glb.
+static func section_along(path: String, pts: Array, ups: Array, width: float, tip := false) -> ArrayMesh:
+	var p := part(path)
+	if p.is_empty() or pts.size() < 2:
+		return null
+	var lengths := [0.0]
+	for i in range(1, pts.size()):
+		lengths.append(float(lengths[i - 1]) + (pts[i] - pts[i - 1] as Vector3).length())
+	var total := maxf(float(lengths[-1]), 0.0001)
+	var mesh: Mesh = p["lods"][0]
+	var out := ArrayMesh.new()
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		for i in v.size():
+			var at := clampf(v[i].z, 0.0, 1.0) * total
+			var k := 1
+			while k < pts.size() - 1 and float(lengths[k]) < at:
+				k += 1
+			var f := clampf((at - float(lengths[k - 1])) / maxf(float(lengths[k]) - float(lengths[k - 1]), 0.0001), 0.0, 1.0)
+			var along: Vector3 = (pts[k] - pts[k - 1] as Vector3).normalized()
+			var up: Vector3 = (ups[k - 1] as Vector3).lerp(ups[k], f)
+			up = (up - along * up.dot(along)).normalized()
+			var across := up.cross(along).normalized()
+			var w := width * (sqrt(maxf(1.0 - v[i].z * v[i].z, 0.0)) if tip else 1.0)
+			var nx := n[i]
+			v[i] = (pts[k - 1] as Vector3).lerp(pts[k], f) + across * v[i].x * w + up * v[i].y
+			n[i] = (across * nx.x / maxf(w, 0.001) + up * nx.y + along * nx.z / total).normalized()
+		arrays[Mesh.ARRAY_VERTEX] = v
+		arrays[Mesh.ARRAY_NORMAL] = n
+		arrays[Mesh.ARRAY_TANGENT] = null
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		out.surface_set_material(out.get_surface_count() - 1, mesh.surface_get_material(s))
+	return out
+
+
 ## Every vertex of a part's `lod` mesh, in the space `xform` puts it in.
 static func points(path: String, xform: Transform3D, lod := 0) -> PackedVector3Array:
 	var out := PackedVector3Array()

@@ -56,6 +56,8 @@ BUDGETS = {
     "shock": [4000, 1000, 100], "disc": [4000, 1000, 100], "caliper": [4000, 1000, 100], "pads": [4000, 1000, 100],
     "handlebars": [4000, 1000, 100], "dashboard": [4000, 1000, 100], "headlight": [4000, 1000, 100],
     "panniers": [4000, 1000, 100], "top_box": [4000, 1000, 100],
+    # (A guard glb is a cross-section the game bends round a short stretch of the guard: one plate's.)
+    "guard": [400, 400, 400], "side_panels": [3000, 800, 100],
 }
 SMALL_BUDGET = [1500, 400, 0]
 

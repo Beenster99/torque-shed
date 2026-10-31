@@ -356,17 +356,24 @@ static func _blender_made(mi) -> bool:
 
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 3 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
-	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle"]
+	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
+	"front_mudguard", "tail", "side_panels"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
-## springer and leading-link forks, and a drum brake's arm and shoes (its caliper and pads).
+## springer and leading-link forks, a drum brake's arm and shoes (its caliper and pads), and a
+## tidy tail's tray (it has no mudguard round the wheel) and the oval number boards (the race
+## number's printed on the code's).
 static func _expects_blender(m: BikeModel, slot: String) -> bool:
 	match slot:
 		"fork":
 			return str(m._build.part("fork").get("style", "conventional")) in ["conventional", "usd"]
 		"front_caliper", "rear_caliper", "front_pads", "rear_pads":
 			return str(m._build.part(slot.get_slice("_", 0) + "_disc").get("style", "")) != "drum"
+		"tail":
+			return str(m._build.part("tail").get("style", "classic")) != "tidy" or m._build.part("tail").get("look", {}).has("cowl")
+		"side_panels":
+			return str(m._build.part("side_panels").get("style", "triangle")) != "oval"
 	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
@@ -381,7 +388,7 @@ const LOADED_MORE := 60000
 
 
 ## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
-## tyres, brakes, shocks, fork, tank and seat where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
+## tyres, brakes, shocks, fork, tank, seat, mudguards, tail and side panels where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
 ## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
 func test_new_look() -> void:
 	var off := []
@@ -457,7 +464,7 @@ func test_new_look() -> void:
 				missing.append(str(parts[slot]))
 		m.free()
 	BikeLookNew.lods_now = false
-	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank and seat, and every one in the catalogue is drawn %s" % [missing])
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank, seat, mudguards, tail and side panels, and every one in the catalogue is drawn %s" % [missing])
 	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
 	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
 	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.
