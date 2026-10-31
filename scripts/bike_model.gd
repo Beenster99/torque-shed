@@ -229,6 +229,11 @@ var _blender_mats := {}
 ## New look: the cross-section (blender/parts/guard) the mudguard being drawn is bent from, ""
 ## for the code's flat plates: see _guard_mesh.
 var _guard_section := ""
+## The new look's fairing shells as the code laid them ({mesh: MeshInstance3D, rows, mat}), and the
+## fairing's paint and screen, for _blender_fairing to give them a thickness and edges.
+var _fairing_grids := []
+var _fairing_paint: Material = null
+var _fairing_glass: Material = null
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -252,6 +257,9 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_exhaust_ports.clear()
 	_blender_mats.clear()
 	_guard_section = ""
+	_fairing_grids.clear()
+	_fairing_paint = null
+	_fairing_glass = null
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -338,6 +346,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_fog_lights()
 	_draw_tail(build)
 	_draw_fairing()
+	_blender_fairing()
 	_draw_mirrors()
 	_draw_front_mudguard(build)
 	_draw_indicators()
@@ -4356,6 +4365,8 @@ func _draw_fairing() -> void:
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color.a = 0.35
 	var dark := _mat(Color(0.04, 0.04, 0.045), 0.2, 0.6)
+	_fairing_paint = mat
+	_fairing_glass = glass
 	var screen := float(p.get("screen", 0.15))
 	var style := str(p.get("style", "half"))
 	# A look can redraw the shell ("shape": batwing, cowl, screen for a bare cruiser screen,
@@ -4500,6 +4511,47 @@ func _draw_fairing() -> void:
 			_shell([{"c": h + Vector3((wide + 0.0) * side, -0.22, 0.1), "w": 0.015, "up": 0.08, "down": 0.08, "n": 3.0},
 				{"c": h + Vector3((wide + 0.03) * side, -0.3, 0.22), "w": 0.015, "up": 0.1, "down": 0.08, "n": 3.0},
 				{"c": h + Vector3((wide - 0.02) * side, -0.34, 0.3), "w": 0.012, "up": 0.06, "down": 0.05, "n": 3.0}], mat)
+
+
+## The new look's fairing: each panel and screen the code laid out (its shell, belly pan, side
+## panels and covers, knee wings) given a real thickness, its edges rolled round from the outer
+## face to the inner one by the Blender-made section (see BlenderParts.shell), carbon's thinner and
+## a screen's thicker, still bound where the code's was so the fit and cover checks are unchanged.
+func _blender_fairing() -> void:
+	if _fairing_grids.is_empty() or not _blender_on():
+		return
+	_current_slot = "fairing"
+	var carbon := _surface() == "carbon"
+	var race := str(_part().get("style", "")) == "race"
+	for g: Dictionary in _fairing_grids:
+		var mi = g["mesh"]
+		if not is_instance_valid(mi) or (mi as MeshInstance3D).mesh == null:
+			continue
+		var kind := ""
+		if g["mat"] == _fairing_glass:
+			kind = "screen"
+		elif g["mat"] == _fairing_paint:
+			kind = "carbon" if carbon else "moulded"
+		else:
+			continue
+		var piece: MeshInstance3D = mi
+		var code := piece.mesh
+		var mesh := BlenderParts.shell(code, g["rows"], BlenderParts.ROOT + "fairing/edge/%s.glb" % kind)
+		if mesh == null:
+			continue
+		mesh.custom_aabb = code.get_aabb()
+		piece.mesh = mesh
+		# Held on round its edges (a screen along its foot), by screws into well nuts, or a race
+		# fairing's quarter-turn fasteners.
+		var spots := []
+		if kind == "screen":
+			spots = BlenderParts.edge_spots(g["rows"], code, [0], 0.09, 0.012)
+		elif piece.name in ["FairingShell", "LowerFairing", "SidePanel"]:
+			spots = BlenderParts.edge_spots(g["rows"], code, [1, 2, 3], 0.16, 0.014)
+		var fastener := BlenderParts.ROOT + "fairing/fastener/%s.glb" % ("dzus" if race else "button")
+		for f: MeshInstance3D in _blender_meshes(BlenderParts.copies(fastener, spots), Transform3D.IDENTITY, {}, piece.get_parent()):
+			f.name = "Fastener"
+	_fairing_grids.clear()
 
 
 ## A modern full fairing (a Panigale, an S1000RR, a ZX-10R, a MotoGP bike), built from flat
@@ -4736,7 +4788,13 @@ func _facet_screen(base: Vector3, half: float, height: float, tilt: float, glass
 
 ## A faceted shell (see ShapeKit.facets) for the part being drawn.
 func _facets(rows: Array, mat: Material, mirror := true, flip := false, parent: Node3D = self) -> MeshInstance3D:
-	return _mesh_instance(ShapeKit.facets(rows, mirror, flip), mat, Vector3.ZERO, parent)
+	var mi := _mesh_instance(ShapeKit.facets(rows, mirror, flip), mat, Vector3.ZERO, parent)
+	if _current_slot == "fairing" and _blender_on() and rows.size() >= 2:
+		var full := []
+		for r: PackedVector3Array in rows:
+			full.append(_mirror_row(r) if mirror else r)
+		_fairing_grids.append({"mesh": mi, "rows": full, "mat": mat})
+	return mi
 
 
 ## A row's right half mirrored into the whole profile, left edge round to right edge.
@@ -8861,7 +8919,10 @@ func _geo(key: String, default: float) -> float:
 
 ## A lofted shell (see ShapeKit.loft) for the part being drawn.
 func _shell(sections: Array, mat: Material, open := false, a0 := 0.0, a1 := TAU, parent: Node3D = self) -> MeshInstance3D:
-	return _mesh_instance(ShapeKit.loft(sections, ShapeKit.RING, open, a0, a1), mat, Vector3.ZERO, parent)
+	var mi := _mesh_instance(ShapeKit.loft(sections, ShapeKit.RING, open, a0, a1), mat, Vector3.ZERO, parent)
+	if _current_slot == "fairing" and open and _blender_on() and sections.size() >= 2:
+		_fairing_grids.append({"mesh": mi, "rows": BlenderParts.loft_rows(sections, ShapeKit.RING, a0, a1), "mat": mat})
+	return mi
 
 
 ## A round tube bent smoothly through `path` (see ShapeKit.sweep): `radius` a float, or one per point.

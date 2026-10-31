@@ -354,10 +354,59 @@ static func _blender_made(mi) -> bool:
 	return mesh.get_surface_count() > 0 and BlenderParts.TAGS.has(BlenderParts.tag_of(mesh.surface_get_material(0)))
 
 
+## Every fairing in the catalogue, on a sports bike in the new look, keeps the shape the code lays
+## out round the bike, given a real thickness: its shell and screen are drawn with the Blender-made
+## edge section rolled round their edges, hugging the code's outline (within a few millimetres),
+## and its panels are held on round their edges, a race fairing's by quarter-turn fasteners and a
+## road one's by screws in rubber well nuts; in Classic the fairing is the code's alone.
+func test_fairings() -> void:
+	var out := []
+	var base := Contracts.style_build("sport")
+	for id in PartsDB.by_kind["fairing"]:
+		var parts := base.duplicate()
+		parts["fairing"] = id
+		var race := str(PartsDB.get_part(str(id)).get("style", "")) == "race"
+		for look in [BikeLook.NEW, BikeLook.CLASSIC]:
+			var m := BikeModel.new()
+			m.look = look
+			t.add_child(m)
+			m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+			var tags := {}
+			var shells := 0
+			for mi in m._slot_meshes.get("fairing", []):
+				if not (mi is MeshInstance3D) or not _blender_made(mi):
+					continue
+				var mesh := (mi as MeshInstance3D).mesh
+				if look == BikeLook.CLASSIC:
+					out.append("%s: Blender-made in Classic" % id)
+					break
+				for k in mesh.get_surface_count():
+					tags[BlenderParts.tag_of(mesh.surface_get_material(k))] = true
+				if str(mi.name).begins_with("Fastener"):
+					continue
+				shells += 1
+				var code: AABB = mesh.custom_aabb
+				var real: AABB = mesh.get_aabb()
+				var d := maxf(((real.position - code.position).abs()).x, maxf(((real.position - code.position).abs()).y, ((real.position - code.position).abs()).z))
+				d = maxf(d, maxf(((real.end - code.end).abs()).x, maxf(((real.end - code.end).abs()).y, ((real.end - code.end).abs()).z)))
+				if code.size == Vector3.ZERO or d > 0.006:
+					out.append("%s %s: %.3f m off the code's outline" % [id, mi.name, d])
+			if look == BikeLook.NEW:
+				for name in ["FairingShell", "Screen"]:
+					var named := (m._slot_meshes.get("fairing", []) as Array).filter(func(mi): return is_instance_valid(mi) and str(mi.name) == name)
+					if named.any(func(mi): return not _blender_made(mi)):
+						out.append("%s: its %s is the code's" % [id, name])
+				if shells == 0:
+					out.append("%s: no thick panels" % id)
+				if not tags.has("rubber" if not race else "chrome"):
+					out.append("%s: no %s fasteners %s" % [id, "quarter-turn" if race else "well-nut", tags.keys()])
+			m.free()
+	check(out.is_empty(), "every fairing in the new look is drawn thick, its Blender-made edges round the code's shape, held on by its own kind of fastener; Classic's is the code's %s" % str(out.slice(0, 6)))
+
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 3 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
-	"front_mudguard", "tail", "side_panels"]
+	"front_mudguard", "tail", "side_panels", "fairing"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
@@ -388,7 +437,7 @@ const LOADED_MORE := 60000
 
 
 ## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
-## tyres, brakes, shocks, fork, tank, seat, mudguards, tail and side panels where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
+## tyres, brakes, shocks, fork, tank, seat, mudguards, tail, side panels and fairing where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
 ## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
 func test_new_look() -> void:
 	var off := []
@@ -464,7 +513,7 @@ func test_new_look() -> void:
 				missing.append(str(parts[slot]))
 		m.free()
 	BikeLookNew.lods_now = false
-	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank, seat, mudguards, tail and side panels, and every one in the catalogue is drawn %s" % [missing])
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank, seat, mudguards, tail, side panels and fairing, and every one in the catalogue is drawn %s" % [missing])
 	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
 	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
 	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.

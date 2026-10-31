@@ -58,6 +58,8 @@ BUDGETS = {
     "panniers": [4000, 1000, 100], "top_box": [4000, 1000, 100],
     # (A guard glb is a cross-section the game bends round a short stretch of the guard: one plate's.)
     "guard": [400, 400, 400], "side_panels": [3000, 800, 100],
+    # (A fairing edge glb is the section the game runs round one stretch of a fairing's edge.)
+    "fairing_edge": [100, 60, 20], "fastener": [240, 100, 50],
 }
 SMALL_BUDGET = [1500, 400, 0]
 
