@@ -1026,13 +1026,30 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			_tube(cradle_front, cradle_back, 0.022, frame_mat)
 			_tube(cradle_back, _pivot, 0.022, frame_mat)
 	_tube(_head - _steer_axis * 0.02, hb, 0.038, frame_mat)
+	var blender := _blender_on()
+	if blender:
+		_blender_welds()
+		# The steering head bearings' cups in the ends of the head stock.
+		for end in [[_head - _steer_axis * 0.02, _steer_axis], [hb, -_steer_axis]]:
+			var out: Vector3 = end[1]
+			var across := out.cross(Vector3.RIGHT).normalized()
+			_blender_pieces(BlenderParts.ROOT + "frame/bearing_cup.glb", Transform3D(Basis(out.cross(across), out, across), end[0]))
 	if not style in ["softail", "chopper"]:
-		_box(Vector3(0.0, 0.06, lerpf(_engine_c.z, _pivot.z, 0.6)), Vector3(0.18, 0.14, 0.14), black)  # battery box
+		var battery_at := Vector3(0.0, 0.06, lerpf(_engine_c.z, _pivot.z, 0.6))
+		if blender:
+			for mi in _blender_pieces(BlenderParts.ROOT + "frame/battery_box.glb", Transform3D(Basis.from_scale(Vector3(0.18, 0.14, 0.14)), battery_at)):
+				mi.name = "BatteryBox"
+		else:
+			_box(battery_at, Vector3(0.18, 0.14, 0.14), black)  # battery box
 	# The frame's own footpegs, unless a set of rearsets is bolted on in their place.
 	var own_pegs := str(build.parts.get("rearsets", "none")) == "none" or not is_fitted("rearsets")
 	for side in ([-1.0, 1.0] if own_pegs else []):
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
-		_box(peg, Vector3(0.1, 0.02, 0.04), black)  # footpegs
+		if blender:
+			for mi in _blender_pieces(BlenderParts.ROOT + "frame/footpeg.glb", Transform3D(Basis.from_scale(Vector3(side, 1.0, 1.0)), peg)):
+				mi.name = "Footpeg"
+		else:
+			_box(peg, Vector3(0.1, 0.02, 0.04), black)  # footpegs
 		if _peg.z < _pivot.z - 0.2:
 			# Forward controls: the pegs stand out on stalks off the downtubes.
 			_tube(Vector3(0.08 * side, _peg.y + 0.01, _peg.z + 0.02), peg, 0.011, frame_mat)
@@ -1040,6 +1057,66 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			# Rearsets: a hanger plate from the frame by the pivot down to the peg.
 			_box((peg + Vector3(0.12 * side, _pivot.y, _pivot.z - 0.02)) * 0.5, Vector3(0.012, absf(_peg.y - _pivot.y) + 0.06, 0.06), frame_mat)
 	_draw_swingarm(build, zr, frame_mat)
+
+
+## The new look's welds: a bead round each frame tube's end where it butts into another (the
+## thinner into the thicker), set where its line comes out of the other's surface, so the joints
+## read as welded rather than as tubes passing through each other.
+func _blender_welds() -> void:
+	var spots := {}
+	for ai in _rails.size():
+		var a: Dictionary = _rails[ai]
+		if not a.get("round", false):
+			continue
+		var pts: Array = a["pts"]
+		var ra := float(a["r"])
+		for end in [0, pts.size() - 1]:
+			var at: Vector3 = pts[end]
+			var inward: Vector3 = ((pts[1] if end == 0 else pts[end - 1]) as Vector3) - at
+			var room := inward.length()
+			if room < 0.01:
+				continue
+			inward /= room
+			var best := -1
+			var best_d := INF
+			for bi in _rails.size():
+				if bi == ai:
+					continue
+				var d := _rail_distance(_rails[bi], at)
+				if d < best_d:
+					best_d = d
+					best = bi
+			if best < 0:
+				continue
+			var rb := float(_rails[best]["r"])
+			if best_d > rb + ra * 0.5 or ra > rb * 1.05:
+				continue
+			# Out along the tube until its line leaves the other one.
+			var t := 0.0
+			while t < minf(room * 0.5, 0.12) and _rail_distance(_rails[best], at + inward * t) < rb:
+				t += 0.002
+			var across := inward.cross(Vector3.UP if absf(inward.y) < 0.9 else Vector3.RIGHT).normalized()
+			var b := Basis(inward.cross(across) * ra, inward * ra, across * ra)
+			var mat: Material = a.get("mat")
+			if not spots.has(mat):
+				spots[mat] = []
+			spots[mat].append(Transform3D(b, at + inward * t))
+	for mat in spots:
+		for mi in _blender_meshes(BlenderParts.copies(BlenderParts.ROOT + "frame/weld.glb", spots[mat]), Transform3D.IDENTITY, {"": mat}):
+			mi.name = "Weld"
+
+
+## How far `p` is from a frame tube's line (one of _rails).
+static func _rail_distance(rail: Dictionary, p: Vector3) -> float:
+	var pts: Array = rail["pts"]
+	var best := INF
+	for k in pts.size() - 1:
+		var a: Vector3 = pts[k]
+		var b: Vector3 = pts[k + 1]
+		var ab := b - a
+		var f := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-9), 0.0, 1.0)
+		best = minf(best, p.distance_to(a + ab * f))
+	return best
 
 
 ## A trestle frame: no frame round the engine at all, the engine is the frame. A short trestle
@@ -1173,8 +1250,14 @@ func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 			_tube(cross - Vector3(arm_x, 0.0, 0.0), cross + Vector3(arm_x, 0.0, 0.0), 0.014, frame_mat, Vector3.ONE, _swingarm)
 		_:
 			for side in [-1.0, 1.0]:
-				_box(Vector3(arm_x * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
-	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), frame_mat, _swingarm)
+				if _blender_on():
+					# The new look's: a rounded box-section arm out to the axle block and its adjuster.
+					var at := Transform3D(Basis.from_scale(Vector3(1.0, 1.0, _arm_len / BOX_ARM_REACH)), Vector3(arm_x * side, 0.0, 0.0))
+					for mi in _blender_pieces(BlenderParts.ROOT + "swingarm/box_arm.glb", at, {"paint": frame_mat}, _swingarm):
+						mi.name = "BoxArm"
+				else:
+					_box(Vector3(arm_x * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
+	_arm_bridge(arm_x, frame_mat)
 	_current_slot = "frame"
 
 
@@ -1271,8 +1354,22 @@ func _draw_own_swingarm(kind: String, arm_x: float, mat: Material) -> bool:
 			return true
 		_:
 			return false
-	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), mat, _swingarm)
+	_arm_bridge(arm_x, mat)
 	return true
+
+
+## How far back the new look's Blender-made box arm reaches, pivot to axle (blender/parts/swingarm).
+const BOX_ARM_REACH := 0.55
+
+
+## The bridge across between the swingarm's two arms by the pivot: the new look's Blender-made box
+## section, or the code's box.
+func _arm_bridge(arm_x: float, mat: Material) -> void:
+	if _blender_on():
+		var at := Transform3D(Basis.from_scale(Vector3(arm_x * 2.0 + 0.02, 1.0, 1.0)), Vector3(0.0, 0.0, 0.04))
+		_blender_pieces(BlenderParts.ROOT + "swingarm/bridge.glb", at, {"paint": mat}, _swingarm)
+	else:
+		_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), mat, _swingarm)
 
 
 ## A point in the model's space, at rest, as seen from the swingarm (whose +Z runs to the axle).
@@ -8907,9 +9004,21 @@ func _tube(a: Vector3, b: Vector3, radius: float, mat: Material, stretch := Vect
 	elif dir.y < 0.0:
 		rot = Basis(Vector3.RIGHT, PI)
 	mi.basis = rot * Basis.from_scale(stretch)
+	var round := stretch == Vector3.ONE
+	if round and _frame_blender():
+		var lods := BlenderParts.sweep_section(BlenderParts.ROOT + "frame/tube/round.glb", [a, b], radius, 1, 1)
+		if not lods.is_empty():
+			mi.mesh = lods[0]
+			mi.transform = Transform3D.IDENTITY
 	if _current_slot == "frame" and parent == self:
-		_rails.append({"pts": [a, b], "r": radius * maxf(stretch.x, stretch.z)})
+		_rails.append({"pts": [a, b], "r": radius * maxf(stretch.x, stretch.z), "round": round, "mat": mat})
 	return mi
+
+
+## Whether a tube of the part being drawn is the new look's Blender-made frame tube (the frame's
+## and the swingarm's).
+func _frame_blender() -> bool:
+	return _current_slot in ["frame", "swingarm"] and _blender_on()
 
 
 ## How the fitted frame places a mounting point (see build_from), or `default`.
@@ -8934,10 +9043,15 @@ func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 1
 		var lods := BlenderParts.sweep_section(section, path, radius, 6, 1)
 		if not lods.is_empty():
 			mi = _blender_meshes(BlenderParts.split(lods[0]), Transform3D.IDENTITY, {"": mat})[0]
+	elif _frame_blender():
+		# The new look's frame tubes: the Blender tube section swept along it (see _blender_welds).
+		var lods := BlenderParts.sweep_section(BlenderParts.ROOT + "frame/tube/round.glb", path, radius, 6, 1)
+		if not lods.is_empty():
+			mi = _blender_meshes(BlenderParts.split(lods[0]), Transform3D.IDENTITY, {"": mat}, parent)[0]
 	if mi == null:
 		mi = _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
 	if _current_slot == "frame" and parent == self:
-		_rails.append({"pts": ShapeKit.smooth(path, 6), "r": (radius as Array).max() if radius is Array else float(radius)})
+		_rails.append({"pts": ShapeKit.smooth(path, 6), "r": (radius as Array).max() if radius is Array else float(radius), "round": true, "mat": mat})
 	# Its line and thickness, so its click target follows the tube (see build_pickers) rather
 	# than filling the whole box round the bend.
 	var thick := 0.0
