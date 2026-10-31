@@ -6,6 +6,7 @@ extends Node
 ## --close takes them close up on the engine and exhaust, for the finishes; a well-worn bike
 ## (hot-coloured headers) comes too. --bare leaves the rider off, to see the tank and seat.
 ## --front takes them close on the nose of the fairing, for its edges; --bars on the handlebars.
+## --lamps=round_7,square_xl puts each of those headlights on a naked bike with no fairing, close up.
 ## Writes <style>_classic.png, <style>_new.png and diff.json (mean and worst pixel difference, 0..255).
 var out_dir := "/tmp/look"
 var styles: Array = []
@@ -14,6 +15,7 @@ var close := false
 var bare := false
 var front := false
 var bars := false
+var lamps: Array = []
 
 
 func _ready() -> void:
@@ -31,6 +33,8 @@ func _ready() -> void:
 			front = true
 		elif a == "--bars":
 			bars = true
+		elif a.begins_with("--lamps="):
+			lamps = Array(a.trim_prefix("--lamps=").split(","))
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(960, 600)
 	var env := WorldEnvironment.new()
@@ -69,13 +73,21 @@ func _ready() -> void:
 	elif bars:
 		cam.global_position = Vector3(0.05, 1.4, 0.15)
 		cam.look_at(Vector3(0.22, 0.95, -0.55), Vector3.UP)
+	elif not lamps.is_empty():
+		cam.global_position = Vector3(0.5, 1.1, -1.75)
+		cam.look_at(Vector3(0.0, 0.95, -0.8), Vector3.UP)
 	elif front:
 		cam.global_position = Vector3(0.75, 1.05, -1.75)
 		cam.look_at(Vector3(0.05, 0.75, -0.55), Vector3.UP)
 	var diffs := {}
 	var cases := []
-	for style in styles:
+	for style in styles if lamps.is_empty() else []:
 		cases.append([style, Contracts.style_build(style), null])
+	for id in lamps:
+		var b: Dictionary = Contracts.style_build("naked").duplicate()
+		b["headlight"] = id
+		b["fairing"] = "none"
+		cases.append([id, b, null])
 	var rusty := {}
 	var patina := {}
 	for s in PartsDB.SLOTS:
@@ -87,7 +99,7 @@ func _ready() -> void:
 		for s in PartsDB.SLOTS:
 			worn[s] = {"wear": 0.9}
 		cases.append(["worn", Contracts.style_build("classic"), worn])
-	if styles.size() == PartsDB.STYLES.size():
+	if styles.size() == PartsDB.STYLES.size() and lamps.is_empty():
 		cases.append(["rusty", Contracts.style_build("classic"), rusty])
 		cases.append(["patina", Contracts.style_build("cafe"), patina])
 	for c in cases:
@@ -99,6 +111,10 @@ func _ready() -> void:
 			add_child(m)
 			m.build_from(BikeBuild.new(PartsDB.sanitize_build(c[1])), Color(0.7, 0.12, 0.1), {}, c[2], not bare)
 			m.position = Vector3(0.0, -m.foot_ground_y(), 0.0)
+			if not lamps.is_empty():
+				var lc := m.to_global(m.slot_bounds("headlight").get_center())
+				cam.global_position = lc + Vector3(0.3, 0.1, -0.6)
+				cam.look_at(lc, Vector3.UP)
 			for i in 6:
 				await get_tree().process_frame
 			await RenderingServer.frame_post_draw

@@ -3186,26 +3186,32 @@ func _draw_headlight() -> void:
 	var face_r := size * 0.9
 	match str(lk.get("lamp", p.get("style", "round"))):
 		"bullet":
-			var body := _mesh_instance(_cylinder(size, size * 1.9, size * 0.45), shell, at + Vector3(0.0, 0.0, size * 0.5), _steer_node)
-			body.rotation.x = -PI * 0.5
-			var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.45), _steer_node)
-			face.rotation.x = PI * 0.5
+			if not _blender_lamp("bullet", Transform3D(Basis.from_scale(Vector3.ONE * size), at), shell, lens):
+				var body := _mesh_instance(_cylinder(size, size * 1.9, size * 0.45), shell, at + Vector3(0.0, 0.0, size * 0.5), _steer_node)
+				body.rotation.x = -PI * 0.5
+				var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.45), _steer_node)
+				face.rotation.x = PI * 0.5
 			front = at + Vector3(0.0, 0.0, -size * 0.45)
 		"oval":
-			var lamp := _mesh_instance(_sphere(size), shell, at, _steer_node)
-			lamp.scale = Vector3(1.3, 0.8, 0.75)
-			var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.7), _steer_node)
-			face.rotation.x = PI * 0.5
-			face.scale = Vector3(1.3, 1.0, 0.8)
+			if not _blender_lamp("round", Transform3D(Basis.from_scale(Vector3(1.3, 0.8, 1.0) * size), at), shell, lens):
+				var lamp := _mesh_instance(_sphere(size), shell, at, _steer_node)
+				lamp.scale = Vector3(1.3, 0.8, 0.75)
+				var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.7), _steer_node)
+				face.rotation.x = PI * 0.5
+				face.scale = Vector3(1.3, 1.0, 0.8)
 		"quad":
 			for x in [-0.045, 0.045]:
 				for y in [-0.04, 0.04]:
+					if _blender_lamp("cell", Transform3D(Basis.IDENTITY, at + Vector3(x, y, 0.0)), shell, lens, {"paint": "Cell"}):
+						continue
 					var cell := _box(at + Vector3(x, y, 0.0), Vector3(0.08, 0.07, 0.08), shell, _steer_node)
 					cell.name = "Cell"
 					_box(at + Vector3(x, y, -0.042), Vector3(0.066, 0.056, 0.006), lens, _steer_node)
 			face_r = 0.0
 		"stacked":
 			for y in [-0.055, 0.055]:
+				if _blender_lamp("round", Transform3D(Basis.from_scale(Vector3.ONE * size * 0.7), at + Vector3(0.0, y, 0.0)), shell, lens):
+					continue
 				var lamp := _mesh_instance(_sphere(size * 0.7), shell, at + Vector3(0.0, y, 0.0), _steer_node)
 				lamp.scale = Vector3(1.0, 1.0, 0.75)
 				var face := _mesh_instance(_cylinder(size * 0.62, 0.01), lens, at + Vector3(0.0, y, -size * 0.5), _steer_node)
@@ -3229,32 +3235,38 @@ func _draw_headlight() -> void:
 			face.rotation.x = PI * 0.5
 			front = at + Vector3(0.0, 0.0, -size * 0.52)
 		"bucket":
-			var bucket := _mesh_instance(_cylinder(size, size * 1.1, size * 0.75), shell, at + Vector3(0.0, 0.0, 0.03), _steer_node)
-			bucket.rotation.x = -PI * 0.5
-			var face := _mesh_instance(_cylinder(size * 0.92, 0.01), lens, at + Vector3(0.0, 0.0, -0.03), _steer_node)
-			face.rotation.x = PI * 0.5
+			if not _blender_lamp("bucket", Transform3D(Basis.from_scale(Vector3.ONE * size), at + Vector3(0.0, 0.0, 0.03)), shell, lens):
+				var bucket := _mesh_instance(_cylinder(size, size * 1.1, size * 0.75), shell, at + Vector3(0.0, 0.0, 0.03), _steer_node)
+				bucket.rotation.x = -PI * 0.5
+				var face := _mesh_instance(_cylinder(size * 0.92, 0.01), lens, at + Vector3(0.0, 0.0, -0.03), _steer_node)
+				face.rotation.x = PI * 0.5
 		"twin":
 			for x in [-0.07, 0.07]:
+				if _blender_lamp("round", Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.7 / 0.75) * size), at + Vector3(x, 0.0, 0.01)), shell, lens):
+					continue
 				var lamp := _mesh_instance(_sphere(size), shell, at + Vector3(x, 0.0, 0.01), _steer_node)
 				lamp.scale = Vector3(1.0, 1.0, 0.7)
 				var face := _mesh_instance(_cylinder(size * 0.85, 0.01), lens, at + Vector3(x, 0.0, -size * 0.6), _steer_node)
 				face.rotation.x = PI * 0.5
 		"plate":
-			var plate := _box(at + Vector3(0.0, -0.02, -0.02), Vector3(0.22, 0.27, 0.02), shell, _steer_node)
-			plate.rotation.x = 0.25
-			var face := _box(at + Vector3(0.0, 0.0, -0.035), Vector3(0.1, 0.07, 0.01), lens, _steer_node)
-			face.rotation.x = 0.25
+			if not _blender_lamp("plate", Transform3D(Basis(Vector3.RIGHT, 0.25), at + Vector3(0.0, -0.02, -0.02)), shell, lens):
+				var plate := _box(at + Vector3(0.0, -0.02, -0.02), Vector3(0.22, 0.27, 0.02), shell, _steer_node)
+				plate.rotation.x = 0.25
+				var face := _box(at + Vector3(0.0, 0.0, -0.035), Vector3(0.1, 0.07, 0.01), lens, _steer_node)
+				face.rotation.x = 0.25
 		"projector":
-			_box(at + Vector3(0.0, 0.0, 0.0), Vector3(0.17, 0.09, 0.09), shell, _steer_node)
-			for x in [-0.04, 0.04]:
-				var face := _mesh_instance(_cylinder(0.025, 0.01), lens, at + Vector3(x, 0.0, -0.05), _steer_node)
-				face.rotation.x = PI * 0.5
+			if not _blender_lamp("projector", Transform3D(Basis.IDENTITY, at), shell, lens):
+				_box(at + Vector3(0.0, 0.0, 0.0), Vector3(0.17, 0.09, 0.09), shell, _steer_node)
+				for x in [-0.04, 0.04]:
+					var face := _mesh_instance(_cylinder(0.025, 0.01), lens, at + Vector3(x, 0.0, -0.05), _steer_node)
+					face.rotation.x = PI * 0.5
 			_box(at + Vector3(0.0, -0.035, -0.047), Vector3(0.15, 0.008, 0.004), _lamp(Color(0.85, 0.92, 1.0), 3.0, "head"), _steer_node)
 		_:
-			var lamp := _mesh_instance(_sphere(size), shell, at, _steer_node)
-			lamp.scale = Vector3(1.0, 1.0, 0.75)
-			var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.7), _steer_node)
-			face.rotation.x = PI * 0.5
+			if not _blender_lamp("round", Transform3D(Basis.from_scale(Vector3.ONE * size), at), shell, lens):
+				var lamp := _mesh_instance(_sphere(size), shell, at, _steer_node)
+				lamp.scale = Vector3(1.0, 1.0, 0.75)
+				var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.7), _steer_node)
+				face.rotation.x = PI * 0.5
 	if face_r > 0.0:
 		if lk.get("ring", false):
 			var ring := _mesh_instance(_torus(face_r, 0.009), chrome, front + Vector3(0.0, 0.0, -0.004), _steer_node)
@@ -3270,6 +3282,27 @@ func _draw_headlight() -> void:
 	if lk.get("brackets", false):
 		for side in [-1.0, 1.0]:
 			_tube(at + Vector3(size * 1.05 * side, 0.0, 0.0), Vector3(0.09 * side, -0.02, 0.0), 0.007, chrome, Vector3.ONE, _steer_node)
+
+
+## New look: a Blender-made lamp body (headlight/<glb>.glb, see blender/parts/headlight/lamps.py) at
+## `xform` in steering space, its paint in `shell` and its glass in the headlight's `lens` (so it
+## lights with the switch), any other tag's material from `over`. Its surfaces are named from
+## `names` by tag (the glass "Lens", the rest "Fitting" unless named). False when there's no glb.
+func _blender_lamp(glb: String, xform: Transform3D, shell: Material, lens: Material, names := {}, over := {}) -> bool:
+	if not _blender_on():
+		return false
+	var mats := {"paint": shell, "lens_white": lens}
+	mats.merge(over, true)
+	var called := {"lens_white": "Lens"}
+	called.merge(names, true)
+	var pieces := _blender_pieces(BlenderParts.ROOT + "headlight/%s.glb" % glb, xform, mats, _steer_node)
+	for mi in pieces:
+		var nm := "Fitting"
+		for tag in called:
+			if mats.has(tag) and (mi as MeshInstance3D).material_override == mats[tag]:
+				nm = called[tag]
+		(mi as Node).name = nm
+	return not pieces.is_empty()
 
 
 ## The modern Speed Triple's pair: two slim, angular LED lamps either side of the middle,
@@ -3313,10 +3346,16 @@ func _square_lamp(at: Vector3, size: float, shell: Material, lens: Material, lk:
 	var w := size * 2.3
 	var h := size * 1.7
 	var front := at.z - size * 0.3
+	var bezel := _look_finish(str(lk.get("bezel", "chrome")), shell)
+	if _blender_lamp("square", Transform3D(Basis.from_scale(Vector3.ONE * size), at), shell, lens, {"paint": "LampBody", "chrome": "Bezel"}, {"chrome": bezel}):
+		# The reflector's hot spot behind the moulded glass.
+		var hot := _mesh_instance(_cylinder(size * 0.26, 0.004), _lamp(Color(1.0, 0.97, 0.88), 4.0, "head"), Vector3(at.x, at.y, at.z - size * 0.43), _steer_node)
+		hot.rotation.x = PI * 0.5
+		_square_ears(at, size, w, lk)
+		return
 	var body := _box(at + Vector3(0.0, 0.0, size * 0.12), Vector3(w * 0.96, h * 0.94, size * 0.84), shell, _steer_node)
 	body.name = "LampBody"
 	_box(at + Vector3(0.0, 0.0, size * 0.7), Vector3(w * 0.7, h * 0.64, size * 0.4), shell, _steer_node)
-	var bezel := _look_finish(str(lk.get("bezel", "chrome")), shell)
 	var t := size * 0.13
 	for y in [-1.0, 1.0]:
 		_box(Vector3(at.x, at.y + y * (h - t) * 0.5, front - 0.004), Vector3(w, t, 0.02), bezel, _steer_node).name = "Bezel"
@@ -3332,6 +3371,11 @@ func _square_lamp(at: Vector3, size: float, shell: Material, lens: Material, lk:
 		var x := (i - 3) / 3.0 * glass.x * 0.42
 		_box(Vector3(at.x + x, at.y, front - 0.008), Vector3(0.003, glass.y * 0.96, 0.003), flute, _steer_node)
 	_box(Vector3(at.x, at.y, front - 0.009), Vector3(glass.x * 0.96, 0.003, 0.003), flute, _steer_node)
+	_square_ears(at, size, w, lk)
+
+
+## The square lamp's black steel ears back to the fork legs (chrome ones are the "brackets" look's).
+func _square_ears(at: Vector3, size: float, w: float, lk: Dictionary) -> void:
 	if not lk.get("brackets", false):
 		# Black steel ears back to the fork legs (chrome ones are the "brackets" look's).
 		var ear := _mat(Color(0.05, 0.05, 0.055), 0.6, 0.45)
@@ -3351,22 +3395,23 @@ func _bugeye_lamps(at: Vector3, size: float, shell: Material, lens: Material, ch
 		var c := at + Vector3(side * gap, 0.0, 0.0)
 		var b := Basis(Vector3.UP, -side * 0.3) * Basis(Vector3.BACK, -side * 0.28)
 		var oval := Basis.from_scale(Vector3(0.88, 1.18, 1.0))
+		var face_at := c + b * Vector3(0.0, 0.0, -size * 1.0)
+		if _blender_lamp("bugeye", Transform3D(b * Basis.from_scale(Vector3.ONE * size), c), shell, lens, {"paint": "BugEye"}):
+			_bugeye_eye(face_at, b * oval, size, chrome, spot)
+			_tube(c + b * Vector3(0.0, -size * 0.3, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+			continue
 		var body := _mesh_instance(_sphere(size), shell, c, _steer_node)
 		body.basis = b * Basis.from_scale(Vector3(0.9, 1.2, 1.05))
 		body.name = "BugEye"
 		# A tapered back on each lamp shell, pointing back towards the bracket.
 		var back := _mesh_instance(_cylinder(size * 0.75, size * 1.1, size * 0.35), shell, c + b * Vector3(0.0, 0.0, size * 0.75), _steer_node)
 		back.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
-		var face_at := c + b * Vector3(0.0, 0.0, -size * 1.0)
 		var face := _mesh_instance(_cylinder(size * 0.86, 0.01), lens, face_at, _steer_node)
 		face.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
 		face.name = "Lens"
 		var rim := _mesh_instance(_torus(size * 0.88, 0.005), chrome, face_at + b * Vector3(0.0, 0.0, 0.002), _steer_node)
 		rim.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
-		var ring := _mesh_instance(_torus(size * 0.55, 0.0018), chrome, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
-		ring.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
-		var hot := _mesh_instance(_cylinder(size * 0.3, 0.003), spot, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
-		hot.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		_bugeye_eye(face_at, b * oval, size, chrome, spot)
 		# The bracket: a short arm from the lamp's back to the fork leg.
 		_tube(c + b * Vector3(0.0, -size * 0.3, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
 	var plate := _box(at + Vector3(0.0, -size * 0.55, size * 0.95), Vector3(gap * 2.0, 0.012, size * 0.9), black, _steer_node)
@@ -3384,6 +3429,14 @@ func _bugeye_lamps(at: Vector3, size: float, shell: Material, lens: Material, ch
 		var f := k / 3.0
 		secs.append({"c": base + dir * 0.1 * f, "w": gap * 1.9 * lerpf(1.0, 0.7, f), "up": 0.03, "down": 0.0, "n": 2.0})
 	_shell(secs, glass, true, 0.25, PI - 0.25, _steer_node).name = "FlyScreen"
+
+
+## A bug-eye's reflector ring and the bulb's hot spot just in front of its glass at `face_at`.
+func _bugeye_eye(face_at: Vector3, b: Basis, size: float, chrome: Material, spot: Material) -> void:
+	var ring := _mesh_instance(_torus(size * 0.55, 0.0018), chrome, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
+	ring.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
+	var hot := _mesh_instance(_cylinder(size * 0.3, 0.003), spot, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
+	hot.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
 
 
 ## The horn under the headstock: a disc, a pair of snail or air trumpets, a klaxon or a bulb.
