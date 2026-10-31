@@ -403,10 +403,80 @@ func test_fairings() -> void:
 			m.free()
 	check(out.is_empty(), "every fairing in the new look is drawn thick, its Blender-made edges round the code's shape, held on by its own kind of fastener; Classic's is the code's %s" % str(out.slice(0, 6)))
 
-## The slots the loader draws in their Blender-made shapes (waves 1 to 3 so far).
+## Every frame in the catalogue, on a bike in the new look, keeps the layout the code bends round
+## the bike: its round tubes are the Blender-made tube swept along the same lines, each joint where
+## a tube butts into a thicker one is welded (a bead sitting on the tube, not off in the air), the
+## head stock has its bearing cups in both ends, and the battery box, the frame's own footpegs and a
+## plain swingarm's box-section arms are Blender-made; in Classic the frame is the code's alone.
+func test_frames() -> void:
+	var out := []
+	var counts := {}
+	var base := Contracts.style_build("classic")
+	base["rearsets"] = "none"
+	for id in PartsDB.by_kind["frame"]:
+		var parts := base.duplicate()
+		parts["frame"] = id
+		for look in [BikeLook.NEW, BikeLook.CLASSIC]:
+			var m := BikeModel.new()
+			m.look = look
+			t.add_child(m)
+			m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+			var named := {}
+			var code_tubes := 0
+			for mi in m._slot_meshes.get("frame", []):
+				if not (mi is MeshInstance3D):
+					continue
+				var key := str(mi.name).rstrip("0123456789").trim_prefix("@MeshInstance3D@")
+				named[key] = int(named.get(key, 0)) + 1
+				# (A tube, not a short lug or boss.)
+				var cyl := (mi as MeshInstance3D).mesh as CylinderMesh
+				if cyl != null and cyl.height > 0.05 and (mi as MeshInstance3D).scale.is_equal_approx(Vector3.ONE):
+					code_tubes += 1
+				if str(mi.name).begins_with("Footpeg") and BlenderParts.tag_of((mi as MeshInstance3D).mesh.surface_get_material(0)) == "rubber":
+					named["peg"] = int(named.get("peg", 0)) + 1
+				if look == BikeLook.CLASSIC and _blender_made(mi):
+					out.append("%s: Blender-made in Classic" % id)
+					break
+				if look == BikeLook.NEW and str(mi.name).begins_with("Weld"):
+					# Each bead sits on one of the frame's tube lines, about its radius out.
+					var verts := (mi as MeshInstance3D).mesh.get_faces()
+					for k in range(0, verts.size(), 97):
+						var near := INF
+						for rail in m._rails:
+							near = minf(near, BikeModel._rail_distance(rail, verts[k]) - float(rail["r"]))
+						if near > 0.012:
+							out.append("%s: a weld %.3f m off its tube" % [id, near])
+							break
+			var fp := PartsDB.get_part(str(id))
+			# (A frame of cast beams, a perimeter's, a spar's or a cast trestle's, has no tubes butting
+			# into each other to weld.)
+			var cast := str(fp.get("style", "")) in ["perimeter", "spar"] or bool((fp.get("look", {}) as Dictionary).get("cast", false))
+			if look == BikeLook.NEW and not cast:
+				counts[id] = int(named.get("Weld", 0))
+			if look == BikeLook.NEW:
+				if code_tubes > 0:
+					out.append("%s: %d of the code's tubes" % [id, code_tubes])
+				if int(named.get("BatteryBox", 0)) == 0 and not str(PartsDB.get_part(str(id)).get("style", "")) in ["softail", "chopper"]:
+					out.append("%s: no battery box" % id)
+				if int(named.get("peg", 0)) != 2:
+					out.append("%s: %d footpegs" % [id, int(named.get("peg", 0))])
+				var cups := 0
+				for mi in m._slot_meshes.get("frame", []):
+					if is_instance_valid(mi) and _blender_made(mi) and BlenderParts.tag_of((mi as MeshInstance3D).mesh.surface_get_material(0)) == "raw_steel":
+						cups += 1
+				if cups < 2:
+					out.append("%s: no bearing cups" % id)
+				if m._arm_type() == "box" and int(named.get("BoxArm", 0)) == 0:
+					out.append("%s: the code's box swingarm" % id)
+			m.free()
+	var welded := counts.values().filter(func(c): return c > 0).size()
+	check(out.is_empty() and welded == counts.size(), "every frame in the new look is Blender-made tube on the code's lines, welded where its tubes meet (%d of %d tubular frames welded %s), with its head stock's bearing cups, battery box, footpegs and swingarm; Classic's is the code's %s" % [welded, counts.size(), counts.keys().filter(func(k): return counts[k] == 0), str(out.slice(0, 6))])
+
+
+## The slots the loader draws in their Blender-made shapes (waves 1 to 4 so far).
 const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
-	"front_mudguard", "tail", "side_panels", "fairing"]
+	"front_mudguard", "tail", "side_panels", "fairing", "frame"]
 
 
 ## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
@@ -437,7 +507,7 @@ const LOADED_MORE := 60000
 
 
 ## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
-## tyres, brakes, shocks, fork, tank, seat, mudguards, tail, side panels and fairing where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
+## tyres, brakes, shocks, fork, tank, seat, mudguards, tail, side panels, fairing and frame where the code-built ones were (the wheels' turning with them), each surface in its finish on that bike, with the headers' ports
 ## kept for their heat colours; a Classic bike has none of them; and the bike stays in budget.
 func test_new_look() -> void:
 	var off := []
@@ -513,7 +583,7 @@ func test_new_look() -> void:
 				missing.append(str(parts[slot]))
 		m.free()
 	BikeLookNew.lods_now = false
-	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank, seat, mudguards, tail, side panels and fairing, and every one in the catalogue is drawn %s" % [missing])
+	check(missing.is_empty(), "every style's new-look bike wears its Blender-made engine, top end, exhaust, wheels, tyres, brakes, shocks, fork, tank, seat, mudguards, tail, side panels, fairing and frame, and every one in the catalogue is drawn %s" % [missing])
 	check(classic_blender.is_empty(), "and a Classic one none of them %s" % [classic_blender])
 	check(off.is_empty(), "each in the code-built one's place, the ports kept and inside the budget %s %s" % [worst, off])
 	# Baked as it's ridden: the headers still colour with heat, and the bike's still a few draws.
