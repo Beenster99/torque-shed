@@ -18970,7 +18970,8 @@ func _test_luggage_looks() -> void:
 			"alloy":
 				shaped = names.has("Body") and names.has("Lid") and names.count("Latch") == 2
 			"roll":
-				shaped = names.has("RollBag") and names.count("RolledEnd") == 2
+				# (Or the new look's Blender-made bag, its rolled ends part of it.)
+				shaped = names.has("RollBag") and (names.count("RolledEnd") == 2 or names.has("Fitting"))
 			"crate":
 				# (Boards and posts as the code builds them, or the new look's Blender-made crate.)
 				shaped = names.size() >= 14 or names.has("Crate")
@@ -18990,7 +18991,7 @@ func _test_luggage_looks() -> void:
 		var ok := not pill
 		match str(PartsDB.get_part(id).get("style", "")):
 			"roll":
-				ok = ok and names.count("RolledTop") == 2 and names.count("RollBag") == 2
+				ok = ok and names.count("RollBag") == 2 and (names.count("RolledTop") == 2 or names.count("Fitting") >= 2)
 			"alloy":
 				ok = ok and names.count("Latch") == 4
 			"soft":
@@ -24906,6 +24907,10 @@ func _test_blender_parts_small_parts() -> void:
 
 func _test_blender_parts_add_ons() -> void:
 	_blender_parts().test_add_ons()
+
+
+func _test_blender_parts_kit_parts() -> void:
+	_blender_parts().test_kit_parts()
 
 
 func _test_blender_parts_fallback() -> void:

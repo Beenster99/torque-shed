@@ -21,6 +21,8 @@ These are drawn at their sizes in metres:
 - "headlight/plate.glb": an enduro number-board lamp, the 0.22 by 0.27 board round its middle with
   its lamp window in it, upright (the game leans it back).
 - "headlight/projector.glb": the LED projector's flat housing with its two lens cups.
+- "headlight/nacelle.glb": a round lamp in its cowl, at unit size.
+- "headlight/triple.glb": one outer housing of a triple lamp, at unit size in its turned frame.
 
 Every glass is tagged lens_white: the game lays its own lamp material over it, so the lamp still
 lights with the headlight switch."""
@@ -198,9 +200,68 @@ def projector(lod):
     return kit.join(parts, "projector")
 
 
+def nacelle(lod):
+    """A round lamp sunk in a cowl that wraps back over the fork tops, at unit size (the game scales
+    it by the part's size, the lamp's radius) round the lamp's point: the cowl through the code's
+    three sections (theirs in metres, for an 85 mm lamp), a rolled lip round its mouth and the glass
+    sunk in it."""
+    m = 1.0 / 0.085
+    segs = [32, 16, 8][lod]
+    rows = [((0.0, 0.0, -0.5), 1.05, 1.05, 1.05, 2.0), ((0.0, 0.004 * m, -0.1), 1.24, 1.18, 1.1, 2.15),
+        ((0.0, 0.01 * m, 0.06 * m), 1.35, 1.25, 1.1, 2.3), ((0.0, 0.022 * m, 0.12 * m), 1.3, 1.08, 1.0, 2.45),
+        ((0.0, 0.03 * m, 0.16 * m), 1.2, 0.9, 0.9, 2.6)]
+    if lod == 2:
+        rows = [rows[0], rows[2], rows[4]]
+    rings = []
+    for i, (c, hw, up, dn, n) in enumerate(rows):
+        # Each section square to the line through the middles, as the code's loft lays them.
+        a = rows[max(i - 1, 0)][0]
+        b = rows[min(i + 1, len(rows) - 1)][0]
+        ty, tz = b[1] - a[1], b[2] - a[2]
+        ln = math.hypot(ty, tz)
+        uy, uz = tz / ln, -ty / ln
+        rings.append([g(c[0] + x, c[1] + z * uy, c[2] + z * uz) for x, z in kit.superellipse(hw, up, dn, n, segs)])
+    parts = [kit.skin("cowl", rings, "paint")]
+    if lod < 2:
+        parts.append(kit.ring("lip", 0.52, 1.0, 0.045, segs, "paint", 6 if lod == 0 else 4))
+    parts.append(lens("glass", -0.48, 0.95, segs, lod, depth=0.05))
+    parts += flutes(-0.48, 0.95, 7, lod)
+    return kit.join(parts, "nacelle")
+
+
+def triple(lod):
+    """One of a triple lamp's two outer housings, the right-hand one (the game mirrors it for the
+    left), in its own turned frame at unit size (the game scales it by the part's size): a wedge
+    tapering to a point at its outer end, 1.9 across and 0.8 tall from its glass at z -0.2 back to
+    1.1, the glass set in its face (the game adds the projector's eye and the light brow)."""
+    outline = [(-0.95, 0.4), (0.62, 0.4), (1.2, -0.02), (0.95, -0.38), (-0.95, -0.4)]
+    if lod == 0:
+        # Its corners rounded a little.
+        soft = []
+        for i, p in enumerate(outline):
+            a = outline[i - 1]
+            b = outline[(i + 1) % len(outline)]
+            soft.append((p[0] + (a[0] - p[0]) * 0.08, p[1] + (a[1] - p[1]) * 0.08))
+            soft.append((p[0] + (b[0] - p[0]) * 0.08, p[1] + (b[1] - p[1]) * 0.08))
+        outline = soft
+    body = kit.prism("housing", outline, -0.2, 1.1, "paint", bevel=0.04 if lod == 0 else 0.0)
+    # (A prism stands out along Blender Z; turned, it runs along the game's Z.)
+    body.rotation_euler = (math.pi * 0.5, 0.0, 0.0)
+    parts = [body]
+    inner = [(x * 0.92 - 0.01, y * 0.82 - 0.06) for x, y in outline]
+    glass = kit.prism("glass", inner, -0.245, -0.19, "lens_white")
+    glass.rotation_euler = (math.pi * 0.5, 0.0, 0.0)
+    parts.append(glass)
+    if lod < 2:
+        # The black bezel's step round the glass.
+        frame = [g(x * 0.97, y * 0.9 - 0.03, -0.21) for x, y in outline]
+        parts.append(kit.sweep("bezel", frame + frame[:2], 0.025, 4, "black_metal"))
+    return kit.join(parts, "triple")
+
+
 def parts():
     out = []
     for name, build in (("round", round_lamp), ("bucket", bucket), ("bullet", bullet), ("square", square), ("bugeye", bugeye),
-            ("cell", cell), ("plate", plate), ("projector", projector)):
+            ("cell", cell), ("plate", plate), ("projector", projector), ("nacelle", nacelle), ("triple", triple)):
         out.append({"kind": "headlight", "path": "headlight/%s.glb" % name, "build": build, "mounts": {}})
     return out

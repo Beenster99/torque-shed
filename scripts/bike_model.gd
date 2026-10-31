@@ -2097,6 +2097,10 @@ func _draw_air_filter() -> void:
 				var at := port + dir * reach
 				if reach > 0.14:
 					_tube(port + dir * 0.06, at - dir * half_len, 0.024, boot)
+				if not _blender_tagged("filter/%s.glb" % ("stack" if stacks else "pod"), Transform3D(_basis_up(dir), at),
+						{"paint": mat, "chrome": chrome, "paint_2": _mat(_col().darkened(0.25), 0.3, 0.5)},
+						{"chrome": "VelocityStack"} if stacks else {"paint": "PodFilter"}).is_empty():
+					continue
 				var piece := _mesh_instance(_cylinder(0.026, 0.05, 0.042), chrome, at) if stacks else _mesh_instance(_cylinder(0.04, 0.09), mat, at)
 				piece.basis = _basis_up(dir)
 				piece.name = "VelocityStack" if stacks else "PodFilter"
@@ -2110,6 +2114,9 @@ func _draw_air_filter() -> void:
 			var at := Vector3(maxf(AIR_FILTER_OUT, mid.x + 0.12) - dir.x * 0.07, mid.y + 0.02, mid.z + 0.16)
 			at.y = minf(at.y, tank_base_y(at.z) - 0.07)
 			_bend([mid + Vector3(0.0, 0.0, 0.07), mid + Vector3(0.0, 0.01, 0.13), at - dir * 0.07], 0.035, boot)
+			if not _blender_tagged("filter/cone.glb", Transform3D(_basis_up(dir), at), {"paint": mat, "paint_2": _mat(_col().darkened(0.25), 0.3, 0.5)},
+					{"paint": "ConeFilter"}).is_empty():
+				return
 			var cone := _mesh_instance(_cylinder(0.065, 0.14, 0.04), mat, at)
 			cone.basis = _basis_up(dir)
 			cone.name = "ConeFilter"
@@ -2124,6 +2131,9 @@ func _draw_air_filter() -> void:
 				var reach := maxf(0.1, (edge - port.x) / dir.x)
 				if reach > 0.11:
 					_tube(port + dir * 0.06, port + dir * (reach - 0.02), 0.03, boot)
+				if not _blender_tagged("filter/cleaner.glb", Transform3D(_basis_up(dir), port + dir * reach), {"paint": _mat(_col().darkened(0.2), 0.75, 0.3),
+						"chrome": _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15)}, {"paint": "AirCleaner"}).is_empty():
+					return
 				var cleaner := _mesh_instance(_cylinder(0.07, 0.045), _mat(_col().darkened(0.2), 0.75, 0.3), port + dir * reach)
 				cleaner.basis = _basis_up(dir)
 				cleaner.name = "AirCleaner"
@@ -2138,17 +2148,34 @@ func _draw_air_filter() -> void:
 			var at := mid + Vector3(0.0, 0.04, 0.16)
 			at.y = minf(at.y, tank_base_y(at.z) - 0.08)
 			var wide := maxf(0.2, _block_w * 0.8)
+			var out := maxf(AIR_FILTER_OUT, wide * 0.5 + 0.05)
+			if _blender_airbox(at, wide, out, mat):
+				return
 			var box := _box(at, Vector3(wide, 0.15, 0.14), mat)
 			box.name = "Airbox"
 			# The element's housing on the right-hand end, with its lid out past the frame and
 			# the tank's edge, where the filter comes out.
-			var out := maxf(AIR_FILTER_OUT, wide * 0.5 + 0.05)
 			var housing := _mesh_instance(_cylinder(0.06, out - wide * 0.5 + 0.01), mat, Vector3((wide * 0.5 + out) * 0.5, at.y, at.z))
 			housing.rotation.z = PI * 0.5
 			housing.name = "FilterHousing"
 			var lid := _mesh_instance(_cylinder(0.066, 0.012), _mat(_col().lightened(0.15), 0.3, 0.5), Vector3(out, at.y, at.z))
 			lid.rotation.z = PI * 0.5
 			lid.name = "FilterLid"
+
+
+## New look: the airbox `wide` across round `at`, with its element's housing out to `out` on the
+## right and the lid on its end, in their Blender-made shapes (filter/airbox, housing and lid.glb,
+## see blender/parts/filter/filters.py). False when there's no glb.
+func _blender_airbox(at: Vector3, wide: float, out: float, mat: Material) -> bool:
+	var dark := {"paint": mat, "paint_2": _mat(_col().lightened(0.15), 0.3, 0.5)}
+	if _blender_tagged("filter/airbox.glb", Transform3D(Basis.from_scale(Vector3(wide / 0.2, 1.0, 1.0)), at), dark, {"paint": "Airbox"}).is_empty():
+		return false
+	var turn := Basis(Vector3.BACK, PI * 0.5)
+	var length := out - wide * 0.5 + 0.01
+	_blender_tagged("filter/housing.glb", Transform3D(turn * Basis.from_scale(Vector3(1.0, length, 1.0)), Vector3((wide * 0.5 + out) * 0.5, at.y, at.z)),
+		dark, {"paint": "FilterHousing"})
+	_blender_tagged("filter/lid.glb", Transform3D(turn, Vector3(out, at.y, at.z)), dark, {"paint_2": "FilterLid"})
+	return true
 
 
 ## Where the spin-on oil filter sits: low on the right at the front of the crankcase, under the
@@ -2174,6 +2201,9 @@ func _draw_oil_filter() -> void:
 	var mat := _mat(_col(), 0.5, 0.4)
 	var at := oil_filter_at()
 	var dir := oil_filter_dir()
+	if not _blender_tagged("filter/oil.glb", Transform3D(_basis_up(dir), at), {"paint": mat, "paint_2": _mat(_col().darkened(0.3), 0.6, 0.35)},
+			{"paint": "OilFilter"}).is_empty():
+		return
 	var f := _mesh_instance(_cylinder(0.035, OIL_FILTER_LEN), mat, at)
 	f.basis = _basis_up(dir)
 	f.name = "OilFilter"
@@ -3242,12 +3272,13 @@ func _draw_headlight() -> void:
 			face_r = 0.0
 		"nacelle":
 			# A round lamp sunk into a cowl that wraps back over the fork tops.
-			_shell([{"c": at + Vector3(0.0, 0.0, -size * 0.5), "w": size * 1.05, "up": size * 1.05, "n": 2.0},
-				{"c": at + Vector3(0.0, 0.01, 0.06), "w": size * 1.35, "up": size * 1.25, "down": size * 1.1, "n": 2.3},
-				{"c": at + Vector3(0.0, 0.03, 0.16), "w": size * 1.2, "up": size * 0.9, "down": size * 0.9, "n": 2.6}], shell, false, 0.0, TAU, _steer_node)
-			var face := _mesh_instance(_cylinder(size * 0.95, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.52), _steer_node)
-			face.rotation.x = PI * 0.5
 			front = at + Vector3(0.0, 0.0, -size * 0.52)
+			if not _blender_lamp("nacelle", Transform3D(Basis.from_scale(Vector3.ONE * size), at), shell, lens, {"paint": "Nacelle"}):
+				_shell([{"c": at + Vector3(0.0, 0.0, -size * 0.5), "w": size * 1.05, "up": size * 1.05, "n": 2.0},
+					{"c": at + Vector3(0.0, 0.01, 0.06), "w": size * 1.35, "up": size * 1.25, "down": size * 1.1, "n": 2.3},
+					{"c": at + Vector3(0.0, 0.03, 0.16), "w": size * 1.2, "up": size * 0.9, "down": size * 0.9, "n": 2.6}], shell, false, 0.0, TAU, _steer_node)
+				var face := _mesh_instance(_cylinder(size * 0.95, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.52), _steer_node)
+				face.rotation.x = PI * 0.5
 		"bucket":
 			if not _blender_lamp("bucket", Transform3D(Basis.from_scale(Vector3.ONE * size), at + Vector3(0.0, 0.0, 0.03)), shell, lens):
 				var bucket := _mesh_instance(_cylinder(size, size * 1.1, size * 0.75), shell, at + Vector3(0.0, 0.0, 0.03), _steer_node)
@@ -3348,6 +3379,12 @@ func _triple_lamps(at: Vector3, size: float, shell: Material, lens: Material, lk
 	for side in [-1.0, 1.0]:
 		var c := at + Vector3(side * gap, size * 0.1, 0.0)
 		var b := Basis(Vector3.UP, -side * 0.38) * Basis(Vector3.BACK, -side * 0.3)
+		# (The left's the right-hand housing mirrored across.)
+		var mirror := Basis.from_scale(Vector3(side, 1.0, 1.0))
+		if _blender_lamp("triple", Transform3D(mirror * Basis(Vector3.UP, -0.38) * Basis(Vector3.BACK, -0.3) * Basis.from_scale(Vector3.ONE * size), c), shell, lens,
+				{"paint": "TripleLamp"}, {"black_metal": black}):
+			_triple_trim(c, b, side, size, inner, drl, black, lk)
+			continue
 		var body := _box(c + b * Vector3(0.0, 0.0, size * 0.45), Vector3(size * 1.9, size * 0.8, size * 1.3), shell, _steer_node)
 		body.basis = b
 		body.name = "TripleLamp"
@@ -3357,17 +3394,22 @@ func _triple_lamps(at: Vector3, size: float, shell: Material, lens: Material, lk
 		var glass := _box(c + b * Vector3(0.0, -size * 0.06, -size * 0.24), Vector3(size * 1.75, size * 0.52, 0.006), lens, _steer_node)
 		glass.basis = b
 		glass.name = "Lens"
-		# The projector's bright eye in the glass, nearer the middle.
-		var eye := _mesh_instance(_cylinder(size * 0.17, 0.004), inner, c + b * Vector3(-side * size * 0.4, -size * 0.08, -size * 0.25), _steer_node)
-		eye.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
-		if lk.get("brow", true):
-			var brow := _box(c + b * Vector3(0.0, size * 0.28, -size * 0.25), Vector3(size * 1.8, size * 0.07, 0.008), drl, _steer_node)
-			brow.basis = b
-			brow.name = "DRL"
-		# The bracket arm back to the fork leg.
-		_tube(c + b * Vector3(side * size * 0.3, -size * 0.2, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+		_triple_trim(c, b, side, size, inner, drl, black, lk)
 	var bridge := _box(at + Vector3(0.0, -size * 0.05, size * 0.5), Vector3(gap * 1.2, size * 0.6, size * 0.9), black, _steer_node)
 	bridge.name = "LampBracket"
+
+
+## A triple lamp's housing's trim on the `side` at `c`, turned `b`: the projector's bright eye in
+## the glass nearer the middle, the light brow over it and the bracket arm back to the fork leg.
+func _triple_trim(c: Vector3, b: Basis, side: float, size: float, inner: Material, drl: Material, black: Material, lk: Dictionary) -> void:
+	var eye := _mesh_instance(_cylinder(size * 0.17, 0.004), inner, c + b * Vector3(-side * size * 0.4, -size * 0.08, -size * 0.25), _steer_node)
+	eye.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
+	if lk.get("brow", true):
+		var brow := _box(c + b * Vector3(0.0, size * 0.28, -size * 0.25), Vector3(size * 1.8, size * 0.07, 0.008), drl, _steer_node)
+		brow.basis = b
+		brow.name = "DRL"
+	# The bracket arm back to the fork leg.
+	_tube(c + b * Vector3(side * size * 0.3, -size * 0.2, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
 
 
 ## An old-school rectangular headlight centred on `at` (steering space), `size` setting its scale:
@@ -3556,8 +3598,10 @@ func _draw_ecu() -> void:
 	if p.is_empty():
 		return
 	var at := Vector3(0.12, _seat_y - 0.17, lerpf(_seat_front.z, _tail.z, 0.3))
-	_box(at, Vector3(0.035, 0.08, 0.13), _mat(_col(), 0.5, 0.35))
-	_box(at + Vector3(0.019, 0.0, 0.0), Vector3(0.004, 0.05, 0.09), _mat(Color(0.75, 0.76, 0.78), 0.9, 0.3))
+	if _blender_tagged("ecu/box.glb", Transform3D(Basis.IDENTITY, at), {"paint": _mat(_col(), 0.5, 0.35),
+			"cast_alloy": _mat(Color(0.75, 0.76, 0.78), 0.9, 0.3)}, {"paint": "ECU"}).is_empty():
+		_box(at, Vector3(0.035, 0.08, 0.13), _mat(_col(), 0.5, 0.35))
+		_box(at + Vector3(0.019, 0.0, 0.0), Vector3(0.004, 0.05, 0.09), _mat(Color(0.75, 0.76, 0.78), 0.9, 0.3))
 	_tube(at + Vector3(0.0, 0.04, -0.06), at + Vector3(-0.08, 0.1, -0.16), 0.006, _mat(Color(0.05, 0.05, 0.05), 0.0, 0.7))
 
 
@@ -3896,14 +3940,19 @@ func _roll_bag(base: Vector3, size: Vector3, mat: Material) -> void:
 	for s in [[-1.0, 0.03, 0.72], [-0.92, 0.4, 0.86], [-0.8, 0.9, 0.97], [-0.6, 1.0, 1.0], [0.0, 1.03, 1.02], [0.6, 1.0, 1.0],
 			[0.8, 0.9, 0.97], [0.92, 0.4, 0.86], [1.0, 0.03, 0.72]]:
 		secs.append({"c": Vector3(0.0, 0.0, s[0] * (half + 0.05)), "w": dz * s[1], "up": r * s[2], "down": r * s[2], "n": 2.3})
-	var body := _mesh_instance(ShapeKit.loft(secs), mat, c)
-	body.basis = Basis(Vector3.UP, PI * 0.5)
-	body.name = "RollBag"
+	var k := size.y / 0.24
+	var blender := not _blender_tagged("luggage/roll_bag.glb", Transform3D(Basis.from_scale(Vector3.ONE * k), c), {"paint": mat, "paint_2": _mat(_col().darkened(0.3), 0.0, 0.6)},
+		{"paint": "RollBag"}).is_empty()
+	if not blender:
+		var body := _mesh_instance(ShapeKit.loft(secs), mat, c)
+		body.basis = Basis(Vector3.UP, PI * 0.5)
+		body.name = "RollBag"
 	for x in [-1.0, 1.0]:
 		# Each end's flat strip rolled down three times into a tube across the end, clipped top and bottom.
-		var roll := _mesh_instance(_cylinder(0.026, r * 1.5, -1.0, 16), mat, c + Vector3(x * (half + 0.072), 0.0, 0.0))
-		roll.name = "RolledEnd"
-		_mesh_instance(_cylinder(0.02, r * 1.5 + 0.01, -1.0, 12), _mat(_col().darkened(0.3), 0.0, 0.6), c + Vector3(x * (half + 0.08), 0.0, 0.0))
+		if not blender:
+			var roll := _mesh_instance(_cylinder(0.026, r * 1.5, -1.0, 16), mat, c + Vector3(x * (half + 0.072), 0.0, 0.0))
+			roll.name = "RolledEnd"
+			_mesh_instance(_cylinder(0.02, r * 1.5 + 0.01, -1.0, 12), _mat(_col().darkened(0.3), 0.0, 0.6), c + Vector3(x * (half + 0.08), 0.0, 0.0))
 		for y in [-1.0, 1.0]:
 			_box(c + Vector3(x * (half + 0.075), y * (r * 0.75 + 0.012), 0.0), Vector3(0.034, 0.022, 0.034), clip)
 		# A strap from the rolled end back over the top to a buckle, holding it down.
@@ -3952,12 +4001,14 @@ func _roll_pannier(c: Vector3, depth: float, k: float, mat: Material, side: floa
 	var secs := []
 	for s in [[0.0, 0.75, 0.85], [0.06, 0.96, 0.97], [0.5, 1.0, 1.0], [0.86, 0.9, 0.97], [1.0, 0.45, 0.95]]:
 		secs.append({"c": Vector3(c.x, y0 + s[0] * hb, c.z), "w": depth * 0.5 * s[1], "up": half_l * s[2], "down": half_l * s[2], "n": 2.8})
-	_shell(secs, mat).name = "RollBag"
 	# The top rolled down three turns into a tube along the bag, folded over to the outside.
 	var roll_at := Vector3(c.x + side * depth * 0.12, y0 + hb + 0.022, c.z)
-	var roll := _mesh_instance(_cylinder(0.03, half_l * 1.9, -1.0, 16), mat, roll_at)
-	roll.rotation.x = PI * 0.5
-	roll.name = "RolledTop"
+	if _blender_tagged("luggage/roll_pannier.glb", Transform3D(Basis.from_scale(Vector3(side * k, k, k)), c), {"paint": mat, "paint_2": _mat(_col().darkened(0.25), 0.0, 0.85)},
+			{"paint": "RollBag"}).is_empty():
+		_shell(secs, mat).name = "RollBag"
+		var roll := _mesh_instance(_cylinder(0.03, half_l * 1.9, -1.0, 16), mat, roll_at)
+		roll.rotation.x = PI * 0.5
+		roll.name = "RolledTop"
 	var outer := c.x + side * (depth * 0.5 + 0.004)
 	for z in [-1.0, 1.0]:
 		var sz: float = c.z + z * half_l * 0.6
@@ -3981,8 +4032,9 @@ func _throw_over(c: Vector3, depth: float, k: float, mat: Material, side: float,
 	var secs := []
 	for s in [[0.0, 0.7, 0.8], [0.08, 0.95, 0.96], [0.55, 1.0, 1.0], [1.0, 0.85, 0.97]]:
 		secs.append({"c": Vector3(c.x, y0 + s[0] * hb, c.z), "w": depth * 0.5 * s[1], "up": half_l * s[2], "down": half_l * s[2], "n": 3.0})
-	_shell(secs, mat).name = "Bag"
 	var flap_mat := _mat(_col().darkened(0.2), 0.0, 0.9)
+	if _blender_tagged("luggage/throw_over.glb", Transform3D(Basis.from_scale(Vector3(side * k, k, k)), c), {"paint": mat, "paint_2": flap_mat}, {"paint": "Bag"}).is_empty():
+		_shell(secs, mat).name = "Bag"
 	_box(Vector3(c.x, y0 + hb + 0.004, c.z), Vector3(depth * 0.9, 0.008, half_l * 2.0), flap_mat)
 	var outer := c.x + side * (depth * 0.5 + 0.004)
 	_box(Vector3(outer, y0 + hb * 0.8, c.z), Vector3(0.008, hb * 0.4, half_l * 2.0), flap_mat)
@@ -6068,34 +6120,61 @@ func _draw_number_boards() -> void:
 	var mat := _mat(_col(), 0.0 if style != "oval" else 0.5, 0.45)
 	var side_at := Vector3(0.0, _seat_y - 0.1, lerpf(_seat_front.z, _tail.z, 0.62))
 	if style in ["mx", "front", "oval"]:
-		var plate: MeshInstance3D
+		var plate: Node3D
 		if style == "oval":
-			plate = _mesh_instance(_cylinder(0.1, 0.008), mat, Vector3(0.0, -0.02, -0.2), _steer_node)
-			plate.basis = Basis(Vector3.RIGHT, PI * 0.5 + 0.15) * Basis.from_scale(Vector3(1.25, 1.0, 1.0))
+			plate = _blender_board("oval", Transform3D(Basis(Vector3.RIGHT, PI * 0.5 + 0.15) * Basis.from_scale(Vector3(1.25, 1.0, 1.0)), Vector3(0.0, -0.02, -0.2)), mat, _steer_node)
+			if plate == null:
+				plate = _mesh_instance(_cylinder(0.1, 0.008), mat, Vector3(0.0, -0.02, -0.2), _steer_node)
+				plate.basis = Basis(Vector3.RIGHT, PI * 0.5 + 0.15) * Basis.from_scale(Vector3(1.25, 1.0, 1.0))
 		else:
-			plate = _box(Vector3(0.0, -0.05, -0.2), Vector3(0.22, 0.21, 0.008), mat, _steer_node)
-			plate.rotation.x = 0.22
+			plate = _blender_board("plate", Transform3D(Basis(Vector3.RIGHT, 0.22), Vector3(0.0, -0.05, -0.2)), mat, _steer_node)
+			if plate == null:
+				plate = _box(Vector3(0.0, -0.05, -0.2), Vector3(0.22, 0.21, 0.008), mat, _steer_node)
+				plate.rotation.x = 0.22
 		_number_on(plate, Vector3(0.0, 0.2, -1.0).normalized(), 0.11)
 	match style:
 		"mx", "tracker":
 			for side in [-1.0, 1.0]:
-				var board: MeshInstance3D
+				var board: Node3D
+				var spot := side_at + Vector3(0.14 * side, 0.0, 0.0)
 				if style == "tracker":
-					board = _mesh_instance(_cylinder(0.12, 0.01), mat, side_at + Vector3(0.14 * side, 0.0, 0.0), self)
-					board.basis = Basis(Vector3.BACK, PI * 0.5 * side) * Basis.from_scale(Vector3(1.0, 1.0, 1.4))
+					board = _blender_board("oval", Transform3D(Basis(Vector3.BACK, PI * 0.5 * side) * Basis.from_scale(Vector3(1.2, 1.25, 1.68)), spot), mat)
+					if board == null:
+						board = _mesh_instance(_cylinder(0.12, 0.01), mat, spot, self)
+						board.basis = Basis(Vector3.BACK, PI * 0.5 * side) * Basis.from_scale(Vector3(1.0, 1.0, 1.4))
 				else:
-					board = _box(side_at + Vector3(0.14 * side, 0.0, 0.0), Vector3(0.008, 0.19, 0.27), mat)
-					board.rotation.x = -0.12
+					# (The front plate turned side on: its 220 mm across along the bike, 270 mm.)
+					board = _blender_board("plate", Transform3D(Basis(Vector3.RIGHT, -0.12) * Basis(Vector3.UP, PI * 0.5) * Basis.from_scale(Vector3(0.27 / 0.22, 0.19 / 0.21, 1.0)), spot), mat)
+					if board == null:
+						board = _box(spot, Vector3(0.008, 0.19, 0.27), mat)
+						board.rotation.x = -0.12
 				_number_on(board, Vector3(side, 0.0, 0.0), 0.12)
 		"shrouds":
 			for side in [-1.0, 1.0]:
-				var wing := _box(_head + Vector3(0.16 * side, -0.2, 0.2), Vector3(0.01, 0.2, 0.24), mat)
-				wing.basis = Basis(Vector3.UP, -0.3 * side) * Basis(Vector3.RIGHT, 0.35)
+				var wing_b := Basis(Vector3.UP, -0.3 * side) * Basis(Vector3.RIGHT, 0.35)
+				if _blender_board("plate", Transform3D(wing_b * Basis(Vector3.UP, PI * 0.5) * Basis.from_scale(Vector3(0.24 / 0.22, 0.2 / 0.21, 1.25)),
+						_head + Vector3(0.16 * side, -0.2, 0.2)), mat) == null:
+					var wing := _box(_head + Vector3(0.16 * side, -0.2, 0.2), Vector3(0.01, 0.2, 0.24), mat)
+					wing.basis = wing_b
 				_box(_head + Vector3(0.165 * side, -0.27, 0.16), Vector3(0.012, 0.03, 0.18), _mat(Color(0.05, 0.05, 0.06), 0.1, 0.6))
 		"oval":
-			var back := _mesh_instance(_cylinder(0.08, 0.008), mat, _tail + Vector3(0.0, 0.06, 0.2), self)
-			back.basis = Basis(Vector3.RIGHT, PI * 0.5 - 0.25) * Basis.from_scale(Vector3(1.25, 1.0, 1.0))
+			var back_b := Basis(Vector3.RIGHT, PI * 0.5 - 0.25) * Basis.from_scale(Vector3(1.25, 1.0, 1.0))
+			var back: Node3D = _blender_board("oval", Transform3D(back_b * Basis.from_scale(Vector3(0.8, 1.0, 0.8)), _tail + Vector3(0.0, 0.06, 0.2)), mat)
+			if back == null:
+				back = _mesh_instance(_cylinder(0.08, 0.008), mat, _tail + Vector3(0.0, 0.06, 0.2), self)
+				back.basis = back_b
 			_number_on(back, Vector3(0.0, 0.25, 1.0).normalized(), 0.09)
+
+
+## New look: a number board's Blender-made blank (number_board/<kind>.glb, see
+## blender/parts/number_board/boards.py) at `xform` in `parent`, in the board's `mat`: the board
+## itself, to print the number on, or null when there's no glb.
+func _blender_board(kind: String, xform: Transform3D, mat: Material, parent: Node3D = null) -> Node3D:
+	var pieces := _blender_tagged("number_board/%s.glb" % kind, xform, {"paint": mat}, {"paint": "NumberBoard"}, parent)
+	for mi in pieces:
+		if (mi as MeshInstance3D).material_override == mat:
+			return mi
+	return null
 
 
 ## The steering damper: a linear one is an oil-filled body along the left of the frame with its
