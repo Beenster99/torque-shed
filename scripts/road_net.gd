@@ -2098,6 +2098,12 @@ func _near(x: float, z: float) -> PackedInt32Array:
 	return _near_at(x, z)[0]
 
 
+## The nearest point of edge `edge`'s line to (x, z): [distance along the line, signed distance right of it (a to b),
+## distance from it].
+func project(edge: int, x: float, z: float) -> Array:
+	return _project(edge, Vector2(x, z))
+
+
 ## The nearest point of edge `edge`'s line to `p`: [distance along the line, signed distance right of it (a to b),
 ## distance from it]. Only the pieces `segs` of the line are looked at (all of them, empty).
 func _project(edge: int, p: Vector2, segs := PackedInt32Array()) -> Array:
