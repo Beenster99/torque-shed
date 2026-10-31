@@ -103,6 +103,23 @@ func test_configurator() -> void:
 	var exhausts := BikeShop.options("exhaust", "naked", tab.parts)
 	var other: String = exhausts.filter(func(e): return e != str(tab.parts["exhaust"]) and e != "none")[0]
 	tab.set_part("exhaust", other)
+	# Picking from a dropdown rebuilds the list, but only once the dropdown has finished sending
+	# its signal: freeing it mid-signal crashed the game (v0.42.0).
+	var sb: OptionButton = tab.find_child("Slot_saddle", true, false)
+	var saddles := BikeShop.options("saddle", "naked", tab.parts)
+	var bi := saddles.find(saddles.filter(func(e): return e != str(tab.parts["saddle"]))[0])
+	sb.item_selected.emit(bi)
+	var kept := is_instance_valid(sb)
+	await _frames(1)
+	var sty: OptionButton = tab.find_child("Style", true, false)
+	sty.item_selected.emit(PartsDB.STYLES.find("cafe"))
+	kept = kept and is_instance_valid(sty)
+	await _frames(1)
+	check(kept and not is_instance_valid(sb) and tab.style == "cafe" and tab.find_child("Slot_saddle", true, false) != null,
+		"a part or style picked from its dropdown rebuilds the list after the dropdown is done with it, not under it")
+	tab._new_style("naked")
+	tab.show_mode("new")
+	tab.set_part("exhaust", other)
 	var red := Color(0.8, 0.1, 0.1)
 	var gold := Color(0.8, 0.62, 0.2)
 	tab.set_colour("frame", red)
