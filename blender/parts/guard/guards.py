@@ -24,10 +24,11 @@ def g(x, y, z):
     return (x, -z, y)
 
 
-def profile(kind):
+def profile(kind, lod=0):
     """The section's outline round its skin (x across, y up), anticlockwise from the left edge's
-    rolled lip: over the top, round the right lip and back under."""
-    n = 10
+    rolled lip: over the top, round the right lip and back under. (The game bends lod0; the
+    lighter ones, coarser across and without the lips, are there for the parts agreement.)"""
+    n = [10, 6, 4][lod]
     if kind == "plastic":
         crown, drop, t = 0.008, 0.012, 0.005
     elif kind == "valanced":
@@ -45,7 +46,7 @@ def profile(kind):
         top.append((x, y))
     under = [(x, y - t) for x, y in reversed(top)]
     # The rolled lips: a small bead under each edge.
-    lip = 0.004 if kind != "plastic" else 0.0
+    lip = 0.004 if kind != "plastic" and lod == 0 else 0.0
     right = [(0.5 + lip * 0.4, top[-1][1] - t * 0.5 - lip * 0.6)] if lip else []
     left = [(-0.5 - lip * 0.4, top[0][1] - t * 0.5 - lip * 0.6)] if lip else []
     return top + right + under + left
@@ -53,7 +54,7 @@ def profile(kind):
 
 def section(kind, rings):
     def make(lod):
-        prof = profile(kind)
+        prof = profile(kind, lod)
         ob = kit.skin("guard", [[g(x, y, i / (rings - 1)) for x, y in prof] for i in range(rings)], "paint")
         return kit.join([ob], "guard")
     return make
