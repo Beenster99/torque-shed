@@ -106,9 +106,10 @@ func _ready() -> void:
 	# The client leaves the ride on its own (the Esc menu's Leave the adventure): back at the shed, off its bike, while
 	# the host and the adventure carry on.
 	var leave_ok := await _leave_check(trip, mine, my_lat) if ok_start else false
-	# Home: the host ends it (once the client has had time to check, too).
+	# Home: the host ends it (once the client has had time to check, too: the client's trip home and its two
+	# seconds at the shed can run past three seconds on a slow machine, so the host gives it eight).
 	var asked := [false]
-	var end_at := Time.get_ticks_msec() + 3000
+	var end_at := Time.get_ticks_msec() + 8000
 	var home_ok := await _until(func():
 		if role == "host" and Adventure.active() and not asked[0] and Time.get_ticks_msec() > end_at:
 			asked[0] = true
