@@ -536,6 +536,12 @@ static func points(path: String, xform: Transform3D, lod := 0) -> PackedVector3A
 	return out
 
 
+## How far outboard of its pivot the Blender-made lever's ball end is (blender/parts/controls).
+const LEVER_REACH := 0.127
+## A footrest hanger plate's thickness (m), the Blender-made one's (blender/parts/controls).
+const HANGER_T := 0.012
+
+
 ## The reference exhaust can every can glb is drawn at (m): its length, inlet to end, and its
 ## biggest radius.
 const CAN_LENGTH := 0.5

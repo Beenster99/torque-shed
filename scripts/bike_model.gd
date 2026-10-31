@@ -2655,6 +2655,9 @@ func _draw_handlebars() -> void:
 	for side in [-1.0, 1.0]:
 		var end := bar_end(side)
 		var out := bar_out(side)
+		if _blender_on():
+			_blender_named("controls/grip.glb", _basis_up(out), end - out * GRIP_LEN, "Grip", {"rubber": rubber})
+			continue
 		var grip := _tube(end - out * GRIP_LEN, end, GRIP_R, rubber, Vector3.ONE, _steer_node)
 		grip.name = "Grip"
 		# The grip's flange at the inner end.
@@ -2663,6 +2666,15 @@ func _draw_handlebars() -> void:
 	_grip_l = bar_end(-1.0) - bar_out(-1.0) * GRIP_LEN * 0.5
 	_grip_r = bar_end(1.0) - bar_out(1.0) * GRIP_LEN * 0.5
 	_draw_controls(bar_end(-1.0), bar_end(1.0))
+
+
+## The new look's Blender-made piece at `path` (under BlenderParts.ROOT) on the steering, set by
+## `basis` at `at`: its first mesh named `name`, the rest "Fitting". `over` as _blender_pieces.
+func _blender_named(path: String, basis: Basis, at: Vector3, name: String, over := {}, parent: Node3D = null) -> Array:
+	var pieces := _blender_pieces(BlenderParts.ROOT + path, Transform3D(basis, at), over, _steer_node if parent == null else parent)
+	for i in pieces.size():
+		(pieces[i] as Node).name = name if i == 0 else "Fitting"
+	return pieces
 
 
 ## A grip's length (m) from the bar end in, and its radius.
@@ -2738,6 +2750,8 @@ func _bent_bar(lk: Dictionary, hw: float, rise: float, mat: Material) -> Vector3
 	elif rh > 0.025:
 		for side in [-1.0, 1.0]:
 			_tube(Vector3(0.04 * side, -0.01, 0.0), Vector3(0.04 * side, rh + 0.005, 0.0), 0.016, chrome if lk.get("chrome_risers", false) else mat, Vector3.ONE, _steer_node)
+	elif _blender_on():
+		_blender_named("controls/bar_clamp.glb", Basis(), Vector3(0.0, rh, 0.0), "BarClamp", {"cast_alloy": _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)})
 	else:
 		_box(Vector3(0.0, rh, 0.0), Vector3(0.1, 0.03, 0.04), _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35), _steer_node)
 	if lk.get("brace", false):
@@ -3018,12 +3032,24 @@ func _draw_controls(l_end: Vector3, r_end: Vector3) -> void:
 	var br := _bar_end_basis(1.0)
 	# Switch gear housings just inboard of each grip, and the throttle tube on the right.
 	var sw_l := l_end + bl * Vector3(0.118, 0.0, 0.0)
+	var thr := r_end + br * Vector3(-0.103, 0.0, 0.0)
+	var perch := l_end + bl * Vector3(0.152, 0.0, 0.0)
+	if _blender_on():
+		# The new look's: the switch gear, throttle, bar-end weights, clutch perch and lever as
+		# Blender-made pieces where the code's go.
+		_blender_named("controls/switch_left.glb", bl, sw_l, "SwitchGear", {"plastic": black})
+		_blender_named("controls/throttle.glb", br, thr, "Throttle", {"plastic": black})
+		for side in [-1.0, 1.0]:
+			_blender_named("controls/bar_end.glb", _basis_up(bar_out(side)), bar_end(side), "BarEnd", {"polished_alloy": steel})
+		_blender_named("controls/clutch_perch.glb", bl, perch, "ClutchPerch", {"cast_alloy": alloy})
+		_blender_named("controls/lever.glb", bl, perch, "ClutchLever", {"cast_alloy": alloy})
+		_draw_cables(perch, thr, bl, br, cable, steel)
+		return
 	var sw := _box(sw_l, Vector3(0.03, 0.042, 0.048), black, _steer_node)
 	sw.name = "SwitchGear"
 	sw.basis = bl
 	var button := _box(sw_l + bl * Vector3(0.0, 0.005, -0.026), Vector3(0.016, 0.01, 0.006), _mat(Color(0.85, 0.1, 0.06), 0.1, 0.4), _steer_node)
 	button.basis = bl
-	var thr := r_end + br * Vector3(-0.103, 0.0, 0.0)
 	var housing := _mesh_instance(_cylinder(0.022, 0.022), black, thr, _steer_node)
 	housing.basis = _basis_up(br.x)
 	housing.name = "Throttle"
@@ -3035,7 +3061,6 @@ func _draw_controls(l_end: Vector3, r_end: Vector3) -> void:
 		w.basis = _basis_up(out)
 		w.name = "BarEnd"
 	# The clutch lever: a clamp on the bar, the blade sweeping out in front of the grip.
-	var perch := l_end + bl * Vector3(0.152, 0.0, 0.0)
 	var clamp := _mesh_instance(_cylinder(0.019, 0.026), alloy, perch, _steer_node)
 	clamp.basis = _basis_up(bl.x)
 	_box(perch + bl * Vector3(0.0, 0.0, -0.026), Vector3(0.026, 0.02, 0.028), alloy, _steer_node).basis = bl
@@ -3044,6 +3069,12 @@ func _draw_controls(l_end: Vector3, r_end: Vector3) -> void:
 		0.0055, alloy, _steer_node, 6)
 	blade.name = "ClutchLever"
 	_mesh_instance(_sphere(0.009), alloy, l_end + bl * Vector3(0.023, -0.012, -0.045), _steer_node)
+	_draw_cables(perch, thr, bl, br, cable, steel)
+
+
+## The clutch and throttle cables from the perch and the throttle (on the bar's own line, `bl` and
+## `br`), down past the head stock and on in the frame to the clutch arm and the carbs.
+func _draw_cables(perch: Vector3, thr: Vector3, bl: Basis, br: Basis, cable: Material, steel: Material) -> void:
 	# Cables: out of the perch and the throttle, down past the headstock.
 	var j_l := -_steer_axis * 0.24 + Vector3(-0.055, 0.0, 0.035)
 	var j_r := -_steer_axis * 0.24 + Vector3(0.055, 0.0, 0.035)
@@ -3095,16 +3126,30 @@ func _draw_front_master() -> void:
 	# On the bar's own line just inboard of the grip (see _bar_end_basis), its reservoir upright.
 	var br := _bar_end_basis(1.0)
 	var at := _grip_r + br * Vector3(-0.08, 0.0, 0.0)
+	var tip := _grip_r + br * Vector3(0.06, -0.012, -0.05)
+	if _blender_on():
+		# The new look's: the master cylinder and its reservoir, and the forged lever (the clutch
+		# lever's, mirrored and reaching to the code's tip).
+		var alloy := _tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), "brushed")
+		_blender_named("controls/master_%s.glb" % ("radial" if radial else "axial"), br, at, "Reservoir", {"cast_alloy": mat})
+		var reach := (br.inverse() * (tip - at)).x
+		_blender_named("controls/lever.glb", br * Basis.from_scale(Vector3(-reach / BlenderParts.LEVER_REACH, 1.0, 1.0)), at, "BrakeLever", {"cast_alloy": alloy})
+		_front_brake_line(at, br)
+		return
 	_box(at, Vector3(0.04, 0.04, 0.05) if radial else Vector3(0.035, 0.035, 0.035), mat, _steer_node).basis = br
 	var res := _mesh_instance(_cylinder(0.022 if radial else 0.018, 0.03), mat, at + Vector3(0.0, 0.04, 0.0), _steer_node)
 	res.name = "Reservoir"
 	_mesh_instance(_cylinder(0.02 if radial else 0.016, 0.004), _mat(Color(0.05, 0.05, 0.05), 0.2, 0.5), at + Vector3(0.0, 0.057, 0.0), _steer_node)
 	# The lever: a shaped blade with a ball end, in front of the grip.
-	var tip := _grip_r + br * Vector3(0.06, -0.012, -0.05)
 	var blade := _bend([at + br * Vector3(0.0, -0.004, -0.03), at + br * Vector3(0.04, -0.008, -0.05), tip], 0.0055,
 		_tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), "brushed"), _steer_node, 6)
 	blade.name = "BrakeLever"
 	_mesh_instance(_sphere(0.009), _mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), tip, _steer_node)
+	_front_brake_line(at, br)
+
+
+## The front brake hose (or cable, for a drum) from the master cylinder at `at` down to the fork leg.
+func _front_brake_line(at: Vector3, br: Basis) -> void:
 	# The brake hose (or cable, for a drum) from the master down to the fork leg.
 	var line := _mat(Color(0.03, 0.03, 0.035), 0.1, 0.55) if _front_is_drum() else _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4)
 	var j := _brake_line_joint()
@@ -5646,6 +5691,9 @@ func _draw_rearsets() -> void:
 	for side in [-1.0, 1.0]:
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
 		var root := Vector3(0.1 * side, _pivot.y - 0.02, _pivot.z - 0.03)
+		if _blender_on():
+			_blender_rearset(style, side, peg, root, mat, black, hanger)
+			continue
 		match style:
 			"forward":
 				var mount := Vector3(0.08 * side, _peg.y + 0.02, _peg.z + 0.08)
@@ -5678,6 +5726,37 @@ func _draw_rearsets() -> void:
 				var rubber := _box(peg + Vector3(0.01 * side, 0.0, 0.0), Vector3(0.1, 0.024, 0.038), black)
 				rubber.name = "Footpeg"
 				_tube(peg + Vector3(-0.03 * side, 0.0, 0.0), peg + Vector3(-0.03 * side, -0.03, -0.15), 0.007, hanger)
+
+
+## The new look's rearsets on `side`, as _draw_rearsets lays them out: each peg, board or cleat a
+## Blender-made piece, the hanger plates the Blender-made plate stretched from the frame to the
+## peg, and the lever and mount tubes the Blender-made tube.
+func _blender_rearset(style: String, side: float, peg: Vector3, root: Vector3, mat: Material, black: Material, hanger: Material) -> void:
+	var mirror := Basis.from_scale(Vector3(side, 1.0, 1.0))
+	var plate := func(at: Vector3, size: Vector3, m: Material) -> void:
+		_blender_named("controls/hanger.glb", Basis.from_scale(Vector3(side * size.x / BlenderParts.HANGER_T, size.y, size.z)), at, "Hanger", {"": m}, self)
+	match style:
+		"forward":
+			var mount := Vector3(0.08 * side, _peg.y + 0.02, _peg.z + 0.08)
+			_tube(mount, peg, 0.012, mat)
+			_blender_named("frame/footpeg.glb", mirror * Basis.from_scale(Vector3(0.9, 1.45, 1.45)), peg + Vector3(0.005 * side, 0.0, 0.0), "Footpeg", {"rubber": black}, self)
+			_tube(peg + Vector3(-0.02 * side, 0.0, -0.02), peg + Vector3(-0.02 * side, 0.08, -0.08), 0.008, mat)
+		"boards":
+			_tube(Vector3(0.08 * side, _peg.y + 0.01, _peg.z), Vector3(0.14 * side, _peg.y, _peg.z), 0.01, hanger)
+			_blender_named("controls/floorboard.glb", mirror, Vector3(0.2 * side, _peg.y, _peg.z), "Footpeg", {"rubber": black, "chrome": mat}, self)
+		"rearset":
+			plate.call((peg + root) * 0.5 + Vector3(0.015 * side, 0.0, 0.0), Vector3(0.01, absf(peg.y - root.y) + 0.07, absf(peg.z - root.z) + 0.07), mat)
+			_blender_named("controls/peg_alloy.glb", mirror, peg, "Footpeg", {"cast_alloy": mat}, self)
+			_tube(peg + Vector3(0.0, -0.01, 0.0), peg + Vector3(-0.005 * side, -0.02, -0.13), 0.006, mat)
+		"cleat":
+			plate.call((peg + root) * 0.5, Vector3(0.012, absf(peg.y - root.y) + 0.06, 0.06), hanger)
+			_blender_named("controls/cleat.glb", mirror, peg, "Footpeg", {"cast_alloy": mat}, self)
+			_tube(peg + Vector3(-0.03 * side, -0.01, 0.0), peg + Vector3(-0.03 * side, -0.02, -0.14), 0.007, mat)
+		_:
+			if absf(peg.y - root.y) > 0.04 or absf(peg.z - root.z) > 0.06:
+				plate.call((peg + root) * 0.5, Vector3(0.012, absf(peg.y - root.y) + 0.06, 0.06), hanger)
+			_blender_named("frame/footpeg.glb", mirror, peg + Vector3(0.01 * side, 0.0, 0.0), "Footpeg", {"rubber": black}, self)
+			_tube(peg + Vector3(-0.03 * side, 0.0, 0.0), peg + Vector3(-0.03 * side, -0.03, -0.15), 0.007, hanger)
 
 
 ## Engine guards: chrome bars round the front of the engine, a full adventure cage up round the
@@ -9015,10 +9094,10 @@ func _tube(a: Vector3, b: Vector3, radius: float, mat: Material, stretch := Vect
 	return mi
 
 
-## Whether a tube of the part being drawn is the new look's Blender-made frame tube (the frame's
-## and the swingarm's).
+## Whether a tube of the part being drawn is the new look's Blender-made tube (the frame's, the
+## swingarm's, the bars' and the rearsets').
 func _frame_blender() -> bool:
-	return _current_slot in ["frame", "swingarm"] and _blender_on()
+	return _current_slot in ["frame", "swingarm", "handlebars", "rearsets"] and _blender_on()
 
 
 ## How the fitted frame places a mounting point (see build_from), or `default`.
