@@ -17,6 +17,12 @@ const SLOTS := 4              # players per layer: two buckets crossfading, and 
 ## A loop's player eases to its new loudness over about this long (s), coming in from silence
 ## and going out to it: never started or stopped mid-wave, which clicks (Simon heard them).
 const GAIN_EASE := 0.02
+## The recorded idle (EngineBank.idle_loop) has the sound to itself up to this far above idle,
+## then hands over to the made sound by IDLE_HANDOVER[1] (fractions of idle above it).
+const IDLE_HANDOVER := [0.1, 0.6]
+## How far the recording may be pitched to suit this engine's idle: its own idle speed only
+## nudges it, so a recording never sounds sped up or slowed down at tickover.
+const IDLE_PITCH := [0.85, 1.15]
 ## How loud each side is from where you're listening: in the helmet you hear the airbox, on
 ## the chase camera the pipe, and other people's bikes are mostly pipe.
 const VIEW_MIX := {"rider": [0.75, 1.3], "chase": [1.0, 0.7], "remote": [1.0, 0.55], "room": [1.0, 0.85]}
@@ -113,6 +119,8 @@ var _catch_t := 1.0           # seconds since it caught: the running sound comes
 var _crank_guess := 0.0
 var _bus_t := 0.0
 var _bus := "Engines"
+var _idle_player: AudioStreamPlayer3D   # the recorded idle
+var idle_share := 0.0         # how much of the sound is the recorded idle now (0..1)
 
 
 ## Sets the sound up for a bike. `model` gives where the pipe and engine are; without one they
@@ -147,6 +155,7 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 		_lever = _make_player(engine_at, 4.0)
 		for i in 2:
 			_starter_players.append(_make_player(engine_at, 6.0))
+		_idle_player = _make_player(exhaust_at, 12.0)
 		flame = ExhaustFlame.new()
 		exhaust_at.add_child(flame)
 	exhaust_at.position = Vector3(0.18, 0.4, 0.75)
@@ -164,6 +173,9 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 			p.stop()
 		_fading[layer] = []
 	_gain = {}
+	_idle_player.stop()
+	_idle_player.stream = bank.idle_loop
+	idle_share = 0.0
 
 
 func _make_player(parent: Node3D, unit: float) -> AudioStreamPlayer3D:
@@ -183,6 +195,9 @@ func set_distant_filter(on: bool) -> void:
 		for p: AudioStreamPlayer3D in _players[layer]:
 			p.attenuation_filter_cutoff_hz = 5000.0 if on else 20500.0
 			p.attenuation_filter_db = -30.0 if on else -24.0
+	if _idle_player:
+		_idle_player.attenuation_filter_cutoff_hz = 5000.0 if on else 20500.0
+		_idle_player.attenuation_filter_db = -30.0 if on else -24.0
 	for p: AudioStreamPlayer3D in _oneshot_ex:
 		p.attenuation_filter_cutoff_hz = 6000.0 if on else 20500.0
 
@@ -243,15 +258,53 @@ func _process_body(delta: float) -> void:
 		# Recordings of the whole bike: the pipe carries all of it, as loud as either side would be.
 		mix = [maxf(mix[0], mix[1]), mix[1]]
 	var weights := bank.mix_weights(rpm, _load) if life > 0.001 else []
+	# A real bike ticking over, where there's a recording of one: it has idle to itself and
+	# crossfades (equal power) into the made sound as the revs rise or the throttle opens.
+	var rec := idle_mix(rpm, _load) if bank.idle_loop and bank.idle_made_rms != Vector2.ZERO else 0.0
+	var made := sqrt(1.0 - rec * rec)
+	_drive_idle(rec * life, mix, delta)
 	var wanted := {}
 	for layer in EngineSynth.LAYERS:
 		wanted[layer] = {}
 	for w in weights:
-		var g: float = float(w[2]) * life * (mix[0] if str(w[0]).begins_with("ex") else mix[1])
+		var g: float = float(w[2]) * life * made * (mix[0] if str(w[0]).begins_with("ex") else mix[1])
 		var loud: float = 0.75 + 0.35 * float(spec["loud"]) if str(w[0]).begins_with("ex") else 1.0
 		wanted[w[0]][w[1]] = [g * loud, float(w[3])]
 	for layer in EngineSynth.LAYERS:
 		_drive_layer(layer, wanted[layer], delta)
+
+
+## How much of the sound the recorded idle is at `at_rpm` and `load` (0..1): all of it at
+## tickover, none of it once the revs are well up or the throttle's wide open.
+func idle_mix(at_rpm: float, load: float) -> float:
+	var idle: float = spec["idle"]
+	var u := clampf((at_rpm / idle - 1.0 - IDLE_HANDOVER[0]) / (IDLE_HANDOVER[1] - IDLE_HANDOVER[0]), 0.0, 1.0)
+	return cos(u * PI * 0.5) * lerpf(1.0, 0.4, clampf(load, 0.0, 1.0))
+
+
+## Plays the recorded idle at `share` of the sound, as loud as the made idle would be from here
+## (so it sits right in every view) and pitched with the revs.
+func _drive_idle(share: float, mix: Array, delta: float) -> void:
+	idle_share = share
+	var p := _idle_player
+	var made: Vector2 = bank.idle_made_rms
+	var loud: float = 0.75 + 0.35 * float(spec["loud"])
+	var want := 0.0
+	if p.stream and share > 0.0:
+		want = share * Vector2(made.x * float(mix[0]) * loud, made.y * float(mix[1])).length() / maxf(bank.idle_rms, 0.001)
+	var g: float = float(_gain.get(p, 0.0))
+	g += (want - g) * (1.0 - exp(-delta / GAIN_EASE))
+	_gain[p] = g
+	if g < 0.0005 and want < 0.0005:
+		if p.playing:
+			p.stop()
+		return
+	if not p.playing:
+		p.play(_rng.randf() * p.stream.get_length())
+	p.volume_db = linear_to_db(maxf(g, 0.00001)) + volume_db
+	var idle: float = spec["idle"]
+	var base := clampf(idle / maxf(bank.idle_rpm, 1.0), IDLE_PITCH[0], IDLE_PITCH[1])
+	p.pitch_scale = clampf(base * rpm / idle, 0.05, 4.0)
 
 
 ## Points this layer's players at the buckets wanted, at their volume and pitch; the rest fade

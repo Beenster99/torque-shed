@@ -321,6 +321,7 @@ func _run_all() -> void:
 	await _t(&"_test_engine_users")
 	await _t(&"_test_engine_loop_clicks")
 	await _t(&"_test_engine_samples")
+	await _t(&"_test_engine_idle_recorded")
 	await _t(&"_test_gear_clunks")
 	await _t(&"_test_starter_variety")
 	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
@@ -11278,6 +11279,67 @@ func _test_engine_samples() -> void:
 		DirAccess.remove_absolute(dir.path_join(f))
 	DirAccess.remove_absolute(dir)
 	DirAccess.remove_absolute("user://engine_samples")
+
+
+func _test_engine_idle_recorded() -> void:
+	# Simon's recordings of real bikes ticking over: each kind of engine finds its own.
+	var want := {"boxer_1000": "boxer", "twin_750": "twin_360", "parallel_750": "parallel_270", "triple_850": "triple",
+		"inline_1000": "inline", "four_1000": "inline", "vtwin_1000": "vtwin_90v", "vtwin45_883": "vtwin_45v",
+		"vtwin60_1200": "vtwin_60v", "single_450": "", "2stroke_350": ""}
+	var wrong := []
+	for id in want:
+		var path := EngineBank.idle_recording(EngineSynth.spec_from_build(BikeBuild.new({"engine": id})))
+		var key := path.get_file().get_basename()
+		key = key.substr(0, key.rfind("_")) if path != "" else ""
+		if key != want[id]:
+			wrong.append("%s: %s" % [id, path])
+	check(wrong.is_empty(), "each engine finds the idle recording of its kind, and those with none find none %s" % [wrong])
+	var full := EngineSynth.make_spec("vtwin", 2, 1000.0, {"crank": "90v", "exhaust": "full"})
+	check(EngineBank.idle_recording(full).get_file().begins_with("vtwin_90v_full_"), "a full system finds its own recording")
+	# A two-stroke single keeps the whole set of recordings it already has.
+	var two := EngineBank.for_spec(EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"})))
+	check(two.recorded and two.idle_loop == null, "a two-stroke single keeps its own recordings, not an idle loop")
+	# The loop: seamless (padded like every loop), measured, and its rpm read from its name.
+	var spec := EngineSynth.spec_from_build(BikeBuild.new({"engine": "vtwin45_883"}))
+	var bank := EngineBank.new(spec)
+	bank.load_idle(EngineBank.idle_recording(spec))
+	var wav := bank.idle_loop
+	check(wav != null and wav.loop_mode == AudioStreamWAV.LOOP_FORWARD and wav.format == AudioStreamWAV.FORMAT_16_BITS
+		and wav.data.size() == (wav.loop_end + EngineSynth.LOOP_PAD) * 2 and wav.get_length() > 3.0,
+		"the recording loops, padded so it comes round without a click")
+	check(absf(bank.idle_rpm - 720.0) < 1.0 and absf(bank.idle_rms - 0.1) < 0.02, "its rpm and loudness are known (%.0f rpm, %.3f)" %
+		[bank.idle_rpm, bank.idle_rms])
+	# Ticking over, the recording is the sound; with the revs up, the made sound takes over.
+	var es := EngineSound.new()
+	add_child(es)
+	es.view = "room"
+	es.setup_spec(spec)
+	es.bank.bake_now()
+	es.running = true
+	es.throttle = 0.0
+	es.rpm = float(spec["idle"])
+	for i in 60:
+		es._process(1.0 / 60.0)
+	var idle_g: float = es._gain.get(es._idle_player, 0.0)
+	var made_g := 0.0
+	for layer in EngineSynth.LAYERS:
+		for b in es._assigned[layer]:
+			made_g = maxf(made_g, float(es._gain.get(es._assigned[layer][b], 0.0)))
+	check(es.idle_share > 0.95 and es._idle_player.playing and made_g < 0.2, "at tickover it's the recording (%.2f), the made sound all but silent (%.3f)" %
+		[es.idle_share, made_g])
+	var made: Vector2 = es.bank.idle_made_rms
+	var level := Vector2(made.x * 1.0 * (0.75 + 0.35 * float(spec["loud"])), made.y * 0.85).length()
+	var heard := idle_g * es.bank.idle_rms
+	check(heard > level * 0.8 and heard < level * 1.25, "and it's as loud as the made idle would be (%.4f against %.4f)" % [heard, level])
+	check(absf(es._idle_player.pitch_scale - clampf(float(spec["idle"]) / 720.0, 0.85, 1.15)) < 0.01,
+		"pitched only a little to suit this engine's idle (%.2f)" % es._idle_player.pitch_scale)
+	es.throttle = 1.0
+	es.rpm = float(spec["idle"]) * 3.0
+	for i in 60:
+		es._process(1.0 / 60.0)
+	check(es.idle_share < 0.001 and not es._idle_player.playing, "with the revs up it fades out and stops, the made sound carrying on")
+	es.queue_free()
+	await get_tree().process_frame
 
 
 ## How much of a buffer's energy is low down (below about 300 Hz): a clunk's thud, not a click.
