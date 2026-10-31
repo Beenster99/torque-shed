@@ -9,9 +9,10 @@ between the head stock and the seat, scales it for the tank's capacity and tilts
 top tube (BlenderParts.tank_xform). Its filler cap, badges, stripes and pads are still the game's,
 laid on the same loft sections.
 
-Over the code's shape: smoother sections, gently rounded ends, the underside tucked in towards the
-nose (clear of carburettors and air filters under it), a tunnel under the middle where the top tube
-runs, and the seam where the pressings are welded running down each side. All `paint`."""
+Over the code's shape: smoother sections and the underside tucked in towards the
+nose (clear of carburettors and air filters under it). The underside stays closed and smooth, with
+no tunnel, welded seam or rolled ends to catch the spray: tanks are painted all over in the booth
+(see SprayJob). All `paint`."""
 
 import math
 
@@ -20,9 +21,9 @@ import kit
 SHAPES = kit.gd_const("TANK_SHAPES")
 
 DETAIL = [
-    {"rings": 30, "segs": 48, "seam": True},
-    {"rings": 14, "segs": 20, "seam": False},
-    {"rings": 7, "segs": 10, "seam": False},
+    {"rings": 30, "segs": 48},
+    {"rings": 14, "segs": 20},
+    {"rings": 7, "segs": 10},
 ]
 FACET_RINGS = [40, 20, 7]
 
@@ -57,45 +58,34 @@ def sections(shape, n):
     return out
 
 
-def tunnel(u, down):
-    """How far the tunnel under the tank rises into it at `u` along (none at the ends)."""
-    return min(0.03, down * 0.45) * smoothstep(0.0, 0.18, u) * (1.0 - smoothstep(0.82, 1.0, u))
-
-
-def smooth_ring(shape, s, segs, shrink=1.0):
+def smooth_ring(shape, s, segs):
     u, cy, w, up, down = s
     e = 2.0 / shape["n"]
     bw = shape["bw"]
-    t = tunnel(u, down)
     # The underside tucked in towards the nose, clear of what sits on the engine under it.
     tuck = 1.0 - 0.22 * (1.0 - smoothstep(0.0, 0.7, u))
     pts = []
     for j in range(segs):
         a = -math.pi * 0.5 + 2.0 * math.pi * j / segs
         ca, sa = math.cos(a), math.sin(a)
-        x = math.copysign(abs(ca) ** e, ca) * w * (bw * tuck if sa < 0.0 else 1.0) * shrink
-        y = math.copysign(abs(sa) ** e, sa) * (up if sa > 0.0 else down) * shrink
-        if sa < 0.0 and t > 0.0:
-            # The tunnel: the underside pushed up either side of the middle, over the top tube.
-            y += t * max(0.0, 1.0 - (x / 0.045) ** 2) ** 2
+        x = math.copysign(abs(ca) ** e, ca) * w * (bw * tuck if sa < 0.0 else 1.0)
+        y = math.copysign(abs(sa) ** e, sa) * (up if sa > 0.0 else down)
         pts.append(g(x, cy + y, u))
     return pts
 
 
 def facet_ring(shape, s, n_rows):
-    """BikeModel._facet_tank's profile, closed under the middle by a flat-topped tunnel."""
+    """BikeModel._facet_tank's profile, closed flat under the middle."""
     u, cy, w, up, down = s
     bw = shape["bw"]
     knee = shape.get("knee", [])
     k = 0.0
     if len(knee) == 3:
         k = knee[2] * smoothstep(knee[0], knee[0] + 0.05, u) * (1.0 - smoothstep(knee[1] - 0.05, knee[1], u))
-    t = min(0.03, down * 0.45)
     half = [(w * bw * 0.6, -down), (w * bw * (1.0 - k), -down * 0.4), (w * (1.0 - k * 0.45), up * 0.18),
         (w * 0.84, up * 0.7), (w * 0.42, up * 0.96), (0.0, up)]
-    # Round from the top of the tunnel under the middle, up the left side and down the right.
-    prof = [(0.0, -down + t), (-w * bw * 0.35, -down + t)] + [(-x, y) for x, y in half[:-1]] + [half[-1]] + \
-        [half[i] for i in range(len(half) - 2, -1, -1)] + [(w * bw * 0.35, -down + t)]
+    # Round from under the middle, up the left side and down the right.
+    prof = [(0.0, -down)] + [(-x, y) for x, y in half[:-1]] + [half[-1]] + [half[i] for i in range(len(half) - 2, -1, -1)]
     return [g(x, cy + y, u) for x, y in prof]
 
 
@@ -106,31 +96,8 @@ def body(shape, lod):
         return [ob], True
     d = DETAIL[lod]
     secs = sections(shape, d["rings"])
-    rings = []
-    for i, s in enumerate(secs):
-        end = i == 0 or i == len(secs) - 1
-        if end and lod < 2:
-            # Rounded ends: the end section drawn a little smaller, with one full size just in.
-            u = s[0] + (0.012 if i == 0 else -0.012)
-            w, up, down = key_at(shape["keys"], u)
-            full = smooth_ring(shape, (u, down, w, up, down), d["segs"])
-            ring = smooth_ring(shape, s, d["segs"], 0.82)
-            rings += [ring, full] if i == 0 else [full, ring]
-        else:
-            rings.append(smooth_ring(shape, s, d["segs"]))
+    rings = [smooth_ring(shape, s, d["segs"]) for s in secs]
     parts = [kit.skin("body", rings, "paint")]
-    if d["seam"]:
-        # The seam down each side, a little below the widest point, where the halves are welded.
-        for side in (-1.0, 1.0):
-            pts = []
-            for s in secs[1:-1]:
-                u, cy, w, up, down = s
-                a = -0.42
-                e = 2.0 / shape["n"]
-                x = abs(math.cos(a)) ** e * w * shape["bw"] * (1.0 - 0.22 * (1.0 - smoothstep(0.0, 0.7, u))) * 1.004
-                y = -(abs(math.sin(a)) ** e) * down * 1.004
-                pts.append(g(x * side, cy + y, u))
-            parts.append(kit.sweep("seam", pts, 0.0022, 5, "paint"))
     return parts, False
 
 
