@@ -50,9 +50,10 @@ PREVIEW = {
 BUDGETS = {
     "frame": [14000, 3500, 500], "engine": [16000, 4000, 500], "head": [16000, 4000, 400],
     "exhaust": [8000, 2000, 250], "fairing": [14000, 3500, 500], "tank": [8000, 2000, 250],
-    "wheel": [10000, 2500, 250], "tyre": [8000, 2000, 250], "fork": [8000, 2000, 200],
+    # (A tyre glb is one of the 32 sections the game bends round the hoop: 1/32 of a tyre's 8000.)
+    "wheel": [10000, 2500, 250], "tyre": [250, 62, 8], "fork": [8000, 2000, 200],
     "swingarm": [5000, 1200, 150], "saddle": [4000, 1000, 150], "tail": [4000, 1000, 150],
-    "shock": [4000, 1000, 100], "disc": [4000, 1000, 100], "caliper": [4000, 1000, 100],
+    "shock": [4000, 1000, 100], "disc": [4000, 1000, 100], "caliper": [4000, 1000, 100], "pads": [4000, 1000, 100],
     "handlebars": [4000, 1000, 100], "dashboard": [4000, 1000, 100], "headlight": [4000, 1000, 100],
     "panniers": [4000, 1000, 100], "top_box": [4000, 1000, 100],
 }
@@ -65,6 +66,8 @@ MOUNTS = {
     "engine": ["engine"],
     "exhaust/can": ["inlet", "outlet"],
     "exhaust/fitting": ["exhaust_port"],
+    "wheel": ["axle"],
+    "shock": ["top", "bottom"],
 }
 
 
@@ -309,3 +312,58 @@ def sphere(name, at, r, scale, segs, tag, rot_x=0.0):
     ob.rotation_euler = (rot_x, 0.0, 0.0)
     ob.location = at
     return ob
+
+
+def revolve(name, profile, segs, tag, closed=True):
+    """A solid turned round the X axis (an axle's): `profile` is its outline as (x along the
+    axle, radius) points, closed back to the first unless `closed` is False (a lip left open)."""
+    bm = bmesh.new()
+    rings = []
+    for i in range(segs):
+        t = 2.0 * math.pi * i / segs
+        rings.append([bm.verts.new((x, r * math.cos(t), r * math.sin(t))) for x, r in profile])
+    n = len(profile)
+    for i in range(segs):
+        a, b = rings[i], rings[(i + 1) % segs]
+        for j in range(n if closed else n - 1):
+            k = (j + 1) % n
+            bm.faces.new((a[j], a[k], b[k], b[j]))
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return _new_object(name, bm, tag)
+
+
+def sweep(name, points, radii, segs, tag, squash=1.0, caps=True, side=None):
+    """A tube along `points` (a spoke, a rail), `radii` one per point or one for all, its section
+    stretched by `squash` along its `side` axis (by default level and square to the tube). The
+    frames are carried along without twisting."""
+    pts = [Vector(p) for p in points]
+    rs = radii if isinstance(radii, (list, tuple)) else [radii] * len(pts)
+    t0 = (pts[1] - pts[0]).normalized()
+    side = Vector(side) if side is not None else t0.cross(Vector((0.0, 0.0, 1.0)))
+    if side.length < 0.01:
+        side = t0.cross(Vector((1.0, 0.0, 0.0)))
+    side.normalize()
+    bm = bmesh.new()
+    rings = []
+    prev = None
+    for i, p in enumerate(pts):
+        t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+        if prev is not None:
+            axis = prev.cross(t)
+            if axis.length > 1e-6:
+                side.rotate(Matrix.Rotation(prev.angle(t), 3, axis.normalized()))
+        side = (side - t * side.dot(t)).normalized()
+        up = t.cross(side).normalized()
+        prev = t
+        rings.append([bm.verts.new(p + side * (math.cos(2.0 * math.pi * j / segs) * rs[i] * squash) + up * (math.sin(2.0 * math.pi * j / segs) * rs[i]))
+            for j in range(segs)])
+    for a, b in zip(rings, rings[1:]):
+        for j in range(segs):
+            k = (j + 1) % segs
+            bm.faces.new((a[j], a[k], b[k], b[j]))
+    if caps:
+        bm.faces.new(rings[0])
+        bm.faces.new(list(reversed(rings[-1])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return _new_object(name, bm, tag)

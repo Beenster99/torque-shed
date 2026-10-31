@@ -143,6 +143,8 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_cases")
 	await _t(&"_test_blender_parts_cans")
 	await _t(&"_test_blender_parts_pipes")
+	await _t(&"_test_blender_parts_tyres")
+	await _t(&"_test_blender_parts_wheels")
 	await _t(&"_test_blender_parts_fallback")
 	await _t(&"_test_blender_parts_new_look")
 	print("The shed")
@@ -3949,10 +3951,19 @@ func _test_perf_steady() -> void:
 		main.queue_free()
 		await get_tree().process_frame
 		return
+	# (One dirty copy for each material a part is drawn in, however many of its meshes share it.)
+	var slot_of := {}
+	for slot in model._slot_meshes:
+		for mi in model._slot_meshes[slot]:
+			if not slot_of.has(mi):
+				slot_of[mi] = slot
 	var mine := {}
+	var owns := {}
 	for r in layer._restore:
 		mine[(r[0] as GeometryInstance3D).material_override] = true
-	check(mine.size() < layer.mesh_count() / 2, "a part's meshes share their dirty materials (%d for %d meshes)" % [mine.size(), layer.mesh_count()])
+		owns[[slot_of.get(r[0], ""), r[1]]] = true
+	check(mine.size() == owns.size() and mine.size() < layer.mesh_count(),
+		"a part's meshes share their dirty materials (%d for %d meshes, %d materials)" % [mine.size(), layer.mesh_count(), owns.size()])
 	var marker := Projection(Vector4(2, 0, 0, 0), Vector4(0, 2, 0, 0), Vector4(0, 0, 2, 0), Vector4(0, 0, 0, 1))
 	mat.set_shader_parameter("to_model", marker)
 	for i in 3:
@@ -24843,6 +24854,14 @@ func _test_blender_parts_cans() -> void:
 
 func _test_blender_parts_pipes() -> void:
 	_blender_parts().test_pipe_sweep()
+
+
+func _test_blender_parts_tyres() -> void:
+	_blender_parts().test_tyres()
+
+
+func _test_blender_parts_wheels() -> void:
+	_blender_parts().test_wheels()
 
 
 func _test_blender_parts_fallback() -> void:

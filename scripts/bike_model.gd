@@ -216,6 +216,10 @@ var _slot_shapes := {}
 ## Each bent tube's line and thickness, by its mesh's instance id (see _bend). Kept here rather
 ## than as a meta on the mesh, which would stop _bake_static merging it.
 var _bends := {}
+## The new look's Blender-made hoops (a rim, a tyre), round the axle along their own X, by their
+## mesh's instance id -> Vector3(inner radius, outer radius, width), for their click targets (see
+## build_pickers): a meta would stop the bake merging them.
+var _hoops := {}
 ## Where the exhaust headers leave the head, for the new look's heat colouring (see
 ## BikeLookNew.bake).
 var _exhaust_ports: Array = []
@@ -241,6 +245,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_shared.clear()
 	_slot_shapes.clear()
 	_bends.clear()
+	_hoops.clear()
 	_exhaust_ports.clear()
 	_blender_mats.clear()
 	_covered.clear()
@@ -2394,6 +2399,7 @@ func _draw_fork(build: BikeBuild) -> void:
 	var gold := _mat(Color(0.8, 0.65, 0.2), 1.0, 0.15)
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
 	var fl := build.fork_length
+	var made := false   # the new look's telescopic forks, made in Blender (see _blender_fork)
 	match style:
 		"girder":
 			for side in [-1.0, 1.0]:
@@ -2445,7 +2451,8 @@ func _draw_fork(build: BikeBuild) -> void:
 			var lr := float(lk.get("leg", 1.0))
 			var usd := style == "usd"
 			var lowers := _look_finish(str(lk.get("lowers", "")), gold if usd else black)
-			for side in [-1.0, 1.0]:
+			made = _blender_on() and _blender_fork(lowers, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome))
+			for side in ([] if made else [-1.0, 1.0]):
 				var x: float = lx * side
 				_tube(Vector3(x, 0.02, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55), (0.034 if usd else 0.024) * lr, main_mat, Vector3.ONE, _steer_node)
 				_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + _steer_axis * (fl * 0.5), (0.022 if usd else 0.032) * lr, lowers, Vector3.ONE, _front_hub)
@@ -2457,11 +2464,11 @@ func _draw_fork(build: BikeBuild) -> void:
 				if lk.get("shrouds", false):
 					var cover := _look_finish(str(lk.get("shroud_finish", "chrome")), chrome)
 					_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * 0.2, 0.038 * lr, cover, Vector3.ONE, _steer_node)
-			if lk.get("brace", false):
+			if lk.get("brace", false) and not made:
 				_box(Vector3(0.0, 0.0, 0.0) + _steer_axis * (fl * 0.25), Vector3(lx * 2.0, 0.03, 0.05), main_mat, _front_hub)
 			# Axle clamps at the foot of each slider, pinched by two bolts, and the axle nuts.
 			var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
-			for side in [-1.0, 1.0]:
+			for side in ([] if made else [-1.0, 1.0]):
 				var x: float = lx * side
 				var foot := _box(Vector3(x, 0.0, 0.0), Vector3(0.05 * lr, 0.06, 0.075), lowers, _front_hub)
 				foot.basis = _basis_up(_steer_axis)
@@ -2476,9 +2483,10 @@ func _draw_fork(build: BikeBuild) -> void:
 					var ear := _bend([Vector3(lx * side, -0.03, -0.01) - _steer_axis * 0.04, Vector3((lx + 0.01) * side, -0.07, -0.06), Vector3(0.1 * side, -0.08, -0.115)],
 						0.011, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome), _steer_node, 10)
 					ear.name = "HeadlampEar"
-	var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
-	_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
-	_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
+	if not made:
+		var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
+		_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
+		_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
 	# The front mudguard is a part of its own now: see _draw_front_mudguard.
 
 
@@ -5676,6 +5684,8 @@ func _draw_rim(wheel: Node3D, rim_r: float, rim_w: float) -> void:
 	var lk := _look()
 	var lip := _look_finish(str(lk.get("lip", "")), rim_mat)
 	var spoke_mat := _look_finish(str(lk.get("spoke_finish", "")), chrome)
+	if _blender_on() and _blender_rim(wheel, rim_r, rim_w, rim_mat, chrome):
+		return
 	# The barrel is open at the sides, so it's drawn from both faces.
 	var barrel_mat := rim_mat.duplicate() as StandardMaterial3D
 	barrel_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -5781,10 +5791,14 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	# Its tread: a road tyre's grooves are cut into its own surface (TextureKit.apply_tread), so
 	# they cost nothing to draw; knobs and blocks stand up off it (see below).
 	var tread := tread_pattern(_part())
-	TextureKit.apply_tread(rubber, tread)
-	var tyre_mi := _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
-	tyre_mi.rotation.z = PI * 0.5
-	tyre_mi.set_meta("hoop", Vector3(rim_r, radius, width))
+	# The new look's tyre is its tread's Blender section bent round the hoop, knobs and all.
+	var tyre_mi: MeshInstance3D = _blender_tyre(wheel, rim_r, radius, width, rim_w, tread, rubber) if _blender_on() else null
+	var blender := tyre_mi != null
+	if not blender:
+		TextureKit.apply_tread(rubber, tread)
+		tyre_mi = _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
+		tyre_mi.rotation.z = PI * 0.5
+		tyre_mi.set_meta("hoop", Vector3(rim_r, radius, width))
 	var wall = _look().get("wall")
 	if wall is Array and (wall as Array).size() >= 3:
 		# A whitewall (or a coloured wall stripe) round both sidewalls.
@@ -5801,7 +5815,7 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	_tyre_lettering(tyre_mi, rim_r, radius, width)
 	# The tread that stands off the tyre: knobs on an off-road tyre (bigger, flatter blocks on a
 	# 50/50 adventure one, studs in them on a studded one), fine sipes cut across a winter tyre.
-	if not tread in ["sipes", "knobs", "blocks", "studs"]:
+	if blender or not tread in ["sipes", "knobs", "blocks", "studs"]:
 		return
 	if tread == "sipes":
 		_tread_ring(wheel, radius, Vector3(width * 0.72, 0.003, 0.004), 72, 0.0015, 0.0, _mat(Color(0.015, 0.015, 0.015), 0.0, 0.95))
@@ -6009,45 +6023,63 @@ func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w :
 	if style == "drum":
 		_draw_drum(side, wheel, hub, rim_r, x)
 		return
-	# The rotor and the carrier in the middle of it, flat rings with their holes cut right
-	# through (see disc_face), so the wheel shows through a drilled disc.
-	var face := disc_face(style)
-	var steel := _disc_mat(_col(), face, 1.0, 0.3)
 	# A floating or drilled disc's carrier is a colour of its own; a plain or wave disc is one piece.
 	var carrier_col = {"floating": Color(0.8, 0.62, 0.2), "drilled": Color(0.2, 0.2, 0.22)}.get(style)
-	var d := _mesh_instance(_disc_ring(disc_r, 0.6 if carrier_col else 0.14, 1.0, 0.006, style != "wave"), steel, Vector3(x, 0.0, 0.0), wheel)
-	d.name = "Disc"
-	if carrier_col:
-		var carrier := _mesh_instance(_disc_ring(disc_r, 0.14, 0.62, 0.008, false), _disc_mat(carrier_col, face, 0.85, 0.35), Vector3(x + 0.001, 0.0, 0.0), wheel)
-		carrier.name = "DiscCarrier"
 	var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
-	if style == "floating":
-		# The floating buttons joining rotor to carrier.
-		_bolt_ring(Vector3(x + 0.006, 0.0, 0.0), Vector3.RIGHT, disc_r * 0.61, 10, bolt, wheel)
-	_bolt_ring(Vector3(x + 0.004, 0.0, 0.0), Vector3.RIGHT, 0.045, 5, bolt, wheel)
+	# The new look's disc is made in Blender, its holes cut right through it.
+	var made := false
+	if _blender_on():
+		var own_r := maxf(float(disc.get("diameter", 280)) / 2000.0, 0.001)
+		_blender_mats[_current_slot] = {"": _mat(_col(), 1.0, 0.3), "raw_steel": _mat(_col(), 1.0, 0.3),
+			"anodised": _mat(carrier_col if carrier_col else _col(), 0.85, 0.35), "black_metal": _mat(Color(0.2, 0.2, 0.22), 0.85, 0.35)}
+		made = not _blender_pieces(BlenderParts.path_for("disc", _part_id()),
+			Transform3D(Basis.from_scale(Vector3(1.0, disc_r / own_r, disc_r / own_r)), Vector3(x, 0.0, 0.0)), {}, wheel).is_empty()
+	if not made:
+		# The rotor and the carrier in the middle of it, flat rings with their holes cut right
+		# through (see disc_face), so the wheel shows through a drilled disc.
+		var face := disc_face(style)
+		var steel := _disc_mat(_col(), face, 1.0, 0.3)
+		var d := _mesh_instance(_disc_ring(disc_r, 0.6 if carrier_col else 0.14, 1.0, 0.006, style != "wave"), steel, Vector3(x, 0.0, 0.0), wheel)
+		d.name = "Disc"
+		if carrier_col:
+			var carrier := _mesh_instance(_disc_ring(disc_r, 0.14, 0.62, 0.008, false), _disc_mat(carrier_col, face, 0.85, 0.35), Vector3(x + 0.001, 0.0, 0.0), wheel)
+			carrier.name = "DiscCarrier"
+		if style == "floating":
+			# The floating buttons joining rotor to carrier.
+			_bolt_ring(Vector3(x + 0.006, 0.0, 0.0), Vector3.RIGHT, disc_r * 0.61, 10, bolt, wheel)
+		_bolt_ring(Vector3(x + 0.004, 0.0, 0.0), Vector3.RIGHT, 0.045, 5, bolt, wheel)
 	_current_slot = side + "_caliper"
 	var pistons := int(_part().get("pistons", 2))
 	var cal_size := Vector3(0.045, 0.06 + 0.008 * pistons, 0.07 + 0.01 * pistons)
 	var cal_at := Vector3(x + 0.012, disc_r * 0.62, disc_r * 0.62 if front else -disc_r * 0.62)
-	var cal := _box(cal_at, cal_size, _mat(_col(), 0.5, 0.35), hub)
-	cal.rotation.x = -PI * 0.25 if front else PI * 0.25
-	# Bleed nipple and the two mounting bolts.
-	_mesh_instance(_cylinder(0.005, 0.016), bolt, cal_at + cal.basis * Vector3(0.012, cal_size.y * 0.5 + 0.006, 0.0), hub).basis = cal.basis
-	for k in [-1.0, 1.0]:
-		var b := _mesh_instance(_cylinder(0.008, 0.012), bolt, cal_at + cal.basis * Vector3(cal_size.x * 0.5 + 0.004, 0.0, cal_size.z * 0.35 * k), hub)
-		b.basis = cal.basis * Basis(Vector3.BACK, PI * 0.5)
+	var cal_basis := Basis(Vector3.RIGHT, -PI * 0.25 if front else PI * 0.25)
+	var cal_mat := _mat(_col(), 0.5, 0.35)
+	# The new look's caliper is made in Blender, its pistons, bleed nipple and bolts and all.
+	_blender_mats[_current_slot] = {"": cal_mat, "paint": cal_mat, "anodised": _mat(_col(), 0.8, 0.3), "raw_steel": bolt}
+	if not _blender_on() or _blender_pieces(BlenderParts.path_for("caliper", _part_id()), Transform3D(cal_basis, cal_at), {}, hub).is_empty():
+		var cal := _box(cal_at, cal_size, cal_mat, hub)
+		cal.basis = cal_basis
+		# Bleed nipple and the two mounting bolts.
+		_mesh_instance(_cylinder(0.005, 0.016), bolt, cal_at + cal_basis * Vector3(0.012, cal_size.y * 0.5 + 0.006, 0.0), hub).basis = cal_basis
+		for k in [-1.0, 1.0]:
+			var b := _mesh_instance(_cylinder(0.008, 0.012), bolt, cal_at + cal_basis * Vector3(cal_size.x * 0.5 + 0.004, 0.0, cal_size.z * 0.35 * k), hub)
+			b.basis = cal_basis * Basis(Vector3.BACK, PI * 0.5)
 	if front:
 		# The hose from the bottom yoke down the back of the fork leg to the caliper.
 		var j := _brake_line_joint() + _steer_axis * _build.fork_length
 		var fx := _fork_x() + 0.035
 		var slide := Vector3(fx, 0.0, 0.045) + _steer_axis * (_build.fork_length * 0.42)
-		var hose := _bike_only(_bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal.basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
+		var hose := _bike_only(_bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal_basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
 			0.005, _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4), hub, 8))
 		hose.name = "BrakeHose"
 		_bike_only(_box(slide, Vector3(0.012, 0.025, 0.02), _mat(Color(0.2, 0.2, 0.22), 0.6, 0.4), hub))
 	_current_slot = side + "_pads"
-	var pad := _box(cal_at + Vector3(0.0, 0.0, 0.0) + cal.basis.y * (cal_size.y * 0.5 + 0.012), Vector3(0.035, 0.024, 0.05), _mat(_col(), 0.4, 0.6), hub)
-	pad.basis = cal.basis
+	var pad_at := cal_at + cal_basis.y * (cal_size.y * 0.5 + 0.012)
+	var pad_mat := _mat(_col(), 0.4, 0.6)
+	_blender_mats[_current_slot] = {"": pad_mat, "paint": pad_mat}
+	if not _blender_on() or _blender_pieces(BlenderParts.path_for("pads", _part_id()), Transform3D(cal_basis, pad_at), {}, hub).is_empty():
+		var pad := _box(pad_at, Vector3(0.035, 0.024, 0.05), pad_mat, hub)
+		pad.basis = cal_basis
 
 
 ## Each disc style's face, drawn once: white where there's metal and clear where there isn't
@@ -6145,7 +6177,18 @@ func _draw_drum(side: String, wheel: Node3D, hub: Node3D, rim_r: float, x: float
 	var alloy := _tex(_mat(_col(), 0.9, 0.3), "brushed", 20.0, 0.6)
 	var dark := _mat(Color(0.08, 0.08, 0.09), 0.6, 0.45)
 	var sides := [1.0, -1.0] if shoes == "4ls" else [1.0]
-	for sx in sides:
+	# The new look's drum and backplate are made in Blender: the drum turning with the wheel, the
+	# backplate (its scoop to the front) still on the hub.
+	var path := BlenderParts.path_for("disc", _part_id())
+	var plate_path := BlenderParts.path_for("disc", _part_id() + "_plate")
+	var made := _blender_on() and not BlenderParts.part(path).is_empty() and not BlenderParts.part(plate_path).is_empty()
+	if made:
+		_blender_mats[_current_slot] = {"": alloy, "cast_alloy": alloy, "black_metal": dark}
+		var k := r / maxf(float(p.get("diameter", 180)) / 2000.0 * 1.1, 0.07)
+		for sx in sides:
+			_blender_pieces(path, Transform3D(Basis.from_scale(Vector3(1.0, k, k)), Vector3(0.018 * sx, 0.0, 0.0)), {}, wheel)
+			_blender_pieces(plate_path, Transform3D(Basis.from_scale(Vector3(sx, k, k * (1.0 if front else -1.0))), Vector3((x - 0.012) * sx, 0.0, 0.0)), {}, hub)
+	for sx in ([] if made else sides):
 		var drum := _mesh_instance(_cylinder(r, 0.07), alloy, Vector3(0.018 * sx, 0.0, 0.0), wheel)
 		drum.rotation.z = PI * 0.5
 		drum.name = "BrakeDrum"
@@ -6237,9 +6280,14 @@ func _draw_shock() -> void:
 	var col := _col()
 	var chrome := _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2)
 	_struts.clear()
+	# The new look's shocks are made in Blender, each stretched between the code's two points.
+	var made := BlenderParts.path_for("shock", _part_id())
+	if not _blender_on() or BlenderParts.part(made).is_empty():
+		made = ""
 	if shock.get("layout", "mono") == "twin":
 		var gas: bool = _part_id() == "twin_shock_gas"
 		var spring_mat := _mat(col, 0.6, 0.3)
+		_blender_mats["shock"] = {"": spring_mat, "paint": spring_mat, "chrome": chrome}
 		var softail := _arm_type() in ["softail", "hardtail"]
 		for side in [-1.0, 1.0]:
 			if softail:
@@ -6247,6 +6295,9 @@ func _draw_shock() -> void:
 				# and the front of the swingarm's triangle, so the back end looks rigid.
 				var front := Vector3(0.07 * side, _pivot.y - 0.03, _pivot.z - 0.28)
 				var arm_end := Vector3(0.07 * side, -0.05, 0.1)
+				if made != "":
+					_blender_strut(made, front, arm_end)
+					continue
 				_strut(front, arm_end, 0.012, chrome)
 				_strut(front.lerp(_pivot + arm_end, 0.1), arm_end + (front - _pivot - arm_end) * 0.35, 0.026, spring_mat)
 				continue
@@ -6257,15 +6308,23 @@ func _draw_shock() -> void:
 			# down further, the way a bobber's does.
 			top.y = minf(top.y, _seat_y - 0.07)
 			var bottom := Vector3(0.12 * side, 0.02, _arm_len - 0.08)
-			_strut(top, bottom, 0.012, chrome)
-			_strut(top + (_pivot + bottom - top) * 0.08, bottom + (top - _pivot - bottom) * 0.25, 0.028, spring_mat)
+			if made != "":
+				_blender_strut(made, top, bottom)
+			else:
+				_strut(top, bottom, 0.012, chrome)
+				_strut(top + (_pivot + bottom - top) * 0.08, bottom + (top - _pivot - bottom) * 0.25, 0.028, spring_mat)
 			if gas:
 				_tube(Vector3(0.155 * side, 0.22, _arm_len - 0.17), Vector3(0.155 * side, 0.32, _arm_len - 0.21), 0.016, chrome, Vector3.ONE, _swingarm)
 	else:
 		var top := Vector3(0.0, _seat_y - 0.14, _pivot.z + 0.02)
 		var bottom := Vector3(0.0, 0.07, 0.14)
-		_strut(top, bottom, 0.016, chrome)
-		_strut(top + (_pivot + bottom - top) * 0.1, bottom + (top - _pivot - bottom) * 0.3, 0.038, _mat(col, 0.3, 0.4))
+		var spring := _mat(col, 0.3, 0.4)
+		_blender_mats["shock"] = {"": spring, "paint": spring, "chrome": chrome, "anodised": _mat(col, 0.8, 0.3)}
+		if made != "":
+			_blender_strut(made, top, bottom)
+		else:
+			_strut(top, bottom, 0.016, chrome)
+			_strut(top + (_pivot + bottom - top) * 0.1, bottom + (top - _pivot - bottom) * 0.3, 0.038, spring)
 
 
 ## A shock absorber part between a point on the frame (`top`, model space) and one on the
@@ -6274,6 +6333,16 @@ func _strut(top: Vector3, bottom: Vector3, radius: float, mat: Material) -> void
 	var low := _pivot + bottom
 	var mi := _tube(top, low, radius, mat)
 	_struts.append({"mi": mi, "top": top, "bottom": bottom, "rest": top.distance_to(low)})
+
+
+## New look: a Blender-made shock (its glb at `path`, from mount_top down to mount_bottom) between
+## `top` and `bottom` as _strut takes them, each of its surfaces stretched from the top as the arm moves.
+func _blender_strut(path: String, top: Vector3, bottom: Vector3) -> void:
+	var rest := ((BlenderParts.part(path)["mounts"] as Dictionary)["bottom"] as Transform3D).origin.length()
+	var low := _pivot + bottom
+	var xf := Transform3D(_basis_up((top - low).normalized()) * Basis.from_scale(Vector3(1.0, top.distance_to(low) / rest, 1.0)), top)
+	for mi in _blender_pieces(path, xf):
+		_struts.append({"mi": mi, "top": top, "bottom": bottom, "rest": rest, "from_top": true})
 
 
 func _update_struts() -> void:
@@ -6285,6 +6354,11 @@ func _update_struts() -> void:
 		var low: Vector3 = _swingarm.transform * (s["bottom"] as Vector3)
 		var dir := low - top
 		var length := dir.length()
+		if s.get("from_top", false):
+			# (A Blender-made shock runs down from its top mount.)
+			mi.position = top
+			mi.basis = _basis_up(-dir / maxf(length, 0.001)) * Basis.from_scale(Vector3(1.0, length / float(s["rest"]), 1.0))
+			continue
 		mi.position = (top + low) * 0.5
 		mi.basis = _basis_up(dir / maxf(length, 0.001)) * Basis.from_scale(Vector3(1.0, length / float(s["rest"]), 1.0))
 
@@ -7441,15 +7515,17 @@ func build_pickers(meta: Dictionary, slot_meta := {}, layer := PICK_LAYER) -> vo
 					var piece := Transform3D(Basis(across, along, across.cross(along)), (a + b) * 0.5)
 					_add_box(body, piece, Vector3(thick, a.distance_to(b) + thick * 0.5, thick))
 				continue
-			if mi.has_meta("hoop"):
-				# A ring (the tyre, a rim barrel): boxes round it, with the middle left open.
-				var hoop: Vector3 = mi.get_meta("hoop")
+			if mi.has_meta("hoop") or _hoops.has(mi.get_instance_id()):
+				# A ring (the tyre, a rim barrel): boxes round it, with the middle left open. (A
+				# Blender-made one runs round its X, not its Y.)
+				var hoop: Vector3 = mi.get_meta("hoop") if mi.has_meta("hoop") else _hoops[mi.get_instance_id()]
+				var turn := Transform3D.IDENTITY if mi.has_meta("hoop") else Transform3D(Basis(Vector3.BACK, -PI * 0.5), Vector3.ZERO)
 				var mid_r := (hoop.x + hoop.y) * 0.5
 				var deep := hoop.y - hoop.x
 				for i in 16:
 					var a := TAU * i / 16.0
 					var piece := Transform3D(Basis(Vector3.UP, -a), Vector3(cos(a), 0.0, sin(a)) * mid_r)
-					_add_box(body, xf * piece, Vector3(deep, hoop.z, TAU * mid_r / 16.0))
+					_add_box(body, xf * turn * piece, Vector3(deep, hoop.z, TAU * mid_r / 16.0))
 				continue
 			if (mi as MeshInstance3D).mesh is TorusMesh:
 				var torus: TorusMesh = mi.mesh
@@ -8510,6 +8586,66 @@ func _blender_mat(slot: String, tag: String, from := "") -> Material:
 	mats[key] = m
 	_blender_mats[slot] = mats
 	return m
+
+
+## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,
+## yokes and shrouds (`shrouds` their finish) from the head on the steering, the sliders, axle
+## clamps, gaiters and brace (`lowers` their finish) from the axle on the front hub, so they slide
+## together as the fork works. False when the fork has no glbs.
+func _blender_fork(lowers: Material, shrouds: Material) -> bool:
+	var upper := BlenderParts.path_for("fork", _part_id() + "_upper")
+	var lower := BlenderParts.path_for("fork", _part_id() + "_lower")
+	if BlenderParts.part(upper).is_empty() or BlenderParts.part(lower).is_empty():
+		return false
+	var main := _mat(_col(), 0.9, 0.2)
+	_blender_mats[_current_slot] = {"": main, "paint": main, "cast_alloy": lowers, "chrome": shrouds,
+		"black_metal": _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35), "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)}
+	# Built at the fork's own length: stretched to the bike's if that's different.
+	var k := _build.fork_length / maxf(float(_part().get("length", _build.fork_length)), 0.01)
+	var along := Basis(Vector3.RIGHT, _steer_axis, Vector3.RIGHT.cross(_steer_axis)) * Basis.from_scale(Vector3(1.0, k, 1.0))
+	_blender_pieces(upper, Transform3D(along, Vector3.ZERO), {}, _steer_node)
+	_blender_pieces(lower, Transform3D(along, Vector3.ZERO), {}, _front_hub)
+	return true
+
+
+## New look: a wheel's Blender-made rim, spokes and hub (and the rear's cush drive) on its
+## spinning node, the rim in the part's own colour and the rest in the finishes its look gives
+## them. False when the wheel has no glb.
+func _blender_rim(wheel: Node3D, rim_r: float, rim_w: float, rim_mat: Material, chrome: Material) -> bool:
+	var path := BlenderParts.path_for("wheel", _part_id())
+	if BlenderParts.part(path).is_empty():
+		return false
+	var sc: Array = _look().get("stripe", [0.7, 0.1, 0.1])
+	_blender_mats[_current_slot] = {"": rim_mat, "polished_alloy": rim_mat, "cast_alloy": rim_mat, "carbon": rim_mat, "paint": rim_mat,
+		"chrome": chrome, "black_metal": _look_finish("black", rim_mat), "anodised": _look_finish("gold", rim_mat),
+		"brushed_steel": _look_finish("brushed", rim_mat), "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3),
+		"paint_2": _mat(Color(float(sc[0]), float(sc[1]), float(sc[2])), 0.2, 0.4, 0.5), "rubber": _mat(Color(0.05, 0.05, 0.05), 0.0, 0.7)}
+	var hoop := false
+	for mi in _blender_pieces(path, Transform3D.IDENTITY, {}, wheel):
+		# (The rim itself, and any cast spokes with it, aimed at as a hoop.)
+		if not hoop and (mi as MeshInstance3D).material_override == rim_mat:
+			_hoops[mi.get_instance_id()] = Vector3(rim_r - 0.03, rim_r, rim_w)
+			hoop = true
+	if _current_slot == "rear_wheel":
+		_blender_pieces(BlenderParts.ROOT + "wheel/fitting/cush_drive.glb", Transform3D.IDENTITY, {}, wheel)
+	return true
+
+
+## New look: a tyre made of its tread's Blender section bent round the hoop (see
+## BlenderParts.tyre_hoop) on the wheel's spinning node, in `rubber`, its lighter levels of
+## detail drawn further off. Returns the rubber's mesh, or null when the tread has no glb.
+func _blender_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w: float, tread: String, rubber: Material) -> MeshInstance3D:
+	var lods := BlenderParts.tyre_hoop(BlenderParts.tyre_path(tread), rim_r, radius, width, rim_w)
+	if lods.is_empty():
+		return null
+	_blender_mats[_current_slot] = {"": rubber, "rubber": rubber}
+	var tyre_mi: MeshInstance3D = null
+	for mi in _blender_meshes(BlenderParts.with_lods(lods), Transform3D.IDENTITY, {}, wheel):
+		if tyre_mi == null and (mi as MeshInstance3D).material_override == rubber:
+			tyre_mi = mi
+	if tyre_mi != null:
+		_hoops[tyre_mi.get_instance_id()] = Vector3(rim_r, radius, width)
+	return tyre_mi
 
 
 # ---------------------------------------------------------------------------- mesh helpers
