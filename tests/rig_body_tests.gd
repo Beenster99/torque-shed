@@ -58,14 +58,24 @@ static func measure(m: BikeModel) -> Dictionary:
 		z0 = minf(z0, v.z)
 		z1 = maxf(z1, v.z)
 		top = maxf(top, v.y)
-	var roof := 0.0
+	# (Along the roof, short of the 2 cm at each end where it rounds up into the tunnel's mouths:
+	# on a short tank, an MX bike's, those come well inside its middle.)
 	var span := z1 - z0
+	var low := []
+	var r0 := INF
+	var r1 := -INF
 	for v in tank:
 		if absf(v.x) > 0.002 or v.z < z0 + span * 0.2 or v.z > z1 - span * 0.2:
 			continue
 		var on: Vector3 = RigBodywork.line_at(floor_line, v.z)[0]
 		if v.y < on.y + 0.03:
-			roof = maxf(roof, absf(v.y - on.y))
+			low.append(Vector2(v.z, v.y - on.y))
+			r0 = minf(r0, v.z)
+			r1 = maxf(r1, v.z)
+	var roof := 0.0
+	for q: Vector2 in low:
+		if q.x > r0 + 0.02 and q.x < r1 - 0.02:
+			roof = maxf(roof, absf(q.y))
 	var hip: Vector3 = r["seat_surface"]
 	var seat := points(m, "saddle")
 	var seat_top := -INF
