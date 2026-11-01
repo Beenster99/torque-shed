@@ -294,7 +294,8 @@ func test_wheels() -> void:
 
 ## Every tread pattern is made in Blender, and bent round the hoop it makes a tyre the size
 ## BikeModel's is: between the bead in the rim and the crown, no wider than the tyre, its crown
-## (or its knobs' tops) where BikeModel's tread is, on a skinny trail tyre and a fat rear alike.
+## (or its knobs' tops) where BikeModel's tread is, on a skinny trail tyre and a fat rear alike,
+## and whole across its crown, with no gap round the middle.
 func test_tyres() -> void:
 	var out := []
 	for tread in ["slick", "rib", "touring", "sport", "cruiser", "trail", "sipes", "knobs", "blocks", "studs"]:
@@ -318,6 +319,45 @@ func test_tyres() -> void:
 			if lo < float(size[0]) - 0.0075 or absf(hi - float(size[1])) > 0.004 or wide > float(size[2]) * 0.5 + 0.002:
 				out.append("%s on %.2f m: %.3f to %.3f m round, %.3f across" % [tread, size[1], lo, hi, wide * 2.0])
 	check(out.is_empty(), "every tread pattern makes a tyre BikeModel's size round the hoop %s" % str(out.slice(0, 6)))
+	var holes := []
+	for tread in ["slick", "rib", "touring", "sport", "cruiser", "trail", "sipes", "knobs", "blocks", "studs"]:
+		var hole := _tyre_hole(BlenderParts.tyre_path(tread))
+		if hole != "":
+			holes.append("%s: %s" % [tread, hole])
+	check(holes.is_empty(), "every tread pattern's tyre is whole across its crown, with no gap round the middle, at every level of detail %s" % str(holes))
+
+
+## Where a tyre's Blender section (`path`, in the tyre's units) is open across its crown: straight
+## down onto it anywhere across the tread, the first thing hit must be the crown facing out, above
+## the sidewalls' bulge, not the inside of the tyre through a gap. "" when it's whole.
+static func _tyre_hole(path: String) -> String:
+	var p := BlenderParts.part(path)
+	if p.is_empty():
+		return "no glb"
+	for lod in 3:
+		var mesh: Mesh = p["lods"][lod]
+		var tris := []
+		for s in mesh.get_surface_count():
+			var a := mesh.surface_get_arrays(s)
+			var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+			var normals: PackedVector3Array = a[Mesh.ARRAY_NORMAL]
+			var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+			for i in range(0, idx.size(), 3):
+				tris.append([verts[idx[i]], verts[idx[i + 1]], verts[idx[i + 2]], normals[idx[i]] + normals[idx[i + 1]] + normals[idx[i + 2]]])
+		for k in 37:
+			var x := -0.88 + 1.76 * k / 36.0
+			for z in [0.3, 0.7]:
+				var from := Vector3(x, 2.0, z)
+				var best := -INF
+				var up := 0.0
+				for t in tris:
+					var hit: Variant = Geometry3D.ray_intersects_triangle(from, Vector3.DOWN, t[0], t[1], t[2])
+					if hit != null and (hit as Vector3).y > best:
+						best = (hit as Vector3).y
+						up = (t[3] as Vector3).y
+				if best < BlenderParts.TYRE_BULGE or up <= 0.0:
+					return "lod%d open at %.2f across (first hit %.2f up, facing %s)" % [lod, x, best, "out" if up > 0.0 else "in"]
+	return ""
 
 
 ## How far `v` is from the polyline `curve`.
