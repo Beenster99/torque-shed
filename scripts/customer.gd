@@ -248,11 +248,6 @@ func bike_src() -> Dictionary:
 func _set_parked(on_stand: bool) -> void:
 	if _bike == null:
 		return
-	if _model:
-		_model.free()
-	_model = BikeModel.new()
-	_model.baked = true   # ridden in and out, not worked on: far fewer draw calls (see BikeModel._bake_static)
-	_model.rider_color = _look.get("top", Color(0, 0, 0, 0)) if _look.get("top") is Color else Color(0, 0, 0, 0)
 	_lean.basis = Basis()
 	var lift := 0.0
 	var stand := ""
@@ -263,12 +258,23 @@ func _set_parked(on_stand: bool) -> void:
 		elif str(_build.parts.get("centre_stand", "none")) != "none":
 			stand = "centre"
 			lift = _build.centre_lift
-	_model.stand_pose = stand
+	# The bike is drawn once, rider and all: parking it or getting back on only swings the stand
+	# and shows or hides the rider (see BikeModel.set_stand). Drawing it afresh each time was a
+	# stutter every time a customer parked up or rode off.
+	if _model == null or not is_instance_valid(_model) or not _model.set_stand(stand):
+		if _model and is_instance_valid(_model):
+			_model.free()
+		_model = BikeModel.new()
+		_model.baked = true   # ridden in and out, not worked on: far fewer draw calls (see BikeModel._bake_static)
+		_model.loose_stands = true
+		_model.rider_color = _look.get("top", Color(0, 0, 0, 0)) if _look.get("top") is Color else Color(0, 0, 0, 0)
+		_model.stand_pose = stand
+		_lean.add_child(_model)
+		_model.build_from(_build, _bike_paint, {}, null, true)
 	_model.position.y = _build.rear_radius + lift
-	_lean.add_child(_model)
-	_model.build_from(_build, _bike_paint, {}, null, not on_stand)
+	_model.set_rider_visible(not on_stand)
+	_model.set_lights(not on_stand, not on_stand)
 	if not on_stand:
-		_model.set_lights(true, true)
 		# Its engine is heard (the sound bakes in the background); not on a headless run, which
 		# would only wait on the bake at exit.
 		if _sound == null and DisplayServer.get_name() != "headless":
@@ -298,7 +304,8 @@ func drop_bike() -> void:
 
 ## Whether someone is drawn sitting on their bike (the customer once they've got on it).
 func rider_on_bike() -> bool:
-	return _model != null and is_instance_valid(_model) and _model._rider != null and is_instance_valid(_model._rider)
+	return _model != null and is_instance_valid(_model) and _model._rider != null and is_instance_valid(_model._rider) \
+			and _model._rider.visible
 
 
 ## Whether the customer is drawn on foot.
