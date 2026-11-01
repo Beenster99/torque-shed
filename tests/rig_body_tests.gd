@@ -153,3 +153,62 @@ func test_deterministic() -> void:
 
 
 
+
+
+## How far a fairing's side panels may stand off the tank's flank where they meet it, and the
+## least room a full one keeps round the engine's hard points (the rig's engine box) each side.
+const FAIRING_GAP := 0.03
+const ENGINE_ROOM := 0.0
+
+
+## Every frame-mounted fairing in the Rig built look is its Blender-made panel set on the head
+## stock's stay: a full one wraps the engine (wider than it, its belly under it and no lower than
+## the style's ground line, its sides back past it), each one reaches back to the tank with no
+## gap, its mirrors stand on its own mounts, and the bar-mounted ones stay the code's.
+func test_fairings() -> void:
+	var off := []
+	var sets := 0
+	for id in PartsDB.by_kind["fairing"]:
+		var part := PartsDB.get_part(str(id))
+		for style in PartsDB.styles_of(str(id)).slice(0, 2):
+			var parts := Contracts.style_build(style)
+			parts["fairing"] = id
+			parts["mirrors"] = "fairing_mirrors"
+			var m := _model()
+			m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+			var what := "%s on a %s" % [id, style]
+			var set_name := m.fairing_set()
+			var shell: Array = (m._slot_meshes["fairing"] as Array).filter(func(mi): return str(mi.name) == "FairingShell")
+			if not part.get("frame_mount", false):
+				if set_name != "":
+					off.append("%s: a bar fairing drawn as a set" % what)
+				m.free()
+				continue
+			sets += 1
+			if set_name == "" or shell.is_empty() or not _blender_made(shell[0]):
+				off.append("%s: not its panel set" % what)
+				m.free()
+				continue
+			var box := m.slot_bounds("fairing")
+			var tank := m.slot_bounds("tank")
+			if box.end.z < tank.position.z - FAIRING_GAP:
+				off.append("%s: %.0f mm short of the tank" % [what, (tank.position.z - box.end.z) * 1000.0])
+			if set_name in RigBodywork.FULL_SETS:
+				var eng: AABB = m.rig["engine_box"]
+				if box.end.x < eng.end.x + ENGINE_ROOM or box.position.y > eng.position.y + 0.05:
+					off.append("%s: doesn't wrap the engine (%.2f wide of %.2f, belly %.2f over its sump %.2f)" % [what, box.end.x, eng.end.x, box.position.y, eng.position.y])
+				if box.position.y < float(m.rig["belly_y"]) - 0.005:
+					off.append("%s: belly %.0f mm under the ground line" % [what, (float(m.rig["belly_y"]) - box.position.y) * 1000.0])
+			if m._fairing_mounts.has("mirror_r") and m.is_fitted("mirrors"):
+				var mb := m.slot_bounds("mirrors")
+				var at: Vector3 = m._fairing_mounts["mirror_r"]
+				if not mb.grow(0.01).has_point(at):
+					off.append("%s: mirrors off their mounts" % what)
+			m.free()
+	check(off.is_empty() and sets >= 6, "every frame-mounted fairing (%d) is its panel set, wrapping the engine and meeting the tank, its mirrors on its mounts; bar ones the code's %s" % [sets, off])
+
+
+static func _blender_made(mi) -> bool:
+	return mi is MeshInstance3D and (mi as MeshInstance3D).mesh is ArrayMesh and ((mi as MeshInstance3D).mesh as ArrayMesh).get_surface_count() > 0 \
+		and BlenderParts.tag_of((mi as MeshInstance3D).mesh.surface_get_material(0)) != ""
+

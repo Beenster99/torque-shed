@@ -1019,6 +1019,7 @@ func _run_all() -> void:
 	await _t(&"_test_bike_rig_reform")
 	await _t(&"_test_rig_body_on_rig")
 	await _t(&"_test_rig_body_deterministic")
+	await _t(&"_test_rig_body_fairings")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -25097,3 +25098,7 @@ func _test_rig_body_on_rig() -> void:
 
 func _test_rig_body_deterministic() -> void:
 	_rig_body().test_deterministic()
+
+
+func _test_rig_body_fairings() -> void:
+	_rig_body().test_fairings()

@@ -244,3 +244,38 @@ static func cowl_fit(rig: Dictionary, keys: Array, from: Vector3, slope: float, 
 	var warp := func(p: Vector3) -> Vector3:
 		return from + dir * (p.z * kz) + up * p.y + Vector3(p.x, 0.0, 0.0)
 	return {"weights": weights, "warp": warp}
+
+
+# ---------------------------------------------------------------------------- fairing
+
+## How far a fairing set's keys move at weight 1 (see blender/parts/fairing/sets.py).
+const FAIRING_WIDE := 0.15       # share wider all round
+const FAIRING_LONG := 0.15       # share longer behind the stay
+const FAIRING_DROP := 0.08       # m lower at the belly
+## A full fairing's room round the engine each side, and its belly pan's over the style's ground line.
+const FAIRING_ROOM := 0.035
+const BELLY_OVER := 0.02
+## The sets whose side panels and belly wrap the engine (the others stop above it).
+const FULL_SETS := ["sport", "race"]
+
+## A fairing set on the bike's rig: {"weights", "warp", "kx"} for the set whose base mesh (its
+## keys at 0) is bounded by `box`, in the glb's space from the stay root: wide enough round the
+## engine, a full one's belly down to the style's ground line and its sides back to the seat.
+static func fairing_fit(rig: Dictionary, set_name: String, box: AABB, engine := AABB(), frame_half_w := 0.0) -> Dictionary:
+	var stay: Vector3 = rig["stay_head"]
+	var weights := {}
+	if set_name in FULL_SETS:
+		# Round the engine as drawn (its covers stand a little proud of the rig's hard points).
+		var eng: AABB = rig.get("engine_box", AABB())
+		if engine.has_volume():
+			eng = eng.merge(engine)
+		# (And outside the frame's spars, which run back under its side panels.)
+		var need := maxf(maxf(absf(eng.position.x), absf(eng.end.x)), frame_half_w) + FAIRING_ROOM
+		weights["width"] = clampf((need / maxf(box.end.x, 0.05) - 1.0) / FAIRING_WIDE, 0.0, 2.5)
+		if rig.has("belly_y"):
+			weights["drop"] = clampf((stay.y + box.position.y - float(rig["belly_y"]) - BELLY_OVER) / FAIRING_DROP, -1.0, 2.0)
+		if rig.has("seat_front") and box.end.z > 0.1:
+			var reach := maxf((rig["seat_front"] as Vector3).z, eng.end.z + FAIRING_ROOM) - stay.z
+			weights["length"] = clampf((reach / box.end.z - 1.0) / FAIRING_LONG, -1.0, 1.5)
+	var warp := func(p: Vector3) -> Vector3: return stay + p
+	return {"weights": weights, "warp": warp, "kx": 1.0 + FAIRING_WIDE * float(weights.get("width", 0.0))}
