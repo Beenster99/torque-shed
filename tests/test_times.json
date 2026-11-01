@@ -656,6 +656,7 @@
 	"_test_rail_timetable": 30,
 	"_test_rail_regions": 2000,
 	"_test_rail_viaduct": 100,
+	"_test_rail_stock": 150,
 	"_test_rail_ride": 6000,
 	"_test_scenery_postcards_sheet": 50,
 	"_test_scenery_ride": 9000,

@@ -14,6 +14,7 @@ extends Node3D
 ## bell ringing.
 
 const Geo := preload("res://scripts/scenery/rail_geo.gd")
+const Models := preload("res://scripts/scenery/rail_models.gd")
 
 ## A train speeds up and slows down at this (m/s/s).
 const ACCEL := 0.45
@@ -356,8 +357,9 @@ static func gate_closed(gt: Dictionary, all: Array, t: float, day: float) -> boo
 # ---------------------------------------------------------------------------- the stock's meshes
 
 static func stock_key(stock: Dictionary, kind: String) -> String:
-	return ("%s|%s|%s|%s|%s|%s|%s" % [kind, stock.get("nose", "unit"), stock.get("body", ""), stock.get("stripe", ""),
-		stock.get("cab", ""), stock.get("car_len", 20), stock.get("roof", "")]).md5_text()
+	return ("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [kind, stock.get("nose", "unit"), stock.get("body", ""),
+		stock.get("stripe", ""), stock.get("cab", ""), stock.get("car_len", 20), stock.get("roof", ""),
+		stock.get("doors", ""), stock.get("electrified", false), stock.get("wagons", ""), stock.get("cars", 4)]).md5_text()
 
 
 static func _col(stock: Dictionary, field: String, fallback: Color) -> Color:
@@ -365,8 +367,14 @@ static func _col(stock: Dictionary, field: String, fallback: Color) -> Color:
 
 
 ## A car of stock `stock` (a kit row: nose "unit", "round", "loco", "freight" or "tram", colours body, stripe, cab,
-## roof; car_len) for a line of kind `kind`: `part` "cab" (the leading end: a cab or a locomotive, facing -z) or "car".
-## Its middle on the rails' top, -z forward.
+## roof and doors; car_len, cars, wagons, electrified) for a line of kind `kind`: `part` "cab" (the leading end: a cab
+## or a locomotive, facing -z) or "car". Its middle on the rails' top, -z forward.
+##
+## Each is a few hundred faces at most (one MultiMesh draws every one of a kind): its body, roof and underframe; bogies
+## with their wheels, side frames and axle boxes (a tram hides its own behind a skirt); doors with their windows down
+## both sides of a passenger car, gangways between cars; buffers and couplings on locomotives and wagons; ribs down a
+## wagon; grilles, fans and horns on a locomotive, air conditioning on a unit's roof and a pantograph up to the wire on
+## an electric train; a cab's windscreen, headlamps, red tail lamps and destination blind or marker lamp.
 static func stock_mesh(stock: Dictionary, kind: String, part: String) -> Mesh:
 	var key := stock_key(stock, kind) + part
 	if _stock_meshes.has(key):
@@ -379,68 +387,224 @@ static func stock_mesh(stock: Dictionary, kind: String, part: String) -> Mesh:
 	var half_l := float(stock.get("car_len", 20.0)) * 0.5 - 0.45
 	var small := kind in ["narrow_gauge", "funicular"]
 	var w := 1.15 if small else 1.42
+	var gauge := 0.5 if small else 0.72
+	var wheel_r := 0.32 if small else 0.43
 	var floor_y := 0.45 if nose == "tram" else (0.95 if not small else 0.7)
 	var top := 3.5 if nose == "tram" else (3.85 if not small else 3.0)
 	var geo := Geo.new()
 	var freight := nose == "freight" or (nose == "loco" and part == "car" and str(stock.get("wagons", "")) == "freight")
-	var colour := cab_c if part == "cab" and nose in ["loco", "freight"] else body
-	if freight and part == "car":
-		colour = body
+	var wagon := freight and part == "car"
+	var loco := part == "cab" and nose in ["loco", "freight"]
+	var coach := not wagon and not loco   # (a passenger car or a unit's cab)
+	var colour := cab_c if loco else body
+	if wagon:
 		top = 3.6
-	# The body, its roof and its underframe.
+	var door_c := _col(stock, "doors", colour.darkened(0.14))
+	var electric := bool(stock.get("electrified", false)) or kind in ["tram", "light_rail"]
+	var dark := Color(0.08, 0.08, 0.09)
+	var grey := Color(0.24, 0.24, 0.25)
+	# The body, its roof (and gutters) and its underframe.
 	geo.box("matte", Vector3(0.0, (floor_y + top) * 0.5, 0.0), Vector3(w, (top - floor_y) * 0.5, half_l), colour)
 	geo.box("matte", Vector3(0.0, top + 0.12, 0.0), Vector3(w - 0.2, 0.12, half_l - 0.2), roof)
-	geo.box("matte", Vector3(0.0, floor_y - 0.12, 0.0), Vector3(w - 0.25, 0.12, half_l - 0.4), Color(0.08, 0.08, 0.09))
-	if nose != "tram":
-		for z: float in [-1.0, 1.0]:
-			geo.box("matte", Vector3(0.0, 0.5, z * (half_l - 2.6)), Vector3(1.0, 0.35, 1.3), Color(0.07, 0.07, 0.08))
-	# Its stripe and windows down both sides (a freight wagon has neither; a locomotive only its cab's).
+	for side: float in [-1.0, 1.0]:
+		var x: float = side * (w + 0.013)
+		geo.quad("matte", Vector3(x, top - 0.16, -half_l), Vector3(x, top - 0.16, half_l), Vector3(x, top - 0.08, half_l),
+			Vector3(x, top - 0.08, -half_l), colour.darkened(0.3))
+	geo.box("matte", Vector3(0.0, floor_y - 0.12, 0.0), Vector3(w - 0.25, 0.12, half_l - 0.4), dark)
+	# Its running gear: two bogies, each two axles with their wheels, side frames and axle boxes (a tram's are behind
+	# its skirt).
+	if nose == "tram":
+		geo.box("matte", Vector3(0.0, floor_y - 0.2, 0.0), Vector3(w - 0.05, 0.2, half_l - 0.3), colour.darkened(0.35))
+	else:
+		var bogie := minf(2.6, half_l * 0.45)
+		var base := minf(1.2, bogie * 0.45)
+		for zb: float in [-half_l + bogie, half_l - bogie]:
+			geo.box("matte", Vector3(0.0, wheel_r + 0.24, zb), Vector3(gauge + 0.22, 0.08, 0.3), dark)
+			for side: float in [-1.0, 1.0]:
+				geo.box("matte", Vector3(side * (gauge + 0.2), wheel_r + 0.1, zb), Vector3(0.06, 0.15, base + 0.35), dark)
+				for za: float in [zb - base, zb + base]:
+					geo.disc("steel", Vector3(side * gauge, wheel_r, za), Vector3.RIGHT, wheel_r, 0.06, grey)
+					geo.box("matte", Vector3(side * (gauge + 0.28), wheel_r, za), Vector3(0.07, 0.1, 0.14), grey)
+		if coach and half_l > 7.0:
+			# (the equipment slung under it, between its bogies)
+			for z: float in [-half_l * 0.22, half_l * 0.22]:
+				geo.box("matte", Vector3(0.25 * signf(z), floor_y - 0.45, z), Vector3(0.75, 0.24, half_l * 0.15), grey)
+		elif loco:
+			geo.box("matte", Vector3(0.0, floor_y - 0.45, 0.0), Vector3(w - 0.35, 0.3, half_l * 0.3), grey)
+	# Its ends: gangways between passenger cars; buffers and a coupling on a locomotive and its wagons; the coupler
+	# under a unit's cab.
+	for end: float in [-1.0, 1.0]:
+		var ze: float = end * half_l
+		var front := end < 0.0 and part == "cab"
+		if coach and not front:
+			geo.box("matte", Vector3(0.0, floor_y + 1.1, ze + end * 0.22), Vector3(0.55, 1.05, 0.22), dark)
+		elif not coach and nose != "tram":
+			geo.box("matte", Vector3(0.0, floor_y - 0.05, ze + end * 0.3), Vector3(0.14, 0.12, 0.3), dark)
+			if nose == "loco":
+				for x: float in [-0.85, 0.85]:
+					geo.disc("steel", Vector3(x, floor_y + 0.05, ze + end * 0.25), Vector3.BACK, 0.17, 0.25, grey, 6)
+		if front and coach and nose != "round":
+			geo.box("matte", Vector3(0.0, floor_y - 0.05, ze - 0.3), Vector3(0.18, 0.14, 0.3), dark)
+	# Its stripe, doors and windows down both sides (a wagon has ribs instead; a locomotive its cab windows, doors and
+	# grilles).
 	var win_lo := floor_y + (1.0 if nose != "tram" else 0.8)
 	var win_hi := top - 0.55
+	var doors: Array = []   # [middle, half width]
+	if coach:
+		if nose == "loco":
+			doors = [[-half_l + 0.9, 0.5], [half_l - 0.9, 0.5]]
+		elif part == "cab":
+			doors = [[-half_l + 1.6 if nose != "round" else -half_l + 1.1, 0.4], [half_l * 0.5, 0.65]]
+		else:
+			doors = [[-half_l * 0.5, 0.65], [half_l * 0.5, 0.65]]
+	elif loco:
+		doors = [[-half_l + 2.9, 0.38], [half_l - 2.9, 0.38]]
 	for side: float in [-1.0, 1.0]:
 		var x: float = side * (w + 0.012)
-		if not (freight and part == "car"):
+		var xd: float = side * (w + 0.02)
+		if not wagon:
 			geo.quad("matte", Vector3(x, win_lo - 0.45, -half_l), Vector3(x, win_lo - 0.45, half_l),
 				Vector3(x, win_lo - 0.15, half_l), Vector3(x, win_lo - 0.15, -half_l), stripe)
-		if part == "cab" and nose in ["loco", "freight"]:
-			geo.quad("window", Vector3(x, win_lo, -half_l + 0.6), Vector3(x, win_lo, -half_l + 2.6),
-				Vector3(x, win_hi, -half_l + 2.6), Vector3(x, win_hi, -half_l + 0.6), Color(0.1, 0.12, 0.14))
-		elif not freight:
+		else:
+			var z := -half_l + 0.8
+			while z < half_l - 0.5:
+				geo.box("matte", Vector3(side * (w + 0.03), (floor_y + top) * 0.5, z), Vector3(0.04, (top - floor_y) * 0.5 - 0.05,
+					0.06), colour.darkened(0.25))
+				z += 1.6
+			geo.box("matte", Vector3(side * (w + 0.03), top - 0.08, 0.0), Vector3(0.045, 0.08, half_l), colour.darkened(0.25))
+		for d: Array in doors:
+			var dz := float(d[0])
+			var hw := float(d[1])
+			var xo: float = side * (w + 0.016)
+			geo.quad("matte", Vector3(xo, floor_y + 0.02, dz - hw - 0.06), Vector3(xo, floor_y + 0.02, dz + hw + 0.06),
+				Vector3(xo, top - 0.3, dz + hw + 0.06), Vector3(xo, top - 0.3, dz - hw - 0.06), dark)
+			geo.quad("matte", Vector3(xd, floor_y + 0.05, dz - hw), Vector3(xd, floor_y + 0.05, dz + hw),
+				Vector3(xd, top - 0.35, dz + hw), Vector3(xd, top - 0.35, dz - hw), door_c if coach else colour.darkened(0.2))
+			var xw: float = side * (w + 0.026)
+			geo.quad("window", Vector3(xw, win_lo + 0.1, dz - hw + 0.15), Vector3(xw, win_lo + 0.1, dz + hw - 0.15),
+				Vector3(xw, win_hi, dz + hw - 0.15), Vector3(xw, win_hi, dz - hw + 0.15), Color(0.1, 0.12, 0.14))
+			if hw > 0.5:
+				var xs: float = side * (w + 0.03)
+				geo.quad("matte", Vector3(xs, floor_y + 0.05, dz - 0.025), Vector3(xs, floor_y + 0.05, dz + 0.025),
+					Vector3(xs, top - 0.35, dz + 0.025), Vector3(xs, top - 0.35, dz - 0.025), dark)
+		if loco:
+			# (its cab windows at both ends, and the grilles down its engine room)
+			for e: float in [-1.0, 1.0]:
+				geo.quad("window", Vector3(x, win_lo, e * (half_l - 0.6)), Vector3(x, win_lo, e * (half_l - 2.3)),
+					Vector3(x, win_hi, e * (half_l - 2.3)), Vector3(x, win_hi, e * (half_l - 0.6)), Color(0.1, 0.12, 0.14))
+			var z := -half_l + 3.8
+			while z + 1.0 < half_l - 3.4:
+				geo.quad("matte", Vector3(x, win_lo - 0.05, z), Vector3(x, win_lo - 0.05, z + 1.0), Vector3(x, win_hi, z + 1.0),
+					Vector3(x, win_hi, z), dark.lightened(0.12))
+				z += 1.4
+		elif coach:
 			var z := -half_l + 1.2
 			while z + 1.4 < half_l - 0.8:
-				geo.quad("window", Vector3(x, win_lo, z), Vector3(x, win_lo, z + 1.4), Vector3(x, win_hi, z + 1.4),
-					Vector3(x, win_hi, z), Color(0.1, 0.12, 0.14))
-				z += 2.0
+				var clear := true
+				for d: Array in doors:
+					if z < float(d[0]) + float(d[1]) + 0.2 and z + 1.4 > float(d[0]) - float(d[1]) - 0.2:
+						clear = false
+				if clear:
+					geo.quad("window", Vector3(x, win_lo, z), Vector3(x, win_lo, z + 1.4), Vector3(x, win_hi, z + 1.4),
+						Vector3(x, win_hi, z), Color(0.1, 0.12, 0.14))
+					z += 2.0
+				else:
+					z += 0.5
+	# Its roof: air conditioning on a unit, vents on a coach, fans and horns on a locomotive.
+	if coach and nose != "loco" and half_l > 5.0:
+		for e: float in [-1.0, 1.0]:
+			geo.box("matte", Vector3(0.0, top + 0.3, e * half_l * 0.55), Vector3(0.75, 0.14, 1.1), roof.lightened(0.12))
+	elif coach:
+		var z := -half_l + 2.0
+		while z < half_l - 1.5:
+			geo.box("matte", Vector3(0.0, top + 0.3, z), Vector3(0.2, 0.08, 0.2), roof.darkened(0.3))
+			z += 3.0
+	if loco:
+		for z: float in [-half_l * 0.25, 0.0, half_l * 0.25]:
+			geo.disc("matte", Vector3(0.0, top + 0.26, z), Vector3.UP, 0.55, 0.04, dark.lightened(0.1))
+	if part == "cab" and nose != "round":
+		for x: float in [-0.25, 0.25]:
+			geo.disc("steel", Vector3(x, top + 0.34, -half_l + 0.7), Vector3.BACK, 0.07, 0.2, grey, 6)
+	# A pantograph up to the wire: on a locomotive, a tram or a short unit's cab, else on every car behind it.
+	var panto := electric and not wagon and (part == "cab") == (nose in ["loco", "tram"] or kind == "light_rail" or
+		int(stock.get("cars", 4)) <= 2)
+	if panto:
+		var z0 := 0.0 if part == "car" or loco else half_l - 3.0
+		var h := maxf(Models.WIRE_H - 0.05, top + 1.0)
+		var ins := Color(0.72, 0.66, 0.55)
+		for x: float in [-0.45, 0.45]:
+			for dz: float in [-0.55, 0.55]:
+				geo.box("matte", Vector3(x, top + 0.32, z0 + dz), Vector3(0.06, 0.08, 0.06), ins)
+		geo.box("steel", Vector3(0.0, top + 0.42, z0), Vector3(0.55, 0.03, 0.7), grey)
+		var knee := Vector3(0.0, (top + 0.45 + h) * 0.5 + 0.15, z0 - 0.7)
+		for x: float in [-0.3, 0.3]:
+			_bar(geo, Vector3(x, top + 0.45, z0 + 0.55), knee + Vector3(x * 0.3, 0.0, 0.0), 0.03, grey)
+		_bar(geo, knee, Vector3(0.0, h - 0.06, z0 + 0.2), 0.025, grey)
+		geo.box("steel", Vector3(0.0, h - 0.03, z0 + 0.2), Vector3(0.75, 0.03, 0.08), grey)
+		for x: float in [-1.0, 1.0]:
+			_bar(geo, Vector3(x * 0.75, h - 0.03, z0 + 0.2), Vector3(x * 0.95, h - 0.2, z0 + 0.2), 0.025, grey)
 	if part == "cab":
-		# The cab's front: its windscreen, its lamps, and on a "round" nose a long tapered snout.
-		var zf := -half_l - 0.012
-		if nose == "round":
-			var tip := -half_l - 4.5
-			var mid_y := floor_y + 1.0
-			for side: float in [-1.0, 1.0]:
-				geo.quad("matte", Vector3(side * w, floor_y, -half_l), Vector3(side * w, top, -half_l),
-					Vector3(side * 0.35, mid_y + 0.4, tip), Vector3(side * 0.6, floor_y, tip + 0.3), colour)
-			geo.quad("matte", Vector3(-w, top, -half_l), Vector3(w, top, -half_l), Vector3(0.35, mid_y + 0.4, tip),
-				Vector3(-0.35, mid_y + 0.4, tip), colour)
-			geo.quad("window", Vector3(-w + 0.3, top - 0.1, -half_l - 0.4), Vector3(w - 0.3, top - 0.1, -half_l - 0.4),
-				Vector3(0.7, top - 0.7, -half_l - 1.8), Vector3(-0.7, top - 0.7, -half_l - 1.8), Color(0.05, 0.06, 0.08))
-		else:
-			geo.quad("window", Vector3(-w + 0.2, win_lo + 0.2, zf), Vector3(w - 0.2, win_lo + 0.2, zf),
-				Vector3(w - 0.2, win_hi, zf), Vector3(-w + 0.2, win_hi, zf), Color(0.05, 0.06, 0.08))
-			geo.quad("matte", Vector3(-w, floor_y, zf), Vector3(w, floor_y, zf), Vector3(w, win_lo - 0.1, zf),
-				Vector3(-w, win_lo - 0.1, zf), stripe if nose == "unit" else colour.darkened(0.1))
-			if nose == "unit" or nose == "tram":
-				geo.quad("matte", Vector3(-w, win_lo - 0.6, zf - 0.01), Vector3(w, win_lo - 0.6, zf - 0.01),
-					Vector3(w, win_lo - 0.1, zf - 0.01), Vector3(-w, win_lo - 0.1, zf - 0.01), Color(0.95, 0.8, 0.1))
-			for x: float in [-w + 0.4, w - 0.4]:
-				geo.box("glow", Vector3(x, floor_y + 0.35, zf - 0.03), Vector3(0.14, 0.09, 0.03), Color(1.0, 0.95, 0.85))
-	if kind in ["tram", "light_rail"]:
-		# (the pantograph up to the wire)
-		geo.box("steel", Vector3(0.0, top + 0.6, 0.0), Vector3(0.05, 0.5, 0.05), Color(0.2, 0.2, 0.2))
-		geo.box("steel", Vector3(0.0, top + 1.1, 0.0), Vector3(0.7, 0.03, 0.08), Color(0.2, 0.2, 0.2))
+		_cab_front(geo, nose, half_l, w, floor_y, top, win_lo, win_hi, colour, stripe, loco)
+		if loco:
+			_cab_front(geo, nose, -half_l, w, floor_y, top, win_lo, win_hi, colour, stripe, loco)
 	var m := geo.mesh()
 	_stock_meshes[key] = m
 	return m
+
+
+## The front of a cab whose end is at z = -`end` (a negative `end` its back end, a locomotive's second cab): its
+## windscreen (or a "round" nose's long tapered snout), headlamps and red tail lamps, and over the windscreen a unit's
+## destination blind or a locomotive's marker lamp.
+static func _cab_front(geo: Geo, nose: String, end: float, w: float, floor_y: float, top: float, win_lo: float,
+		win_hi: float, colour: Color, stripe: Color, loco: bool) -> void:
+	var s := signf(end)   # (-z is forward of a +1 end)
+	var half_l := absf(end)
+	var zf := -s * (half_l + 0.012)
+	var out := -s * 0.03   # (a lamp stands proud of the face this much)
+	if nose == "round":
+		var tip := -half_l - 4.5
+		var mid_y := floor_y + 1.0
+		for side: float in [-1.0, 1.0]:
+			geo.quad("matte", Vector3(side * w, floor_y, -half_l), Vector3(side * w, top, -half_l),
+				Vector3(side * 0.35, mid_y + 0.4, tip), Vector3(side * 0.6, floor_y, tip + 0.3), colour)
+		geo.quad("matte", Vector3(-w, top, -half_l), Vector3(w, top, -half_l), Vector3(0.35, mid_y + 0.4, tip),
+			Vector3(-0.35, mid_y + 0.4, tip), colour)
+		geo.quad("matte", Vector3(-0.6, floor_y, tip + 0.3), Vector3(0.6, floor_y, tip + 0.3), Vector3(0.35, mid_y + 0.4, tip),
+			Vector3(-0.35, mid_y + 0.4, tip), colour)
+		geo.quad("steel", Vector3(-w + 0.3, top - 0.1, -half_l - 0.4), Vector3(w - 0.3, top - 0.1, -half_l - 0.4),
+			Vector3(0.7, top - 0.7, -half_l - 1.8), Vector3(-0.7, top - 0.7, -half_l - 1.8), Color(0.05, 0.06, 0.08))
+		# (its lamps, low on the snout)
+		for side: float in [-1.0, 1.0]:
+			geo.box("glow", Vector3(side * 0.66, floor_y + 0.42, tip + 1.3), Vector3(0.16, 0.07, 0.22), Color(1.0, 0.95, 0.85))
+			geo.box("tail", Vector3(side * 0.82, floor_y + 0.42, tip + 2.0), Vector3(0.1, 0.05, 0.16), Color(1.0, 0.12, 0.06))
+		return
+	geo.quad("steel", Vector3(-w + 0.2, win_lo + 0.2, zf), Vector3(w - 0.2, win_lo + 0.2, zf),
+		Vector3(w - 0.2, win_hi, zf), Vector3(-w + 0.2, win_hi, zf), Color(0.05, 0.06, 0.08))
+	geo.quad("matte", Vector3(-0.06, win_lo + 0.2, zf + out * 0.3), Vector3(0.06, win_lo + 0.2, zf + out * 0.3),
+		Vector3(0.06, win_hi, zf + out * 0.3), Vector3(-0.06, win_hi, zf + out * 0.3), colour.darkened(0.2))
+	geo.quad("matte", Vector3(-w, floor_y, zf), Vector3(w, floor_y, zf), Vector3(w, win_lo - 0.1, zf),
+		Vector3(-w, win_lo - 0.1, zf), stripe if nose == "unit" else colour.darkened(0.1))
+	if nose in ["unit", "tram", "loco"]:
+		geo.quad("matte", Vector3(-w, win_lo - 0.6, zf + out * 0.3), Vector3(w, win_lo - 0.6, zf + out * 0.3),
+			Vector3(w, win_lo - 0.1, zf + out * 0.3), Vector3(-w, win_lo - 0.1, zf + out * 0.3), Color(0.95, 0.8, 0.1))
+	for x: float in [-w + 0.4, w - 0.4]:
+		geo.box("glow", Vector3(x, floor_y + 0.35, zf + out), Vector3(0.14, 0.09, 0.03), Color(1.0, 0.95, 0.85))
+		geo.box("tail", Vector3(x * 0.55, floor_y + 0.35, zf + out), Vector3(0.08, 0.07, 0.03), Color(1.0, 0.12, 0.06))
+	if loco:
+		geo.box("glow", Vector3(0.0, top - 0.3, zf + out), Vector3(0.1, 0.07, 0.03), Color(1.0, 0.95, 0.85))
+	else:
+		geo.box("glow", Vector3(0.0, top - 0.32, zf + out), Vector3(0.7, 0.12, 0.02), Color(1.0, 0.55, 0.08))
+	# (the skirt under it)
+	geo.box("matte", Vector3(0.0, floor_y - 0.25, zf + out * 2.0), Vector3(w - 0.35, 0.22, 0.05), Color(0.08, 0.08, 0.09))
+
+
+## A square bar from `a` to `b`, `thick` its half width.
+static func _bar(geo: Geo, a: Vector3, b: Vector3, thick: float, col: Color) -> void:
+	var az := (b - a) * 0.5
+	var side := Vector3.RIGHT if absf(az.normalized().x) < 0.9 else Vector3.UP
+	var ax := az.cross(side).normalized() * thick
+	var ay := az.cross(ax).normalized() * thick
+	geo.box("steel", (a + b) * 0.5, Vector3.ZERO, col, ax, ay, az)
 
 
 ## A barrier arm a metre long out along +x from its pivot, red and white (scaled to the road's width).
