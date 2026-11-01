@@ -327,12 +327,17 @@ func _tick_view(delta: float) -> void:
 		if _boat == null:
 			_boat = MeshInstance3D.new()
 			_boat.name = "CrewFerry"
+			# (moved each physics tick, with the bikes aboard: drawn eased between them, as they are, see Bike._ready)
+			_boat.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON
 			world.add_child(_boat)
 		var region_id := str(RegionKit.at_frame(links.region.frame_lat, links.region.frame_lon, pose.x, pose.z).get("region", ""))
 		_boat.mesh = FerryScenery.boat_mesh(_size(), SceneryStreamer.kit("ferry", region_id))
 		_boat_key = key
+	var was := _boat.global_position if _boat.visible else Vector3.INF
 	_boat.visible = true
 	_boat.global_transform = Transform3D(Basis(Vector3.UP, -pose.w), world.to_local_pos(pose.x, pose.y, pose.z))
+	if was == Vector3.INF or was.distance_to(_boat.global_position) > 20.0:
+		_boat.reset_physics_interpolation()   # (shown again, or the world's origin moved: there at once)
 	_last_pose = Vector3(pose.x, pose.y, pose.z)
 	if phase == "sailing" and t >= 0.0:
 		_tick_camera(delta)
@@ -479,9 +484,11 @@ func _let_go(bike: Bike) -> void:
 
 
 func _tick_camera(_delta: float) -> void:
+	var fresh := _cam == null or not _cam.current
 	if _cam == null:
 		_cam = Camera3D.new()
 		_cam.name = "FerryCamera"
+		_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON   # (with the boat it watches)
 		_cam.fov = 60.0
 		_cam.far = 8000.0
 		world.add_child(_cam)
@@ -498,9 +505,12 @@ func _tick_camera(_delta: float) -> void:
 	var at := bike.global_position if bike != null else _boat.global_position
 	var from := at - fwd * 16.0 + side * 10.0 * (1.0 - swing) + Vector3.UP * (5.0 + 2.0 * k)
 	var look := at + fwd * (20.0 + 40.0 * swing) + Vector3.UP * 1.0   # (near enough that the bikes stay in view)
+	fresh = fresh or _cam.global_position.distance_to(from) > 20.0   # (or the world's origin moved)
 	_cam.global_position = from
 	if from.distance_to(look) > 0.1:
 		_cam.look_at(look, Vector3.UP)
+	if fresh:
+		_cam.reset_physics_interpolation()
 
 
 func _end_camera() -> void:

@@ -97,6 +97,11 @@ const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7, "gravel": 0.6,
 
 
 func _ready() -> void:
+	# Physics interpolation, for the ridden bike and the camera riding with it only (Bike._ready, ChaseCamera._ready):
+	# they move 120 times a second and are drawn eased between the ticks at whatever rate the screen draws. Everything
+	# else is left as it was (moved once a drawn frame, or standing still).
+	get_tree().physics_interpolation = true
+	get_tree().root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	world = World.new()
 	add_child(world)
 	world.generate(MAP_SEED)

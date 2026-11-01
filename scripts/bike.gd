@@ -99,6 +99,7 @@ const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
 const HOLD_SPEED := 1.0           # m/s: slower than this, a bike with its controls off is held still (see _hold_still)
 var _held := false   # frozen by _hold_still (not by anyone else)
+var _tick_origin := Vector3.INF   # where the last physics tick left it (to tell a jump from riding: _smooth_jumps)
 const START_TIME := 0.7           # seconds on the starter motor before it fires
 ## How hard a start has to be (start_struggle) before it's a struggle: the starter labours and
 ## it takes up to STRUGGLE_CRANK seconds more to fire.
@@ -452,6 +453,8 @@ func place(pos: Vector3, heading: float) -> void:
 	var t := Transform3D(Basis(Vector3.UP, heading), pos + Vector3.UP * (build.rear_radius + 0.05))
 	global_transform = t
 	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+	reset_physics_interpolation()
+	_tick_origin = t.origin
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	steer = 0.0
@@ -539,6 +542,8 @@ func shift_origin(d: Vector3) -> void:
 	t.origin -= d
 	global_transform = t
 	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+	reset_physics_interpolation()
+	_tick_origin = t.origin
 	for w in wheels:
 		if w.has("contact_pos"):
 			w["contact_pos"] = (w["contact_pos"] as Vector3) - d
@@ -646,10 +651,27 @@ func passes(other: Node) -> bool:
 	return is_ghost() or (other != null and _passing.has(other.get_instance_id()))
 
 
+## Drawn smoothly between physics ticks (Main turns physics interpolation on): the bike moves 120 times a second, and a
+## screen drawing at another rate (144, or anything as the frame rate wanders) otherwise saw it, and the view riding
+## with it, stand still one frame and jump two ticks the next: a shaky ride, worst in first person.
+func _ready() -> void:
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON
+
+
 func _physics_process(delta: float) -> void:
 	var pt := Perf.t0()
 	_physics_process_body(delta)
+	_smooth_jumps(delta)
 	Perf.add("bike_physics", pt)
+
+
+## Moved further in a tick than riding takes it (placed, respawned, put on a ferry or a trailer by someone else): drawn
+## there at once, not slid across from where it was.
+func _smooth_jumps(delta: float) -> void:
+	var at := global_position
+	if _tick_origin != Vector3.INF and at.distance_to(_tick_origin) > linear_velocity.length() * delta * 3.0 + 0.5:
+		reset_physics_interpolation()
+	_tick_origin = at
 
 
 func _physics_process_body(delta: float) -> void:

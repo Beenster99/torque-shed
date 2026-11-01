@@ -158,6 +158,7 @@ func _bind(model: BikeModel) -> void:
 		vp.size = _view_size(m["size"], int(cfg["px"]))
 		add_child(vp)
 		var cam := Camera3D.new()
+		cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # (aimed once a drawn frame, below)
 		cam.projection = Camera3D.PROJECTION_FRUSTUM
 		cam.keep_aspect = Camera3D.KEEP_HEIGHT
 		cam.cull_mask = cull_mask()
@@ -213,7 +214,8 @@ func update(eye_cam: Camera3D) -> void:
 	if _env == null or _env_in <= 0.0:
 		_env_in = ENV_EVERY
 		_env = cheap_environment(_world_environment(), true, bool(cfg["ssao"]))
-	var eye := eye_cam.global_position
+	# Where the eye and the mirrors are drawn this frame (eased between the physics ticks, see Bike._ready).
+	var eye := eye_cam.get_global_transform_interpolated().origin
 	var measure := Perf.on
 	for i in views.size():
 		var v: Dictionary = views[i]
@@ -226,7 +228,7 @@ func update(eye_cam: Camera3D) -> void:
 			# Something gave the glass a new look (a respray): keep that one for when it's off.
 			v["plain"] = glass.material_override
 			glass.material_override = v["mat"]
-		var frame := (v["frame"] as Node3D).global_transform
+		var frame := (v["frame"] as Node3D).get_global_transform_interpolated()
 		var size: Vector2 = v["size"]
 		var view := mirror_view(eye, frame, size)
 		if view.is_empty() or not glass.is_visible_in_tree() or not _on_screen(eye_cam, frame, size):
