@@ -1009,6 +1009,11 @@ func _run_all() -> void:
 	await _t(&"_test_bike_look_wear")
 	print("Rig built: the eight lines of each style's reference bike")
 	await _t(&"_test_bike_rig_lines")
+	await _t(&"_test_bike_rig_stock")
+	await _t(&"_test_bike_rig_catalogue")
+	await _t(&"_test_bike_rig_deterministic")
+	await _t(&"_test_bike_rig_everyone")
+	await _t(&"_test_bike_rig_fit")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -2577,7 +2582,9 @@ func _test_round5_models() -> void:
 			var t := m.slot_bounds("tank")
 			var bars := m.slot_bounds("handlebars")
 			var seat := m.slot_bounds("saddle")
-			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + 0.12,
+			# (In the Rig built look an MX seat rides up over the tank's tail, as a real one does.)
+			var under_seat := 0.2 if bool(m.rig.get("seat_overlap", false)) else 0.12
+			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + under_seat,
 				"%s on a %s sits between the bars and the seat (%.2f..%.2f, head %.2f, seat %.2f)" % [tank, frame, t.position.z, t.end.z, m._head.z, seat.position.z])
 			m.queue_free()
 	# Each frame places the parts its own way: a chopper is long and raked with its pegs out
@@ -7888,7 +7895,11 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		m.build_from(BikeBuild.new({"fairing": id, "mirrors": "fairing_mirrors"}))
 		check(m.slot_bounds("fairing").size.length() > 0.2 and m.slot_bounds("mirrors").size.length() > 0.1,
 			"the %s and its mirrors are drawn" % id)
-		check(m.slot_bounds("fairing").get_center().z < m.slot_bounds("tank").get_center().z, "round the front of the bike")
+		# (Its front ahead of the tank's: a full race fairing runs back to the tail, so its middle
+		# can sit level with a long tank's.)
+		var fb := m.slot_bounds("fairing")
+		var tb := m.slot_bounds("tank")
+		check(fb.position.z < tb.position.z - 0.05 and fb.get_center().z < tb.end.z, "round the front of the bike")
 		m.free()
 	for id in PartsDB.by_kind["mirrors"]:
 		var m := BikeModel.new()
@@ -24115,6 +24126,26 @@ func _bike_rig() -> RefCounted:
 
 func _test_bike_rig_lines() -> void:
 	_bike_rig().test_lines_table()
+
+
+func _test_bike_rig_stock() -> void:
+	_bike_rig().test_stock_on_lines()
+
+
+func _test_bike_rig_catalogue() -> void:
+	_bike_rig().test_catalogue_clear()
+
+
+func _test_bike_rig_deterministic() -> void:
+	_bike_rig().test_deterministic()
+
+
+func _test_bike_rig_everyone() -> void:
+	_bike_rig().test_everyone_rigged()
+
+
+func _test_bike_rig_fit() -> void:
+	_bike_rig().test_fit_report()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)

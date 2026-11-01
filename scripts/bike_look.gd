@@ -8,7 +8,8 @@ class_name BikeLook
 const CLASSIC := "classic"
 const NEW := "new"
 const LOOKS: Array[String] = [CLASSIC, NEW]
-const NAMES := {CLASSIC: "Classic", NEW: "New"}
+## (The new look is called "Rig built": its bikes are laid out by BikeRig. The settings keep "new".)
+const NAMES := {CLASSIC: "Classic", NEW: "Rig built"}
 ## Every BikeModel is in this group while it's in the tree, so a change of look reaches them all.
 const GROUP := &"bike_models"
 ## The Bike detail setting's steps (Settings.gfx_bike_detail), and how far each keeps a bike's
