@@ -212,6 +212,68 @@ func test_edges() -> void:
 	_restore()
 
 
+## Where Mapterhorn has no fine tile (no survey finer than the world's 30 m one: much of the Highlands), there is none
+## (a NONE file), and the middle level is the ground there, the fine tiles round the gap eased into it. AWS's fine tile
+## there, which stood flat rectangles up to 100 m out of the land (sheer walls on the hillsides), is never read.
+func test_gap() -> void:
+	var tmp := "user://test_heights_gap"
+	RegionStore._remove_tree(tmp)
+	_copy_tree(FIXTURES, tmp)
+	var gap := Vector3i(14, 14303, 6517)
+	var rel := "%d/%d/%d" % [gap.x, gap.y, gap.z]
+	DirAccess.remove_absolute(tmp.path_join(rel + ".webp"))
+	# AWS's tile there, a flat rectangle 2 km up.
+	var img := Image.create(256, 256, false, Image.FORMAT_RGB8)
+	var v := int((2000.0 + 32768.0) * 256.0)
+	img.fill(Color8(v >> 16, (v >> 8) & 255, v & 255))
+	img.save_png(tmp.path_join(rel + ".png"))
+	_offline([tmp] as Array[String])
+	var was_disk := HeightTiles.disk
+	HeightTiles.disk = tmp
+	check(HeightTiles.tile(gap) == null and not HeightTiles.has(gap), "past AWS_TOP an AWS tile on disk isn't read: the fine tile is missing")
+	HeightTiles._mark_none(gap)
+	HeightTiles.reset()   # (and read back from disk as a new game would)
+	check(HeightTiles.is_none(gap) and HeightTiles.has(gap) and HeightTiles.tile(gap) == null,
+		"Mapterhorn having none, a NONE file says so: it counts as had (never fetched again) but has no ground")
+	check(HeightTiles.fetch([gap] as Array[Vector3i]) == 0, "and fetching it again, offline, wants nothing")
+	var r := RealRegion.get_region(REGION)
+	var tr := _live_terrain(r)
+	var b := HeightTiles.geo_box(gap)   # (south, west, north, east)
+	var mid_lat := (b.x + b.z) * 0.5
+	var c := tr.from_geo(mid_lat, (b.y + b.w) * 0.5)
+	var h := _bare(tr, c.x, c.y)
+	var m := tr.height_at_level(1, c.x, c.y)
+	check(not is_nan(h) and absf(h - m) < 0.01 and h < 1500.0, "in the gap the ground is the middle level's (%.2f m against %.2f), not AWS's rectangle" % [h, m])
+	# Walking from the fine tile west of it into the gap, each 4 m step no bigger than the hillside's own.
+	var w := tr.from_geo(mid_lat, b.y)
+	var worst := -INF
+	var prev := Vector3(NAN, NAN, NAN)
+	var x := w.x - 300.0
+	while x < w.x + 200.0:
+		var now := Vector3(_bare(tr, x, w.y), tr._live_level(0, tr.lat0 - w.y / tr._m.x, tr.lon0 + x / tr._m.y, false), tr.height_at_level(1, x, w.y))
+		if not is_nan(prev.x):
+			var own := maxf(absf(now.y - prev.y), absf(now.z - prev.z))
+			worst = maxf(worst, absf(now.x - prev.x) - own)
+		prev = now
+		x += 4.0
+	var at_edge := _bare(tr, w.x - 0.5, w.y)
+	check(absf(at_edge - tr.height_at_level(1, w.x - 0.5, w.y)) < 0.5, "the fine tile beside the gap meets the middle level at its edge (%.2f m)" % at_edge)
+	check(worst < 0.3, "and walking into the gap in 4 m steps, no step bigger than the hillside's own (%.2f m over it at most)" % maxf(worst, 0.0))
+	HeightTiles.disk = was_disk
+	_restore()
+	RegionStore._remove_tree(tmp)
+
+
+func _copy_tree(from: String, to: String) -> void:
+	DirAccess.make_dir_recursive_absolute(to)
+	var d := DirAccess.open(from)
+	for f in d.get_files():
+		if not f.begins_with("."):
+			DirAccess.copy_absolute(from.path_join(f), to.path_join(f))
+	for sub in d.get_directories():
+		_copy_tree(from.path_join(sub), to.path_join(sub))
+
+
 ## The ground under a building is level (the baker levelled it; live heights level it as they are read).
 func test_pads() -> void:
 	_offline()

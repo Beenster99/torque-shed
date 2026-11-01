@@ -60,9 +60,9 @@ func _put(key: Vector3i, h: float, h_of := Callable()) -> void:
 			var v: float = h_of.call(i, j) if h_of.is_valid() else h
 			var e := int(round((v + 32768.0) * 256.0))
 			img.set_pixel(i, j, Color8((e >> 16) & 255, (e >> 8) & 255, e & 255))
-	var path := DIR.path_join("%d/%d/%d.png" % [key.x, key.y, key.z])
+	var path := DIR.path_join("%d/%d/%d.webp" % [key.x, key.y, key.z])   # (Mapterhorn's: AWS's aren't read at the fine zoom)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
-	img.save_png(path)
+	img.save_webp(path, false)
 
 
 ## The fetcher the terrain is given: writes each tile asked for (its level's height) and notes it.
