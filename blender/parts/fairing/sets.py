@@ -40,22 +40,22 @@ PI = math.pi
 # section: [z, top, shoulder (x, y), character line (x, y), lower flank (x, y), belly], the
 # character line at the frame's spar height and the shoulder where the tank's meets it.
 SPORT_STATIONS = [
-    [-0.42, -0.085, (0.025, -0.09), (0.035, -0.11), (0.025, -0.13), -0.14],
-    [-0.3, -0.025, (0.07, -0.04), (0.12, -0.12), (0.085, -0.2), -0.22],
-    [-0.15, 0.015, (0.1, -0.005), (0.185, -0.14), (0.155, -0.3), -0.34],
-    [0.0, 0.025, (0.125, 0.005), (0.225, -0.16), (0.2, -0.4), -0.46],
-    [0.2, 0.0, (0.14, -0.025), (0.245, -0.18), (0.235, -0.48), -0.6],
-    [0.42, -0.04, (0.15, -0.065), (0.245, -0.2), (0.235, -0.53), -0.66],
-    [0.66, -0.1, (0.15, -0.12), (0.22, -0.24), (0.22, -0.5), -0.6],
+    [-0.46, -0.1, (0.025, -0.1), (0.045, -0.125), (0.03, -0.15), -0.16],
+    [-0.33, -0.055, (0.045, -0.06), (0.09, -0.115), (0.07, -0.19), -0.21],
+    [-0.18, -0.015, (0.07, -0.02), (0.13, -0.125), (0.11, -0.26), -0.29],
+    [-0.04, 0.02, (0.095, 0.0), (0.17, -0.14), (0.15, -0.33), -0.38],
+    [0.12, 0.0, (0.12, -0.01), (0.195, -0.15), (0.18, -0.42), -0.5],
+    [0.32, -0.04, (0.135, -0.05), (0.205, -0.17), (0.195, -0.48), -0.6],
+    [0.56, -0.1, (0.13, -0.11), (0.19, -0.2), (0.18, -0.46), -0.58],
 ]
 SPORT = {
     "stations": SPORT_STATIONS,
     "panels": [
         ["nose", "paint", [(-0.4, -1.45), (0.0, -1.45), (0.0, 1.45), (-0.4, 1.45)], False],
         ["chin", "paint", [(-0.36, 1.45), (0.0, 1.45), (0.0, 2 * PI - 1.45), (-0.36, 2 * PI - 1.45)], False],
-        ["upper", "paint", [(0.0, 0.16), (0.44, 0.95), (0.5, 1.45), (0.0, 1.45)], True],
-        ["lower", "paint", [(0.0, 1.45), (0.5, 1.45), (0.62, 2.55), (0.0, 2.55)], True],
-        ["belly", "paint", [(0.02, 2.55), (0.56, 2.55), (0.56, 2 * PI - 2.55), (0.02, 2 * PI - 2.55)], False],
+        ["upper", "paint", [(0.0, 0.16), (0.4, 0.95), (0.56, 1.45), (0.0, 1.45)], True],
+        ["lower", "paint", [(0.0, 1.45), (0.56, 1.45), (0.4, 2.55), (0.0, 2.55)], True],
+        ["belly", "paint", [(0.02, 2.55), (0.4, 2.55), (0.4, 2 * PI - 2.55), (0.02, 2 * PI - 2.55)], False],
     ],
     "screen": [(-0.26, 0.02), 0.5, 0.12],       # (front z, rear z), half angle, rise at the back
     "lamps": [(-0.38, -0.2), (1.12, 1.42)],    # z range, angle range, right (and mirrored)
@@ -69,13 +69,13 @@ RACE = dict(SPORT, stations=[[z - 0.02 if z < 0 else z, top, (sh[0] * 0.92, sh[1
 HALF = dict(SPORT, panels=SPORT["panels"][:1] + [["upper", "paint", [(0.0, 0.16), (0.3, 0.95), (0.3, 1.55), (0.0, 1.55)], True],
     ["chin", "paint", [(-0.36, 1.45), (-0.02, 1.45), (-0.02, 2 * PI - 1.45), (-0.36, 2 * PI - 1.45)], False]], ducts=None)
 SEELEY = {
-    "secs": [[-0.3, -0.04, -0.16, 0.06, 2.0], [-0.2, 0.0, -0.26, 0.16, 2.0], [-0.06, 0.02, -0.32, 0.2, 2.0], [0.08, 0.0, -0.34, 0.21, 2.1],
-        [0.2, -0.04, -0.32, 0.2, 2.2]],
+    "secs": [[-0.3, -0.03, -0.24, 0.115, 2.0], [-0.24, 0.005, -0.29, 0.165, 2.0], [-0.12, 0.02, -0.33, 0.2, 2.0], [0.04, 0.01, -0.35, 0.21, 2.1],
+        [0.2, -0.04, -0.33, 0.2, 2.2]],
     "panels": [["shell", "paint", [(-0.3, -2.25), (0.12, -2.25), (0.12, 2.25), (-0.3, 2.25)], False],
         ["wing", "paint", [(0.12, 0.7), (0.2, 1.2), (0.2, 2.25), (0.12, 2.25)], True]],
     "screen": [(-0.17, 0.04), 0.75, 0.12],
-    "lamps": [(-0.31, -0.27), (-0.5, 0.5)],
-    "ducts": None, "mirror": None, "wings": None, "round_lamp": True,
+    "lamps": None,
+    "ducts": None, "mirror": None, "wings": None, "round_lamp": 0.085,
 }
 ADVENTURE = {
     "secs": [[-0.34, -0.04, -0.2, 0.05, 2.6], [-0.24, 0.02, -0.28, 0.13, 2.8], [-0.1, 0.06, -0.34, 0.2, 3.0], [0.06, 0.04, -0.4, 0.25, 3.2],
@@ -146,11 +146,18 @@ def station_at(st, z):
         return [(0.0, k[1]), k[2], k[3], k[4], (0.0, k[5])]
     if z <= sts[0][0]:
         return pts(sts[0])
-    for a, b in zip(sts, sts[1:]):
-        if z <= b[0]:
-            f = smoothstep(a[0], b[0], z)
-            pa, pb = pts(a), pts(b)
-            return [(pa[i][0] + (pb[i][0] - pa[i][0]) * f, pa[i][1] + (pb[i][1] - pa[i][1]) * f) for i in range(5)]
+    n = len(sts)
+    for j in range(n - 1):
+        if z <= sts[j + 1][0]:
+            # A Catmull-Rom spline through the stations along the length, so the skin runs on
+            # smoothly through each one rather than easing to a stop at it (which rippled it).
+            f = (z - sts[j][0]) / (sts[j + 1][0] - sts[j][0])
+            ks = [pts(sts[max(j - 1, 0)]), pts(sts[j]), pts(sts[j + 1]), pts(sts[min(j + 2, n - 1)])]
+            f2, f3 = f * f, f * f * f
+
+            def cr(p0, p1, p2, p3):
+                return 0.5 * (2.0 * p1 + (-p0 + p2) * f + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * f2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * f3)
+            return [(cr(*[k[i][0] for k in ks]), cr(*[k[i][1] for k in ks])) for i in range(5)]
     return pts(sts[-1])
 
 
@@ -321,6 +328,12 @@ def build_set(name, lod, p):
             for s in (1, -1):
                 cs = [(lz0, a0 * s), (lz1, a0 * s), (lz1, a1 * s), (lz0, a1 * s)]
                 objs.append(slab("lamp", st, p, grid(cs, 8, 3, 0.0), "lens_white", "black_metal", 0.004, lift=0.003))
+        if st.get("round_lamp"):
+            # One round headlamp filling the nose's opening, set a little back inside it.
+            z0 = stations_of(st)[0][0]
+            at = (0.0, centre_y(st, z0), z0 + 0.03)
+            objs.append(kit.tube("lamp", g(*at), g(at[0], at[1], at[2] - 0.012), st["round_lamp"], 24 if lod == 0 else 10, "lens_white"))
+            objs.append(kit.tube("bezel", g(at[0], at[1], at[2] + 0.04), g(*at), st["round_lamp"] + 0.006, 24 if lod == 0 else 10, "chrome"))
         if st.get("ducts"):
             (dz0, dz1), (a0, a1) = st["ducts"]
             for s in (1, -1):
@@ -364,6 +377,9 @@ def mounts(name):
         (lz0, lz1), (a0, a1) = st["lamps"]
         at = surface(st, p, (lz0 + lz1) * 0.5, 0.0)
         out["lamp"] = (g(at[0], at[1] - 0.05, at[2]), (0.0, 1.0, 0.0))
+    elif st.get("round_lamp"):
+        z0 = stations_of(st)[0][0]
+        out["lamp"] = (g(0.0, centre_y(st, z0), z0 + 0.03), (0.0, 1.0, 0.0))
     return out
 
 

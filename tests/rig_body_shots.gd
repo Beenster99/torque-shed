@@ -3,11 +3,16 @@ extends Node
 ## with its tank, seat and tail fitted to the rig's lines, against the same bike with the bodywork
 ## placed the old way (RigBodywork.on off).
 ##   xvfb-run -a godot --path . res://tests/rig_body_shots.tscn -- --out=/tmp/rig [--styles=cafe,sport] [--provisional]
-## --provisional makes up a rig from the old layout's datums (for before the bike rig, H1, is in).
+##     [--view=front] [--rig-only] [--parts=fairing:half_fairing,tank:...]
+## --provisional makes up a rig from the old layout's datums (for before the bike rig, H1, is in);
+## --view=front looks from three-quarters in front, closer; --parts swaps parts on every bike.
 ## Writes <style>_rig.png and <style>_old.png.
 var out_dir := "/tmp/rig"
 var styles: Array = []
 var provisional := false
+var front := false
+var rig_only := false
+var swaps := {}
 var cam: Camera3D
 
 
@@ -20,6 +25,13 @@ func _ready() -> void:
 			styles = Array(a.trim_prefix("--styles=").split(","))
 		elif a == "--provisional":
 			provisional = true
+		elif a == "--view=front":
+			front = true
+		elif a == "--rig-only":
+			rig_only = true
+		elif a.begins_with("--parts="):
+			for kv in a.trim_prefix("--parts=").split(","):
+				swaps[kv.get_slice(":", 0)] = kv.get_slice(":", 1)
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(1000, 620)
 	var env := WorldEnvironment.new()
@@ -43,12 +55,18 @@ func _ready() -> void:
 	cam.make_current()
 	cam.global_position = Vector3(4.0, 0.75, 0.0)
 	cam.look_at(Vector3(0.0, 0.75, 0.0), Vector3.UP)
+	if front:
+		cam.size = 1.2
+		cam.global_position = Vector3(2.6, 1.5, -3.0)
+		cam.look_at(Vector3(0.0, 0.8, -0.55), Vector3.UP)
 	for style in styles:
-		for with_rig in [true, false]:
+		for with_rig in ([true] if rig_only else [true, false]):
 			var m := BikeModel.new()
 			m.look = BikeLook.NEW
 			add_child(m)
-			var build := BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build(style)))
+			var parts := Contracts.style_build(style)
+			parts.merge(swaps, true)
+			var build := BikeBuild.new(PartsDB.sanitize_build(parts))
 			RigBodywork.on = with_rig
 			if with_rig and provisional:
 				m._lay_out(build)

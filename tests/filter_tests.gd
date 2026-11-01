@@ -300,8 +300,10 @@ func test_fairing_caps() -> void:
 		var bare := BikeModel.new()
 		t.add_child(bare)
 		bare.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)), Color.RED, off, null, false)
-		check(bare._slot_meshes["air_filter"].any(func(mi): return (mi as Node).has_meta("service_cap"))
-			and bare._slot_meshes["air_filter"].all(func(mi): return not (mi as Node3D).visible),
+		# (Under a Rig built panel set the airbox sits under the tank, clear of the panels, and
+		# has no cap: it just goes.)
+		var capped: bool = bare._set_drawn != "" or bare._slot_meshes["air_filter"].any(func(mi): return (mi as Node).has_meta("service_cap"))
+		check(capped and bare._slot_meshes["air_filter"].all(func(mi): return not (mi as Node3D).visible),
 			"%s: with the air filter off its cap goes too" % PartsDB.style_name(style))
 		bare.free()
 
