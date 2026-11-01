@@ -187,22 +187,14 @@ static func _shape(pieces: Array) -> ArrayMesh:
 	var index := PackedInt32Array()
 	for piece in pieces:
 		var xf: Transform3D = piece[2]
-		var nb := xf.basis.inverse().transposed()
 		var arrays := (piece[0] as Mesh).surface_get_arrays(piece[1])
 		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var n = arrays[Mesh.ARRAY_NORMAL]
 		var has_n: bool = n is PackedVector3Array and (n as PackedVector3Array).size() == v.size()
 		var base := verts.size()
-		for i in v.size():
-			verts.append(xf * v[i])
-			normals.append((nb * (n[i] as Vector3)).normalized() if has_n else Vector3.UP)
-		var idx = arrays[Mesh.ARRAY_INDEX]
-		if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
-			for i in idx:
-				index.append(base + i)
-		else:
-			for i in v.size():
-				index.append(base + i)
+		verts.append_array(MeshJoin.moved(v, xf))
+		normals.append_array(MeshJoin.turned_normals(n if has_n else null, xf, v.size()))
+		index.append_array(MeshJoin.shifted_index(arrays[Mesh.ARRAY_INDEX], base, v.size()))
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
@@ -354,40 +346,38 @@ static func _shaded_arrays(pieces: Array) -> Array:
 		var s: int = piece[1]
 		var xf: Transform3D = piece[2]
 		var look: Dictionary = piece[3]
-		var nb := xf.basis.inverse().transposed()
 		var arrays := mesh.surface_get_arrays(s)
 		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var n = arrays[Mesh.ARRAY_NORMAL]
 		var has_n: bool = n is PackedVector3Array and (n as PackedVector3Array).size() == v.size()
 		var base := verts.size()
 		var a: Color = look["albedo"]
-		var l0 := [a.r, a.g, a.b, float(look["metallic"])]
-		var l1 := [float(look["roughness"]), float(look["clearcoat"]), float(look["clearcoat_roughness"]), float(look["depth"])]
-		var l2 := [float(look["kit"]), float(look["scale"]), float(look["rust"]), 0.0]
+		var l0 := PackedFloat32Array([a.r, a.g, a.b, float(look["metallic"])])
+		var l1 := PackedFloat32Array([float(look["roughness"]), float(look["clearcoat"]), float(look["clearcoat_roughness"]), float(look["depth"])])
+		var l2 := PackedFloat32Array([float(look["kit"]), float(look["scale"]), float(look["rust"]), 0.0])
 		var finish := float(look.get("finish", Finish.PLAIN))
 		var ports: Array = look.get("ports", [])
 		var heat := float(look.get("heat", 0.0))
 		var wear := float(look.get("wear", 0.0))
 		var dust := float(look.get("dust", 0.0))
-		for i in v.size():
-			var at := xf * v[i]
-			verts.append(at)
-			normals.append((nb * (n[i] as Vector3)).normalized() if has_n else Vector3.UP)
-			c0.append_array(l0)
-			c1.append_array(l1)
-			c2.append_array(l2)
-			# How hot this bit of pipe runs: hottest where it leaves the head.
-			var hot := 0.0
-			for port in ports:
-				hot = maxf(hot, 1.0 - at.distance_to(port) / HEAT_REACH)
-			c3.append_array([finish, clampf(hot, 0.0, 1.0) * heat, wear, dust])
-		var idx = arrays[Mesh.ARRAY_INDEX]
-		if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
-			for i in idx:
-				index.append(base + i)
+		var at := MeshJoin.moved(v, xf)
+		verts.append_array(at)
+		normals.append_array(MeshJoin.turned_normals(n if has_n else null, xf, v.size()))
+		c0.append_array(MeshJoin.tiled(l0, v.size()))
+		c1.append_array(MeshJoin.tiled(l1, v.size()))
+		c2.append_array(MeshJoin.tiled(l2, v.size()))
+		if ports.is_empty():
+			c3.append_array(MeshJoin.tiled(PackedFloat32Array([finish, 0.0, wear, dust]), v.size()))
 		else:
-			for i in v.size():
-				index.append(base + i)
+			var start := c3.size()
+			c3.append_array(MeshJoin.tiled(PackedFloat32Array([finish, 0.0, wear, dust]), v.size()))
+			for i in at.size():
+				# How hot this bit of pipe runs: hottest where it leaves the head.
+				var hot := 0.0
+				for port in ports:
+					hot = maxf(hot, 1.0 - at[i].distance_to(port) / HEAT_REACH)
+				c3[start + i * 4 + 1] = clampf(hot, 0.0, 1.0) * heat
+		index.append_array(MeshJoin.shifted_index(arrays[Mesh.ARRAY_INDEX], base, v.size()))
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
