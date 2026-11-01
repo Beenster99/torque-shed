@@ -4864,6 +4864,10 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 	var style := str(p.get("style", "hugger"))
 	# (New look: pressed steel or moulded plastic, bent round as the code lays it out.)
 	_guard_section = "valanced" if style == "classic" else ("plastic" if material == "plastic" and style in ["high", "enduro"] else "steel")
+	if style in ["high", "enduro"] and _rig_bodywork() and fairing_set() in HUGGER_SETS:
+		# Rig built: under an adventure bike's fairing the guard hugs the tyre, as a Multistrada's
+		# or a GS's does; the fairing's beak is the bodywork's, not the guard's.
+		style = "hugger"
 	if style in ["high", "enduro"]:
 		# Under the bottom yoke, sweeping forward and up into a beak; the enduro one is longer
 		# at the back and has a lip at the front.
@@ -4979,6 +4983,10 @@ func _draw_fairing() -> void:
 ## The Blender-made fairing set a frame-mounted fairing is drawn as in the Rig built look (see
 ## blender/parts/fairing/sets.py): "" for one on the bars (a flyscreen, bikini or batwing, sized
 ## to the headlight) or none.
+## Rig built: the fairing sets under which a high front guard is drawn hugging the tyre instead.
+const HUGGER_SETS := ["adventure", "touring"]
+
+
 func fairing_set() -> String:
 	var p := PartsDB.get_part(str(_build.parts.get("fairing", "none"))) if _build else {}
 	if p.is_empty() or not p.get("frame_mount", false):

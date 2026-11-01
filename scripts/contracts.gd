@@ -875,10 +875,10 @@ static func style_build(style: String) -> Dictionary:
 				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "fork": "enduro_usd",
 				"mirrors": "round_mirrors", "front_mudguard": "enduro_front_fender"}, true)
 		"tourer":
-			b.merge({"frame": "tourer_heavy_spar", "tank": "touring_23", "saddle": "touring_comfort", "handlebars": "flat_bar",
-				"tail": "classic_mudguard", "engine": "boxer_1100", "panniers": "aluminium_boxes", "top_box": "alloy_top_box",
-				"fairing": "touring_fairing", "mirrors": "fairing_mirrors", "headlight": "led_projector",
-				"rear_tyre": "touring_road", "front_tyre": "touring_road_120", "front_mudguard": "chrome_classic"}, true)
+			b.merge({"frame": "tourer_heavy_spar", "tank": "angular_gt_19", "saddle": "touring_comfort", "handlebars": "flat_bar",
+				"tail": "tourer_rack_tail", "engine": "boxer_1100", "panniers": "aluminium_boxes", "top_box": "alloy_top_box",
+				"fairing": "touring_fairing", "mirrors": "fairing_mirrors", "headlight": "led_projector", "exhaust": "tourer_black",
+				"rear_tyre": "touring_road", "front_tyre": "touring_road_120", "front_mudguard": "road_hugger"}, true)
 		"sport":
 			b.merge({"frame": "sport_perimeter_red", "tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons",
 				"tail": "sport_pointed_tail", "engine": "inline_1000", "exhaust": "race_underseat_ti", "fairing": "race_fairing",
