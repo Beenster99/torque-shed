@@ -40,10 +40,10 @@ PI = math.pi
 # section: [z, top, shoulder (x, y), character line (x, y), lower flank (x, y), belly], the
 # character line at the frame's spar height and the shoulder where the tank's meets it.
 SPORT_STATIONS = [
-    [-0.46, -0.1, (0.025, -0.1), (0.045, -0.125), (0.03, -0.15), -0.16],
-    [-0.33, -0.055, (0.045, -0.06), (0.09, -0.115), (0.07, -0.19), -0.21],
-    [-0.18, -0.015, (0.07, -0.02), (0.13, -0.125), (0.11, -0.26), -0.29],
-    [-0.04, 0.02, (0.095, 0.0), (0.17, -0.14), (0.15, -0.33), -0.38],
+    [-0.38, -0.055, (0.05, -0.06), (0.08, -0.12), (0.065, -0.19), -0.215],
+    [-0.33, -0.03, (0.07, -0.035), (0.11, -0.12), (0.09, -0.22), -0.25],
+    [-0.19, 0.0, (0.09, -0.01), (0.14, -0.125), (0.12, -0.27), -0.3],
+    [-0.04, 0.02, (0.1, 0.0), (0.17, -0.14), (0.15, -0.33), -0.38],
     [0.12, 0.0, (0.12, -0.01), (0.195, -0.15), (0.18, -0.42), -0.5],
     [0.32, -0.04, (0.135, -0.05), (0.205, -0.17), (0.195, -0.48), -0.6],
     [0.56, -0.1, (0.13, -0.11), (0.19, -0.2), (0.18, -0.46), -0.58],
@@ -51,14 +51,15 @@ SPORT_STATIONS = [
 SPORT = {
     "stations": SPORT_STATIONS,
     "panels": [
-        ["nose", "paint", [(-0.4, -1.45), (0.0, -1.45), (0.0, 1.45), (-0.4, 1.45)], False],
-        ["chin", "paint", [(-0.36, 1.45), (0.0, 1.45), (0.0, 2 * PI - 1.45), (-0.36, 2 * PI - 1.45)], False],
+        ["nose", "paint", [(-0.38, -1.45), (0.0, -1.45), (0.0, 1.45), (-0.38, 1.45)], False],
+        ["chin", "paint", [(-0.38, 1.45), (0.0, 1.45), (0.0, 2 * PI - 1.45), (-0.38, 2 * PI - 1.45)], False],
         ["upper", "paint", [(0.0, 1.3), (0.4, 1.0), (0.56, 1.45), (0.0, 1.45)], True],
-        ["lower", "paint", [(0.0, 1.45), (0.56, 1.45), (0.4, 2.55), (0.0, 2.55)], True],
-        ["belly", "paint", [(0.02, 2.55), (0.4, 2.55), (0.4, 2 * PI - 2.55), (0.02, 2 * PI - 2.55)], False],
+        ["lower", "paint", [(0.0, 1.45), (0.56, 1.45), (0.52, 2.55), (0.0, 2.55)], True],
+        ["belly", "paint", [(0.02, 2.55), (0.52, 2.55), (0.52, 2 * PI - 2.55), (0.02, 2 * PI - 2.55)], False],
     ],
-    "screen": [(-0.26, 0.02), 0.5, 0.12],       # (front z, rear z), half angle, rise at the back
-    "lamps": [(-0.38, -0.2), (1.12, 1.42)],    # z range, angle range, right (and mirrored)
+    "screen": [(-0.3, 0.0), 0.55, 0.16],       # (front z, rear z), half angle, rise at the back
+    "lamps": [(-0.37, -0.24), (1.02, 1.3)],    # z range, angle range, right (and mirrored)
+    "mouth": True,                             # a blunt nose, its front an air intake
     "ducts": [(0.05, 0.24), (1.62, 2.1)],
     "mirror": (-0.06, 1.05),
     "wings": None,
@@ -83,7 +84,7 @@ ADVENTURE = {
     "panels": [["nose", "paint", [(-0.34, -1.5), (0.02, -1.5), (0.02, 1.5), (-0.34, 1.5)], False],
         ["shroud", "paint", [(0.02, 0.3), (0.34, 1.0), (0.34, 2.1), (0.02, 1.95)], True],
         ["chin", "plastic", [(-0.3, 1.5), (0.0, 1.5), (0.0, 2 * PI - 1.5), (-0.3, 2 * PI - 1.5)], False]],
-    "screen": [(-0.22, -0.04), 0.7, 0.3],
+    "screen": [(-0.22, -0.11), 0.7, 0.32],
     "lamps": [(-0.3, -0.18), (0.25, 0.95)],
     "ducts": [(0.12, 0.3), (1.3, 1.8)],
     "mirror": (0.0, 0.95), "wings": None,
@@ -303,6 +304,33 @@ def mirrored(corners):
     return [(z, -th) if th <= PI else (z, 2.0 * PI - th) for z, th in [corners[0], corners[1], corners[2], corners[3]]]
 
 
+def mouth(st, p, lod):
+    """A blunt nose's front closed by its air intake: a black face across the first section,
+    set a little back inside the nose's lip."""
+    z0 = stations_of(st)[0][0]
+    n = 24 if lod == 0 else (12 if lod == 1 else 6)
+    bm = bmesh.new()
+    ring = []
+    for k in range(n):
+        th = -PI + 2.0 * PI * k / n
+        x, y, z = surface(st, p, z0, th)
+        ring.append(bm.verts.new(g(x * 0.97, y, z + 0.012)))
+    yc = centre_y(st, z0)
+    c = bm.verts.new(g(0.0, yc, z0 + 0.03))
+    faces = [bm.faces.new((ring[k], ring[(k + 1) % n], c)) for k in range(n)]
+    ahead = g(0.0, 0.0, -1.0)
+    if sum(faces[0].normal[k] * ahead[k] for k in range(3)) < 0.0:
+        for f in faces:
+            f.normal_flip()
+    me = bpy.data.meshes.new("mouth")
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(kit.tag_material("black_metal"))
+    ob = bpy.data.objects.new("mouth", me)
+    bpy.context.scene.collection.objects.link(ob)
+    return ob
+
+
 def build_set(name, lod, p):
     st = SETS[name]
     d = DETAIL[lod]
@@ -316,6 +344,8 @@ def build_set(name, lod, p):
                 cs = [cs[0], cs[1], cs[2], cs[3]]
             ni, nj = counts(cs, lod)
             objs.append(slab(pname, st, p, grid(cs, ni, nj), tag, "plastic", thick))
+    if st.get("mouth"):
+        objs.append(mouth(st, p, lod))
     # The screen: glass on the nose's top, rising off it towards the back.
     (z0, z1), half, rise = st["screen"]
     ni, nj = (10, 12) if lod == 0 else ((4, 5) if lod == 1 else (1, 2))

@@ -4351,10 +4351,21 @@ func _draw_tail(build: BikeBuild) -> void:
 			var a := _tail + Vector3(0.0, -0.05, -0.12)
 			var b := _tail + Vector3(0.0, -0.02, 0.2)
 			var c := _tail + Vector3(0.0, 0.06, 0.46)
+			var rigged := _rig_bodywork()
+			if rigged:
+				# Rig built: one straight blade on from the seat's back, lifted as one.
+				b = a.lerp(c, 0.4)
 			var planks := [_plank(a, b, w + 0.02, 0.012, mat), _plank(b, c, w, 0.012, mat)]
+			var was: Array = planks.map(func(pl): return (pl as Node3D).position.y)
 			for plank in planks:
 				_rear_guard.append(plank)
 				_lift_clear_of_tyre(plank)
+			if rigged and planks.all(func(pl): return is_instance_valid(pl)):
+				var up := maxf(planks[0].position.y - float(was[0]), planks[1].position.y - float(was[1]))
+				for i in 2:
+					planks[i].position.y = float(was[i]) + up
+				# The tail light under the blade near its end, not hung in the air below it.
+				lamp = c.lerp(b, 0.3) + Vector3(0.0, up - 0.035, 0.0)
 			# The fender's end rounded off rather than square-cut.
 			var tip := _plank_tip(planks[1], true, mat)
 			if tip:
@@ -4363,7 +4374,8 @@ func _draw_tail(build: BikeBuild) -> void:
 				_guard_blade(plank)
 			_number_plate(lamp + Vector3(0.0, -0.07, -0.01), Vector2(0.13, 0.08), -0.3, plate)
 		_:
-			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 2.0, mat, 10))
+			# (Rig built: it stops a little past level behind the wheel, not wrapped down round it.)
+			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 1.75 if _rig_bodywork() else 2.0, mat, 10))
 			# The lamp on a bracket off the guard, the plate below it.
 			var a := atan2(lamp.z - axle.z, lamp.y - axle.y)
 			_tube(lamp, _rear_guard_at(a, r + 0.05), 0.01, mat)

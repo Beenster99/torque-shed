@@ -2585,8 +2585,9 @@ func _test_round5_models() -> void:
 			var t := m.slot_bounds("tank")
 			var bars := m.slot_bounds("handlebars")
 			var seat := m.slot_bounds("saddle")
-			# (In the Rig built look an MX seat rides up over the tank's tail, as a real one does.)
-			var under_seat := 0.2 if bool(m.rig.get("seat_overlap", false)) else 0.12
+			# (In the Rig built look an MX seat rides up over the tank's tail, as a real one does: a
+			# 450's tank runs about 30 cm on under the seat's nose.)
+			var under_seat := 0.35 if bool(m.rig.get("seat_overlap", false)) else 0.12
 			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + under_seat,
 				"%s on a %s sits between the bars and the seat (%.2f..%.2f, head %.2f, seat %.2f)" % [tank, frame, t.position.z, t.end.z, m._head.z, seat.position.z])
 			m.queue_free()
