@@ -199,7 +199,7 @@ static func hard_points(engine: Dictionary) -> Dictionary:
 ## The bike laid out in the Rig built look: datums in the model's space (see the lines agreement
 ## for each key). Worked out once per set of parts and kept.
 static func solve(build: BikeBuild) -> Dictionary:
-	var key := JSON.stringify(build.parts) + "|%.4f|%.4f|%.4f|%.4f|%.4f" % [build.wheelbase, build.rake_deg, build.fork_length, build.seat_height, build.rear_radius]
+	var key := JSON.stringify(build.parts) + "|%.4f|%.4f|%.4f|%.4f|%.4f|%s" % [build.wheelbase, build.rake_deg, build.fork_length, build.seat_height, build.rear_radius, RigBodywork.on]
 	if _cache.has(key):
 		return _cache[key]
 	var r := _solve(build)
@@ -381,7 +381,9 @@ static func _solve(build: BikeBuild) -> Dictionary:
 		top = maxf(top, lerpf(a.y, b.y, fz) + (float(k[1]) + float(k[2])) * size * sc_z)
 	# A tank the heads push well over the style's line needs raised mounts made for it. (One
 	# that stands tall on its own, a fat cruiser tank, is the tank's shape, not the engine's.)
-	if lifted and top - top_max > TANK_HIGH:
+	# (Where the bodywork's fitted to the rig (RigBodywork), the tank is shaped to sit on the line
+	# instead, so it needs nothing made.)
+	if lifted and top - top_max > TANK_HIGH and not RigBodywork.on:
 		notes.append({"what": "raised tank mounts", "why": "the tank stands %d mm over this style's line" % roundi((top - top_max) * 1000.0), "fab": true})
 
 	# 4: the seat line and the tail; 5: the rider and the pegs.
