@@ -343,6 +343,8 @@ func _run_all() -> void:
 	await _t(&"_test_customer_save")
 	await _t(&"_test_customer_ride_session")
 	await _t(&"_test_customer_lean")
+	await _t(&"_test_customer_bike_drawn_once")
+	await _t(&"_test_mesh_join")
 	await _t(&"_test_customer_routes")
 	print("Shed building: packed deliveries and racking, bay lifts, the big annex, the crew lounge upstairs")
 	await _t(&"_test_delivery_packing")
@@ -12663,6 +12665,64 @@ func _test_customer_ride_session() -> void:
 ## A customer riding in leans into each turn (left for a left-hander, right for a right), about
 ## as far as atan(v * yaw rate / g) says, eased in and out and never too far, slowing for the
 ## corner; the rider leans with the bike; none while paddling backwards out of a bay.
+## A customer's bike is drawn once: parking it and getting back on swing the stand and show or
+## hide the rider, without drawing the whole bike again (which was a stutter each time).
+func _test_customer_bike_drawn_once() -> void:
+	Shed.start_new("Tester", 64)
+	var parts := PartsDB.DEFAULT_BUILD.duplicate()
+	parts["side_stand"] = PartsDB.DEFAULT_BUILD["side_stand"]
+	var o := Vector3(150.0, 0.0, 0.0)
+	var ride := PackedVector3Array([o, o + Vector3(0.0, 0.0, -10.0)])
+	var cv := CustomerView.new()
+	add_child(cv)
+	cv.set_process(false)
+	cv.setup({"id": 32, "name": "Parker"}, PackedVector3Array([ride[1], ride[1] + Vector3.BACK]), Basis(), false, ride, {"parts": parts, "paint": Color.RED})
+	var model: BikeModel = cv._model
+	check(model != null and model.stand_pose == "" and cv.rider_on_bike(), "a customer rides in on their bike, stand up")
+	cv._cur = {"mode": "ride", "pts": ride}
+	cv._leg_done("park")
+	check(cv._model == model, "parking keeps the bike as it was drawn")
+	check(model.stand_pose == "side" and not model._slot_meshes["side_stand"].is_empty(), "and puts its side stand down")
+	check(not cv.rider_on_bike(), "the customer is off it")
+	var swung := 0
+	for mi in model._slot_meshes["side_stand"]:
+		if is_instance_valid(mi) and (mi as Node).has_meta(&"loose_stand") and model.is_ancestor_of(mi):
+			swung += 1
+	check(swung == model._slot_meshes["side_stand"].size(), "the stand is drawn on its own, out of the bake (%d meshes)" % swung)
+	cv._leg_done("mount")
+	check(cv._model == model and model.stand_pose == "" and cv.rider_on_bike(), "getting back on tucks the stand up again, same bike")
+	var plain := BikeModel.new()
+	add_child(plain)
+	plain.build_from(BikeBuild.new(parts), Color.RED)
+	check(not plain.set_stand("side") and plain.stand_pose == "", "a bike drawn without loose stands says it has to be drawn again")
+	plain.free()
+	cv.free()
+
+
+## MeshJoin's one-call helpers give what the per-vertex loops they replaced gave.
+func _test_mesh_join() -> void:
+	var box := BoxMesh.new()
+	var arrays := box.surface_get_arrays(0)
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var worst := 0.0
+	for xf: Transform3D in [Transform3D(Basis(Vector3(0.3, 1.0, 0.2).normalized(), 0.7), Vector3(1, 2, 3)),
+			Transform3D(Basis.from_scale(Vector3(1.0, 2.0, 0.5)).rotated(Vector3.UP, 0.4), Vector3(-1, 0, 2))]:
+		var nb := xf.basis.inverse().transposed()
+		var moved := MeshJoin.moved(v, xf)
+		var turned := MeshJoin.turned_normals(n, xf, v.size())
+		for i in v.size():
+			worst = maxf(worst, moved[i].distance_to(xf * v[i]))
+			worst = maxf(worst, turned[i].distance_to((nb * n[i]).normalized()))
+	check(worst < 1e-4, "vertices and normals are moved as a vertex at a time (%.6f)" % worst)
+	var short := MeshJoin.turned_normals(n.slice(0, 2), Transform3D.IDENTITY, 5)
+	check(short.size() == 5 and short[4] == Vector3.UP and short[0].is_equal_approx(n[0]), "missing normals point straight up")
+	var four := MeshJoin.tiled(PackedFloat32Array([1, 2, 3, 4]), 7)
+	check(four.size() == 28 and four[24] == 1.0 and four[27] == 4.0, "four floats repeat for every vertex")
+	check(MeshJoin.shifted_index(PackedInt32Array([0, 2, 1]), 10, 3) == PackedInt32Array([10, 12, 11]), "a triangle list is moved along")
+	check(MeshJoin.shifted_index(null, 5, 3) == PackedInt32Array([5, 6, 7]), "and one is made where the mesh has none")
+
+
 func _test_customer_lean() -> void:
 	Shed.start_new("Tester", 63)
 	var bike := {"parts": PartsDB.DEFAULT_BUILD.duplicate(), "paint": Color.RED}

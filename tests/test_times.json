@@ -178,6 +178,8 @@
 	"_test_customer_bay_screen": 40,
 	"_test_customer_bike_in_and_back": 24,
 	"_test_customer_lean": 499,
+	"_test_customer_bike_drawn_once": 900,
+	"_test_mesh_join": 20,
 	"_test_customer_ride_session": 4740,
 	"_test_customer_rides_in": 25,
 	"_test_customer_routes": 258,
