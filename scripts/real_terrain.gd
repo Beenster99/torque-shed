@@ -286,16 +286,10 @@ func _work_water_tile(key: Vector2i) -> Array:
 	var i0 := key.x * WATER_TILE - r
 	var j0 := key.y * WATER_TILE - r
 	# (none where every other point is dry: a tile of land with no water near it, the most of them, is told quickly)
-	var some := false
-	for j in range(0, g, 2):
-		for i in range(0, g, 2):
-			if cover((i0 + i) * WATER_STEP, (j0 + j) * WATER_STEP) == RealPack.WATER:
-				some = true
-				break
-		if some:
-			break
-	if not some:
+	var covers := _cover_grid(i0 * WATER_STEP, j0 * WATER_STEP, WATER_STEP, g, 2)
+	if not covers.has(RealPack.WATER):
 		return []
+	covers = _cover_grid(i0 * WATER_STEP, j0 * WATER_STEP, WATER_STEP, g)
 	# The water's heights round the tile (INF where it's dry)...
 	var raw := PackedFloat32Array()
 	raw.resize(g * g)
@@ -305,7 +299,7 @@ func _work_water_tile(key: Vector2i) -> Array:
 		for i in g:
 			var x := (i0 + i) * WATER_STEP
 			var z := (j0 + j) * WATER_STEP
-			if cover(x, z) != RealPack.WATER:
+			if covers[j * g + i] != RealPack.WATER:
 				continue
 			var h := height(x, z)
 			if not is_nan(h):
@@ -324,6 +318,8 @@ func _work_water_tile(key: Vector2i) -> Array:
 	counts.resize(g * g)
 	wets.resize(g * g)
 	for j in g:
+		if low.slice(j * g, j * g + g).count(INF) == g and raw.slice(j * g, j * g + g).count(INF) == g:
+			continue   # (no water near this row: its sums and counts stay 0)
 		for i in g:
 			var e := WATER_EASE
 			var s := 0.0
@@ -373,7 +369,15 @@ func _work_water_tile(key: Vector2i) -> Array:
 static func _low_pass(v: PackedFloat32Array, g: int, reach: int, rows: bool) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(g * g)
+	out.fill(INF)
 	for a in g:
+		var dry := true   # (a line with no water on it stays INF: most of them, most tiles)
+		for b in g:
+			if (v[a * g + b] if rows else v[b * g + a]) != INF:
+				dry = false
+				break
+		if dry:
+			continue
 		for b in g:
 			var m := INF
 			for d in range(maxi(0, b - reach), mini(g, b + reach + 1)):
@@ -415,6 +419,52 @@ func _cover_from(lvls: Array, x: float, z: float) -> int:
 		var ix := roundi(x / lv.spacing)
 		var iz := roundi(z / lv.spacing)
 		var t: PackedByteArray = _cover_tile(lv, Vector2i(floori(float(ix) / lv.cells), floori(float(iz) / lv.cells)))
+		if not t.is_empty():
+			return t[posmod(iz, lv.cells) * lv.cells + posmod(ix, lv.cells)]
+	return -1
+
+
+## cover() at g x g points from (x0, z0), `step` apart (every `stride`th of them; the rest -1): the same answers, each
+## cover tile looked up once (not under the lock for every point, which the heights the ride asks for wait on).
+func _cover_grid(x0: float, z0: float, step: float, g: int, stride := 1) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(g * g)
+	out.fill(-1)
+	var memo := {}
+	for j in range(0, g, stride):
+		for i in range(0, g, stride):
+			var x := x0 + i * step
+			var z := z0 + j * step
+			if _cover_cells.is_empty():
+				out[j * g + i] = _cover_memo(levels, x, z, memo)
+				continue
+			var lat := lat0 - z / _m.x
+			var lon := lon0 + x / _m.y
+			for c: Dictionary in _cover_cells:
+				if lat >= float(c["south"]) and lat < float(c["north"]) and lon >= float(c["west"]) and lon < float(c["east"]):
+					var m: Vector2 = c["m"]
+					out[j * g + i] = _cover_memo(c["levels"], (lon - float(c["lon"])) * m.y, -(lat - float(c["lat"])) * m.x, memo)
+					break
+	return out
+
+
+## _cover_from, with the tiles it has looked up in `memo`.
+func _cover_memo(lvls: Array, x: float, z: float, memo: Dictionary) -> int:
+	for lv: Level in lvls:
+		if not lv.has_cover:
+			continue
+		var ix := roundi(x / lv.spacing)
+		var iz := roundi(z / lv.spacing)
+		var key := Vector2i(floori(float(ix) / lv.cells), floori(float(iz) / lv.cells))
+		var mine: Dictionary = memo.get(lv, {})
+		if mine.is_empty():
+			memo[lv] = mine
+		var t: PackedByteArray
+		if mine.has(key):
+			t = mine[key]
+		else:
+			t = _cover_tile(lv, key)
+			mine[key] = t
 		if not t.is_empty():
 			return t[posmod(iz, lv.cells) * lv.cells + posmod(ix, lv.cells)]
 	return -1

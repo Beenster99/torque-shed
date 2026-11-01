@@ -676,6 +676,14 @@ func test_real_land() -> void:
 					if absf(terr.height(x, z) - hv) > 0.15:
 						rough_raw += 1
 		check(points > 0 and over == 0, "the water's level is at or under the map's heights of it (%d of %d points over)" % [over, points])
+		# (the tiles' cover, read a grid at a time, is cover()'s)
+		var grid := terr._cover_grid(wkey.x * RealLand.BLOCK, wkey.y * RealLand.BLOCK, st, 64)
+		var same := 0
+		for j in 64:
+			for i in 64:
+				if grid[j * 64 + i] == terr.cover(wkey.x * RealLand.BLOCK + i * st, wkey.y * RealLand.BLOCK + j * st):
+					same += 1
+		check(same == 64 * 64, "its cover read a grid at a time is the same as a point at a time (%d of %d)" % [same, 64 * 64])
 		check(rough_raw > 0 and rough * 4 <= rough_raw, "and it's smooth where the map's heights aren't (%d points off their neighbours by 15 cm, the map's %d)" % [rough, rough_raw])
 		var mi := land._make_mesh(wkey, land._block_arrays(wkey, 0), water)
 		check(mi.mesh.get_surface_count() == 2 and mi.mesh.surface_get_material(1) == land._water_material, "and the block's mesh has it as water")
