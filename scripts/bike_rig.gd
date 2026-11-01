@@ -32,6 +32,8 @@ const DECK := 0.14
 const HEAD_K_MIN := 0.62
 ## How far over a style's tank line the tank may stand before it needs raised mounts made (m).
 const TANK_HIGH := 0.12
+## How far the seat stays over the rear tyre with the shock fully home (m): room for the fender.
+const REAR_CLEAR := 0.04
 ## How short a tank may be drawn to sit on its style's lines, as a share of its own length.
 const TANK_SQUEEZE := 0.75
 ## How far a full race fairing's belly pan hangs below the cases it's sized round (m).
@@ -390,6 +392,17 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	hip.z = maxf(hip.z, seat_front_z + 0.14)
 	var tail_z: float = at_u.call(float(t4["tail_u"]))
 	var tail := Vector3(0.0, seat_y - 0.02 + maxf(0.0, (tail_z - hip.z) * tan(rail)), tail_z)
+	# The seat's back end clears the rear tyre with the shock fully home (a long-travel MX or
+	# supermoto tyre comes up a long way), with room for the fender between: the line from the
+	# seat's nose to the tail kicks up as far as that takes.
+	var seat_nose := Vector3(0.0, seat_y - 0.02, seat_front_z)
+	for i in 9:
+		var z := lerpf(zr - build.rear_radius * 0.9, minf(tail_z, zr), i / 8.0)
+		var dz := z - zr
+		var need := build.rear_travel + sqrt(maxf(0.0, build.rear_radius * build.rear_radius - dz * dz)) + REAR_CLEAR
+		var f := (z - seat_nose.z) / maxf(tail_z - seat_nose.z, 0.01)
+		if f > 0.05 and lerpf(seat_nose.y, tail.y, f) < need:
+			tail.y = seat_nose.y + (need - seat_nose.y) / f
 	var t5: Dictionary = l["5_rider"]
 	var peg := Vector3(0.17, seat_y - float(t5["peg_mm"][1]) / 1000.0, hip.z - float(t5["peg_mm"][0]) / 1000.0)
 	# (The lines are the stock bike's, on the controls it comes with (a tourer's floorboards, say).
