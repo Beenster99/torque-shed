@@ -230,6 +230,58 @@ static func baked_in(surfaces: Array, xform: Transform3D) -> Array:
 	return out
 
 
+## Rig built: a part's lod0 surfaces ([[Mesh, Material], ...], as surfaces gives them) with its
+## shape keys mixed in by `weights` ({key name: weight}, negative weights too; the rest at 0) and
+## every vertex then moved by `warp` (a Callable taking the glb's point to the bike's: a tank bent
+## along its frame, say). Normals follow the warp. Empty when there's no glb.
+static func morphed(path: String, weights: Dictionary, warp: Callable) -> Array:
+	var p := part(path)
+	if p.is_empty():
+		return []
+	var mesh: Mesh = p["lods"][0]
+	var am := mesh as ArrayMesh
+	var names := []
+	if am != null:
+		for i in am.get_blend_shape_count():
+			names.append(str(am.get_blend_shape_name(i)))
+	var out := []
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var base_v := v.duplicate()
+		var base_n := n.duplicate()
+		var shapes: Array = am.surface_get_blend_shape_arrays(s) if am != null else []
+		for i in shapes.size():
+			var w := float(weights.get(names[i], 0.0)) if i < names.size() else 0.0
+			if w == 0.0:
+				continue
+			var sv: PackedVector3Array = shapes[i][Mesh.ARRAY_VERTEX]
+			var sn = shapes[i][Mesh.ARRAY_NORMAL]
+			for k in v.size():
+				v[k] += (sv[k] - base_v[k]) * w
+			if sn is PackedVector3Array and (sn as PackedVector3Array).size() == n.size():
+				for k in n.size():
+					n[k] += ((sn as PackedVector3Array)[k] - base_n[k]) * w
+		const E := 0.002
+		for k in v.size():
+			var q := v[k]
+			var at: Vector3 = warp.call(q)
+			var jac := Basis((warp.call(q + Vector3(E, 0.0, 0.0)) - at) / E, (warp.call(q + Vector3(0.0, E, 0.0)) - at) / E,
+				(warp.call(q + Vector3(0.0, 0.0, E)) - at) / E)
+			v[k] = at
+			if k < n.size():
+				n[k] = (jac.inverse().transposed() * n[k]).normalized()
+		arrays[Mesh.ARRAY_VERTEX] = v
+		arrays[Mesh.ARRAY_NORMAL] = n
+		arrays[Mesh.ARRAY_TANGENT] = null
+		var flat := ArrayMesh.new()
+		flat.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		flat.surface_set_material(0, mesh.surface_get_material(s))
+		out.append([flat, mesh.surface_get_material(s)])
+	return out
+
+
 ## A cross-section part (a mudguard's: see blender/parts/guard/guards.py, running 0 to 1 along +Z,
 ## -0.5 to 0.5 across) bent along `pts`, its up `ups` at each, `width` across: each vertex goes
 ## the share of the way along the line its Z gives, out across by its X and up by its Y. A `tip`
