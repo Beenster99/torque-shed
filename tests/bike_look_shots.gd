@@ -5,6 +5,7 @@ extends Node
 ##   xvfb-run -a godot --path . res://tests/bike_look_shots.tscn -- --out=/tmp/look [--styles=cafe,sport] [--close]
 ## --close takes them close up on the engine and exhaust, for the finishes; a well-worn bike
 ## (hot-coloured headers) comes too. --bare leaves the rider off, to see the tank and seat.
+## --side takes them square side on (the right side), for the lines.
 ## --front takes them close on the nose of the fairing, for its edges; --bars on the handlebars.
 ## --lamps=round_7,square_xl puts each of those headlights on a naked bike with no fairing, close up.
 ## Writes <style>_classic.png, <style>_new.png and diff.json (mean and worst pixel difference, 0..255).
@@ -15,6 +16,7 @@ var close := false
 var bare := false
 var front := false
 var bars := false
+var side := false
 var lamps: Array = []
 
 
@@ -31,6 +33,8 @@ func _ready() -> void:
 			bare = true
 		elif a == "--front":
 			front = true
+		elif a == "--side":
+			side = true
 		elif a == "--bars":
 			bars = true
 		elif a.begins_with("--lamps="):
@@ -76,6 +80,9 @@ func _ready() -> void:
 	elif not lamps.is_empty():
 		cam.global_position = Vector3(0.5, 1.1, -1.75)
 		cam.look_at(Vector3(0.0, 0.95, -0.8), Vector3.UP)
+	elif side:
+		cam.global_position = Vector3(4.2, 0.62, 0.0)
+		cam.look_at(Vector3(0.0, 0.58, 0.0), Vector3.UP)
 	elif front:
 		cam.global_position = Vector3(0.75, 1.05, -1.75)
 		cam.look_at(Vector3(0.05, 0.75, -0.55), Vector3.UP)

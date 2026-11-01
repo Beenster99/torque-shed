@@ -787,8 +787,9 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
 ## A tank's: the code's loft leans its end sections with the dip of its middle line, where the
-## Blender-made tank's stand upright, so a deep tank's ends sit a few centimetres apart.
-const TANK_GIVE := 0.05
+## Blender-made tank's stand upright, so a deep tank's ends sit a few centimetres apart (more on a
+## big tank the Rig built look draws shorter to sit on its style's lines, see BikeRig.TANK_SQUEEZE).
+const TANK_GIVE := 0.06
 ## The most triangles a new-look bike may draw close up with its Blender-made parts on, and how
 ## many more than with the code-built shapes alone (the parts agreement's budgets per part,
 ## added up for the parts loaded so far).

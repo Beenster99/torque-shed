@@ -56,11 +56,11 @@
 		"tris": "76754"
 	},
 	"race": {
-		"colours": "8ec911a2",
-		"materials": "117",
-		"meshes": "306",
-		"size": "0.70,1.16,2.02",
-		"tris": "60138"
+		"colours": "4027d554",
+		"materials": "114",
+		"meshes": "294",
+		"size": "0.70,1.16,2.09",
+		"tris": "58710"
 	},
 	"roader": {
 		"colours": "a6809633",
@@ -72,15 +72,15 @@
 	"scrambler": {
 		"colours": "9a7d3261",
 		"materials": "136",
-		"meshes": "429",
+		"meshes": "427",
 		"size": "1.01,1.58,2.09",
-		"tris": "74986"
+		"tris": "74834"
 	},
 	"sport": {
 		"colours": "7aee19dc",
 		"materials": "116",
 		"meshes": "297",
-		"size": "0.67,1.18,2.03",
+		"size": "0.67,1.18,2.09",
 		"tris": "59290"
 	},
 	"supermoto": {

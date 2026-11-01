@@ -162,6 +162,9 @@ var _down_z := 0.0               # where its downtubes come down in front of the
 var _bay := false                # the frame is one of BAY_FRAMES, built round its engine
 var _head_k := 1.0               # how big the barrels and heads are drawn (see _place_cylinders)
 var _cyls := []                  # {base, up} per cylinder barrel
+## The Rig built look's layout of this bike (BikeRig.solve): empty in the Classic look. The
+## bodywork reads its lines from here (see the lines agreement's keys).
+var rig := {}
 var _arm_len := 0.6
 var _struts: Array = []     # rear shocks: [{mi, top (model space), bottom (on the swingarm), rest}]
 var _grip_l := Vector3(-0.31, 0.12, 0.06)   # handlebar grips, in steering space
@@ -421,13 +424,27 @@ func _lay_out(build: BikeBuild) -> float:
 	if sets.get("peg") is Array and is_fitted("rearsets"):
 		peg = sets["peg"]
 	_peg = Vector3(0.17, float(peg[0]), _pivot.z + float(peg[1]))
+	rig = {}
+	if BikeLook.is_new(self) and BikeRig.on:
+		# The Rig built look: the engine, seat, tail and pegs where the style's lines put them.
+		rig = BikeRig.solve(build)
+		_engine_c = rig["crank"]
+		_seat_front = rig["seat_front"]
+		_tail = rig["tail"]
+		_peg = rig["peg"]
 	_eye = _eye_point()
 	return zr
 
 
+## How far back the rider sits: on the Rig built look's hip point, else 0.42 of the way from the
+## seat's front to the tail.
+func _hip_z() -> float:
+	return (rig["hip"] as Vector3).z if not rig.is_empty() else lerpf(_seat_front.z, _tail.z, 0.42)
+
+
 ## The rider's eyes, sat on the seat (as _build_rider sits them) looking down over the bars.
 func _eye_point() -> Vector3:
-	var hips := Vector3(0.0, _seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
+	var hips := Vector3(0.0, _seat_y + 0.1, _hip_z())
 	return hips + Vector3(0.0, 0.5, -0.3) + Vector3(0.0, 0.28, 0.28)
 
 
@@ -588,7 +605,8 @@ func _layout_cylinders(build: BikeBuild) -> void:
 	_bore_r = clampf(float(block.get("bore", 80.0)) * 0.0006, 0.022, 0.062)
 	_eng_s = clampf(pow(build.displacement / 700.0, 0.3), 0.55, 1.2)
 	_bay = str(PartsDB.get_part(str(build.parts.get("frame", ""))).get("style", "")) in BAY_FRAMES
-	_head_k = 1.0
+	# The Rig built look draws the top end at its real height over the crank (see BikeRig.head_k).
+	_head_k = 1.0 if rig.is_empty() else float(rig["head_k"])
 	_place_cylinders(build)
 	_fit_bay(build)
 
@@ -653,7 +671,14 @@ func _fit_bay(build: BikeBuild) -> void:
 	_spine_kink = Vector3.ZERO
 	_rail_low = _engine_c.y - 0.17 * _eng_s
 	_down_z = _engine_c.z - 0.17 * _eng_s - 0.075
-	if not _bay:
+	# (The Rig built look's rig has already put the engine where it goes and the backbone over it.)
+	if _bay and not rig.is_empty():
+		# The downtubes in front of the engine the rig placed, and the rails under its sump.
+		_rail_low = minf(_rail_low, _rig_low(BAY_DOWN_R))
+		var front := _bay_front(_engine_corners(), 0.0, _rail_low)
+		if front > -INF:
+			_down_z = minf(_down_z, front)
+	if not _bay or not rig.is_empty():
 		return
 	var want_z := _engine_c.z
 	var front_limit := _bay_front_limit(build)
@@ -826,7 +851,7 @@ func _engine_corners() -> Array:
 	_add_box_corners(out, e + Vector3(-half - 0.025, -0.015 * s, -0.06 * s), Basis(), Vector3(0.025, 0.085 * s, 0.085 * s))
 	for c in _cyls:
 		var up: Vector3 = c["up"]
-		var fin := _bore_r * 1.55 * _head_k
+		var fin := _bore_r * 1.55 * _head_w()
 		_add_box_corners(out, (c["base"] as Vector3) - up * 0.005, _basis_up(up), Vector3(fin, 0.095 * _head_k, fin))
 	# The spark plugs and their caps on top of each head, out to the side (see _draw_spark_plugs).
 	if _build.layout != "boxer":
@@ -845,12 +870,12 @@ func _engine_corners() -> Array:
 		var last: Dictionary = _cyls[_cyls.size() - 1]
 		var up: Vector3 = first["up"]
 		var mid: Vector3 = ((first["base"] as Vector3) + (last["base"] as Vector3)) * 0.5
-		var span := absf((last["base"] as Vector3).x - (first["base"] as Vector3).x) * 0.5 + 0.08 * k
-		_add_box_corners(out, mid + up * (lo + hi) * 0.5, _basis_up(up), Vector3(span, (hi - lo) * 0.5 * k, float(head[2]) * k))
+		var span := absf((last["base"] as Vector3).x - (first["base"] as Vector3).x) * 0.5 + 0.08 * _head_w()
+		_add_box_corners(out, mid + up * (lo + hi) * 0.5, _basis_up(up), Vector3(span, (hi - lo) * 0.5 * k, float(head[2]) * _head_w()))
 		return out
 	for c in _cyls:
 		var up: Vector3 = c["up"]
-		_add_box_corners(out, (c["base"] as Vector3) + up * (lo + hi) * 0.5, _basis_up(up), Vector3(float(head[1]) * k, (hi - lo) * 0.5 * k, float(head[2]) * k))
+		_add_box_corners(out, (c["base"] as Vector3) + up * (lo + hi) * 0.5, _basis_up(up), Vector3(float(head[1]) * _head_w(), (hi - lo) * 0.5 * k, float(head[2]) * _head_w()))
 	return out
 
 
@@ -913,25 +938,43 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			# wider. Each starts inside the head stock, so it meets it with no gap.
 			var half := MONO_HALF if carbon else SPAR_HALF
 			for side in [-1.0, 1.0]:
-				var beam := _tube(hb + Vector3(SPAR_FRONT_X * side, 0.05, 0.0), _pivot + Vector3(0.12 * side, 0.1, 0.0), SPAR_R, frame_mat,
-					Vector3(half.x / SPAR_R, 1.0, half.y / SPAR_R))
-				beam.name = "SparBeam"
+				var front := hb + Vector3(SPAR_FRONT_X * side, 0.05, 0.0)
+				var back := _pivot + Vector3(0.12 * side, 0.1, 0.0)
+				var over := _spar_over(front, back, half.y)
+				if over != Vector3.ZERO:
+					# Rig built: the beams rise over the top end on their way back (see _spar_over).
+					over.x = lerpf(front.x, back.x, 0.5)
+					for seg in [[front, over], [over, back]]:
+						_tube(seg[0], seg[1], SPAR_R, frame_mat, Vector3(half.x / SPAR_R, 1.0, half.y / SPAR_R)).name = "SparBeam"
+				else:
+					var beam := _tube(front, back, SPAR_R, frame_mat, Vector3(half.x / SPAR_R, 1.0, half.y / SPAR_R))
+					beam.name = "SparBeam"
 				_tube(_pivot + Vector3(0.12 * side, 0.1, 0.0), _pivot + Vector3(0.12 * side, -0.12, 0.02), 0.04, frame_mat)
 				_tube(_seat_front + Vector3(0.08 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.016, frame_mat)
 				_tube(_pivot + Vector3(0.1 * side, 0.12, 0.0), _tail + Vector3(0.06 * side, -0.02, -0.05), 0.014, frame_mat)
 		"adv":
 			# A tall steel tubular frame: twin top rails and twin cradle rails round the engine,
 			# an upright and one brace a side, and a bolt-on rack out past the tail.
+			var sag := 0.12
 			for side in [-1.0, 1.0]:
 				var top := []
 				var bottom := []
 				for i in 5:
 					var f := i / 4.0
 					top.append(hb.lerp(_pivot + Vector3(0.0, 0.18, 0.0), f) + Vector3(0.1 * side, 0.08, 0.0))
-					bottom.append(hb.lerp(_pivot, f) + Vector3(0.11 * side, -0.12 * sin(f * PI), 0.0))
+					bottom.append(hb.lerp(_pivot, f) + Vector3(0.11 * side, -sag * sin(f * PI), 0.0))
+				if not rig.is_empty():
+					# Rig built: the cradle rails drop in front of the cases, run flat under the
+					# sump and rise behind the gearbox to the pivot.
+					var x: float = 0.11 * side
+					var low := _rig_low(0.014)
+					var cf := _engine_c.z + (rig["hard"]["case_front"] as Vector3).z
+					var cr := _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z
+					bottom = [bottom[0], Vector3(x, lerpf(hb.y, low, 0.6), cf - 0.04), Vector3(x, low, cf + 0.03),
+						Vector3(x, low, minf(cr, _pivot.z - 0.06)), bottom[4]]
 				_bend(top, 0.014, frame_mat)
 				_bend(bottom, 0.014, frame_mat)
-				_tube(top[1], bottom[2], 0.011, frame_mat)
+				_tube(top[1], bottom[2 if rig.is_empty() else 1], 0.011, frame_mat)
 				_tube(top[4], bottom[4], 0.013, frame_mat)
 				_tube(_seat_front + Vector3(0.07 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.012, frame_mat)
 				_tube(top[3], _tail + Vector3(0.06 * side, -0.03, -0.05), 0.01, frame_mat)
@@ -954,7 +997,11 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			var spine_mid := _head.lerp(_seat_front, 0.5) + Vector3(0.0, 0.0 if chop else 0.03, 0.0)
 			var neck := _head + Vector3(0.0, -0.01, 0.02)
 			var seat := _seat_front + Vector3(0.0, -0.04, 0.0)
-			if _spine_kink != Vector3.ZERO:
+			if not rig.is_empty():
+				# Rig built: the backbone the rig drew, arched over the heads where it has to be.
+				_bend(Array(rig["spine"]), 0.03 if not chop else 0.032, frame_mat)
+				spine_mid = (rig["spine"] as PackedVector3Array)[4]
+			elif _spine_kink != Vector3.ZERO:
 				# Over a big engine the backbone runs back over the heads under the tank, then
 				# bends down to the seat behind the back cylinder.
 				var k := _spine_kink
@@ -978,7 +1025,14 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 				# Rails from the seat back to the tail, carrying the fender.
 				_bend([_seat_front + Vector3(0.07 * side, -0.02, -0.04), _seat_front.lerp(_tail, 0.5) + Vector3(0.075 * side, -0.02, 0.0),
 					_tail + Vector3(0.07 * side, -0.03, 0.02)], 0.015, frame_mat)
-			_bend([_seat_front + Vector3(0.0, -0.04, -0.02), _seat_front.lerp(_pivot, 0.5) + Vector3(0.0, 0.0, -0.05), _pivot + Vector3(0.0, 0.05, -0.04)], 0.026, frame_mat)
+			var post_mid := _seat_front.lerp(_pivot, 0.5) + Vector3(0.0, 0.0, -0.05)
+			var post_low := _pivot + Vector3(0.0, 0.05, -0.04)
+			if not rig.is_empty():
+				# Rig built: the seat post comes down behind the gearbox.
+				var behind := _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z + 0.026 + 0.015
+				post_mid.z = maxf(post_mid.z, behind)
+				post_low.z = maxf(post_low.z, behind + 0.01)
+			_bend([_seat_front + Vector3(0.0, -0.04, -0.02), post_mid, post_low], 0.026, frame_mat)
 			_tube(_pivot + Vector3(-0.1, 0.0, 0.0), _pivot + Vector3(0.1, 0.0, 0.0), 0.022, frame_mat)
 			if style == "cruiser":
 				# Twin shocks need upper rails to push against, from the seat post back to the tail.
@@ -1015,13 +1069,25 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			_bend([hb + Vector3(0.0, -0.01, 0.02), hb.lerp(split, 0.55) + Vector3(0.0, 0.0, -0.01), split], 0.022, frame_mat)
 			var low_y := _engine_c.y - 0.2 * _eng_s
 			var top := _pivot + Vector3(0.0, 0.22, -0.06)
+			# (Rig built: the loops under the sump, and the subframe from behind the heads.)
+			var sub := _seat_front
+			var rise_z := _pivot.z - 0.14
+			if not rig.is_empty():
+				low_y = minf(low_y, _rig_low(0.016))
+				sub.z = maxf(sub.z, top.z + 0.08)
+				# The loops turn up behind the gearbox, not through it.
+				rise_z = maxf(rise_z, _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z + 0.03)
 			for side in [-1.0, 1.0]:
 				var x: float = 0.06 * side
 				_bend([split, Vector3(x, low_y + 0.04, split.z + 0.06), Vector3(x, low_y, _engine_c.z + 0.05),
-					Vector3(x + 0.01 * side, low_y + 0.01, _pivot.z - 0.14), Vector3(0.08 * side, _pivot.y - 0.05, _pivot.z - 0.03), _pivot + Vector3(0.09 * side, 0.08, -0.04)], 0.016, frame_mat)
-				_bend([top + Vector3(0.0, 0.0, 0.0), _pivot + Vector3(0.09 * side, 0.16, -0.06), _pivot + Vector3(0.09 * side, 0.02, -0.03)], 0.02, frame_mat)
-				_bend([top + Vector3(0.05 * side, 0.02, 0.02), _seat_front + Vector3(0.07 * side, 0.0, 0.06), _tail + Vector3(0.06 * side, -0.02, 0.02)], 0.012, frame_mat)
-				_tube(_pivot + Vector3(0.08 * side, 0.06, 0.0), _seat_front.lerp(_tail, 0.6) + Vector3(0.065 * side, -0.03, 0.0), 0.011, frame_mat)
+					Vector3(x + 0.01 * side, low_y + 0.01, rise_z), Vector3(0.08 * side, _pivot.y - 0.05, maxf(_pivot.z - 0.03, rise_z + 0.02)), _pivot + Vector3(0.09 * side, 0.08, -0.04)], 0.016, frame_mat)
+				var px := 0.09
+				if not rig.is_empty():
+					# Rig built: the loops come down to the pivot outside a wide engine's cases.
+					px = maxf(px, float(rig["hard"]["case_half_w"]) + 0.032)
+				_bend([top + Vector3(0.0, 0.0, 0.0), _pivot + Vector3(px * side, 0.16, -0.06), _pivot + Vector3(px * side, 0.02, -0.03)], 0.02, frame_mat)
+				_bend([top + Vector3(0.05 * side, 0.02, 0.02), sub + Vector3(0.07 * side, 0.0, 0.06), _tail + Vector3(0.06 * side, -0.02, 0.02)], 0.012, frame_mat)
+				_tube(_pivot + Vector3(0.08 * side, 0.06, 0.0), sub.lerp(_tail, 0.6) + Vector3(0.065 * side, -0.03, 0.0), 0.011, frame_mat)
 			_bend([_head + Vector3(0.0, -0.02, 0.02), _head.lerp(top, 0.5) + Vector3(0.0, 0.03, 0.0), top], 0.034, frame_mat)
 		_:
 			_tube(_head, _seat_front, 0.024, frame_mat)
@@ -1029,7 +1095,11 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			_tube(_seat_front, _pivot, 0.02, frame_mat)
 			_tube(_pivot, _tail, 0.016, frame_mat)
 			var cradle_front := Vector3(0.0, _engine_c.y - 0.2, _engine_c.z - 0.2)
-			var cradle_back := Vector3(0.0, _engine_c.y - 0.2, _pivot.z)
+			if not rig.is_empty():
+				# Rig built: the cradle wraps the engine it's built round, under its sump and
+				# ahead of its cases.
+				cradle_front = Vector3(0.0, minf(cradle_front.y, _rig_low(0.024)), minf(cradle_front.z, _engine_c.z - 0.17 * _eng_s - 0.045))
+			var cradle_back := Vector3(0.0, cradle_front.y, _pivot.z)
 			_tube(hb, cradle_front, 0.024, frame_mat)
 			_tube(cradle_front, cradle_back, 0.022, frame_mat)
 			_tube(cradle_back, _pivot, 0.022, frame_mat)
@@ -1067,6 +1137,47 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 	_draw_swingarm(build, zr, frame_mat)
 
 
+## Rig built: how low a tube of radius `r` runs to pass under the engine's sump (see BikeRig).
+func _rig_low(r: float) -> float:
+	return _engine_c.y + (rig["hard"]["sump"] as Vector3).y - r - 0.012
+
+
+## Rig built: where a straight spar beam from `a` to `b` (half `half_h` deep) would run into the
+## top end, the point over it the beam bends up to; ZERO where it already clears (or in Classic).
+## The top end is sampled at each cylinder's tip and its head's front and back edges, with room
+## for the cam cover and its bolts.
+func _spar_over(a: Vector3, b: Vector3, half_h: float) -> Vector3:
+	if rig.is_empty():
+		return Vector3.ZERO
+	var need := []
+	var top := _engine_c.y + float(rig["hard"]["top_y"])
+	for c in _cyls:
+		var tip: Vector3 = (c["base"] as Vector3) + (c["up"] as Vector3) * 0.215
+		for dz in [-0.08, 0.0, 0.08, 0.12]:
+			need.append(Vector2(tip.z + dz, maxf(tip.y, top) + 0.03 + 0.02 + half_h))
+	var worst := 0.0
+	var over := Vector3.ZERO
+	for n: Vector2 in need:
+		var f := clampf((n.x - a.z) / maxf(b.z - a.z, 0.01), 0.0, 1.0)
+		var short := n.y - lerpf(a.y, b.y, f)
+		if short > worst:
+			worst = short
+			over = Vector3(0.0, n.y, n.x)
+	if over == Vector3.ZERO:
+		return over
+	# Lift the bend until both legs clear every sample on their side of it.
+	for n: Vector2 in need:
+		if n.x > over.z and n.x < b.z:
+			var g := (n.x - over.z) / (b.z - over.z)
+			if g < 0.999:
+				over.y = maxf(over.y, (n.y - b.y * g) / (1.0 - g))
+		elif n.x < over.z and n.x > a.z:
+			var g := (over.z - n.x) / (over.z - a.z)
+			if g < 0.999:
+				over.y = maxf(over.y, (n.y - a.y * g) / (1.0 - g))
+	return over
+
+
 ## The new look's welds: a bead round each frame tube's end where it butts into another (the
 ## thinner into the thicker), set where its line comes out of the other's surface, so the joints
 ## read as welded rather than as tubes passing through each other.
@@ -1080,7 +1191,15 @@ func _blender_welds() -> void:
 		var ra := float(a["r"])
 		for end in [0, pts.size() - 1]:
 			var at: Vector3 = pts[end]
-			var inward: Vector3 = ((pts[1] if end == 0 else pts[end - 1]) as Vector3) - at
+			# (Along the tube to its first point a centimetre in: a smoothed bend's are close together.)
+			var inward := Vector3.ZERO
+			var step: int = 1 if end == 0 else -1
+			var k: int = end + step
+			while k >= 0 and k < pts.size():
+				inward = (pts[k] as Vector3) - at
+				if inward.length() >= 0.01:
+					break
+				k += step
 			var room := inward.length()
 			if room < 0.01:
 				continue
@@ -1148,6 +1267,11 @@ func _draw_trestle(frame_mat: Material) -> void:
 		# One head (or a row of them across the bike): the back mount is on the back of it.
 		aft = Vector3(0.0, last.y - 0.03, last.z + 0.1 * s) if last.z - first.z < 0.1 else Vector3(0.0, last.y, last.z)
 	var x := clampf(_block_w * 0.32, 0.06, 0.12)
+	if not rig.is_empty():
+		# Rig built: the rails run down the outside of a wide row of heads, not through them.
+		# (A row's head and cam-end caps reach 0.075 past its outer bores.)
+		for c in _cyls:
+			x = maxf(x, absf((c["base"] as Vector3).x) + 0.075 * _head_w() + 0.02)
 	var case_back := _engine_c + Vector3(0.0, 0.02, 0.17 * s)
 	var cast := bool(_look().get("cast", false))
 	var lug := _mat(Color(0.12, 0.12, 0.13), 0.8, 0.35)
@@ -1157,6 +1281,9 @@ func _draw_trestle(frame_mat: Material) -> void:
 		var f := fwd + Vector3(x * side, 0.0, 0.0)
 		var a := aft + Vector3(x * side, 0.0, 0.0)
 		var u1 := u0.lerp(a, 0.5) + Vector3(0.012 * side, 0.025, 0.0)
+		if not rig.is_empty():
+			# Rig built: out to the rails' full width over the heads, then straight down past them.
+			u1.x = a.x
 		if cast:
 			var secs := []
 			for k in 6:
@@ -1451,13 +1578,17 @@ func _draw_tank() -> void:
 	# The top tube, from the head stock back to the front of the seat.
 	var a := _head + Vector3(0.0, -0.03, 0.06)
 	var b := _seat_front + Vector3(0.0, 0.03, 0.0)
-	if _spine_kink != Vector3.ZERO:
+	if not rig.is_empty():
+		# Rig built: on the backbone, its top kept down to the style's line (see BikeRig).
+		a = rig["tank_nose"]
+		b = rig["tank_rear"]
+	elif _spine_kink != Vector3.ZERO:
 		# On a backbone bent over a big engine, the tank sits on its top run (see _fit_bay).
 		b = _spine_kink + Vector3(0.0, 0.02, 0.0)
 	# Real tanks sit nearly level along the frame: cap the nose-up slope so a tall head stock
 	# (scramblers, classics on long forks) doesn't stand the tank up on end.
 	var max_rise := tan(deg_to_rad(_geo("tank_slope", 13.0))) * maxf(b.z - a.z, 0.01)
-	if a.y - b.y > max_rise:
+	if a.y - b.y > max_rise and rig.is_empty():
 		a.y = b.y + max_rise
 	_tank_a = a
 	_tank_b = b
@@ -2011,7 +2142,7 @@ func _draw_head() -> void:
 		var b := _cyl_basis(up)
 		var mid := (first + last) * 0.5
 		# (Across the row in the head's own size, which b scales back up to the row's width.)
-		var span := absf(last.x - first.x) / up.length() + 0.12
+		var span := absf(last.x - first.x) / b.x.length() + 0.12
 		_box(mid, Vector3(span, 0.08, 0.15), gasket).basis = b
 		var cover := _box(mid + up * 0.06, Vector3(span - 0.01, 0.05, 0.14 if valves > 2 else 0.1), cover_mat)
 		cover.basis = b
@@ -7116,7 +7247,7 @@ func _build_plain_rider() -> void:
 	var helmet := _mat(rider_color if mine else paint.lightened(0.15), 0.4, 0.15)
 	var visor := _mat(Color(0.02, 0.02, 0.03), 0.9, 0.05)
 	var gloves := _mat(Color(0.04, 0.04, 0.04), 0.0, 0.6)
-	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
+	var hips := Vector3(0.0, seat_y + 0.1, _hip_z())
 	var shoulders := hips + (_style_n["torso"] as Vector3)
 	var torso := _tube(hips, shoulders, 0.15, suit, Vector3(1.25, 1.0, 0.8), _rider)
 	var lid := _mesh_instance(_sphere(0.15), helmet, shoulders + Vector3(0.0, 0.2, -0.08), _rider)
@@ -7168,7 +7299,7 @@ func _build_dressed_rider() -> void:
 	var tx: Array = RiderGear.get_item(trousers).get("extras", [])
 	var hidden := eye_layers()   # kept out of your own first-person eye, as in _build_rider
 	var seat_y := _seat_y
-	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
+	var hips := Vector3(0.0, seat_y + 0.1, _hip_z())
 	var shoulders := hips + (_style_n["torso"] as Vector3)
 	var torso := RiderFigure.limb(_rider, hips, shoulders, 0.15, jm, hidden)
 	torso.basis = torso.basis * Basis.from_scale(Vector3(1.25, 1.0, 0.8))
@@ -7674,7 +7805,16 @@ func redress(gear: Dictionary) -> void:
 ## A turn that stands a piece up along cylinder barrel `up`, sized with the barrel (see
 ## _place_cylinders).
 func _cyl_basis(up: Vector3) -> Basis:
+	if not rig.is_empty():
+		# Rig built: the top end only shortened to its real height, its barrels and heads as wide.
+		return _basis_up(up) * Basis.from_scale(Vector3(_head_w(), up.length(), _head_w()))
 	return _basis_up(up).scaled(Vector3.ONE * up.length())
+
+
+## How wide the barrels and heads are drawn: as long as they're drawn, but full width in the Rig
+## built look, which only shortens them (see BikeRig.head_k).
+func _head_w() -> float:
+	return _head_k if rig.is_empty() else 1.0
 
 
 func _basis_up(up: Vector3) -> Basis:
@@ -9199,7 +9339,7 @@ func _blender_top_end() -> void:
 	var case_path := BlenderParts.path_for("engine", str(_build.parts.get("engine", "")))
 	var case: bool = not _slot_meshes["engine"].is_empty() and not BlenderParts.part(case_path).is_empty()
 	var tops: Array = [] if _slot_meshes["head"].is_empty() else \
-		BlenderParts.top_end_pieces(str(_build.layout), str(_build.parts.get("head", "")), _cyls, _eng_s, _bore_r)
+		BlenderParts.top_end_pieces(str(_build.layout), str(_build.parts.get("head", "")), _cyls, _eng_s, _bore_r, -1.0 if rig.is_empty() else _head_w())
 	if not case and tops.is_empty():
 		return
 	for slot in ["engine", "head"]:
