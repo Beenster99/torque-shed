@@ -605,6 +605,7 @@ func _run_all() -> void:
 	await _t(&"_test_live_tiles")
 	await _t(&"_test_live_heights")
 	await _t(&"_test_live_edges")
+	await _t(&"_test_live_gap")
 	await _t(&"_test_live_pads")
 	await _t(&"_test_live_same")
 	await _t(&"_test_live_ride")
@@ -22896,6 +22897,10 @@ func _test_live_heights() -> void:
 
 func _test_live_edges() -> void:
 	_live().test_edges()
+
+
+func _test_live_gap() -> void:
+	_live().test_gap()
 
 
 func _test_live_pads() -> void:

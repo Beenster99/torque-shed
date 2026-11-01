@@ -2,7 +2,9 @@ class_name HeightTiles
 extends RefCounted
 ## The world's ground heights as web-mercator map tiles (Terrarium: height = R * 256 + G + B / 256 - 32768 metres), from
 ## Mapterhorn (tiles.mapterhorn.com, 512 px webp), else AWS's Terrain Tiles (256 px png), the same sources
-## tools/route_bake.py bakes from. A region whose heights are "live" (RealTerrain) reads them from here instead of from
+## tools/route_bake.py bakes from. AWS's are only taken at AWS_TOP and coarser: past that, where Mapterhorn has no tile
+## (it has its fine zooms only where a survey finer than the world's 30 m one covers the land), there is none, and the
+## coarser zoom carries on there (RealTerrain eases into it). A region whose heights are "live" (RealTerrain) reads them from here instead of from
 ## baked tiles of its own.
 ##
 ## Tiles are kept on disk under `disk` (and read from any folder in `dirs`, the tests' fixtures among them) and decoded
@@ -13,6 +15,13 @@ extends RefCounted
 const MAPTERHORN := "https://tiles.mapterhorn.com/%d/%d/%d.webp"
 const AWS := "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.png"
 const USER_AGENT := "TorqueShed (+https://github.com/Beenster99/torque-shed)"
+## The finest zoom AWS's tiles are used at. Finer than this, where Mapterhorn has no tile AWS's is only the world's 30 m
+## survey drawn larger, with flat rectangles here and there standing up to 100 m out of the land round them (all over
+## the Highlands): sheer walls on the hillsides. So there is none there (a NONE file says so) and the coarser zoom,
+## Mapterhorn's, is the ground.
+const AWS_TOP := 12
+## A tile Mapterhorn had none of is asked for again once its NONE file is this old (days): it may have one by then.
+const NONE_DAYS := 30
 ## Where fetched tiles are kept (the tests keep theirs elsewhere).
 static var disk := "user://heights"
 ## Decoded tiles kept in memory (a 512 px tile is 768 KB): a long ride's near tiles and their surroundings.
@@ -44,6 +53,7 @@ static var _used_now := {}   # Vector3i -> true
 static var _lock := Mutex.new()
 static var _mem := {}        # Vector3i(z, x, y) -> Tile
 static var _missing := {}    # Vector3i -> true: not on disk when last looked (fetch() clears it)
+static var _none := {}       # Vector3i -> bool: whether there is known to be no such tile (a NONE file), once looked
 static var _tick := 0
 ## Whether each cell (RealRegion.cell_of: Vector2i(row, col)) has sea, from its place profile (know_sea). A cell not in
 ## here is taken to have it, as before profiles: ground at or under SEA_ABS is sea.
@@ -129,7 +139,7 @@ static func has(key: Vector3i) -> bool:
 	var known := _mem.has(key)
 	var gone := _missing.has(key)
 	_lock.unlock()
-	if known:
+	if known or is_none(key):
 		return true
 	if gone:
 		return false
@@ -139,6 +149,46 @@ static func has(key: Vector3i) -> bool:
 	_missing[key] = true   # (until fetch() brings it)
 	_lock.unlock()
 	return false
+
+
+## Whether there is known to be no tile `key` (Mapterhorn had none, past AWS_TOP): has() is true of it, but tile() is
+## null and the coarser zoom is the ground there.
+static func is_none(key: Vector3i) -> bool:
+	_lock.lock()
+	var v = _none.get(key)
+	_lock.unlock()
+	if v != null:
+		return v
+	var p := _none_path(key)
+	var yes := p != "" and (Time.get_unix_time_from_system() - FileAccess.get_modified_time(p)) < NONE_DAYS * 86400.0
+	_lock.lock()
+	_none[key] = yes
+	_lock.unlock()
+	return yes
+
+
+## The NONE file of tile `key` in `disk` or `dirs`, or "".
+static func _none_path(key: Vector3i) -> String:
+	if key.x <= AWS_TOP:
+		return ""
+	for root in [disk] + Array(dirs):
+		var p: String = str(root).path_join(_rel(key) + ".none")
+		if FileAccess.file_exists(p):
+			return p
+	return ""
+
+
+## Notes on disk that Mapterhorn has no tile `key`.
+static func _mark_none(key: Vector3i) -> void:
+	var path := disk.path_join(_rel(key) + ".none")
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.close()
+	_lock.lock()
+	_none[key] = true
+	_missing.erase(key)
+	_lock.unlock()
 
 
 ## A tile from its file's bytes (webp or png): null when they are no good. `key` places it, for which cells have sea.
@@ -321,10 +371,12 @@ static func _rel(key: Vector3i) -> String:
 	return "%d/%d/%d" % [key.x, key.y, key.z]
 
 
-## The file holding tile `key` (webp or png) in `disk` or `dirs`, or "".
+## The file holding tile `key` (webp or png) in `disk` or `dirs`, or "". Past AWS_TOP only Mapterhorn's (webp): AWS's
+## fetched there before are passed over.
 static func _path_of(key: Vector3i) -> String:
+	var exts := [".webp", ".png"] if key.x <= AWS_TOP else [".webp"]
 	for root in [disk] + Array(dirs):
-		for ext in [".webp", ".png"]:
+		for ext: String in exts:
 			var p: String = str(root).path_join(_rel(key) + ext)
 			if FileAccess.file_exists(p):
 				return p
@@ -412,10 +464,13 @@ static func _fetch(todo: Array[Vector3i], progress: Callable) -> int:
 			if state == 0:
 				continue
 			clients.erase(c)
-			if state < 0 and not bool(c["aws"]):
-				clients.append(_start(c["key"], true))   # Mapterhorn didn't have it: AWS's
+			var key: Vector3i = c["key"]
+			if state == -2 and not bool(c["aws"]) and key.x > AWS_TOP:
+				_mark_none(key)   # (Mapterhorn hasn't it and AWS's isn't wanted: the coarser zoom is the ground there)
+			elif state < 0 and not bool(c["aws"]) and key.x <= AWS_TOP:
+				clients.append(_start(key, true))   # Mapterhorn didn't have it: AWS's
 				continue
-			if state < 0:
+			elif state < 0:
 				failed += 1
 			done += 1
 			if progress.is_valid():
@@ -433,7 +488,8 @@ static func _start(key: Vector3i, aws: bool) -> Dictionary:
 		"err": err, "since": Time.get_ticks_msec()}
 
 
-## Moves one fetch on: 0 while it runs, 1 when the tile is on disk, -1 when it failed.
+## Moves one fetch on: 0 while it runs, 1 when the tile is on disk, -2 when the server has no such tile, -1 when it
+## failed otherwise.
 static func _poll(c: Dictionary) -> int:
 	var http: HTTPClient = c["http"]
 	if int(c["err"]) != OK or Time.get_ticks_msec() - int(c["since"]) > TIMEOUT_MS:
@@ -452,6 +508,8 @@ static func _poll(c: Dictionary) -> int:
 		c["body"] = body   # (a packed array is a value: put back)
 		return 0
 	if st == HTTPClient.STATUS_CONNECTED and bool(c["sent"]):
+		if http.get_response_code() == 404:
+			return -2
 		if http.get_response_code() != 200:
 			return -1
 		var body: PackedByteArray = c["body"]
@@ -477,5 +535,6 @@ static func reset() -> void:
 	_lock.lock()
 	_mem.clear()
 	_missing.clear()
+	_none.clear()
 	_sea_cells.clear()
 	_lock.unlock()

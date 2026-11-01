@@ -846,7 +846,9 @@ func _pixel(key: Vector3i, t: HeightTiles.Tile, i: int, j: int) -> float:
 
 
 ## How much of the next level a sample at pixel (u, v) of tile `key` takes: 0 inside the ride's tiles, rising to 1 at
-## an edge (or a corner) with no tile of the ride's beyond it (tools/route_bake.py blend_edges).
+## an edge (or a corner) with no tile of the ride's beyond it, or one there is none of (HeightTiles.is_none: no fine
+## survey there), so a fine tile next to a gap meets the coarser level there with no step (tools/route_bake.py
+## blend_edges).
 func _edge_weight(li: int, key: Vector3i, u: float, v: float, size: int) -> float:
 	var f := LIVE_EASE_PX * size / 512.0
 	var w := 0.0
@@ -856,20 +858,25 @@ func _edge_weight(li: int, key: Vector3i, u: float, v: float, size: int) -> floa
 	var near_s := size - v < f
 	if not (near_w or near_e or near_n or near_s):
 		return 0.0
-	if near_w and not _uses(li, key + Vector3i(0, -1, 0)):
+	if near_w and not _has_ground(li, key + Vector3i(0, -1, 0)):
 		w = maxf(w, 1.0 - smoothstep(0.0, f, u))
-	if near_e and not _uses(li, key + Vector3i(0, 1, 0)):
+	if near_e and not _has_ground(li, key + Vector3i(0, 1, 0)):
 		w = maxf(w, 1.0 - smoothstep(0.0, f, size - u))
-	if near_n and not _uses(li, key + Vector3i(0, 0, -1)):
+	if near_n and not _has_ground(li, key + Vector3i(0, 0, -1)):
 		w = maxf(w, 1.0 - smoothstep(0.0, f, v))
-	if near_s and not _uses(li, key + Vector3i(0, 0, 1)):
+	if near_s and not _has_ground(li, key + Vector3i(0, 0, 1)):
 		w = maxf(w, 1.0 - smoothstep(0.0, f, size - v))
 	for d: Vector2i in [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)]:
 		var cu := u if d.x < 0 else size - u
 		var cv := v if d.y < 0 else size - v
-		if cu < f and cv < f and not _uses(li, key + Vector3i(0, d.x, d.y)):
+		if cu < f and cv < f and not _has_ground(li, key + Vector3i(0, d.x, d.y)):
 			w = maxf(w, 1.0 - smoothstep(0.0, f, maxf(cu, cv)))
 	return w
+
+
+## Whether the ride uses tile `key` of level `li` and it has ground (not one there is none of).
+func _has_ground(li: int, key: Vector3i) -> bool:
+	return _uses(li, key) and not HeightTiles.is_none(key)
 
 
 ## `h` at route-frame (x, z) levelled under any building there, feathered into the land round it
