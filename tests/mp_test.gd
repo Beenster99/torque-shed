@@ -140,6 +140,7 @@ func _ready() -> void:
 	var rec_ok := false
 	var pass_step := 0
 	var pass_t := 0
+	var pass_since := 0         # when the host sat down (ms on the clock)
 	var pass_seen := false     # the client saw the host sat in the passenger seat, its door open
 	var pass_door := false     # the client saw the passenger door swing
 	var pass_sat := false      # and the host sat in the passenger seat
@@ -600,9 +601,13 @@ func _ready() -> void:
 							Shed.request({"a": "recovery_board"})
 						if rv.riding_along:
 							pass_step = 1
+							pass_since = Time.get_ticks_msec()
 					1:
+						# Sat a while in game time and on the clock: the two run flat out at a fixed
+						# frame rate, so 300 frames can be gone in under a second here while the
+						# client, busier, hasn't yet drawn the door swinging or the host in the seat.
 						pass_t += 1
-						if pass_t > 300:
+						if pass_t > 300 and Time.get_ticks_msec() - pass_since > 4000:
 							rv.stop_riding_along()
 							pass_step = 2
 					2:

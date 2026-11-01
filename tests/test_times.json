@@ -683,5 +683,6 @@
 	"_test_ferry_crew": 5,
 	"_test_ferry_timeline": 15,
 	"_test_ferry_kits": 120,
-	"_test_ferry_lay_out": 60
+	"_test_ferry_lay_out": 60,
+	"_test_bike_rig_lines": 200
 }
