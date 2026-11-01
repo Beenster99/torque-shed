@@ -891,7 +891,7 @@ static func style_build(style: String) -> Dictionary:
 				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "carbon_hugger",
 				"front_tyre": "sport_road_120", "rear_tyre": "sport_road_190"}, true)
 		"bobber":
-			b.merge({"frame": "softail_hardtail", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
+			b.merge({"frame": "softail_hardtail", "tank": "peanut_9", "saddle": "bobber_gunfighter", "handlebars": "drag_bar",
 				"tail": "bobber_fender", "engine": "vtwin_1000", "exhaust": "straight_pipe", "front_wheel": "wire_16_bobber",
 				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel",
 				"rear_tyre": "touring_road_150"}, true)

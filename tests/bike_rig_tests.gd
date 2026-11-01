@@ -11,8 +11,9 @@ const LINE_KEYS := ["1_backbone", "2_tank", "3_tank_seat", "4_seat", "5_rider", 
 const WHEELBASE_TOL := 0.06   # m
 const SEAT_TOL := 0.05        # m
 const RAKE_TOL := 4.5         # degrees
-## Choppers are customs: built longer and more raked than any factory one.
-const CUSTOM_LONG := ["chopper"]
+## Choppers are customs: built longer and more raked than any factory one. The stock cruiser
+## carries an 1800 V-twin on the Nightster's lines, so it comes longer than one too.
+const CUSTOM_LONG := ["chopper", "cruiser"]
 
 
 func _init(runner: Node) -> void:

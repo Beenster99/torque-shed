@@ -7,11 +7,11 @@
 		"tris": "84114"
 	},
 	"bobber": {
-		"colours": "f2eedbfe",
-		"materials": "131",
+		"colours": "613ce427",
+		"materials": "128",
 		"meshes": "395",
 		"size": "0.96,1.10,2.24",
-		"tris": "72138"
+		"tris": "73158"
 	},
 	"cafe": {
 		"colours": "ae65eadf",

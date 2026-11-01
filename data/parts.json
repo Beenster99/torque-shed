@@ -211,7 +211,8 @@
 			],
 			"rig": {
 				"gusset": true,
-				"steady": true
+				"steady": true,
+				"slope": 16.0
 			}
 		},
 		"cruiser_cradle": {
@@ -253,7 +254,8 @@
 				"tourer"
 			],
 			"rig": {
-				"steady": true
+				"steady": true,
+				"slope": 16.0
 			}
 		},
 		"chopper_raked": {
@@ -556,7 +558,8 @@
 			"price": 1170,
 			"rig": {
 				"gauge": 0.95,
-				"steady": true
+				"steady": true,
+				"slope": 16.0
 			}
 		},
 		"bobber_springer_frame": {
@@ -603,7 +606,8 @@
 			"rig": {
 				"gauge": 1.05,
 				"gusset": true,
-				"steady": true
+				"steady": true,
+				"slope": 16.0
 			}
 		},
 		"chopper_long_rake": {
@@ -732,7 +736,8 @@
 			"price": 1170,
 			"rig": {
 				"drop": 0.035,
-				"steady": true
+				"steady": true,
+				"slope": 16.0
 			}
 		},
 		"cruiser_bagger_frame": {
@@ -776,7 +781,8 @@
 			"rig": {
 				"gauge": 1.15,
 				"gusset": true,
-				"steady": true
+				"steady": true,
+				"slope": 16.0
 			}
 		},
 		"scrambler_desert_cradle": {

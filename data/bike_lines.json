@@ -137,24 +137,24 @@
 					"tol_mm": 15
 				},
 				"2_tank": {
-					"top_over_yoke_mm": -40,
+					"top_over_yoke_mm": 20,
 					"tol_mm": 25,
 					"nose_behind_axis_mm": 70,
 					"nose_tol_mm": 20
 				},
 				"3_tank_seat": {
-					"tank_rear_u": 0.52,
+					"tank_rear_u": 0.6,
 					"seat_overlap": false,
 					"gap_mm": 15,
 					"step_tol_mm": 25
 				},
 				"4_seat": {
-					"front_u": 0.53,
+					"front_u": 0.62,
 					"rail_deg": 0,
 					"rail_tol_deg": 4,
-					"rider_u": 0.6,
-					"tail_u": 0.74,
-					"tail_rise_mm": 30,
+					"rider_u": 0.72,
+					"tail_u": 0.9,
+					"tail_rise_mm": 10,
 					"tol_u": 0.03
 				},
 				"5_rider": {
@@ -243,10 +243,10 @@
 			}
 		},
 		"cruiser": {
-			"reference": "Ducati XDiavel",
+			"reference": "Harley-Davidson Nightster",
 			"published": {
-				"wheelbase_mm": 1615,
-				"seat_mm": 755,
+				"wheelbase_mm": 1545,
+				"seat_mm": 705,
 				"rake_deg": 30.0,
 				"ground_clearance_mm": 120
 			},
@@ -257,24 +257,24 @@
 					"tol_mm": 15
 				},
 				"2_tank": {
-					"top_over_yoke_mm": 0,
+					"top_over_yoke_mm": 35,
 					"tol_mm": 25,
 					"nose_behind_axis_mm": 70,
 					"nose_tol_mm": 20
 				},
 				"3_tank_seat": {
-					"tank_rear_u": 0.52,
+					"tank_rear_u": 0.6,
 					"seat_overlap": false,
 					"gap_mm": 15,
 					"step_tol_mm": 25
 				},
 				"4_seat": {
-					"front_u": 0.53,
-					"rail_deg": 4,
+					"front_u": 0.61,
+					"rail_deg": 0,
 					"rail_tol_deg": 4,
-					"rider_u": 0.6,
-					"tail_u": 0.82,
-					"tail_rise_mm": 60,
+					"rider_u": 0.73,
+					"tail_u": 0.9,
+					"tail_rise_mm": 10,
 					"tol_u": 0.03
 				},
 				"5_rider": {
@@ -510,11 +510,11 @@
 				},
 				"4_seat": {
 					"front_u": 0.51,
-					"rail_deg": 6,
+					"rail_deg": 11,
 					"rail_tol_deg": 4,
 					"rider_u": 0.61,
-					"tail_u": 1.05,
-					"tail_rise_mm": 60,
+					"tail_u": 1.04,
+					"tail_rise_mm": 170,
 					"tol_u": 0.03
 				},
 				"5_rider": {

@@ -871,7 +871,7 @@ func _engine_corners() -> Array:
 	_add_box_corners(out, e, Basis(), Vector3(half, 0.13 * s, 0.17 * s))
 	if _build.layout == "2stroke":
 		_add_box_corners(out, e + Vector3(0.0, -0.16 * s, 0.02), Basis(), Vector3(_block_w * 0.35, 0.03, 0.12 * s))
-	else:
+	elif not _dry_sump():
 		var sump_w := minf(_block_w * 0.55, 0.16)
 		_add_box_corners(out, Vector3(e.x, e.y - 0.13 * s - 0.029, e.z - 0.01), Basis(), Vector3(sump_w * 0.5, 0.03, 0.11 * s))
 	# The alternator cover out on the left.
@@ -1983,12 +1983,17 @@ const TANK_SHAPES := {
 		[0.7, 0.11, 0.09, 0.06], [1.0, 0.045, 0.03, 0.025]]},
 	"cafe": {"len": 0.66, "n": 2.6, "bw": 0.8, "keys": [[0.0, 0.07, 0.05, 0.04], [0.12, 0.135, 0.11, 0.06], [0.35, 0.155, 0.13, 0.07],
 		[0.62, 0.1, 0.12, 0.07], [0.8, 0.105, 0.1, 0.065], [0.95, 0.09, 0.07, 0.05], [1.0, 0.05, 0.03, 0.03]]},
+	# (Peanut and fat bob, Rig built: wedges, as a Harley's are, tall at the head and sweeping down to
+	# the seat (`rig_keys`, traced from a Nightster and a Street Bob; see rig_shape).)
 	"peanut": {"len": 0.5, "n": 2.2, "bw": 0.8, "keys": [[0.0, 0.05, 0.04, 0.03], [0.2, 0.095, 0.085, 0.05], [0.55, 0.105, 0.095, 0.055],
-		[0.85, 0.08, 0.07, 0.045], [1.0, 0.035, 0.025, 0.02]]},
+		[0.85, 0.08, 0.07, 0.045], [1.0, 0.035, 0.025, 0.02]],
+		"rig_keys": [[0.0, 0.05, 0.05, 0.035], [0.18, 0.095, 0.1, 0.055], [0.5, 0.105, 0.08, 0.05], [0.8, 0.085, 0.045, 0.04], [1.0, 0.04, 0.015, 0.02]]},
 	"coffin": {"len": 0.5, "n": 5.0, "bw": 0.95, "keys": [[0.0, 0.07, 0.06, 0.04], [0.08, 0.11, 0.09, 0.06], [0.9, 0.11, 0.09, 0.06],
 		[1.0, 0.07, 0.05, 0.04]]},
 	"fatbob": {"len": 0.64, "n": 2.8, "bw": 0.9, "keys": [[0.0, 0.1, 0.08, 0.07], [0.15, 0.18, 0.13, 0.1], [0.5, 0.2, 0.14, 0.11],
-		[0.85, 0.17, 0.12, 0.09], [1.0, 0.1, 0.06, 0.05]]},
+		[0.85, 0.17, 0.12, 0.09], [1.0, 0.1, 0.06, 0.05]],
+		"rig_keys": [[0.0, 0.1, 0.08, 0.07], [0.15, 0.18, 0.11, 0.085], [0.4, 0.195, 0.1, 0.08], [0.7, 0.17, 0.06, 0.07], [0.9, 0.13, 0.025, 0.05],
+			[1.0, 0.09, 0.01, 0.035]]},
 	"sport": {"len": 0.56, "n": 3.4, "bw": 0.85, "keys": [[0.0, 0.1, 0.08, 0.06], [0.15, 0.17, 0.15, 0.09], [0.4, 0.19, 0.16, 0.1],
 		[0.65, 0.16, 0.12, 0.09], [0.85, 0.12, 0.08, 0.07], [1.0, 0.08, 0.04, 0.04]]},
 	"race": {"len": 0.54, "n": 3.8, "bw": 0.9, "keys": [[0.0, 0.11, 0.09, 0.06], [0.15, 0.18, 0.15, 0.09], [0.38, 0.19, 0.14, 0.1],
@@ -2020,6 +2025,8 @@ func _draw_tank() -> void:
 	var style := str(p.get("style", "cafe"))
 	var shape_key := str(look.get("shape", style))
 	var shape: Dictionary = TANK_SHAPES.get(shape_key, TANK_SHAPES.get(style, TANK_SHAPES["cafe"]))
+	if not rig.is_empty():
+		shape = rig_shape(shape)
 	var size := pow(float(p.get("capacity", 15.0)) / 15.0, 0.33)
 	var sc := _look_vec("scale", Vector3.ONE)   # length, width, height
 	# The top tube, from the head stock back to the front of the seat.
@@ -2238,6 +2245,18 @@ func _look_trim(key: String) -> String:
 
 
 ## A profile key list's [half-width, rise, drop] at `u` along it.
+## A tank or seat shape as the Rig built look draws it: its own `rig_keys` (and `rig_span`) in
+## place of the Classic look's where it has them (the Blender parts are built from those too).
+static func rig_shape(shape: Dictionary) -> Dictionary:
+	if not shape.has("rig_keys"):
+		return shape
+	var out := shape.duplicate()
+	out["keys"] = shape["rig_keys"]
+	if shape.has("rig_span"):
+		out["span"] = shape["rig_span"]
+	return out
+
+
 static func _key_at(keys: Array, u: float) -> Array:
 	for i in keys.size() - 1:
 		var k0: Array = keys[i]
@@ -2274,8 +2293,12 @@ const SEAT_SHAPES := {
 		[0.5, 0.13, 0.08, 0.04, 0.07], [0.6, 0.12, 0.05, 0.04, 0.11], [0.95, 0.12, 0.05, 0.04, 0.11], [1.0, 0.1, 0.03, 0.03, 0.11]]},
 	"solo": {"n": 3.0, "from": -0.02, "to": 0.0, "span": 0.55, "keys": [[0.0, 0.08, 0.02, 0.02, 0.0], [0.15, 0.12, 0.035, 0.025, 0.0],
 		[0.75, 0.14, 0.045, 0.025, 0.01], [1.0, 0.12, 0.03, 0.025, 0.02]]},
+	# (Rig built, a Harley's scooped solo, traced from a Street Bob and a Nightster: the nose sweeps
+	# up to the tank's tail, the seat dips where the rider sits, and kicks up again at the back.)
 	"gunfighter": {"n": 3.0, "from": -0.06, "to": 0.0, "span": 0.7, "keys": [[0.0, 0.07, 0.02, 0.03, -0.02], [0.2, 0.13, 0.04, 0.03, -0.01],
-		[0.6, 0.15, 0.05, 0.03, 0.0], [0.85, 0.14, 0.07, 0.03, 0.04], [1.0, 0.11, 0.04, 0.03, 0.06]]},
+		[0.6, 0.15, 0.05, 0.03, 0.0], [0.85, 0.14, 0.07, 0.03, 0.04], [1.0, 0.11, 0.04, 0.03, 0.06]],
+		"rig_span": 0.8, "nose_max": 2.5, "rig_keys": [[0.0, 0.07, 0.02, 0.03, 0.06], [0.12, 0.11, 0.035, 0.03, 0.045], [0.35, 0.15, 0.05, 0.03, 0.005],
+			[0.55, 0.16, 0.05, 0.03, 0.0], [0.78, 0.15, 0.05, 0.03, 0.015], [0.93, 0.13, 0.05, 0.03, 0.04], [1.0, 0.1, 0.03, 0.03, 0.045]]},
 	"hump_long": {"n": 3.0, "from": -0.02, "to": 0.04, "keys": [[0.0, 0.1, 0.02, 0.03, 0.0], [0.08, 0.12, 0.035, 0.03, 0.0], [0.45, 0.125, 0.035, 0.03, -0.005],
 		[0.55, 0.12, 0.05, 0.05, 0.02], [0.75, 0.11, 0.08, 0.08, 0.06], [0.92, 0.09, 0.07, 0.08, 0.07], [1.0, 0.05, 0.03, 0.05, 0.05]]},
 	"flat_track": {"n": 4.0, "from": -0.02, "to": 0.08, "keys": [[0.0, 0.08, 0.02, 0.02, 0.0], [0.1, 0.1, 0.03, 0.025, 0.0], [0.8, 0.1, 0.03, 0.025, 0.01],
@@ -2293,6 +2316,8 @@ func _draw_saddle() -> void:
 	var y := _seat_y
 	var style := str(p.get("style", "bench"))
 	var shape: Dictionary = SEAT_SHAPES.get(str(look.get("shape", style)), SEAT_SHAPES.get(style, SEAT_SHAPES["bench"]))
+	if not rig.is_empty():
+		shape = rig_shape(shape)
 	var sc := _look_vec("scale", Vector3.ONE)   # length, width, height
 	var z0 := _seat_front.z + float(shape["from"])
 	var z1 := _tail.z + float(shape["to"])
@@ -2451,6 +2476,12 @@ static func _seat_key_at(keys: Array, u: float) -> Array:
 
 # ---------------------------------------------------------------------------- engine
 
+## Rig built: a big V-twin is dry-sumped (its oil in a tank under the seat), so there's no sump
+## hanging under its cases and the engine sits that much lower (see BikeRig.hard_points).
+func _dry_sump() -> bool:
+	return not rig.is_empty() and _build.layout == "vtwin"
+
+
 func _draw_engine() -> void:
 	_current_slot = "engine"
 	var col := _col()
@@ -2497,7 +2528,7 @@ func _draw_engine() -> void:
 	if _build.layout == "2stroke":
 		# Expansion chamber bulge under the engine instead of a sump.
 		_box(e + Vector3(0.0, -0.16 * s, 0.02), Vector3(_block_w * 0.7, 0.06, 0.24 * s), mat)
-	else:
+	elif not _dry_sump():
 		# A finned sump under the cases.
 		var sump_w := minf(_block_w * 0.55, 0.16)
 		var sump_y := e.y - 0.13 * s - 0.016
