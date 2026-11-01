@@ -1,5 +1,5 @@
 """The seats, rig built (bodywork track H3): one glb for each shape BikeModel draws (SEAT_SHAPES,
-read from the game's code): bench, cafe, enduro, sport, touring, brat, stepped, king_queen, solo,
+read from the game's code, its `rig_keys` where it has them): bench, cafe, enduro, sport, touring, brat, stepped, king_queen, solo,
 gunfighter, hump_long and flat_track. Each is a padded cover over a black base pan, drawn at a
 reference length of 1 m. It sits on its rails: its origin is on the top of the seat rails
 (BikeModel.rig "seat_rails", lines agreement 3) under the seat's nose, the pan's flat underside
@@ -54,7 +54,7 @@ def smoothstep(a, b, x):
 def point(shape, p, u, a, shrink=1.0):
     """A point on the seat at `u` along it and `a` round it: its section's middle is as high over
     the rails as its drop and lift, so the pan sits flat on them."""
-    w, up, down, lift = key_at(shape["keys"], u)
+    w, up, down, lift = key_at(shape.get("rig_keys", shape["keys"]), u)
     nose = 1.0 - smoothstep(0.0, NOSE, u)
     w += p["nose_w"] * nose
     up += p["foam"] + p["nose_h"] * nose

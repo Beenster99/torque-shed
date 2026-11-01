@@ -42,11 +42,12 @@ static func _named(m: BikeModel, slot: String, name: String) -> Array:
 	return (m._slot_meshes.get(slot, []) as Array).filter(func(mi): return is_instance_valid(mi) and str((mi as Node).name).rstrip("0123456789") == name)
 
 
-## The line a tube from BikeModel._tube runs along: [one end, the other], in its parent's space.
+## The line a tube runs along: [one end, the other], in its parent's space. A tube from
+## BikeModel._tube is a CylinderMesh centred on its node; a Blender grip (controls/grip.glb) is a
+## glb that starts at its node and runs up its y axis; both are read from the mesh's own extent.
 static func _tube_ends(mi: MeshInstance3D) -> Array:
-	var h := float((mi.mesh as CylinderMesh).height) * 0.5
-	var along := mi.basis.y.normalized() * h
-	return [mi.position - along, mi.position + along]
+	var box := mi.mesh.get_aabb()
+	return [mi.position + mi.basis.y * box.position.y, mi.position + mi.basis.y * box.end.y]
 
 
 ## Every twin-spar frame and every carbon monocoque: the beams are slimmer at their deepest than

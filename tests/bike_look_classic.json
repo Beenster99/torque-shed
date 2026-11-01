@@ -7,11 +7,11 @@
 		"tris": "84114"
 	},
 	"bobber": {
-		"colours": "7aa5f07c",
-		"materials": "131",
+		"colours": "613ce427",
+		"materials": "128",
 		"meshes": "395",
-		"size": "0.96,1.11,2.24",
-		"tris": "72138"
+		"size": "0.96,1.10,2.24",
+		"tris": "73158"
 	},
 	"cafe": {
 		"colours": "ae65eadf",
@@ -35,11 +35,11 @@
 		"tris": "80844"
 	},
 	"cruiser": {
-		"colours": "c093ddfb",
-		"materials": "137",
-		"meshes": "398",
-		"size": "0.72,1.26,2.33",
-		"tris": "80478"
+		"colours": "2bacb3a2",
+		"materials": "143",
+		"meshes": "422",
+		"size": "0.72,1.25,2.39",
+		"tris": "72854"
 	},
 	"mx": {
 		"colours": "21b6261e",

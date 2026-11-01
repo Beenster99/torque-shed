@@ -206,13 +206,14 @@ static func seat_fit(rig: Dictionary, shape: Dictionary, sc: Vector3, span: floa
 		var k := BikeModel._seat_key_at(keys, u)
 		var top: float = (float(k[2]) + float(k[3]) + float(k[1])) * sc.z
 		weights["foam"] = clampf((hip.y - rail_y.call(hip.z) - top) / SEAT_FOAM / maxf(sc.z, 0.5) + foam_extra / SEAT_FOAM, -1.0, 2.5)
-	# Line 3: its nose as wide and as tall as the tank's rear.
+	# Line 3: its nose as wide and as tall as the tank's rear (a scooped solo's, SEAT_SHAPES "nose_max",
+	# sweeps up further to meet a tank the heads hold high).
 	if not tank_rear_sec.is_empty():
 		var k0 := BikeModel._seat_key_at(keys, 0.0)
 		weights["nose_width"] = clampf((float(tank_rear_sec["w"]) - float(k0[0]) * sc.y) / SEAT_NOSE_W, -1.0, 1.5)
 		var tank_top := (tank_rear_sec["c"] as Vector3).y + float(tank_rear_sec["up"])
 		var seat_top: float = rail_y.call(z0) + (float(k0[1]) + float(k0[2]) + float(k0[3]) + SEAT_FOAM * float(weights.get("foam", 0.0))) * sc.z
-		weights["nose_height"] = clampf((tank_top - seat_top) / SEAT_NOSE_H, -1.0, 1.5)
+		weights["nose_height"] = clampf((tank_top - seat_top) / SEAT_NOSE_H, -1.0, float(shape.get("nose_max", 1.5)))
 	var dir := Vector3(0.0, slope, 1.0).normalized()
 	var up := up_from(dir)
 	var warp := func(p: Vector3) -> Vector3:

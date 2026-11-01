@@ -1,5 +1,6 @@
 """The fuel tanks, rig built (bodywork track H3): one glb for each shape BikeModel draws
-(TANK_SHAPES, read from the game's code so the two never drift apart). Teardrop, cafe, peanut,
+(TANK_SHAPES, read from the game's code so the two never drift apart; a shape's `rig_keys` where it
+has them, see BikeModel.rig_shape). Teardrop, cafe, peanut,
 coffin, fatbob, sport, race, touring, adv and enduro are lofted smooth; the angular gt,
 streetfighter and wedge are folded from flat panels with a crease at every fold.
 
@@ -110,7 +111,7 @@ def tunnel(p, u, x_end, y_end, tw, lod=0):
 def smooth_half(shape, p, u):
     """The right half of a smooth tank's section at `u`, from the top round to the tunnel's roof,
     both middle points left out: [(x, y)]."""
-    w, up, down = key_at(shape["keys"], u)
+    w, up, down = key_at(shape.get("rig_keys", shape["keys"]), u)
     e = 2.0 / shape["n"]
     bw = shape["bw"]
     cy = down - p["sink"]
@@ -145,7 +146,7 @@ def smooth_half(shape, p, u):
 
 def facet_half(shape, p, u):
     """BikeModel._facet_tank's profile, right half, over a floor and tunnel."""
-    w, up, down = key_at(shape["keys"], u)
+    w, up, down = key_at(shape.get("rig_keys", shape["keys"]), u)
     bw = shape["bw"]
     cy = down - p["sink"]
     depth = down + p["T"] + p["skirt"]

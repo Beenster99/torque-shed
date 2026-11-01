@@ -96,7 +96,9 @@ def case(engine, lod, parts):
     if layout == "2stroke":
         parts.append(kit.prism("bulge", kit.rounded_rect(block_w(engine) * 0.35, 0.12, 0.03, 4 if lod < 2 else 1), -0.16 - 0.03 * k, -0.16 + 0.03 * k, "cast_alloy",
             0.006 if lod == 0 else 0.0, 2, at=(0.0, -0.02 * k, 0.0)))
-    else:
+    elif layout != "vtwin":
+        # (A big V-twin is dry-sumped, its oil in a tank under the seat: no sump under its cases,
+        # as BikeModel._dry_sump draws it in the Rig built look, the only one these glbs are for.)
         # (BikeModel stops a sump growing past 0.16 m wide however big the engine, so it's drawn
         # narrower for the big ones here, where the whole case is scaled with the engine.)
         w = min(block_w(engine) * 0.55, 0.16 / size(engine))

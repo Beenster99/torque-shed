@@ -133,11 +133,11 @@
 			"lines": {
 				"1_backbone": {
 					"kind": "tube",
-					"clear_mm": 30,
+					"clear_mm": 15,
 					"tol_mm": 15
 				},
 				"2_tank": {
-					"top_over_yoke_mm": -25,
+					"top_over_yoke_mm": 20,
 					"tol_mm": 25,
 					"nose_behind_axis_mm": 70,
 					"nose_tol_mm": 20
@@ -153,7 +153,7 @@
 					"rail_deg": 0,
 					"rail_tol_deg": 4,
 					"rider_u": 0.72,
-					"tail_u": 0.76,
+					"tail_u": 0.9,
 					"tail_rise_mm": 10,
 					"tol_u": 0.03
 				},
@@ -253,11 +253,11 @@
 			"lines": {
 				"1_backbone": {
 					"kind": "tube",
-					"clear_mm": 30,
+					"clear_mm": 15,
 					"tol_mm": 15
 				},
 				"2_tank": {
-					"top_over_yoke_mm": -25,
+					"top_over_yoke_mm": 35,
 					"tol_mm": 25,
 					"nose_behind_axis_mm": 70,
 					"nose_tol_mm": 20

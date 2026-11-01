@@ -30,6 +30,9 @@ const HEAD_REACH := 0.215
 const DECK := 0.14
 ## The shortest the top end is drawn against its full size (the rest is real proportion).
 const HEAD_K_MIN := 0.62
+## How tall a V-twin's top end stands against a straight-up one's of the same bore and stroke
+## (its barrels lean out at 45 degrees, so its heads come up that much less far).
+const VTWIN_TOP := 0.88
 ## How far over a style's tank line the tank may stand before it needs raised mounts made (m).
 const TANK_HIGH := 0.12
 ## How far the seat stays over the rear tyre with the shock fully home (m): room for the fender.
@@ -74,8 +77,10 @@ const FAMILY := {
 ##   steady    a head steady from the top of the engine up to the backbone
 ##   deep, wide  a spar or perimeter beam's depth and width, against the family's
 ##   loop      how far either side an MX frame's loops run under the engine (m)
+##   slope     the steepest its tank floor may run nose-up over a V-twin, in degrees (0: the
+##             frame's geo tank_slope; a softail's or a cruiser cradle's backbone drops steeply)
 const FRAME_RIG := {"gauge": 1.0, "twin": 0.0, "split": false, "top": 0.0, "tank_low": 0.0, "drop": 0.0, "gusset": false, "steady": false,
-	"deep": 1.0, "wide": 1.0, "loop": 0.06}
+	"deep": 1.0, "wide": 1.0, "loop": 0.06, "slope": 0.0}
 const NO_FIT := {"mx": ["boxer", "inline", "triple"], "perimeter": ["boxer"], "spar": ["boxer"]}
 
 ## Off lays the Rig built look out as Classic does (for the checks that compare the two looks'
@@ -130,6 +135,8 @@ static func head_k(engine: Dictionary) -> float:
 		return 1.0
 	var s := engine_scale(float(engine.get("displacement", 700.0)))
 	var want := real_top(float(engine.get("bore", 80.0)), float(engine.get("stroke", 70.0)))
+	if layout == "vtwin":
+		want *= VTWIN_TOP
 	return clampf((want - DECK * s) / (BARREL_FOOT * s + HEAD_REACH), HEAD_K_MIN, 1.0)
 
 
@@ -187,7 +194,8 @@ static func hard_points(engine: Dictionary) -> Dictionary:
 		"head_rear": Vector3(0.0, head_y, maxf(back, tops.map(func(t): return (t as Vector3).z + 0.08).max() if not tops.is_empty() else back)),
 		"case_front": Vector3(0.0, 0.0, -0.17 * s),
 		"case_rear": Vector3(0.0, 0.0, 0.17 * s),
-		"sump": Vector3(0.0, -0.13 * s - 0.059, -0.01),
+		# (A big V-twin's oil lives in a tank under the seat: its dry sump sits close under the cases.)
+		"sump": Vector3(0.0, -0.13 * s - (0.004 if layout == "vtwin" else 0.059), -0.01),
 		"case_half_w": block_w * 0.5,
 		"head_half_w": head_w,
 		"intake": [],
@@ -309,7 +317,7 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	var spine_over := heads_y + float(l["1_backbone"]["clear_mm"]) / 1000.0 + spine_r
 	var tank := PartsDB.get_part(str(parts.get("tank", "")))
 	var tank_look: Dictionary = tank.get("look", {})
-	var shape: Dictionary = BikeModel.TANK_SHAPES.get(str(tank_look.get("shape", tank.get("style", "cafe"))), BikeModel.TANK_SHAPES["cafe"])
+	var shape: Dictionary = BikeModel.rig_shape(BikeModel.TANK_SHAPES.get(str(tank_look.get("shape", tank.get("style", "cafe"))), BikeModel.TANK_SHAPES["cafe"]))
 	var size := pow(float(tank.get("capacity", 15.0)) / 15.0, 0.33)
 	var sc_z := 1.0
 	if tank_look.get("scale") is Array and (tank_look["scale"] as Array).size() >= 3:
@@ -373,7 +381,11 @@ static func _solve(build: BikeBuild) -> Dictionary:
 		a.y = best
 	# (Nor nose-down any steeper than nose-up may be: on a short run, an MX tank's under its
 	# seat, the solve above can't be trusted that far.)
-	var max_rise := tan(deg_to_rad(float(geo.get("tank_slope", 13.0)))) * maxf(b.z - a.z, 0.01)
+	# (A frame's own steeper slope is for the V-twin it's built round, its heads splayed fore and
+	# aft under the tank's ends; an upright engine's top end stands under the middle.)
+	var vtwin := str(engine.get("layout", "")) == "vtwin"
+	var slope_deg := float(frig["slope"]) if float(frig["slope"]) > 0.0 and vtwin else float(geo.get("tank_slope", 13.0))
+	var max_rise := tan(deg_to_rad(slope_deg)) * maxf(b.z - a.z, 0.01)
 	a.y = clampf(a.y, b.y - max_rise, b.y + max_rise)
 	# Over the heads: first the tail comes up (the tank lies flatter, and the backbone drops from
 	# under it to the seat, as a softail's does), as far as level with the nose; then both.

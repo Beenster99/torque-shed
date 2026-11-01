@@ -891,7 +891,7 @@ static func style_build(style: String) -> Dictionary:
 				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "carbon_hugger",
 				"front_tyre": "sport_road_120", "rear_tyre": "sport_road_190"}, true)
 		"bobber":
-			b.merge({"frame": "softail_hardtail", "tank": "fatbob_13", "saddle": "flat_bench", "handlebars": "drag_bar",
+			b.merge({"frame": "softail_hardtail", "tank": "peanut_9", "saddle": "bobber_gunfighter", "handlebars": "drag_bar",
 				"tail": "bobber_fender", "engine": "vtwin_1000", "exhaust": "straight_pipe", "front_wheel": "wire_16_bobber",
 				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel",
 				"rear_tyre": "touring_road_150"}, true)
@@ -901,9 +901,9 @@ static func style_build(style: String) -> Dictionary:
 				"front_wheel": "wire_19_chrome", "rear_wheel": "wire_16_bobber", "headlight": "bates_cafe", "mirrors": "bar_end_mirrors",
 				"front_mudguard": "none", "rear_tyre": "touring_road_150"}, true)
 		"cruiser":
-			b.merge({"frame": "cruiser_cradle", "tank": "peanut_9", "saddle": "cruiser_gunfighter_solo", "handlebars": "drag_bar",
-				"tail": "bobber_cateye_fender", "engine": "vtwin_1100", "exhaust": "cruiser_black_turnouts", "front_wheel": "cast_19_six",
-				"rear_wheel": "wire_16_bobber", "panniers": "none", "mirrors": "round_mirrors", "front_mudguard": "bobber_ribbed_bobbed",
+			b.merge({"frame": "cruiser_cradle", "tank": "fatbob_23", "saddle": "touring_comfort", "handlebars": "drag_bar",
+				"tail": "classic_mudguard", "engine": "vtwin_1100", "exhaust": "shotgun_duals", "front_wheel": "cast_19_six",
+				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic",
 				"front_tyre": "touring_road_130", "rear_tyre": "touring_road_150"}, true)
 		"adventure":
 			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_25", "saddle": "cruiser_stepped_seat",
