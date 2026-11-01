@@ -140,6 +140,9 @@ func test_map() -> void:
 	while not WorldMap.loaded() and Time.get_ticks_msec() < end:
 		view.poll()
 		await t.get_tree().process_frame
+	# (a few frames first: what the tests before left to free or finish is theirs, not the map's)
+	for f in 3:
+		await t.get_tree().process_frame
 	var worst := 0.0
 	for k in 5:
 		view.show_view(g[0], g[1], 8000.0 * pow(1.6, k))
