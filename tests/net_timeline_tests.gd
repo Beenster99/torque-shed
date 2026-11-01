@@ -158,3 +158,27 @@ func _arrival_stamped(arrive: Callable, seconds: float) -> Dictionary:
 		last_x = x
 		last_now = now
 	return {"back": back, "jump": jump}
+
+
+## The host hitches and its game loses 1.5 s (its clock falls behind ours) while the packets keep coming as
+## quickly as ever: the quickest lately (what the road traffic's lateness is told against) follows its clock within
+## the WINDOW, where the eased mapping would still be most of the hitch behind.
+func test_host_hitch() -> void:
+	var tl := NetTimeline.new()
+	var now := 100.0
+	var theirs := 20.0
+	for k in 90:   # (three seconds of packets, 30 ms on the way)
+		tl.push(null, theirs, now + 0.03)
+		tl.step(SEND)
+		now += SEND
+		theirs += SEND
+	check(is_equal_approx(tl.quickest(), 80.03), "before the hitch, the quickest lately is their clock's (%.3f)" % tl.quickest())
+	now += 1.5   # (their game lost 1.5 s: our clock ran on, theirs didn't)
+	for k in int((NetTimeline.WINDOW + 0.5) / SEND):
+		tl.push(null, theirs, now + 0.03)
+		tl.step(SEND)
+		now += SEND
+		theirs += SEND
+	var late := now - SEND + 0.03 - (theirs - SEND) - tl.quickest()
+	check(absf(late) < 0.005, "a WINDOW after the hitch, a packet on time is on time again (%.3f s late)" % late)
+	check(tl.offset < tl.quickest() - 1.0, "where the eased mapping is still behind (%.2f s)" % (tl.quickest() - tl.offset))
