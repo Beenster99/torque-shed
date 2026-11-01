@@ -7804,6 +7804,40 @@ func _build_rider() -> void:
 	_apply_body()
 	_pose_limbs()
 	_pose_head()
+	_eye_shadows(_rider)
+
+
+## Your own rider's helmet, torso and upper arms are left out of the first-person eye (on
+## HELMET_LAYER), and a mesh the camera leaves out casts no shadow either: so each of them gets a
+## shadow-only twin on the ordinary layer, hanging from it so it moves with it, and the piece
+## itself casts none (it would only double the twin's shadow in the chase view).
+func _eye_shadows(node: Node) -> void:
+	if not own_rider:
+		return
+	var eye := 1 << (HELMET_LAYER - 1)
+	for c in node.get_children():
+		_eye_shadows(c)
+	var mi := node as MeshInstance3D
+	if mi == null or mi.mesh == null or not (mi.layers & eye) or mi.has_meta(&"eye_shadow"):
+		return
+	# (what it casts with the Avatar shadow setting on: the setting may have it off just now)
+	if int(mi.get_meta("avatar_cast", mi.cast_shadow)) == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		return
+	var twin := MeshInstance3D.new()
+	twin.name = "EyeShadow"
+	twin.mesh = mi.mesh
+	twin.material_override = mi.material_override
+	for s in mi.get_surface_override_material_count():
+		twin.set_surface_override_material(s, mi.get_surface_override_material(s))
+	twin.layers = 1
+	twin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	twin.set_meta(&"eye_shadow", true)
+	mi.add_child(twin)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if mi.has_meta("avatar_cast"):
+		# A figure's mesh (Graphics.avatar_mesh): the Avatar shadow setting looks after the twin now.
+		mi.set_meta("avatar_cast", GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		Graphics.avatar_mesh(twin)
 
 
 ## The rider in plain colours (no gear chosen): overalls, lid and boots.

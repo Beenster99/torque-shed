@@ -681,6 +681,7 @@ func _run_all() -> void:
 	await _t(&"_test_lights_beams")
 	await _t(&"_test_lights_upscaler_off")
 	await _t(&"_test_lights_avatar_shadows")
+	await _t(&"_test_first_person_rider_shadow")
 	await _t(&"_test_lights_far_terrain")
 	await _t(&"_test_lights_kit_bike_materials")
 	await _t(&"_test_adv_roads_junction_plan")
@@ -23799,6 +23800,46 @@ func _test_lights_beams() -> void:
 
 func _test_lights_upscaler_off() -> void:
 	await _lights().test_upscaler_off()
+
+
+## In first person your helmet, torso and upper arms are left out of the eye, which would take
+## their shadow with them: each has a shadow-only twin the eye does see, so your shadow is whole.
+func _test_first_person_rider_shadow() -> void:
+	var eye := 1 << (BikeModel.HELMET_LAYER - 1)
+	for own: bool in [true, false]:
+		var m := BikeModel.new()
+		m.own_rider = own
+		add_child(m)
+		m.build_from(BikeBuild.new(PartsDB.DEFAULT_BUILD.duplicate()), Color.RED)
+		var hidden := 0
+		var twinned := 0
+		var casting_hidden := 0
+		for mi in m._rider.find_children("*", "MeshInstance3D", true, false):
+			var g := mi as MeshInstance3D
+			if g.has_meta(&"eye_shadow"):
+				continue
+			if g.layers & eye:
+				hidden += 1
+				if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+					casting_hidden += 1
+				for c in g.get_children():
+					if c.has_meta(&"eye_shadow") and (c as MeshInstance3D).layers == 1 \
+							and (c as MeshInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+						twinned += 1
+		if own:
+			check(hidden > 0 and twinned == hidden and casting_hidden == 0,
+				"your own rider's pieces kept out of the first-person eye each cast their shadow through a twin (%d of %d)" % [twinned, hidden])
+			Settings.gfx_avatar_shadows = false
+			Graphics.apply_avatar_shadows(get_tree())
+			var off := true
+			for mi in m._rider.find_children("EyeShadow", "MeshInstance3D", true, false):
+				off = off and (mi as MeshInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			Settings.gfx_avatar_shadows = true
+			Graphics.apply_avatar_shadows(get_tree())
+			check(off, "the Avatar shadow setting switches the twins off too")
+		else:
+			check(hidden == 0 and twinned == 0, "someone else's rider is drawn whole, with no twins")
+		m.free()
 
 
 func _test_lights_avatar_shadows() -> void:
