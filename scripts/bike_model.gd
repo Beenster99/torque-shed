@@ -31,6 +31,9 @@ var rider_gear := {}
 var present := {}                # slot -> bool; missing slots are not drawn
 var condition := {}              # slot -> {rust, dirt, wear, color, finish}
 var stand_pose := ""             # "side" or "centre" draws that stand down on the ground; set before build_from
+## The stands are left out of the bake (a few meshes of their own), so set_stand can swing them
+## up or down without drawing the whole bike again: a customer's bike parking or ridden off.
+var loose_stands := false
 ## The rider's helmet is on its own render layer so the first-person camera can leave it out.
 const HELMET_LAYER := 2
 ## Whether this is your own ride: only then do the rider's helmet, torso and upper arms go on
@@ -361,6 +364,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_shock()
 	_draw_side_stand(build)
 	_draw_centre_stand(build)
+	_mark_loose_stands()
 	_draw_horn()
 	_draw_ecu()
 	_draw_panniers(build, zr)
@@ -7837,6 +7841,40 @@ func _build_rider() -> void:
 	_apply_body()
 	_pose_limbs()
 	_pose_head()
+	_eye_shadows(_rider)
+
+
+## Your own rider's helmet, torso and upper arms are left out of the first-person eye (on
+## HELMET_LAYER), and a mesh the camera leaves out casts no shadow either: so each of them gets a
+## shadow-only twin on the ordinary layer, hanging from it so it moves with it, and the piece
+## itself casts none (it would only double the twin's shadow in the chase view).
+func _eye_shadows(node: Node) -> void:
+	if not own_rider:
+		return
+	var eye := 1 << (HELMET_LAYER - 1)
+	for c in node.get_children():
+		_eye_shadows(c)
+	var mi := node as MeshInstance3D
+	if mi == null or mi.mesh == null or not (mi.layers & eye) or mi.has_meta(&"eye_shadow"):
+		return
+	# (what it casts with the Avatar shadow setting on: the setting may have it off just now)
+	if int(mi.get_meta("avatar_cast", mi.cast_shadow)) == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		return
+	var twin := MeshInstance3D.new()
+	twin.name = "EyeShadow"
+	twin.mesh = mi.mesh
+	twin.material_override = mi.material_override
+	for s in mi.get_surface_override_material_count():
+		twin.set_surface_override_material(s, mi.get_surface_override_material(s))
+	twin.layers = 1
+	twin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	twin.set_meta(&"eye_shadow", true)
+	mi.add_child(twin)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if mi.has_meta("avatar_cast"):
+		# A figure's mesh (Graphics.avatar_mesh): the Avatar shadow setting looks after the twin now.
+		mi.set_meta("avatar_cast", GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		Graphics.avatar_mesh(twin)
 
 
 ## The rider in plain colours (no gear chosen): overalls, lid and boots.
@@ -8579,6 +8617,41 @@ func has_dials() -> bool:
 	return not _needles.is_empty()
 
 
+## The stands' slots, which set_stand draws again.
+const STAND_SLOTS := ["side_stand", "centre_stand"]
+
+
+## Swings the stands to `pose` ("side" or "centre" puts that one down, "" tucks both up) without
+## drawing the rest of the bike again. False, and nothing changed, on a bike not drawn with
+## loose_stands: that one has to be drawn afresh with the new stand_pose.
+func set_stand(pose: String) -> bool:
+	if not loose_stands or _build == null:
+		return false
+	if pose == stand_pose:
+		return true
+	stand_pose = pose
+	for slot in STAND_SLOTS:
+		for mi in _slot_meshes.get(slot, []):
+			if is_instance_valid(mi):
+				(mi as Node).free()
+		_slot_meshes[slot] = []
+	_draw_side_stand(_build)
+	_draw_centre_stand(_build)
+	_current_slot = ""
+	_mark_loose_stands()
+	_apply_visibility()
+	return true
+
+
+## With loose_stands, marks the stands' meshes to stay out of the bake (see _can_bake).
+func _mark_loose_stands() -> void:
+	if not loose_stands:
+		return
+	for slot in STAND_SLOTS:
+		for mi in _slot_meshes.get(slot, []):
+			(mi as Node).set_meta(&"loose_stand", true)
+
+
 func set_rider_visible(v: bool) -> void:
 	if _rider:
 		_rider.visible = v
@@ -8713,22 +8786,13 @@ static func shape_mesh(pieces: Array) -> ArrayMesh:
 	for mi in pieces:
 		var m := mi as MeshInstance3D
 		var xf := m.transform
-		var nb := xf.basis.inverse().transposed()
 		for s in m.mesh.get_surface_count():
 			var arrays := m.mesh.surface_get_arrays(s)
 			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			var n = arrays[Mesh.ARRAY_NORMAL]
 			var base := verts.size()
-			for i in v.size():
-				verts.append(xf * v[i])
-				normals.append((nb * (n[i] as Vector3)).normalized() if n is PackedVector3Array and i < (n as PackedVector3Array).size() else Vector3.UP)
-			var idx = arrays[Mesh.ARRAY_INDEX]
-			if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
-				for i in idx:
-					index.append(base + i)
-			else:
-				for i in v.size():
-					index.append(base + i)
+			verts.append_array(MeshJoin.moved(v, xf))
+			normals.append_array(MeshJoin.turned_normals(arrays[Mesh.ARRAY_NORMAL], xf, v.size()))
+			index.append_array(MeshJoin.shifted_index(arrays[Mesh.ARRAY_INDEX], base, v.size()))
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts

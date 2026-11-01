@@ -78,6 +78,12 @@ func push(state, sent: float, now: float) -> void:
 		snaps.pop_front()
 
 
+## Our clock minus theirs for the quickest packet in the last WINDOW seconds (INF with none yet): unlike `offset`, it
+## follows their clock at once when it falls behind (a hitch they lost time to).
+func quickest() -> float:
+	return _least
+
+
 ## Eases the clock mapping and the delay towards what the packets lately need (call once a frame with its `delta`):
 ## a little at a time, so the bike is never seen to jump, only to run a little slow or fast for a moment.
 func step(delta: float) -> void:
