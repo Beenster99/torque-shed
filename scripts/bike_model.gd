@@ -7804,15 +7804,20 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 
 
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
+## How much further down than usual (21 degrees) the rider's view is tipped (radians): in the Rig
+## built look the rider sits where the style's lines put them, on some bikes close over the bars,
+## so the view tips down far enough to keep the hands and clocks in it.
+func eye_tip() -> float:
+	if rig.is_empty():
+		return 0.0
+	var hands := _head + _grip_l + Vector3(0.0, 0.12, 0.1) - _eye
+	var down := atan2(-hands.y, -hands.z)
+	# (No more than 9 degrees, so looking back the view still runs back down the road.)
+	return clampf(down - deg_to_rad(30.0) - deg_to_rad(21.0), 0.0, deg_to_rad(9.0))
+
+
 func eye_transform() -> Transform3D:
-	var pitch := deg_to_rad(21.0)
-	if not rig.is_empty():
-		# Rig built: the rider sits where the style's lines put them, which on some bikes is close
-		# over the bars, so the view tips down far enough to keep the hands and clocks in it.
-		var hands := _head + _grip_l + Vector3(0.0, 0.12, 0.1) - _eye
-		var down := atan2(-hands.y, -hands.z)
-		pitch = clampf(down - deg_to_rad(30.0), pitch, deg_to_rad(36.0))
-	var at := Transform3D(Basis(Vector3.RIGHT, -pitch), _eye)
+	var at := Transform3D(Basis(Vector3.RIGHT, -deg_to_rad(21.0) - eye_tip()), _eye)
 	var look := float(_pose["look"])
 	if look != 0.0:
 		# Looking into a corner, the view turns most of the way with the head.
