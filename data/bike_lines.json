@@ -510,11 +510,11 @@
 				},
 				"4_seat": {
 					"front_u": 0.51,
-					"rail_deg": 6,
+					"rail_deg": 11,
 					"rail_tol_deg": 4,
 					"rider_u": 0.61,
-					"tail_u": 1.05,
-					"tail_rise_mm": 60,
+					"tail_u": 1.04,
+					"tail_rise_mm": 170,
 					"tol_u": 0.03
 				},
 				"5_rider": {
