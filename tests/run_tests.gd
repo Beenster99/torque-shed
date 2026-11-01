@@ -2585,7 +2585,9 @@ func _test_round5_models() -> void:
 			var t := m.slot_bounds("tank")
 			var bars := m.slot_bounds("handlebars")
 			var seat := m.slot_bounds("saddle")
-			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + 0.12,
+			# (In the Rig built look an MX seat rides up over the tank's tail, as a real one does.)
+			var under_seat := 0.2 if bool(m.rig.get("seat_overlap", false)) else 0.12
+			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + under_seat,
 				"%s on a %s sits between the bars and the seat (%.2f..%.2f, head %.2f, seat %.2f)" % [tank, frame, t.position.z, t.end.z, m._head.z, seat.position.z])
 			m.queue_free()
 	# Each frame places the parts its own way: a chopper is long and raked with its pegs out
@@ -7896,8 +7898,11 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		m.build_from(BikeBuild.new({"fairing": id, "mirrors": "fairing_mirrors"}))
 		check(m.slot_bounds("fairing").size.length() > 0.2 and m.slot_bounds("mirrors").size.length() > 0.1,
 			"the %s and its mirrors are drawn" % id)
-		# (Its front: a race fairing brings its tail unit, back over the seat.)
-		check(m.slot_bounds("fairing").position.z < m.slot_bounds("tank").position.z, "the %s goes round the front of the bike" % id)
+		# (Its front ahead of the tank's: a full race fairing runs back to the tail, so its middle
+		# can sit level with a long tank's.)
+		var fb := m.slot_bounds("fairing")
+		var tb := m.slot_bounds("tank")
+		check(fb.position.z < tb.position.z - 0.05 and fb.get_center().z < tb.end.z, "round the front of the bike")
 		m.free()
 	for id in PartsDB.by_kind["mirrors"]:
 		var m := BikeModel.new()

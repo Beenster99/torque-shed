@@ -163,6 +163,9 @@ var _cyls := []                  # {base, up} per cylinder barrel
 ## The Rig built look's layout of this bike (BikeRig.solve): empty in the Classic look. The
 ## bodywork reads its lines from here (see the lines agreement's keys).
 var rig := {}
+## Whether this model is laid out by the rig in the Rig built look: a whole bike is; a loose part
+## on its own (assembly_display) isn't.
+var use_rig := true
 var _arm_len := 0.6
 var _struts: Array = []     # rear shocks: [{mi, top (model space), bottom (on the swingarm), rest}]
 var _grip_l := Vector3(-0.31, 0.12, 0.06)   # handlebar grips, in steering space
@@ -425,7 +428,7 @@ func _lay_out(build: BikeBuild) -> float:
 		peg = sets["peg"]
 	_peg = Vector3(0.17, float(peg[0]), _pivot.z + float(peg[1]))
 	rig = {}
-	if BikeLook.is_new(self) and BikeRig.on:
+	if BikeLook.is_new(self) and BikeRig.on and use_rig:
 		# The Rig built look: the engine, seat, tail and pegs where the style's lines put them.
 		rig = BikeRig.solve(build)
 		_engine_c = rig["crank"]
@@ -999,7 +1002,7 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			var seat := _seat_front + Vector3(0.0, -0.04, 0.0)
 			if not rig.is_empty():
 				# Rig built: the backbone the rig drew, arched over the heads where it has to be.
-				_bend(Array(rig["spine"]), 0.03 if not chop else 0.032, frame_mat)
+				_bend(Array(rig["spine"]), BikeRig.SPINE_R, frame_mat)
 				spine_mid = (rig["spine"] as PackedVector3Array)[4]
 			elif _spine_kink != Vector3.ZERO:
 				# Over a big engine the backbone runs back over the heads under the tank, then
@@ -2371,7 +2374,10 @@ func _blender_airbox(at: Vector3, wide: float, out: float, mat: Material) -> boo
 func oil_filter_at() -> Vector3:
 	if _build.layout == "boxer":
 		# Under a boxer's barrels there's no room: it stands out of the front of the cases.
-		return _engine_c + Vector3(0.05 * _eng_s, -0.08 * _eng_s, -0.17 * _eng_s - 0.03)
+		# (In the Rig built look a little lower and further out, clear of crash bars and forward
+		# controls round the front of the cases.)
+		var out := 0.0 if rig.is_empty() else 0.02
+		return _engine_c + Vector3(0.05 * _eng_s, -0.08 * _eng_s - out, -0.17 * _eng_s - 0.03 - out)
 	return _engine_c + Vector3(_block_w * 0.5 + OIL_FILTER_LEN * 0.5 - 0.003, -0.1 * _eng_s - 0.015, -0.11 * _eng_s - 0.005)
 
 
@@ -7976,8 +7982,20 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 
 
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
+## How much further down than usual (21 degrees) the rider's view is tipped (radians): in the Rig
+## built look the rider sits where the style's lines put them, on some bikes close over the bars,
+## so the view tips down far enough to keep the hands and clocks in it.
+func eye_tip() -> float:
+	if rig.is_empty():
+		return 0.0
+	var hands := _head + _grip_l + Vector3(0.0, 0.12, 0.1) - _eye
+	var down := atan2(-hands.y, -hands.z)
+	# (No more than 9 degrees, so looking back the view still runs back down the road.)
+	return clampf(down - deg_to_rad(30.0) - deg_to_rad(21.0), 0.0, deg_to_rad(9.0))
+
+
 func eye_transform() -> Transform3D:
-	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-21.0)), _eye)
+	var at := Transform3D(Basis(Vector3.RIGHT, -deg_to_rad(21.0) - eye_tip()), _eye)
 	var look := float(_pose["look"])
 	if look != 0.0:
 		# Looking into a corner, the view turns most of the way with the head.
@@ -8565,6 +8583,8 @@ static func assembly_display(parts: Dictionary, cond: Dictionary, unseen := {}) 
 		build[slot] = parts[slot]
 		fitted[slot] = true
 	var model := BikeModel.new()
+	# (A loose part keeps the shape it has always had: there's no bike round it to rig.)
+	model.use_rig = false
 	model.build_from(BikeBuild.new(build, cond), Color(0.55, 0.56, 0.58), fitted, cond, false)
 	model.strip_to(parts.keys())
 	# Off the bike, a part leaves behind the cables and hoses that ran to the rest of it, and a
