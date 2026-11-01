@@ -11,7 +11,8 @@ that line along the rig's tank floor (BikeModel.rig "tank_floor", lines agreemen
 tunnel sits on the backbone whatever its shape, and stretches the tank from the nose to the rear.
 
 Shape keys (glTF morph targets, Godot blend shapes) that the game sets per bike:
-- `tunnel_height`: the flanks and floor 60 mm lower, to cover a deeper backbone or spars;
+- `tunnel_height`: the tunnel 80 mm taller inside the tank, the whole shell sitting that much
+  lower round the backbone (a fat bob straddles its backbone deep); weights past 1 go deeper;
 - `tunnel_width`: the channel 50 mm wider each side (twin top tubes, a wide airbox lid);
 - `tunnel_length`: the tunnel open right out of the back; at 0 it closes from 80% of the
   length, where the frame drops away under the tank's rear;
@@ -36,9 +37,9 @@ DETAIL = [
 ]
 FACET_RINGS = [40, 20, 6]
 
-BASE = {"T": 0.035, "tw": 0.035, "ut": 0.8, "reach": 0.0, "kf": 0.0, "ka": 0.0}
+BASE = {"T": 0.035, "sink": 0.0, "tw": 0.035, "ut": 0.8, "reach": 0.0, "kf": 0.0, "ka": 0.0}
 KEYS = {
-    "tunnel_height": {"T": 0.095},
+    "tunnel_height": {"sink": 0.08},
     "tunnel_width": {"tw": 0.085},
     "tunnel_length": {"ut": 1.25},
     "nose_reach": {"reach": 0.12},
@@ -109,7 +110,7 @@ def smooth_half(shape, p, u):
     w, up, down = key_at(shape["keys"], u)
     e = 2.0 / shape["n"]
     bw = shape["bw"]
-    cy = down
+    cy = down - p["sink"]
     depth = down + p["T"]
     tuck = 0.3 * (1.0 - smoothstep(0.0, 0.7, u))
     knee = knee_at(p, u)
@@ -143,7 +144,7 @@ def facet_half(shape, p, u):
     """BikeModel._facet_tank's profile, right half, over a floor and tunnel."""
     w, up, down = key_at(shape["keys"], u)
     bw = shape["bw"]
-    cy = down
+    cy = down - p["sink"]
     depth = down + p["T"]
     k = own_knee(shape, u)
     knee = knee_at(p, u)

@@ -17,6 +17,7 @@ const TANK_KNEE := {"sport": 1.0, "race": 1.0, "wedge": 1.0, "streetfighter": 1.
 const KNEE_AT := [0.58, 0.84]    # where the tank's two knee keys are centred, share of its length
 const BASE_TUNNEL_HALF := 0.035  # m: the glb's own tunnel half width and depth below the roof
 const BASE_TUNNEL_DEEP := 0.035
+const TUNNEL_SINK := 0.08        # m the tank sinks round the spine at tunnel_height 1
 const TUNNEL_SPARE := 0.006      # m kept between the spine and the tunnel's walls
 const SEAT_NOSE_W := 0.06        # m each key moves at weight 1 (see the Blender scripts)
 const SEAT_NOSE_H := 0.04
@@ -66,19 +67,29 @@ static func tank_fit(rig: Dictionary, shape_name: String, shape: Dictionary, siz
 	var length := maxf(rear.z - nose.z, 0.2)
 	var kx := size * sc.y
 	var ky := size * sc.z
-	# Line 2: the tank's top no higher than the rig allows: squash it where it would be.
+	var half_w := float(rig.get("tunnel_half_w", 0.02))
+	# The flanks come down past the bottom of the spine: the tank sinks round it, its tunnel taller.
+	var sink := maxf(2.0 * half_w + 0.012 - BASE_TUNNEL_DEEP * ky, 0.0)
+	# Line 2: the tank's top no higher than the rig allows. It sinks further round the spine (as a
+	# fat bob does), up to half its height, and what's left over is squashed.
 	if rig.has("tank_top_max"):
 		var top_max := float(rig["tank_top_max"])
+		var over := 0.0
+		var tallest := 0.0
 		for k in shape["keys"]:
 			var at: Vector3 = line_at(floor_line, nose.z + float(k[0]) * length)[0]
 			var rise := (float(k[2]) + float(k[3])) * ky
-			if rise > 0.001 and at.y + rise > top_max:
-				ky *= maxf((top_max - at.y) / rise, 0.55)
-	var half_w := float(rig.get("tunnel_half_w", 0.02))
+			tallest = maxf(tallest, rise)
+			over = maxf(over, at.y + rise - top_max)
+		sink = maxf(sink, minf(over, tallest * 0.5))
+		var left := over - sink
+		if left > 0.0 and tallest > 0.01:
+			var squash := maxf((tallest - left) / tallest, 0.6)
+			ky *= squash
+			sink *= squash
 	var weights := {
 		"tunnel_width": clampf((half_w + TUNNEL_SPARE - BASE_TUNNEL_HALF) / 0.05 / maxf(kx, 0.5), -0.3, 1.5),
-		# The flanks come down past the bottom of the spine.
-		"tunnel_height": clampf((2.0 * half_w + 0.012 - BASE_TUNNEL_DEEP * ky) / 0.06 / maxf(ky, 0.5), 0.0, 1.5),
+		"tunnel_height": sink / (TUNNEL_SINK * ky),
 		"tunnel_length": 1.0,
 		"nose_reach": 0.6,
 	}
@@ -91,7 +102,7 @@ static func tank_fit(rig: Dictionary, shape_name: String, shape: Dictionary, siz
 	var warp := func(p: Vector3) -> Vector3:
 		var on: Array = line_at(floor_line, nose.z + p.z * length)
 		return (on[0] as Vector3) + up_from(on[1]) * (p.y * ky) + Vector3(p.x * kx, 0.0, 0.0)
-	return {"weights": weights, "warp": warp, "len": length, "kx": kx, "ky": ky}
+	return {"weights": weights, "warp": warp, "len": length, "kx": kx, "ky": ky, "sink": sink}
 
 
 ## The tank's loft sections as the rest of the bike reads them (BikeModel._tank_secs: the filler
@@ -105,7 +116,7 @@ static func tank_secs(rig: Dictionary, shape: Dictionary, fit: Dictionary, steps
 		var k := BikeModel._key_at(shape["keys"], u)
 		var on: Array = line_at(floor_line, nose.z + u * float(fit["len"]))
 		var down: float = k[2] * float(fit["ky"])
-		out.append({"c": (on[0] as Vector3) + Vector3(0.0, down, 0.0), "w": k[0] * float(fit["kx"]), "up": k[1] * float(fit["ky"]),
+		out.append({"c": (on[0] as Vector3) + Vector3(0.0, down - float(fit["sink"]), 0.0), "w": k[0] * float(fit["kx"]), "up": k[1] * float(fit["ky"]),
 			"down": down, "n": shape["n"], "bw": shape["bw"]})
 	return out
 
