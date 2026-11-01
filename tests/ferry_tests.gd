@@ -75,6 +75,16 @@ func test_links() -> void:
 	var costs := PackedFloat64Array([1.0, 1.5, 3.0])
 	check(absf(links.cost(0, costs) - (FerryLinks.BOARD_COST + float(l["m"]) * FerryLinks.COST_PER_M)) < 0.01,
 		"a crossing costs boarding and its length, at the cheapest road's rate")
+	# A long crossing's open sea has no cells baked: its route comes as the pieces by either shore, apart (Holyhead to
+	# Dublin), and is joined across the gap.
+	var apart := island()
+	(apart.features["lines"][0] as Array)[1] = PackedVector2Array([Vector2(1010, 0), Vector2(1200, 20), Vector2(1250, 20)])
+	(apart.features["lines"][1] as Array)[1] = PackedVector2Array([Vector2(1590, 0), Vector2(1400, 20), Vector2(1350, 20)])
+	var across := FerryLinks.new(apart)
+	check(across.links.size() == 1 and (across.links[0]["pts"] as PackedVector2Array).size() == 8 and across.routes.size() == 2,
+		"a route's pieces with open sea between them joined across it, into one link (%d)" % across.links.size())
+	(apart.features["lines"][1] as Array)[6] = "other"
+	check(FerryLinks.new(apart).links.is_empty(), "but never two routes' pieces")
 
 
 ## The planner routes over the water where the roads don't go, says so, and plans a route that doesn't cross the
@@ -289,3 +299,15 @@ func test_lay_out() -> void:
 	check(ms < 2.0, "laid out in %.2f ms (under 2)" % ms)
 	var island_key := Vector2i(int(floor(1600.0 / RoadBlock.SIZE)), 0)
 	check((FerryScenery.lay_out(net, island_key, rows)["items"].get("ramp", []) as Array).size() == 1, "and the island's ramp in its own block")
+	# A route drawn over a headland by the shore: the boat lies on from the ramp where the ground's under the water,
+	# never on the land.
+	var line := PackedVector2Array([Vector2(1000, 0), Vector2(1600, 0)])
+	var headland := func(x: float, _z: float) -> float: return -6.0 if x > 1200.0 else 4.0
+	var afloat := FerryScenery.lies(line, headland, 0.0)
+	check(afloat > 200.0 and afloat < 200.0 + FerryScenery.WET_STEP + 0.5 and FerryScenery.lies(line, land, 0.0) == FerryScenery.berth(line),
+		"a boat lies afloat past a headland (%.0f m out) and at the ramp's end where it's sea (%.0f m)" % [afloat, FerryScenery.lies(line, land, 0.0)])
+	check(FerryScenery.lies(line, func(_x: float, _z: float) -> float: return NAN, 0.0) == FerryScenery.berth(line),
+		"and at the ramp's end while the heights aren't there")
+	var boats: Array = dress.get("boats", [])
+	var f1: Array = boats.filter(func(x): return str(x["id"]) == "f1")
+	check(not f1.is_empty() and (f1[0]["afloat"] as Vector2).x < 20.0, "the scenery's boats afloat too (%s)" % (str(f1[0]["afloat"]) if not f1.is_empty() else "none"))
