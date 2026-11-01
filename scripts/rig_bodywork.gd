@@ -27,6 +27,9 @@ const FLANK_SKIRT := 0.06        # m its flanks come down at flank_depth 1
 ## 27 mm over the hard points), and how far fore and aft of each top its head reaches.
 const HEAD_CLEAR := 0.035
 const HEAD_LONG := 0.08
+const DEEP_FLANKS := ["adv"]     # tank shapes whose flanks come down to the engine
+const DEEP_SKIRT := 0.12         # m, at most
+const OVERLAP_UNDER := 0.16      # m an MX tank may run on under the seat past its line
 const TUNNEL_SPARE := 0.006      # m kept between the spine and the tunnel's walls
 const SEAT_NOSE_W := 0.06        # m each key moves at weight 1 (see the Blender scripts)
 const SEAT_NOSE_H := 0.04
@@ -76,6 +79,11 @@ static func tank_fit(rig: Dictionary, shape_name: String, shape: Dictionary, siz
 	# As long as the rig laid it out for (BikeRig: its own length, down to TANK_SQUEEZE of it),
 	# its back on the seat's nose.
 	var back := rear.z + 0.03
+	if rig.get("seat_overlap", false):
+		# An MX bike's tank runs on back under the seat's nose (which rides up over it), as long
+		# as its own shape, up to OVERLAP_UNDER past the line.
+		var want := float(shape["len"]) * lerpf(0.85, 1.0, size) * sc.x
+		back = clampf(nose.z + 0.03 + want, back, back + OVERLAP_UNDER)
 	var room := back - (nose.z + 0.03)
 	var length := minf(clampf(float(shape["len"]) * lerpf(0.85, 1.0, size) * sc.x, 0.25, maxf(room, 0.25)), room)
 	var front := back - length
@@ -114,6 +122,10 @@ static func tank_fit(rig: Dictionary, shape_name: String, shape: Dictionary, siz
 			ky *= squash
 			sink *= squash
 	# (Where the heads come up close under the floor, the flanks come up off it, keeping a lip.)
+	if shape_name in DEEP_FLANKS:
+		# An adventure tank's flanks come down over the frame towards the engine's top, filling
+		# the bay under it as a GS's tank and its side panels do.
+		skirt = maxf(skirt, minf(below - 0.01, DEEP_SKIRT * ky))
 	skirt = maxf(minf(skirt, below), -0.8 * BASE_TUNNEL_DEEP * ky)
 	var weights := {
 		"tunnel_width": clampf((half_w + TUNNEL_SPARE - BASE_TUNNEL_HALF) / 0.05 / maxf(kx, 0.5), -0.3, 1.5),
@@ -226,9 +238,13 @@ static func seat_fit(rig: Dictionary, shape: Dictionary, sc: Vector3, span: floa
 ## Where a cowl of `keys` (TAIL_COWLS's) starts along the rails: as the code's own cowl hangs
 ## from the end of the subframe (the rig's "tail"), its front under the back of the seat, at its
 ## look's length `ln`.
-static func cowl_start(rig: Dictionary, keys: Array, ln: float, seat_z0: float) -> float:
+static func cowl_start(rig: Dictionary, keys: Array, ln: float, seat_z0: float, hip_lead := INF) -> float:
 	var tail: Vector3 = rig["tail"] if rig.has("tail") else (rig["seat_rails"][1] as Vector3)
-	return maxf(tail.z + float(keys[0][0]) * ln, seat_z0 + 0.3)
+	var z := maxf(tail.z + float(keys[0][0]) * ln, seat_z0 + 0.3)
+	if hip_lead < INF and rig.has("seat_surface"):
+		# A sports tail comes forward to just behind the rider, so the seat has no pillion hump.
+		z = minf(z, maxf((rig["seat_surface"] as Vector3).z + hip_lead, seat_z0 + 0.2))
+	return z
 
 
 ## A cowl from `from` (on the rails, see cowl_start) back along them: {"weights", "warp"}.

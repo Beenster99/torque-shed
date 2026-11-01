@@ -2596,8 +2596,9 @@ func _test_round5_models() -> void:
 			var t := m.slot_bounds("tank")
 			var bars := m.slot_bounds("handlebars")
 			var seat := m.slot_bounds("saddle")
-			# (In the Rig built look an MX seat rides up over the tank's tail, as a real one does.)
-			var under_seat := 0.2 if bool(m.rig.get("seat_overlap", false)) else 0.12
+			# (In the Rig built look an MX seat rides up over the tank's tail, as a real one does: a
+			# 450's tank runs about 30 cm on under the seat's nose.)
+			var under_seat := 0.35 if bool(m.rig.get("seat_overlap", false)) else 0.12
 			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + under_seat,
 				"%s on a %s sits between the bars and the seat (%.2f..%.2f, head %.2f, seat %.2f)" % [tank, frame, t.position.z, t.end.z, m._head.z, seat.position.z])
 			m.queue_free()
@@ -20159,7 +20160,10 @@ static func fit_cases() -> Dictionary:
 				for race in fairings:
 					var gk := "%s|%s|%s" % [bar, dash, race]
 					if not dash_groups.has(gk):
-						dash_groups[gk] = {"build": seat_builds[seats[0]], "eyes": {},
+						# (Its own build: the shared seat builds carry the last tail case's wheel and
+						# parts, which would make the clocks' place depend on the order styles come in.)
+						var sb0: BikeBuild = seat_builds[seats[0]]
+						dash_groups[gk] = {"build": BikeBuild.new({"frame": sb0.parts["frame"], "saddle": sb0.parts["saddle"]}), "eyes": {},
 							"parts": {"handlebars": bar, "dashboard": dash, "fairing": fairings[race] if race else "none", "style": style}}
 					(dash_groups[gk]["eyes"] as Dictionary).merge(eyes)
 	probe.free()

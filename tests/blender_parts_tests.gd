@@ -883,6 +883,9 @@ func test_new_look() -> void:
 			# tucks under that tank: rig_body_tests checks them on their lines instead.)
 			if slot in RIG_FITTED and m._rig_bodywork() or slot in SET_FITTED and m._rig_bodywork() and m.fairing_set() != "":
 				continue
+			# (And a high front guard hugs the tyre under an adventure or touring fairing.)
+			if slot == "front_mudguard" and m._rig_bodywork() and m.fairing_set() in BikeModel.HUGGER_SETS:
+				continue
 			var a := (models["code"] as BikeModel).slot_bounds(slot)
 			var b := m.slot_bounds(slot)
 			if slot == "head":

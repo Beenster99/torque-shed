@@ -390,6 +390,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 			(mi as Node).set_meta("under_fairing", true)
 		_hide_covered()
 		_service_caps()
+	elif _set_drawn in CAPPED_SETS:
+		_service_caps(true)
 	_apply_visibility()
 	_current_slot = ""
 	if with_rider:
@@ -2317,8 +2319,15 @@ func _draw_saddle() -> void:
 		var cowl_z := INF
 		if not cowl_keys.is_empty() and is_fitted("tail"):
 			var ln := float(_build.part("tail").get("look", {}).get("length", 1.0))
-			cowl_z = RigBodywork.cowl_start(rig, cowl_keys, ln, (rig["seat_rails"][0] as Vector3).z)
-		_seat_fit = RigBodywork.seat_fit(rig, shape, sc, float(shape.get("span", 1.0)), _tank_secs[_tank_secs.size() - 1] if not _tank_secs.is_empty() else {}, 0.0)
+			cowl_z = RigBodywork.cowl_start(rig, cowl_keys, ln, (rig["seat_rails"][0] as Vector3).z, _cowl_lead(cowl_keys))
+			if _cowl_lead(cowl_keys) < INF:
+				# (A sports tail right behind the rider: just the rider's flat pad, no pillion hump.)
+				seat_name = "brat"
+				shape = SEAT_SHAPES["brat"]
+				keys = shape["keys"]
+		# (Over a cowl the seat stops where the cowl starts, not running on under it.)
+		_seat_fit = RigBodywork.seat_fit(rig, shape, sc, float(shape.get("span", 1.0)), _tank_secs[_tank_secs.size() - 1] if not _tank_secs.is_empty() else {}, 0.0,
+			cowl_z + 0.03 if cowl_z < INF else INF)
 		z0 = float(_seat_fit["z0"])
 		z1 = float(_seat_fit["z1"])
 		var w: Dictionary = _seat_fit["weights"]
@@ -4256,7 +4265,9 @@ func _draw_panniers(build: BikeBuild, zr: float) -> void:
 		var depth := 0.15 * k
 		var c := Vector3(side * (w + depth * 0.5), top - 0.17 * k, zr - 0.08)
 		var shape := str(_look().get("shape", p.get("style", "hard")))
-		if not _blender_pannier(shape, c, k, side, mat):
+		# Rig built: plain hard cases are a sports tourer's angular ones.
+		var drawn := "sport_case" if shape == "hard" and not _look().has("shape") and _rig_bodywork() else shape
+		if not _blender_pannier(drawn, c, k, side, mat):
 			_code_pannier(shape, c, depth, k, side, Vector3(side * w, top, c.z), mat, rack)
 		_tube(Vector3(side * w, top, _pivot.z + 0.1), Vector3(side * w, top, zr + 0.16), 0.008, rack)
 		_tube(Vector3(side * w, top, zr + 0.16), Vector3(side * w, top - 0.3 * k, zr + 0.12), 0.008, rack)
@@ -4278,7 +4289,7 @@ func _blender_pannier(shape: String, c: Vector3, k: float, side: float, mat: Mat
 			return true
 		"roll", "soft":
 			return false
-	var pieces := _blender_tagged("luggage/hard_case.glb", xf, {"paint": mat, "plastic": _mat(Color(0.05, 0.05, 0.055), 0.1, 0.6)}, {"paint": "Case"})
+	var pieces := _blender_tagged("luggage/%s.glb" % ("sport_case" if shape == "sport_case" else "hard_case"), xf, {"paint": mat, "plastic": _mat(Color(0.05, 0.05, 0.055), 0.1, 0.6)}, {"paint": "Case"})
 	if pieces.is_empty():
 		return false
 	if shape in ["hard_top", "hard"]:
@@ -4792,11 +4803,23 @@ func _draw_tail(build: BikeBuild) -> void:
 		"enduro":
 			var a := _tail + Vector3(0.0, -0.05, -0.12)
 			var b := _tail + Vector3(0.0, -0.02, 0.2)
-			var c := _tail + Vector3(0.0, 0.06, 0.46)
+			var rigged := _rig_bodywork()
+			# (Rig built: shorter, ending with the rack rather than well past it.)
+			var c := _tail + Vector3(0.0, 0.06, 0.34 if rigged else 0.46)
+			if rigged:
+				# Rig built: one straight blade on from the seat's back, lifted as one.
+				b = a.lerp(c, 0.4)
 			var planks := [_plank(a, b, w + 0.02, 0.012, mat), _plank(b, c, w, 0.012, mat)]
+			var was: Array = planks.map(func(pl): return (pl as Node3D).position.y)
 			for plank in planks:
 				_rear_guard.append(plank)
 				_lift_clear_of_tyre(plank)
+			if rigged and planks.all(func(pl): return is_instance_valid(pl)):
+				var up := maxf(planks[0].position.y - float(was[0]), planks[1].position.y - float(was[1]))
+				for i in 2:
+					planks[i].position.y = float(was[i]) + up
+				# The tail light under the blade near its end, not hung in the air below it.
+				lamp = c.lerp(b, 0.3) + Vector3(0.0, up - 0.035, 0.0)
 			# The fender's end rounded off rather than square-cut.
 			var tip := _plank_tip(planks[1], true, mat)
 			if tip:
@@ -4805,7 +4828,8 @@ func _draw_tail(build: BikeBuild) -> void:
 				_guard_blade(plank)
 			_number_plate(lamp + Vector3(0.0, -0.07, -0.01), Vector2(0.13, 0.08), -0.3, plate)
 		_:
-			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 2.0, mat, 10))
+			# (Rig built: it stops a little past level behind the wheel, not wrapped down round it.)
+			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 1.75 if _rig_bodywork() else 2.0, mat, 10))
 			# The lamp on a bracket off the guard, the plate below it.
 			var a := atan2(lamp.z - axle.z, lamp.y - axle.y)
 			_tube(lamp, _rear_guard_at(a, r + 0.05), 0.01, mat)
@@ -5294,6 +5318,10 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 	var style := str(p.get("style", "hugger"))
 	# (New look: pressed steel or moulded plastic, bent round as the code lays it out.)
 	_guard_section = "valanced" if style == "classic" else ("plastic" if material == "plastic" and style in ["high", "enduro"] else "steel")
+	if style in ["high", "enduro"] and _rig_bodywork() and fairing_set() in HUGGER_SETS:
+		# Rig built: under an adventure bike's fairing the guard hugs the tyre, as a Multistrada's
+		# or a GS's does; the fairing's beak is the bodywork's, not the guard's.
+		style = "hugger"
 	if style in ["high", "enduro"]:
 		# Under the bottom yoke, sweeping forward and up into a beak; the enduro one is longer
 		# at the back and has a lip at the front.
@@ -5409,6 +5437,10 @@ func _draw_fairing() -> void:
 ## The Blender-made fairing set a frame-mounted fairing is drawn as in the Rig built look (see
 ## blender/parts/fairing/sets.py): "" for one on the bars (a flyscreen, bikini or batwing, sized
 ## to the headlight) or none.
+## Rig built: the fairing sets under which a high front guard is drawn hugging the tyre instead.
+const HUGGER_SETS := ["adventure", "touring"]
+
+
 func fairing_set() -> String:
 	var p := PartsDB.get_part(str(_build.parts.get("fairing", "none"))) if _build else {}
 	if p.is_empty() or not p.get("frame_mount", false):
@@ -6235,8 +6267,11 @@ func _hide_covered() -> void:
 ## quick-release cap on the right-hand panel, over where it sits, that it comes out through:
 ## the cap goes with the filter, so it's what you see and aim at to get the filter out.
 const SERVICE_CAPS: Array[String] = ["air_filter", "oil_filter"]
+## Rig built: the panel sets whose flanks run down over the airbox, so the air filter comes out
+## through a cap in them where they cover it.
+const CAPPED_SETS := ["touring"]
 
-func _service_caps() -> void:
+func _service_caps(set_flanks := false) -> void:
 	var skin := []   # the fairing's triangles, in the model's space
 	for mi in _slot_meshes.get("fairing", []):
 		if mi is MeshInstance3D and (mi as MeshInstance3D).mesh != null:
@@ -6244,13 +6279,15 @@ func _service_caps() -> void:
 			for v in (mi as MeshInstance3D).mesh.get_faces():
 				skin.append(xf * v)
 	for slot in SERVICE_CAPS:
-		if slot == "air_filter" and _set_drawn != "":
+		if set_flanks and slot != "air_filter":
+			continue
+		if slot == "air_filter" and _set_drawn != "" and not set_flanks:
 			continue
 		var meshes: Array = _slot_meshes.get(slot, [])
 		var box := slot_bounds(slot)
 		# Partly behind the panels is behind them: the cap stands in for the lot (an oil filter
 		# hanging out under the belly pan with the engine out of sight would look lost).
-		var behind := meshes.any(func(mi): return (mi as Node).has_meta("under_fairing"))
+		var behind := set_flanks or meshes.any(func(mi): return (mi as Node).has_meta("under_fairing"))
 		for c in _covered:
 			var inner: AABB = c
 			behind = behind or (box.end.y > inner.position.y and box.position.y < inner.end.y \
@@ -10147,6 +10184,15 @@ func _rig_part(path: String, fit: Dictionary, over: Dictionary) -> MeshInstance3
 	return first
 
 
+## Rig built: how far behind the rider's hip a sports or racing tail cowl starts under a full
+## fairing (INF otherwise: the cowl starts where its keys say).
+const COWL_HIP_LEAD := 0.2
+func _cowl_lead(keys: Array) -> float:
+	if not fairing_set() in RigBodywork.FULL_SETS:
+		return INF
+	return COWL_HIP_LEAD if keys == TAIL_COWLS["sport"] or keys == TAIL_COWLS["racing"] else INF
+
+
 ## Rig built: how a tail cowl of `keys` (TAIL_COWLS's) carries on from the seat's end along the
 ## rails ({} when the bike isn't fitted that way), with "t", where the code's own cowl would hang
 ## from for the same place (its stripe, number board and back stop are laid out from it).
@@ -10154,7 +10200,7 @@ func _cowl_fit(keys: Array, ln: float) -> Dictionary:
 	if not _rig_bodywork() or _seat_fit.is_empty():
 		return {}
 	var rail_y: Callable = _seat_fit["rail_y"]
-	var z1 := RigBodywork.cowl_start(rig, keys, ln, (rig["seat_rails"][0] as Vector3).z)
+	var z1 := RigBodywork.cowl_start(rig, keys, ln, (rig["seat_rails"][0] as Vector3).z, _cowl_lead(keys))
 	var slope := float(_seat_fit["slope"])
 	var from := Vector3(0.0, float(rail_y.call(z1)), z1)
 	var fit := RigBodywork.cowl_fit(rig, keys, from, slope, ln, _seat_end)

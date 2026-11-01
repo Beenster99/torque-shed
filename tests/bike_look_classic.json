@@ -91,10 +91,10 @@
 		"tris": "69800"
 	},
 	"tourer": {
-		"colours": "814bc133",
-		"materials": "172",
-		"meshes": "658",
-		"size": "0.83,1.45,2.22",
-		"tris": "91464"
+		"colours": "c187c58d",
+		"materials": "165",
+		"meshes": "478",
+		"size": "0.82,1.45,2.13",
+		"tris": "84976"
 	}
 }
