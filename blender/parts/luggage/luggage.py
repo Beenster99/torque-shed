@@ -4,6 +4,7 @@ panniers (the game scales them evenly by its k for other sizes), in the game's a
 
 - "luggage/hard_case.glb": a touring hard pannier round its middle, 150 mm deep, its latches on
   the outer face (+X; the game mirrors it for the left).
+- "luggage/sport_case.glb": a sports tourer's angular side case the same way, its front raked.
 - "luggage/saddlebag.glb": a cruiser's leather saddlebag round its middle, with its flap and
   buckled straps on the outer face (+X).
 - "luggage/alu_pannier.glb": an aluminium adventure pannier's body round the case's middle, 150 by
@@ -70,6 +71,19 @@ def hard_case(lod):
         for z in (-0.12, 0.12):
             parts.append(box("hook", (-0.08, 0.12, z), (0.006, 0.02, 0.012), "plastic", 6))
     return kit.join(parts, "hard_case")
+
+
+def sport_case(lod):
+    """A sports tourer's side case (a CB1000GT's, a Tracer's): angular, its front raked back
+    towards the bottom and its lid sloping up to the back."""
+    segs = [24, 16, 8][lod]
+    secs = [(-0.25, 0.055, 0.12, 0.02, 7.0), (-0.2, 0.072, 0.15, 0.09, 7.0), (-0.08, 0.075, 0.165, 0.15, 7.0),
+        (0.16, 0.075, 0.18, 0.18, 7.0), (0.22, 0.07, 0.175, 0.17, 7.0)]
+    parts = [along("case", secs if lod < 2 else [secs[0], secs[2], secs[4]], segs, "paint")]
+    if lod < 2:
+        parts.append(along("seam", [(-0.2, 0.077, 0.0045, 0.0045, 4.0), (0.215, 0.077, 0.0045, 0.0045, 4.0)], 8, "plastic", at=(0.0, 0.09)))
+        parts.append(box("latch", (0.078, 0.08, 0.12), (0.006, 0.02, 0.03), "plastic", 6))
+    return kit.join(parts, "sport_case")
 
 
 def saddlebag(lod):
@@ -287,7 +301,7 @@ def throw_over(lod):
 
 def parts():
     out = []
-    for name, build in (("hard_case", hard_case), ("saddlebag", saddlebag), ("top_case", top_case), ("backrest", backrest), ("crate", crate), ("trunk", trunk), ("trunk_lid", trunk_lid), ("roll_bag", roll_bag), ("roll_pannier", roll_pannier), ("throw_over", throw_over),
+    for name, build in (("hard_case", hard_case), ("sport_case", sport_case), ("saddlebag", saddlebag), ("top_case", top_case), ("backrest", backrest), ("crate", crate), ("trunk", trunk), ("trunk_lid", trunk_lid), ("roll_bag", roll_bag), ("roll_pannier", roll_pannier), ("throw_over", throw_over),
             ("alu_pannier", lambda lod: alu_case("alu_pannier", (0.15, 0.34, 0.46), (1, 0), lod)),
             ("alu_pannier_lid", lambda lod: alu_case("alu_pannier_lid", (0.15, 0.34, 0.46), (1, 0), lod, True)),
             ("alu_top", lambda lod: alu_case("alu_top", (0.36, 0.26, 0.34), (0, 1), lod)),

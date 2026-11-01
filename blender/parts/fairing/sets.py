@@ -40,32 +40,36 @@ PI = math.pi
 # section: [z, top, shoulder (x, y), character line (x, y), lower flank (x, y), belly], the
 # character line at the frame's spar height and the shoulder where the tank's meets it.
 SPORT_STATIONS = [
-    # Drawn with a ruler, as a Panigale's is: the top rising straight from the nose's tip to the
-    # screen; the bottom running straight back level across the top of the front guard, then a
-    # sharp straight drop behind the tyre (two stations close together at each corner keep the
-    # spline from rounding it) to a flat bottom line.
-    [-0.4, -0.175, (0.035, -0.18), (0.055, -0.2), (0.045, -0.22), -0.23],
-    [-0.33, -0.115, (0.075, -0.12), (0.105, -0.17), (0.085, -0.235), -0.24],
-    [-0.19, -0.01, (0.1, -0.03), (0.145, -0.145), (0.12, -0.255), -0.255],
-    [-0.06, 0.005, (0.11, -0.01), (0.17, -0.14), (0.15, -0.27), -0.27],
-    [-0.03, 0.005, (0.112, -0.01), (0.173, -0.14), (0.153, -0.285), -0.285],
-    [0.13, 0.0, (0.12, -0.01), (0.195, -0.15), (0.19, -0.56), -0.6],
-    [0.17, 0.0, (0.122, -0.015), (0.198, -0.155), (0.195, -0.575), -0.6],
-    [0.32, -0.04, (0.135, -0.05), (0.205, -0.17), (0.2, -0.58), -0.6],
-    [0.56, -0.1, (0.13, -0.11), (0.19, -0.2), (0.19, -0.575), -0.6],
-    [0.7, -0.14, (0.12, -0.15), (0.175, -0.23), (0.175, -0.55), -0.58],
+    # Traced from a Panigale V4's side view, scaled to our wheelbase at the axles: a short nose
+    # whose front falls steeply from the screen to its tip, its underside running back level just
+    # over the front guard, the side panels' front edge dropping behind the tyre to a flat bottom
+    # line 130 mm off the ground; the character line falls in one straight line from the tank to
+    # the lamps.
+    [-0.36, -0.225, (0.03, -0.228), (0.045, -0.237), (0.035, -0.25), -0.26],
+    [-0.33, -0.185, (0.06, -0.19), (0.085, -0.228), (0.065, -0.27), -0.285],
+    [-0.29, -0.114, (0.08, -0.13), (0.11, -0.215), (0.085, -0.29), -0.305],
+    [-0.2, -0.07, (0.1, -0.085), (0.14, -0.185), (0.11, -0.32), -0.335],
+    [-0.11, -0.046, (0.11, -0.06), (0.165, -0.155), (0.14, -0.36), -0.375],
+    [0.0, -0.03, (0.115, -0.045), (0.18, -0.12), (0.155, -0.45), -0.47],
+    [0.06, -0.02, (0.118, -0.04), (0.19, -0.1), (0.18, -0.6), -0.66],
+    [0.11, -0.01, (0.12, -0.035), (0.195, -0.083), (0.19, -0.78), -0.83],
+    [0.15, -0.005, (0.122, -0.03), (0.198, -0.07), (0.195, -0.79), -0.84],
+    [0.32, -0.03, (0.135, -0.04), (0.205, -0.07), (0.2, -0.79), -0.84],
+    [0.5, -0.08, (0.13, -0.09), (0.19, -0.12), (0.19, -0.79), -0.84],
+    [0.7, -0.14, (0.12, -0.15), (0.175, -0.185), (0.17, -0.62), -0.66],
 ]
 SPORT = {
     "stations": SPORT_STATIONS,
     "panels": [
-        ["nose", "paint", [(-0.4, -1.45), (0.0, -1.45), (0.0, 1.45), (-0.4, 1.45)], False],
-        ["chin", "paint", [(-0.4, 1.45), (0.0, 1.45), (0.0, 2 * PI - 1.45), (-0.4, 2 * PI - 1.45)], False],
+        ["nose", "paint", [(-0.36, -1.45), (0.0, -1.45), (0.0, 1.45), (-0.36, 1.45)], False],
+        ["chin", "paint", [(-0.36, 1.45), (-0.12, 1.45), (-0.12, 2 * PI - 1.45), (-0.36, 2 * PI - 1.45)], False],
         ["upper", "paint", [(0.0, 1.3), (0.64, 0.8), (0.66, 1.45), (0.0, 1.45)], True],
-        ["lower", "paint", [(0.0, 1.45), (0.66, 1.45), (0.58, 2.6), (0.15, 2.6)], True],
+        ["lower", "paint", [(-0.12, 1.45), (0.66, 1.45), (0.58, 2.6), (-0.02, 2.6)], True],
         ["belly", "paint", [(0.15, 2.6), (0.58, 2.6), (0.58, 2 * PI - 2.6), (0.15, 2 * PI - 2.6)], False],
     ],
-    "screen": [(-0.34, 0.0), 0.55, 0.2],       # (front z, rear z), half angle, rise at the back
-    "lamps": [(-0.385, -0.25), (0.95, 1.3)],    # z range, angle range, right (and mirrored)
+    "screen": [(-0.27, -0.03), 0.45, 0.14],       # (front z, rear z), half angle, rise at the back
+    "screen_curve": 0.95,                     # under 1: the profile curves back in over the cockpit
+    "lamps": [(-0.35, -0.24), (0.95, 1.3)],    # z range, angle range, right (and mirrored)
     "mouth": True,                             # a blunt nose, its front an air intake
     "ducts": [(0.06, 0.26), (1.65, 2.05)],
     "slots": 3,                                # the ducts as so many slim vents
@@ -74,9 +78,9 @@ SPORT = {
 }
 RACE = dict(SPORT, stations=[[z - 0.02 if z < 0 else z, top, (sh[0] * 0.92, sh[1]), (cr[0] * 0.9, cr[1]), (lo[0] * 0.9, lo[1]), bot]
     for z, top, sh, cr, lo, bot in SPORT_STATIONS],
-    screen=[(-0.27, 0.04), 0.6, 0.2], lamps=None, mirror=None, wings=[(-0.08, 0.08), 1.25])
+    screen=[(-0.27, 0.04), 0.6, 0.2], screen_curve=None, lamps=None, mirror=None, wings=[(-0.08, 0.08), 1.25])
 HALF = dict(SPORT, panels=SPORT["panels"][:1] + [["upper", "paint", [(0.0, 1.3), (0.3, 1.05), (0.3, 1.55), (0.0, 1.55)], True],
-    ["chin", "paint", [(-0.36, 1.45), (-0.02, 1.45), (-0.02, 2 * PI - 1.45), (-0.36, 2 * PI - 1.45)], False]], ducts=None)
+    ["chin", "paint", [(-0.36, 1.45), (-0.12, 1.45), (-0.12, 2 * PI - 1.45), (-0.36, 2 * PI - 1.45)], False]], ducts=None)
 SEELEY = {
     "secs": [[-0.3, -0.03, -0.24, 0.115, 2.0], [-0.24, 0.005, -0.29, 0.165, 2.0], [-0.12, 0.02, -0.33, 0.2, 2.0], [0.04, 0.01, -0.35, 0.21, 2.1],
         [0.2, -0.04, -0.33, 0.2, 2.2]],
@@ -86,57 +90,67 @@ SEELEY = {
     "lamps": None,
     "ducts": None, "mirror": None, "wings": None, "round_lamp": 0.085,
 }
-# A Multistrada's / GS's upper drawn through its lines: a sharp beak low at the front (its intake
-# black), the lamps' face slanting back up from it to a raked screen, and side shrouds that close
-# the bay down round the radiator to the engine.
+# A Multistrada V4's upper, traced from its side view scaled to our wheelbase at the axles: a black
+# beak low at the front, the lamps' face rising steeply from it to a tall raked screen, the side
+# shrouds' front edge falling behind the tyre to the bottom of the radiator, and the crease
+# running down from the tank to the beak.
 ADVENTURE = {
     "stations": [
-        [-0.44, -0.28, (0.02, -0.282), (0.03, -0.288), (0.025, -0.293), -0.296],
-        [-0.405, -0.17, (0.05, -0.18), (0.08, -0.225), (0.06, -0.28), -0.3],
-        [-0.35, -0.05, (0.09, -0.06), (0.13, -0.18), (0.1, -0.3), -0.32],
-        [-0.2, 0.02, (0.13, 0.0), (0.19, -0.17), (0.15, -0.33), -0.36],
-        [-0.06, 0.05, (0.15, 0.025), (0.22, -0.16), (0.2, -0.38), -0.42],
-        [0.1, 0.04, (0.17, 0.01), (0.25, -0.2), (0.24, -0.54), -0.6],
-        [0.26, 0.0, (0.17, -0.03), (0.25, -0.22), (0.24, -0.58), -0.64],
-        [0.4, -0.05, (0.16, -0.07), (0.23, -0.24), (0.22, -0.56), -0.62],
+        [-0.423, -0.29, (0.02, -0.293), (0.03, -0.3), (0.025, -0.305), -0.31],
+        [-0.39, -0.25, (0.045, -0.255), (0.065, -0.285), (0.05, -0.305), -0.315],
+        [-0.36, -0.19, (0.07, -0.2), (0.1, -0.29), (0.08, -0.305), -0.32],
+        [-0.32, -0.045, (0.1, -0.06), (0.13, -0.29), (0.11, -0.305), -0.32],
+        [-0.24, -0.03, (0.13, -0.045), (0.17, -0.29), (0.15, -0.31), -0.31],
+        [-0.17, -0.04, (0.15, -0.05), (0.2, -0.28), (0.19, -0.345), -0.36],
+        [-0.11, -0.05, (0.16, -0.055), (0.22, -0.266), (0.21, -0.41), -0.43],
+        [-0.04, -0.05, (0.17, -0.055), (0.235, -0.25), (0.23, -0.55), -0.58],
+        [0.1, -0.04, (0.17, -0.045), (0.25, -0.22), (0.24, -0.57), -0.6],
+        [0.26, -0.03, (0.17, -0.035), (0.25, -0.19), (0.24, -0.56), -0.6],
+        [0.4, -0.05, (0.16, -0.06), (0.23, -0.16), (0.22, -0.42), -0.45],
     ],
-    # The paint and the black beak under it cut on a diagonal, so the beak reads as its own
-    # sharp layer under the nose, as a Multistrada's does.
-    "panels": [["nose", "paint", [(-0.44, -0.85), (0.02, -1.5), (0.02, 1.5), (-0.44, 0.85)], False],
-        ["shroud", "paint", [(0.02, 0.6), (0.4, 0.8), (0.28, 2.5), (0.04, 2.3)], True],
-        ["chin", "plastic", [(-0.44, 0.85), (0.0, 1.5), (0.0, 2 * PI - 1.5), (-0.44, 2 * PI - 0.85)], False]],
-    "screen": [(-0.31, -0.06), 0.7, 0.36],
-    "lamps": [(-0.38, -0.24), (0.4, 0.8)],
+    "panels": [["nose", "paint", [(-0.36, -1.0), (0.02, -1.5), (0.02, 1.5), (-0.36, 1.0)], False],
+        ["beak", "plastic", [(-0.423, -0.02), (-0.36, -0.53), (-0.36, 0.53), (-0.423, 0.02)], False],
+        ["chin", "plastic", [(-0.423, 0.02), (-0.24, 1.2), (-0.24, 2 * PI - 1.2), (-0.423, 2 * PI - 0.02)], False],
+        ["shroud", "paint", [(0.02, 0.6), (0.4, 0.8), (0.3, 1.45), (0.02, 1.45)], True],
+        ["skirt", "paint", [(-0.24, 1.2), (0.3, 1.45), (0.22, 2.5), (-0.04, 2.5)], True]],
+    "screen": [(-0.31, -0.1), 0.55, 0.3],
+    "screen_curve": 0.95,
+    "lamps": [(-0.355, -0.3), (0.3, 0.9)],
     "max": 14,
-    "mouth": True,
-    "ducts": [(0.1, 0.3), (1.5, 2.0)],
+    "ducts": [(0.03, 0.22), (1.5, 2.1)],
     "slots": 3,
     "mirror": (0.0, 0.95), "wings": None,
 }
-# A sports tourer's (CB1000GT, Tracer 9) drawn through its lines: a thin, sharp nose with slim lamps
-# and a tall raked screen, the character line creased hard along the flanks, and side panels that
-# run down round the radiator with slim vents.
+# A sports tourer's upper (CB1000GT), traced from its side view scaled to our wheelbase at the
+# axles and set 90 mm lower to sit with our tank: a slim, sharp nose whose front rises almost
+# straight up to a tall raked screen, a shallow fairing whose underside runs back level, and a
+# small radiator shroud below it.
 TOURING = {
     "stations": [
-        [-0.43, -0.26, (0.02, -0.262), (0.03, -0.268), (0.025, -0.273), -0.276],
-        [-0.395, -0.15, (0.05, -0.16), (0.085, -0.2), (0.065, -0.25), -0.27],
-        [-0.33, -0.04, (0.09, -0.05), (0.14, -0.16), (0.11, -0.27), -0.29],
-        [-0.2, 0.0, (0.12, -0.02), (0.185, -0.15), (0.15, -0.29), -0.31],
-        [-0.04, 0.04, (0.15, 0.02), (0.23, -0.15), (0.2, -0.34), -0.37],
-        [0.12, 0.03, (0.17, 0.0), (0.26, -0.17), (0.23, -0.46), -0.5],
-        [0.3, -0.02, (0.17, -0.05), (0.25, -0.2), (0.22, -0.5), -0.54],
-        [0.44, -0.07, (0.15, -0.09), (0.22, -0.22), (0.2, -0.47), -0.5],
+        [-0.333, -0.18, (0.02, -0.183), (0.03, -0.187), (0.025, -0.192), -0.195],
+        [-0.31, -0.075, (0.05, -0.085), (0.07, -0.19), (0.055, -0.2), -0.205],
+        [-0.22, 0.04, (0.09, 0.02), (0.12, -0.185), (0.1, -0.205), -0.215],
+        [-0.06, 0.11, (0.13, 0.09), (0.18, -0.18), (0.15, -0.26), -0.27],
+        [0.0, 0.12, (0.14, 0.095), (0.195, -0.178), (0.17, -0.4), -0.42],
+        [0.12, 0.1, (0.15, 0.07), (0.22, -0.175), (0.25, -0.55), -0.57],
+        [0.3, 0.06, (0.15, 0.05), (0.25, -0.16), (0.3, -0.5), -0.52],
+        [0.44, 0.02, (0.14, 0.01), (0.24, -0.15), (0.27, -0.45), -0.47],
+        [0.62, -0.02, (0.13, -0.03), (0.22, -0.15), (0.23, -0.42), -0.44],
+        [0.82, -0.04, (0.12, -0.05), (0.21, -0.14), (0.2, -0.38), -0.4],
     ],
-    "panels": [["nose", "paint", [(-0.43, -0.9), (0.02, -1.45), (0.02, 1.45), (-0.43, 0.9)], False],
-        ["upper", "paint", [(0.02, 1.2), (0.44, 0.75), (0.44, 1.45), (0.02, 1.45)], True],
-        ["knee", "paint", [(0.02, 1.45), (0.44, 1.45), (0.36, 2.45), (0.06, 2.35)], True],
-        ["chin", "plastic", [(-0.43, 0.9), (0.0, 1.45), (0.0, 2 * PI - 1.45), (-0.43, 2 * PI - 0.9)], False]],
-    "screen": [(-0.3, -0.02), 0.62, 0.34],
-    "lamps": [(-0.4, -0.27), (0.5, 0.85)],
+    "panels": [["nose", "paint", [(-0.333, -1.45), (0.02, -1.45), (0.02, 1.45), (-0.333, 1.45)], False],
+        ["chin", "plastic", [(-0.333, 1.45), (-0.06, 1.45), (-0.06, 2 * PI - 1.45), (-0.333, 2 * PI - 1.45)], False],
+        ["upper", "paint", [(0.02, 1.2), (0.44, 0.75), (0.44, 1.6), (0.02, 1.6)], True],
+        ["knee", "paint", [(-0.03, 1.6), (0.14, 1.6), (0.14, 2.5), (0.0, 2.5)], True],
+        # (Flanks under the tank, over the top of the engine, and side covers on back under the
+        # seat: no frame or electrics showing between. The air filter's lid stands out.)
+        ["flank", "paint", [(0.14, 1.57), (0.44, 1.57), (0.44, 2.35), (0.14, 2.4)], True],
+        ["side", "paint", [(0.44, 1.36), (0.8, 1.56), (0.72, 2.3), (0.44, 2.35)], True]],
+    "screen": [(-0.24, 0.03), 0.5, 0.12],
+    "screen_curve": 0.95,
+    "lamps": [(-0.33, -0.25), (0.6, 1.2)],
     "max": 14,
-    "mouth": True,
-    "ducts": [(0.1, 0.3), (1.6, 2.1)],
-    "slots": 3,
+    "ducts": None,
     "mirror": (0.0, 1.1), "wings": None,
 }
 SETS = {"sport": SPORT, "race": RACE, "half": HALF, "seeley": SEELEY, "adventure": ADVENTURE, "touring": TOURING}
@@ -277,16 +291,17 @@ def grid(corners, ni, nj, gap=GAP):
 def slab(name, st, p, uv_rows, tag, edge_tag, thick, lift=0.0, lifts=None):
     """A moulding over `uv_rows` ((z, angle) grid): its outer skin in `tag`, its inner face and
     its edges in `edge_tag`, `thick` deep (a single skin, facing out, when 0), raised `lift` off
-    the fairing's skin (or by `lifts[i]` row by row)."""
+    the fairing's skin (or by `lifts[i]` row by row, or `lifts[i][j]` point by point)."""
     bm = bmesh.new()
     outer, inner = [], []
     for i, row in enumerate(uv_rows):
         lo, li = [], []
         up = lift if lifts is None else lifts[i]
-        for z, th in row:
+        for j, (z, th) in enumerate(row):
             s = surface(st, p, z, th)
             n = normal(st, p, z, th)
-            o = [s[k] + n[k] * up for k in range(3)]
+            u = up[j] if isinstance(up, list) else up
+            o = [s[k] + n[k] * u for k in range(3)]
             lo.append(bm.verts.new(g(*o)))
             if thick > 0.0:
                 li.append(bm.verts.new(g(*[o[k] - n[k] * thick for k in range(3)])))
@@ -389,7 +404,14 @@ def build_set(name, lod, p):
     (z0, z1), half, rise = st["screen"]
     ni, nj = (10, 12) if lod == 0 else ((4, 5) if lod == 1 else (1, 2))
     rows = grid([(z0, -half), (z1, -half), (z1, half), (z0, half)], ni, nj, 0.0)
-    lifts = [0.006 + rise * (i / ni) ** 1.7 for i in range(ni + 1)]
+    # (Its profile rises steeply off the nose and curves back in over the cockpit with a
+    # "screen_curve" under 1, or sweeps up away from the bike at the back over 1.)
+    # Curved in, it's a bubble: its sides come down onto the fairing, so from the side it's glass
+    # all the way from the nose up to its top edge.
+    curve = st.get("screen_curve") or 1.7
+    lifts = [0.006 + rise * (i / ni) ** curve for i in range(ni + 1)]
+    if st.get("screen_curve"):
+        lifts = [[0.006 + (lf - 0.006) * (1.0 - (abs(th) / half) ** 2) ** 0.5 for _, th in rows[i]] for i, lf in enumerate(lifts)]
     objs.append(slab("screen", st, p, rows, "glass", "glass", 0.004 if lod < 2 else 0.0, lifts=lifts))
     if lod < 2:
         if st.get("lamps"):

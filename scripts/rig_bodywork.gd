@@ -238,9 +238,13 @@ static func seat_fit(rig: Dictionary, shape: Dictionary, sc: Vector3, span: floa
 ## Where a cowl of `keys` (TAIL_COWLS's) starts along the rails: as the code's own cowl hangs
 ## from the end of the subframe (the rig's "tail"), its front under the back of the seat, at its
 ## look's length `ln`.
-static func cowl_start(rig: Dictionary, keys: Array, ln: float, seat_z0: float) -> float:
+static func cowl_start(rig: Dictionary, keys: Array, ln: float, seat_z0: float, hip_lead := INF) -> float:
 	var tail: Vector3 = rig["tail"] if rig.has("tail") else (rig["seat_rails"][1] as Vector3)
-	return maxf(tail.z + float(keys[0][0]) * ln, seat_z0 + 0.3)
+	var z := maxf(tail.z + float(keys[0][0]) * ln, seat_z0 + 0.3)
+	if hip_lead < INF and rig.has("seat_surface"):
+		# A sports tail comes forward to just behind the rider, so the seat has no pillion hump.
+		z = minf(z, maxf((rig["seat_surface"] as Vector3).z + hip_lead, seat_z0 + 0.2))
+	return z
 
 
 ## A cowl from `from` (on the rails, see cowl_start) back along them: {"weights", "warp"}.
