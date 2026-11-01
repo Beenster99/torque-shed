@@ -1,9 +1,19 @@
 """The seat cowls and tail sections a tail unit's look can ask for, one glb each (BikeModel's
 TAIL_COWLS, read from the game's code): ducktail, hump, solo and tracker lofted smooth with gently
 rounded ends, and the sports and race tails folded from flat panels, creased at every fold, to
-match the full fairings. Each is drawn in metres from the end of the subframe (BikeModel's _tail),
-back along -Y; the game stretches it back by the look's "length". The tracker's number board, the
-solo's back stop and any stripe are still the game's. All `paint`."""
+match the full fairings. Rig built (bodywork track H3): each sits on the seat rails and carries
+the seat's line on to the tail. Its origin is on the top of the rails (BikeModel.rig
+"seat_rails") under the cowl's front, its underside wrapping 20 mm below them, and it runs back
+along -Y in metres; the game stretches it back to the rig's "tail" (lines agreement line 4).
+The tracker's number board, the solo's back stop and any stripe are still the game's.
+
+Shape keys the game sets per bike:
+- `front_width`, `front_height`: the front 50 mm wider each side and 40 mm taller, fading out by
+  a third of the way back, so it meets the seat's rear section; negative weights shrink it;
+- `kick`: the tail's end 80 mm higher, rising more towards the tip (lines agreement
+  "tail_rise_mm").
+
+All `paint`."""
 
 import math
 
@@ -11,6 +21,27 @@ import kit
 
 COWLS = kit.gd_const("TAIL_COWLS")
 FACETED = ["sport", "racing"]
+WRAP = 0.02               # m the cowl's underside wraps below the rails
+BASE = {"fw": 0.0, "fh": 0.0, "kick": 0.0}
+KEYS = {"front_width": {"fw": 0.05}, "front_height": {"fh": 0.04}, "kick": {"kick": 0.08}}
+
+
+def smoothstep(a, b, x):
+    t = min(max((x - a) / (b - a), 0.0), 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def on_rails(keys, p):
+    """The code's keys moved to sit on the rails from the cowl's front, with the shape keys'
+    changes: [z, half width, up, down, centre height, squareness]."""
+    z0 = keys[0][0]
+    total = max(keys[-1][0] - z0, 0.01)
+    out = []
+    for z, w, up, down, lift, n in keys:
+        f = (z - z0) / total
+        front = 1.0 - smoothstep(0.0, 0.35, f)
+        out.append([z - z0, w + p["fw"] * front, up + p["fh"] * front, down, lift + down - WRAP + p["kick"] * f * f, n])
+    return out
 PER_SPAN = [8, 3, 1]
 SEGS = [36, 14, 8]
 
@@ -55,7 +86,11 @@ def facet_ring(k):
 
 
 def cowl(name, lod):
-    keys = COWLS[name]
+    return kit.keyed(lambda p: cowl_with(name, lod, p), BASE, KEYS)
+
+
+def cowl_with(name, lod, p):
+    keys = on_rails(COWLS[name], p)
     if name in FACETED:
         # (The code takes three rows a span; more here, so the creases run smoothly to the point.)
         rows = [facet_ring(k) for k in along(keys, [6, 3, 1][lod], False)]
