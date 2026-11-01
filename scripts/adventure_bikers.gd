@@ -1022,8 +1022,8 @@ func _draw(delta: float) -> void:
 					var ds := s - float(jn["s"])
 					var lane := absf(lat)
 					var side := signf(lat) if lane > 0.3 else float(stream.keep(s) * dir)
-					lat += side * (AdventureJunctions.swing(jn, ds, lane) - lane)
-					var slope := AdventureJunctions.swing(jn, ds + 0.5, lane) - AdventureJunctions.swing(jn, ds - 0.5, lane)
+					lat += side * (AdventureJunctions.swing(jn, ds, lane, side) - lane)
+					var slope := AdventureJunctions.swing(jn, ds + 0.5, lane, side) - AdventureJunctions.swing(jn, ds - 0.5, lane, side)
 					heading = (f * dir + right * side * slope * dir).normalized()
 			pos = (at["pos"] as Vector3) + right * lat
 			fwd = (heading + right * clampf(dlat / maxf(v, 2.0), -0.3, 0.3)).normalized()

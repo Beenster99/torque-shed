@@ -882,8 +882,8 @@ func _place(d: Dictionary, at := {}) -> Array:
 			# Round the island on its kerb side, then back into the lane.
 			var ds := s - float(jn["s"])
 			var side := signf(lat) if absf(lat) > 0.3 else float(keep(s) * dir)
-			lat += side * (AdventureJunctions.swing(jn, ds, lane) - lane)
-			var slope := AdventureJunctions.swing(jn, ds + 0.5, lane) - AdventureJunctions.swing(jn, ds - 0.5, lane)
+			lat += side * (AdventureJunctions.swing(jn, ds, lane, side) - lane)
+			var slope := AdventureJunctions.swing(jn, ds + 0.5, lane, side) - AdventureJunctions.swing(jn, ds - 0.5, lane, side)
 			heading = (fwd * dir + right * side * slope * dir).normalized()
 	return [(at["pos"] as Vector3) + right * lat, heading, lat]
 

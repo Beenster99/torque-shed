@@ -62,6 +62,7 @@ var _asked_at := 0
 var _ease := 0.0
 var _ease_from := Transform3D()
 var _land_xf := Transform3D()
+var _land_back := 0.0
 var _land_t := 0.0
 var _tick_at := 0
 var _boat: MeshInstance3D
@@ -167,6 +168,9 @@ func _physics_process(delta: float) -> void:
 				_land(bike)
 		"landing":
 			_land_t += delta
+			# (asked again each tick, in the local frame as it is now: a boat lying well out puts the riders far enough
+			# off that the world's origin moves under them, and the ground there may take a moment to come)
+			_land_xf = landing_xf(int(sailing["to"]), _land_back) if not sailing.is_empty() else _land_xf
 			if bike != null:
 				_put(bike, _land_xf, Vector3.ZERO)
 				if _land_t >= LAND_WAIT or _ground_under(_land_xf.origin):
@@ -270,13 +274,18 @@ static func _out(tau: float) -> float:
 
 
 ## Where the middle of a `size` boat crossing link `i` stands `s` m along it, as Vector3(x, z, heading) in the region
-## frame: from its ramp end (its stern at the end of the terminal's ramp) to the other's.
+## frame: from its ramp end (its stern at the end of the terminal's ramp, or on from there where it's afloat) to the
+## other's.
 func boat_at(i: int, from: int, s: float, size: String) -> Vector3:
 	var line := links.line_from(i, from)
 	var back := links.line_from(i, links.other_end(i, from))
 	var m := float(links.links[i]["m"])
 	var half := float((FerryScenery.BOATS[size] as Dictionary)["len"]) * 0.5
-	return FerryScenery.along(line, FerryScenery.sailed(m, s, FerryScenery.berth(line) + half, FerryScenery.berth(back) + half))
+	var net: RoadNet = world.roads.net if world != null and world.roads != null else null
+	var height: Callable = net.height if net != null else Callable()
+	var level := FerryScenery.water_of(net, links.links[i]["pts"]) if net != null else 0.0
+	return FerryScenery.along(line, FerryScenery.sailed(m, s, FerryScenery.lies(line, height, level) + half,
+		FerryScenery.lies(back, height, level) + half))
 
 
 # ---------------------------------------------------------------------------- the boat, the bike on it, the camera
@@ -376,7 +385,8 @@ func _land(bike: Bike) -> void:
 	var to := int(sailing["to"])
 	var aboard: Array = (sailing.get("aboard", {}) as Dictionary).keys()
 	aboard.sort()
-	_land_xf = landing_xf(to, maxi(0, aboard.find(Shed.me())) * LAND_GAP)   # (the crew one behind another)
+	_land_back = maxi(0, aboard.find(Shed.me())) * LAND_GAP   # (the crew one behind another)
+	_land_xf = landing_xf(to, _land_back)
 	if bike != null:
 		_put(bike, _land_xf, Vector3.ZERO)
 		trip.main.camera.snap()

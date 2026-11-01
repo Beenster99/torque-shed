@@ -11,15 +11,22 @@ extends RefCounted
 ## same order; their hash goes into the crew's ride hash (AdventureCrew.ride_hash), never into the region's.
 ##
 ## A ferry route cut at a cell's edge comes in pieces that share the point they were cut at; pieces of one route (the
-## same id) are joined end to end first. A route whose ends aren't both by a road (one leaving the map, a foot ferry to
-## a beach) isn't a link. Plain data and pure functions: safe on a worker.
+## same id) are joined end to end first, and across the open sea between them where the cells there (with no roads)
+## were never baked, so the route was cut out. A route whose ends aren't both by a road (one leaving the map, a foot
+## ferry to a beach) isn't a link. Plain data and pure functions: safe on a worker.
 
 ## Bumped whenever how links are made changes: it's in the builder hash (AdventureCrew.builds).
-const VERSION := 1
+const VERSION := 2
 ## A route's end is joined to the road junction nearest it, this near at most (m).
 const SNAP := 200.0
+## A long crossing's end, this near (m): a big port's berths can lie well out from its public roads (Holyhead's are
+## some 750 m out along the breakwater from the nearest one).
+const SNAP_PORT := 1000.0
 ## Pieces of one route meet where their ends are this close (m: they share a point, so it's only rounding).
 const JOIN := 0.5
+## Pieces of one route this far apart at most (m) are joined across the gap between them: a long crossing's open sea
+## has no cells baked (no roads), so its route comes only as the pieces by either shore.
+const GAP_MOST := 150000.0
 ## A route shorter than this (m) between its terminals isn't a crossing.
 const SHORTEST := 60.0
 ## How fast the ferries sail (m/s, about 17 knots), and the shortest and longest crossing the crew sits through (s):
@@ -89,8 +96,9 @@ func _init(r: RealRegion) -> void:
 	var pairs := {}   # Vector2i(lower node, higher node) -> link index
 	for route: Dictionary in routes:
 		var pts: PackedVector2Array = route["pts"]
-		var a := r.nearest_node(pts[0].x, pts[0].y, SNAP)
-		var b := r.nearest_node(pts[pts.size() - 1].x, pts[pts.size() - 1].y, SNAP)
+		var reach := SNAP_PORT if _length(pts) >= SHIP_FROM else SNAP
+		var a := r.nearest_node(pts[0].x, pts[0].y, reach)
+		var b := r.nearest_node(pts[pts.size() - 1].x, pts[pts.size() - 1].y, reach)
 		if a < 0 or b < 0 or a == b:
 			continue
 		var line := PackedVector2Array([r.node_pos[a]])
@@ -155,6 +163,22 @@ static func _routes(lines: Array) -> Array:
 					pts = joined
 					used[j] = 1
 					grew = true
+			if grew:
+				continue
+			# (none meets it: the nearest piece left of the route is over a stretch of open sea with no cell baked, where
+			# the route was cut out; it's joined across in a straight line)
+			var near := -1
+			var near_m := GAP_MOST
+			for j in range(i + 1, pieces.size()):
+				if used[j] == 0 and pieces[j][2] == id:
+					var m := _gap(pts, pieces[j][0])
+					if m < near_m:
+						near_m = m
+						near = j
+			if near >= 0:
+				pts = _bridge(pts, pieces[near][0])
+				used[near] = 1
+				grew = true
 		out.append({"pts": pts, "name": pieces[i][1], "id": id})
 	return out
 
@@ -181,6 +205,40 @@ static func _join(p: PackedVector2Array, q: PackedVector2Array) -> PackedVector2
 		out = q.duplicate()
 		out.reverse()
 		out.append_array(p.slice(1))
+	return out
+
+
+## How far apart the nearest ends of `p` and `q` are (m).
+static func _gap(p: PackedVector2Array, q: PackedVector2Array) -> float:
+	var p1 := p[p.size() - 1]
+	var q1 := q[q.size() - 1]
+	return minf(minf(p1.distance_to(q[0]), p1.distance_to(q1)), minf(p[0].distance_to(q[0]), p[0].distance_to(q1)))
+
+
+## `p` and `q` joined end to end across the gap between their nearest ends (either way round).
+static func _bridge(p: PackedVector2Array, q: PackedVector2Array) -> PackedVector2Array:
+	var p0 := p[0]
+	var p1 := p[p.size() - 1]
+	var q0 := q[0]
+	var q1 := q[q.size() - 1]
+	var gaps := [p1.distance_to(q0), p1.distance_to(q1), q1.distance_to(p0), q0.distance_to(p0)]
+	var out := PackedVector2Array()
+	var r := q.duplicate()
+	match gaps.find(gaps.min()):
+		0:
+			out = p.duplicate()
+			out.append_array(q)
+		1:
+			r.reverse()
+			out = p.duplicate()
+			out.append_array(r)
+		2:
+			out = q.duplicate()
+			out.append_array(p)
+		_:
+			r.reverse()
+			out = r
+			out.append_array(p)
 	return out
 
 

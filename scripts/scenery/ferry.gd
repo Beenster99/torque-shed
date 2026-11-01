@@ -21,7 +21,7 @@ extends RefCounted
 const Clock := preload("res://scripts/scenery/rail_train.gd")
 
 ## Part of what a block lays out: bump it with the look (SceneryStreamer folds the scripts' versions into its own).
-const VERSION := 2
+const VERSION := 3
 ## How fast the scenery's boats sail (m/s) and how long each waits at either end (s).
 const SPEED := 9.0
 const DWELL := 90.0
@@ -39,6 +39,11 @@ const RAMP_W := 8.0
 ## slipway's end), as near as that allows.
 const BERTH_LEAST := 10.0
 const BERTH_MOST := 60.0
+## Where a boat lies: on from its ramp to where the ground's this far (m) under the water, looked for every WET_STEP (m)
+## and as far as WET_MOST (or near half the route).
+const WET := 1.5
+const WET_STEP := 8.0
+const WET_MOST := 3000.0
 ## How steeply a ramp may climb or fall to a boat's deck (rise over run).
 const RAMP_STEEP := 0.25
 ## A route's water is the sea unless both its ends are higher than this (m): then it's a lake, just under its banks.
@@ -50,6 +55,7 @@ const SLOT_Z := 3.6
 ## The routes the crew is crossing on just now (FerryCrossing): {route id: true}; the scenery leaves them be.
 static var crew_ids := {}
 static var _meshes := {}
+static var _lies := {}
 static var _lock := Mutex.new()
 static var _lamp_mat: StandardMaterial3D
 
@@ -107,8 +113,12 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 		if m < FerryLinks.SHORTEST:
 			continue
 		var region_id := str(RegionKit.at_frame(n.region.frame_lat, n.region.frame_lon, pts[0].x, pts[0].y).get("region", ""))
+		var water := water_of(n, pts)
+		var back := pts.duplicate()
+		back.reverse()
 		boats.append({"pts": pts, "m": m, "id": str(route["id"]), "size": FerryLinks.size_of(str(route["name"]), m),
-			"kit": SceneryStreamer.kit("ferry", region_id), "water": water_of(n, pts)})
+			"kit": SceneryStreamer.kit("ferry", region_id), "water": water,
+			"afloat": Vector2(lies(pts, n.height, water, 0.0), lies(back, n.height, water, 0.0))})
 	if not boats.is_empty() or lamps:
 		out["dress"] = {"corner": corner, "boats": boats, "lamps": lamps}
 	return out
@@ -236,8 +246,9 @@ class Boats:
 		for i in routes.size():
 			var r: Dictionary = routes[i]
 			var at := FerryScenery.boat_on(float(r["m"]), clock.x, FerryScenery.offset_of(str(r["id"])), clock.y)
-			var half := float(FerryScenery.BOATS[str(r["size"])]["len"]) * 0.5 + 2.0   # (its stern by the route's end)
-			var p := FerryScenery.along(r["pts"], FerryScenery.sailed(float(r["m"]), at.x, half, half))
+			var half := float(FerryScenery.BOATS[str(r["size"])]["len"]) * 0.5 + 2.0   # (its stern by the route's end, afloat)
+			var afloat: Vector2 = r.get("afloat", Vector2.ZERO)
+			var p := FerryScenery.along(r["pts"], FerryScenery.sailed(float(r["m"]), at.x, half + afloat.x, half + afloat.y))
 			var here := box.has_point(Vector2(p.x, p.y)) and not FerryScenery.crew_ids.has(str(r["id"]))
 			var mi: MeshInstance3D = _shown[i]
 			if not here:
@@ -385,9 +396,45 @@ static func ramp_basis(h: float, long: float, drop: float) -> Basis:
 
 
 ## How far out from the road's end a boat lies, for a link's `line` from that end (FerryLinks.line_from: the
-## junction, then the route): the route's own start, kept to BERTH_LEAST..BERTH_MOST.
+## junction, then the route): the route's own start, kept to BERTH_LEAST..BERTH_MOST. (Where the boat itself lies is
+## afloat: lies.)
 static func berth(line: PackedVector2Array) -> float:
 	return clampf(line[0].distance_to(line[mini(1, line.size() - 1)]), BERTH_LEAST, BERTH_MOST)
+
+
+## How far along `line` (m) a boat lies at rest, from `from` on (the ramp's end, berth(line), when it's less than 0): the
+## first point on from there where the ground (`height`, a RoadNet's) is WET under the water at `level`. The map's
+## routes are drawn roughly, often over a headland or a quay by either shore, and a boat there would sit on the land.
+## Where the heights aren't all there yet, `from` (and not kept: asked again later).
+static func lies(line: PackedVector2Array, height: Callable, level: float, from := -1.0) -> float:
+	if from < 0.0:
+		from = berth(line)
+	if not height.is_valid() or line.size() < 2:
+		return from
+	var key := "%d|%s|%s|%s|%d|%.1f|%.1f" % [height.hash(), line[0], line[1], line[line.size() - 1], line.size(), level, from]
+	_lock.lock()
+	var kept = _lies.get(key)
+	_lock.unlock()
+	if kept != null:
+		return float(kept)
+	var most := minf(WET_MOST, FerryLinks._length(line) * 0.45)
+	var s := from
+	var out := from
+	while s <= most:
+		var p := along(line, s)
+		var h := float(height.call(p.x, p.y))
+		if is_nan(h):
+			return from
+		if h < level - WET:
+			out = s
+			break
+		s += WET_STEP
+	_lock.lock()
+	if _lies.size() > 512:
+		_lies.clear()
+	_lies[key] = out
+	_lock.unlock()
+	return out
 
 
 ## Where along a route or link `m` m long a boat's middle is `s` m into its crossing (0 to m), lying `from_off` m off

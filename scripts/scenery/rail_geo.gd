@@ -3,8 +3,9 @@ extends RefCounted
 ## a mesh on the main thread. Every face is vertex coloured and drawn from both sides.
 
 ## The surfaces, in the order a mesh holds them: matte (ballast, stone, platforms), steel (rails, wires, girders), glow
-## (lamps: lit at night), window (a train's windows: lit at night), lamp_red (a crossing's lit lamps).
-const SURFACES := ["matte", "steel", "glow", "window", "lamp_red"]
+## (lamps: lit at night), window (a train's windows: lit at night), lamp_red (a crossing's lit lamps), tail (a train's
+## red tail and marker lamps: always on, brighter at night).
+const SURFACES := ["matte", "steel", "glow", "window", "lamp_red", "tail"]
 
 static var _mats := {}
 
@@ -102,6 +103,10 @@ static func material(surf: String) -> StandardMaterial3D:
 			m.emission_enabled = true
 			m.emission = Color(1.0, 0.12, 0.05)
 			m.emission_energy_multiplier = 4.0
+		"tail":
+			m.emission_enabled = true
+			m.emission = Color(1.0, 0.1, 0.05)
+			m.emission_energy_multiplier = 0.6
 	_mats[surf] = m
 	return m
 
@@ -110,3 +115,22 @@ static func material(surf: String) -> StandardMaterial3D:
 static func night(lamps: float) -> void:
 	material("glow").emission_energy_multiplier = 0.15 + lamps * 3.0
 	material("window").emission_energy_multiplier = lamps * 1.6
+	material("tail").emission_energy_multiplier = 0.6 + lamps * 2.4
+
+
+## A round bar (a wheel, an axle, a pipe) of radius `r` round `at`, `half` its half length along `axis` (x, y or z: a
+## unit axis), `sides` faces round it, both ends capped.
+func disc(name: String, at: Vector3, axis: Vector3, r: float, half: float, col: Color, sides := 8) -> void:
+	var u := Vector3.UP if absf(axis.y) < 0.9 else Vector3.RIGHT
+	u = (u - axis * u.dot(axis)).normalized()
+	var v := axis.cross(u)
+	var a := at - axis * half
+	var b := at + axis * half
+	for k in sides:
+		var t0 := TAU * k / sides
+		var t1 := TAU * (k + 1) / sides
+		var p0 := (u * cos(t0) + v * sin(t0)) * r
+		var p1 := (u * cos(t1) + v * sin(t1)) * r
+		quad(name, a + p0, a + p1, b + p1, b + p0, col)
+		tri(name, a, a + p1, a + p0, col)
+		tri(name, b, b + p0, b + p1, col)

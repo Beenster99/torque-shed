@@ -6,6 +6,7 @@ extends RefCounted
 const Roads := preload("res://tests/road_block_tests.gd")
 const Rail := preload("res://scripts/scenery/rail.gd")
 const Trains := preload("res://scripts/scenery/rail_train.gd")
+const Geo := preload("res://scripts/scenery/rail_geo.gd")
 
 var t: Node   # the test runner: check()
 
@@ -244,6 +245,39 @@ func test_regions() -> void:
 		check(near, "%s station is beside its line" % st[6])
 	check(runs.any(func(r): return not r["track"]), "and its old viaducts on the closed line west of Redmire still stand")
 	check(Rail.runs_of(RealRegion.get_region("shodoshima"))["runs"].is_empty(), "Shodoshima has no railway, and none is laid")
+
+
+## Every kit's stock, cab and car: a train with its running gear, lit at both ends, a pantograph only where there is
+## a wire to reach, and few enough faces that a long freight train costs little.
+func test_stock() -> void:
+	var kits: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/scenery_kits.json"))["kinds"]
+	var rows: Array = []
+	for kind: String in ["railway", "tram", "light_rail", "subway", "narrow_gauge", "funicular", "monorail"]:
+		var base: Dictionary = kits[kind]["default"]
+		rows.append([kind, base, "default"])
+		for reg: String in (kits[kind].get("regions", {}) as Dictionary):
+			var k := base.duplicate()
+			k.merge(kits[kind]["regions"][reg], true)
+			rows.append([kind, k, reg])
+	for row: Array in rows:
+		var kind: String = row[0]
+		var stock: Dictionary = row[1]
+		var wired := bool(stock.get("electrified", false)) or kind in ["tram", "light_rail"]
+		var tops := 0.0
+		for part: String in ["cab", "car"]:
+			var m: ArrayMesh = Trains.stock_mesh(stock, kind, part)
+			var verts := 0
+			var lamps := {}
+			for s in m.get_surface_count():
+				var v: PackedVector3Array = m.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+				verts += v.size()
+				lamps[s] = m.surface_get_material(s) == Geo.material("tail") or m.surface_get_material(s) == Geo.material("glow")
+				for p in v:
+					tops = maxf(tops, p.y)
+			check(verts < 4000, "%s %s's %s: %d vertices" % [kind, row[2], part, verts])
+			if part == "cab":
+				check(lamps.values().count(true) == 2, "%s %s's cab has its headlamps and tail lamps" % [kind, row[2]])
+		check((tops > 5.0) == wired, "%s %s: a pantograph up to the wire only where it's electric (top %.1f m)" % [kind, row[2], tops])
 
 
 ## A viaduct across a valley (Ribblehead's shape: a line on a bridge 400 m long over a dale 30 m deep, the map's viaduct

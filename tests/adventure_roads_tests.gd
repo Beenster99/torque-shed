@@ -192,6 +192,67 @@ func test_instructions() -> void:
 	await _frames(2)
 
 
+## On the network ride the traffic goes round a roundabout's real ring, not through its middle (Simon, v0.42.2: "other
+## road users do not seem to respect the roundabout and simply cut through it"). The planned line runs on through each
+## ring, so the traffic goes round the ring's own road from where the line comes into it to where it leaves, whatever
+## its shape (round, or with the corners the map gives it), either way round, and gives way at its edge; where the
+## line only runs along one of its roads, it keeps to that road.
+func test_real_rings() -> void:
+	var r := Rides.tour_route("dales", 7)
+	var rings: Array = r.real.junctions.filter(func(row): return str(row["type"]) in ["roundabout", "mini"])
+	check(not rings.is_empty() and rings.all(func(row): return row.has("rr") and (row["ring"] as PackedInt32Array).size() >= 3),
+		"the plan knows each ring's own roads (%d rings)" % rings.size())
+	var net := RoadNet.new(RealRegion.get_region("dales"), func(_x: float, _z: float) -> float: return 0.0)
+	var w := AdventureWorld.new()
+	w.route = r
+	w.roads = RoadStreamer.new()
+	w.roads.net = net
+	var traffic := AdventureTraffic.new()
+	traffic.world = w
+	traffic._busy = PackedFloat32Array([0.0])
+	var js := []
+	traffic._real_rings(js)
+	traffic.free()
+	w.roads.free()
+	w.free()
+	var off := 0.0
+	var round_ := 0
+	var along := 0
+	for row: Dictionary in rings:
+		var ring: PackedInt32Array = row["ring"]
+		var s0 := int(row["k"]) * AdventureRoute.STEP
+		var got: Array = js.filter(func(jn): return absf(float(jn["s"]) - s0) < float(row["rr"]))
+		var into := not AdventureTraffic.ring_sides(r, net, ring, s0, float(row["rr"]) * 2.0 + 20.0).is_empty()
+		if not into:
+			along += 1
+			check(got.all(func(jn): return not jn.has("ro")), "a ring the road runs along the edge of isn't gone round (at %.0f m)" % s0)
+			continue
+		check(got.size() == 1 and float(got[0]["stop"]) > float(got[0]["ro"]), "a ring the road runs into is a junction gone round, given way at (at %.0f m)" % s0)
+		if got.size() != 1:
+			continue
+		round_ += 1
+		var jn: Dictionary = got[0]
+		var edges := []
+		for n in ring:
+			for ei in net.region.adjacent[n]:
+				if ring.has(net.region.other_end(ei, n)):
+					edges.append(ei)
+		var span: Vector2 = jn["span"]
+		for side: float in [1.0, -1.0]:
+			var ds := span.x + AdventureJunctions.RING_TAPER
+			while ds <= span.y - AdventureJunctions.RING_TAPER:
+				var lat := AdventureJunctions.swing(jn, ds, 1.8, side)
+				if lat > 1.8 + 0.01:
+					var xz := r.xz_at(float(jn["s"]) + ds, side * lat)
+					var near := INF
+					for ei: int in edges:
+						near = minf(near, float(net.project(ei, xz[0], xz[1])[2]))
+					off = maxf(off, near)
+				ds += 0.5
+			check(is_equal_approx(AdventureJunctions.swing(jn, span.y + 2.0, 1.8, side), 1.8), "and back in its lane once out of it")
+	check(round_ > 0 and off < 0.6, "round %d rings on the ring's own road, never across the middle (%.2f m off its middle line at most; %d only run along)" % [round_, off, along])
+
+
 ## The lights: red, red and amber, green, amber, round again, the side road's green only while
 ## the main road's red; all from one clock, so every machine's lights agree.
 func test_lights_cycle() -> void:

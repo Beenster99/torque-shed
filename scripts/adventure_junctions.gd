@@ -53,6 +53,10 @@ const RING := 6.8
 const CIRCLE := 2.9
 const MINI_RO := 5.4
 const MINI_RC := 3.4
+## Round a real ring (swing's "sides"), how far (m) the traffic eases out onto its middle line from where it comes in,
+## and how far past where the planned line meets it the ring's road reaches (its give way line just past that).
+const RING_TAPER := 3.0
+const RING_HALF := 3.5
 ## The traffic lights' cycle (s): main road green, side road green, amber, all red, red and amber.
 const MAIN_GREEN := [16.0, 24.0]
 const SIDE_GREEN := [8.0, 12.0]
@@ -328,8 +332,20 @@ static func stub_mesh(a: Dictionary) -> ArrayMesh:
 
 ## How far off the centre line (m, unsigned) traffic keeps `ds` metres from a roundabout's middle:
 ## out round the island (rc beside it), easing back to `lane` on the way in and out. `lane` itself
-## away from one.
-static func swing(st: Dictionary, ds: float, lane: float) -> float:
+## away from one. Round a real ring of road on the network ride, where the planned line runs through it: along the
+## ring's own middle line on its `side` (+1 right of the way s grows, -1 left: "sides", see AdventureTraffic.ring_sides),
+## easing out onto it over RING_TAPER m from where it comes in, never across the island.
+static func swing(st: Dictionary, ds: float, lane: float, side := 0.0) -> float:
+	if st.has("sides"):
+		var line: PackedFloat32Array = st["sides"][0 if side > 0.0 else 1]
+		var f := ds - float(st["from"])
+		var i := int(floor(f))
+		if side == 0.0 or i < 0 or i >= line.size() - 1 or is_nan(line[i]) or is_nan(line[i + 1]):
+			return lane
+		var v := lerpf(line[i], line[i + 1], f - i)
+		var span: Vector2 = st["span"]
+		var ease := clampf(minf(ds - span.x, span.y - ds) / RING_TAPER, 0.0, 1.0)
+		return lane + (maxf(v, lane) - lane) * ease
 	if not st.has("rc"):
 		return lane
 	var rc := float(st["rc"])

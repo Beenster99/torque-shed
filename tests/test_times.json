@@ -300,6 +300,7 @@
 	"_test_lights_kit_bike_materials": 279,
 	"_test_lights_upscaler_off": 123,
 	"_test_live_edges": 2173,
+	"_test_live_gap": 900,
 	"_test_live_heights": 2036,
 	"_test_live_pads": 2179,
 	"_test_live_ride": 14717,
@@ -656,6 +657,7 @@
 	"_test_rail_timetable": 30,
 	"_test_rail_regions": 2000,
 	"_test_rail_viaduct": 100,
+	"_test_rail_stock": 150,
 	"_test_rail_ride": 6000,
 	"_test_scenery_postcards_sheet": 50,
 	"_test_scenery_ride": 9000,
@@ -695,5 +697,7 @@
 	"_test_bike_rig_frame_numbers": 2100,
 	"_test_bike_rig_fittings": 2600,
 	"_test_bike_rig_reform": 1400,
-	"_test_rig_body_fairings": 6000
+	"_test_rig_body_fairings": 6000,
+	"_test_road_pockets": 4400,
+	"_test_adv_roads_real_rings": 3000
 }
