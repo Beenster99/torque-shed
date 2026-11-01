@@ -39,6 +39,7 @@ static func usual_size(build: BikeBuild) -> float:
 ## on the engine's own cases, barrels and heads, and isn't shrunk much to get there.
 func test_engines_fit() -> void:
 	var m := BikeModel.new()
+	m.look = BikeLook.CLASSIC   # (_fit_bay is the Classic look's layout; Rig built's is BikeRig, tests/bike_rig_tests.gd)
 	t.add_child(m)
 	var frames := chopper_frames()
 	var engines: Array = PartsDB.by_kind["engine"]
@@ -80,6 +81,7 @@ func test_engines_fit() -> void:
 ## of every kind, and whole bikes of every style still lay out round their engine as before.
 func test_other_frames() -> void:
 	var m := BikeModel.new()
+	m.look = BikeLook.CLASSIC   # (_fit_bay is the Classic look's layout; Rig built's is BikeRig, tests/bike_rig_tests.gd)
 	t.add_child(m)
 	var biggest := {}
 	for e in PartsDB.by_kind["engine"]:
@@ -117,6 +119,7 @@ func test_other_frames() -> void:
 ## The measure itself sees an engine through the tank and through a tube.
 func test_measure() -> void:
 	var m := BikeModel.new()
+	m.look = BikeLook.CLASSIC   # (_fit_bay is the Classic look's layout; Rig built's is BikeRig, tests/bike_rig_tests.gd)
 	t.add_child(m)
 	m.build_engine_bay(BikeBuild.new(chopper_parts("chopper_raked", "vtwin_1800")))
 	var clear := m.engine_clash()
@@ -140,6 +143,7 @@ func test_whole_bikes() -> void:
 	for f in chopper_frames():
 		for e in ["vtwin_1800", "inline_1200", "twin_750"]:
 			var m := BikeModel.new()
+			m.look = BikeLook.CLASSIC   # (_fit_bay is the Classic look's layout; Rig built's is BikeRig, tests/bike_rig_tests.gd)
 			t.add_child(m)
 			m.build_from(BikeBuild.new(PartsDB.sanitize_build(chopper_parts(str(f), e))))
 			var c := m.engine_clash()

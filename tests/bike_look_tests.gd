@@ -149,7 +149,7 @@ func test_switch() -> void:
 	var tab := DebugTab.new()
 	t.add_child(tab)
 	var picker := tab.find_child("BikeLookPicker", true, false) as OptionButton
-	check(picker != null and picker.item_count == 2 and picker.get_item_text(picker.selected) == "New",
+	check(picker != null and picker.item_count == 2 and picker.get_item_text(picker.selected) == "Rig built",
 		"the Debug tab has the Bike look switch, showing the look in use")
 	tab.free()
 	follows.free()
@@ -169,6 +169,7 @@ func test_new_budgets() -> void:
 	# (The bake on the code-built shapes alone: the Blender-made parts have their own budget, see
 	# tests/blender_parts_tests.gd.)
 	BlenderParts.on = false
+	BikeRig.on = false
 	var over := []
 	var worst := {}
 	for style in PartsDB.STYLES:
@@ -188,6 +189,7 @@ func test_new_budgets() -> void:
 		m.free()
 	BikeLookNew.lods_now = false
 	BlenderParts.on = true
+	BikeRig.on = true
 	check(over.is_empty(), "every style's bike is inside the new look's budgets, at most a third of Classic's draws and all its detail close up %s %s" % [worst, over])
 
 
@@ -197,6 +199,7 @@ func test_new_budgets() -> void:
 func test_new_parts_and_detail() -> void:
 	BikeLookNew.lods_now = true
 	BlenderParts.on = false
+	BikeRig.on = false
 	var parts := Contracts.style_build("scrambler")
 	var classic := _model(parts, BikeLook.CLASSIC, true)
 	var m := _model(parts, BikeLook.NEW, true)
@@ -209,6 +212,7 @@ func test_new_parts_and_detail() -> void:
 			off.append("%s %s / %s" % [slot, a, b])
 	check(off.is_empty() and not m._shared.is_empty(), "every part is the same size and in the same place as in Classic %s" % [off])
 	BlenderParts.on = true
+	BikeRig.on = true
 	var was := Settings.gfx_bike_detail
 	Settings.gfx_bike_detail = "high"
 	var mine := _model(parts, BikeLook.NEW, true)

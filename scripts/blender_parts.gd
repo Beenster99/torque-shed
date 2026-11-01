@@ -111,7 +111,7 @@ const PER_CYLINDER_BORE := {"2stroke": 0.045, "vtwin": 0.05, "boxer": 0.05}
 ## The top end's glbs for an engine `layout` with head part `head`, and where each goes, for the
 ## cylinders BikeModel lays out (`cyls`, `eng_s` as in top_end_xform, `bore_r` its _bore_r):
 ## [[path, Transform3D], ...]. Empty when the layout has no Blender top end for that head.
-static func top_end_pieces(layout: String, head: String, cyls: Array, eng_s: float, bore_r: float) -> Array:
+static func top_end_pieces(layout: String, head: String, cyls: Array, eng_s: float, bore_r: float, width := -1.0) -> Array:
 	if cyls.is_empty():
 		return []
 	if not layout in PER_CYLINDER:
@@ -126,7 +126,8 @@ static func top_end_pieces(layout: String, head: String, cyls: Array, eng_s: flo
 		if part(path).is_empty():
 			return []
 		var up: Vector3 = cyls[i]["up"]
-		var b := up.length() * bore_r / float(PER_CYLINDER_BORE[layout])
+		# (`width`: the barrel's width against its drawn length, when that isn't the same.)
+		var b := (up.length() if width < 0.0 else width) * bore_r / float(PER_CYLINDER_BORE[layout])
 		var t := top_end_xform([cyls[i]], 1.0)
 		out.append([path, Transform3D(t.basis * Basis.from_scale(Vector3(b, 1.0, b)), t.origin)])
 	return out
