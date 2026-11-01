@@ -479,6 +479,94 @@ func test_join_caps() -> void:
 	check(proud < 0.02, "on a 1 in 10 hill the join's disc is nowhere above the road (%.3f m at most, at %s)" % [proud, str(at)])
 
 
+## A little loop of road closing round a pocket of land (a roundabout the map draws square, a triangle of roads at a
+## fork) has a floor over it flush with its roads: no pit sunk under them all round for a bike to drop into (Simon,
+## v0.42.2: "bikes can get trapped in gaps around roundabouts"). Nor is a town's block of streets one, nor a
+## roundabout's ring (its island fills it).
+func test_pockets() -> void:
+	var hill := func(x: float, z: float) -> float: return 30.0 + x * 0.08 - z * 0.05
+	# A square of four one-way roads 10 m out from (100, 100), a road off each corner.
+	var nodes := [[100, 90], [110, 100], [100, 110], [90, 100], [100, -300], [500, 100], [100, 500], [-300, 100]]
+	var edges := [[0, 1, "tertiary", 1], [1, 2, "tertiary", 1], [2, 3, "tertiary", 1], [3, 0, "tertiary", 1],
+		[0, 4, "tertiary"], [1, 5, "tertiary"], [2, 6, "tertiary"], [3, 7, "tertiary"]]
+	var net := RoadNet.new(graph(nodes, edges), hill)
+	check(not net.on_ring(0), "a roundabout the map draws square isn't taken for one (its corners too sharp)")
+	var pk := net.pocket_of(0)
+	check(not pk.is_empty() and (pk["edges"] as PackedInt32Array).size() == 4 and net.pocket_of(2) == pk,
+		"but its four roads close round a pocket (%s)" % str(pk.get("edges")))
+	var got := _floored(net, pk)
+	check(got[0] == 0 and got[1] < 0.1 and got[2] < 0.005,
+		"nothing to fall into: no hole (%d), no step over it (%.3f m at most in 20 cm), no floor up through the road (%.3f m)" % got.slice(0, 3))
+	# A triangle of roads at a fork, its corners far enough apart to be junctions of their own, land left between them.
+	var fork := RoadNet.new(graph([[100, 100], [128, 116], [128, 84], [-200, 100], [400, 160], [400, 40]],
+		[[3, 0, "secondary"], [0, 1, "secondary"], [0, 2, "secondary"], [1, 2, "residential"], [1, 4, "secondary"], [2, 5, "secondary"]]), hill)
+	var tri := fork.pocket_of(3)
+	check(not tri.is_empty(), "a triangle of roads at a fork closes round a pocket")
+	if not tri.is_empty():
+		got = _floored(fork, tri)
+		check(got[0] == 0 and got[1] < 0.1 and got[2] < 0.005 and got[3] > 0,
+			"floored over: no hole (%d), no step over it (%.3f m in 20 cm), not up through the road (%.3f m), %d floor triangles" % got)
+	# A block of a town's streets has land of its own in its middle; a roundabout has its island.
+	var town := RoadNet.new(graph([[0, 0], [120, 0], [120, 120], [0, 120]], [[0, 1, "residential"], [1, 2, "residential"],
+		[2, 3, "residential"], [3, 0, "residential"]]), hill)
+	check(town.pocket_of(0).is_empty(), "a town's block of streets isn't a pocket")
+	var rn := RoadNet.new(roundabout(), flat)
+	check(rn.pocket_of(0).is_empty() and rn.pocket_of(8).is_empty(), "nor is a roundabout's ring, nor the road off it")
+
+
+## Pocket `pk`'s block's surfaces over it every 20 cm: [holes (nothing to ride on), the biggest step from one point to the
+## next, how far its floor stands up through its roads' carriageways at most, its floor's triangles].
+func _floored(net: RoadNet, pk: Dictionary) -> Array:
+	var line: PackedVector2Array = pk["line"]
+	var box := Rect2(line[0], Vector2.ZERO)
+	for q in line:
+		box = box.expand(q)
+	var mid := box.get_center()
+	var b := RoadBlock.build(net, RoadBlock.key_of(mid.x, mid.y))
+	var deck := PackedVector3Array()
+	for surf: String in b.arrays["deck"]:
+		var g: Dictionary = b.arrays["deck"][surf]
+		var ids: PackedInt32Array = g["i"]
+		for t in ids.size() / 3:
+			var tri := [(g["v"] as PackedVector3Array)[ids[t * 3]] + b.anchor(), (g["v"] as PackedVector3Array)[ids[t * 3 + 1]] + b.anchor(),
+				(g["v"] as PackedVector3Array)[ids[t * 3 + 2]] + b.anchor()]
+			if tri.any(func(v: Vector3) -> bool: return box.grow(1.0).has_point(Vector2(v.x, v.z))):
+				deck.append_array(tri)
+	var floor := PackedVector3Array()
+	for v: Vector3 in b.arrays["island"]["v"]:
+		floor.append(v + b.anchor())
+	var holes := 0
+	var proud := 0.0
+	var step := 0.0
+	var tops := {}
+	for dz in range(0, int(box.size.y * 5.0) + 1):
+		for dx in range(0, int(box.size.x * 5.0) + 1):
+			var p := box.position + Vector2(dx, dz) * 0.2
+			if not Geometry2D.is_point_in_polygon(p, line):
+				continue
+			var d := _deck_y(deck, p)
+			var f := _deck_y(floor, p)
+			if not is_nan(d) and not is_nan(f) and _on_carriageway(net, pk, p):
+				proud = maxf(proud, f - d)
+			var top := d if is_nan(f) else (f if is_nan(d) else maxf(d, f))
+			if is_nan(top):
+				holes += 1
+			tops[Vector2i(dx, dz)] = top
+	for c: Vector2i in tops:
+		for n: Vector2i in [c + Vector2i(1, 0), c + Vector2i(0, 1)]:
+			if tops.has(n) and not is_nan(tops[c]) and not is_nan(tops[n]):
+				step = maxf(step, absf(float(tops[c]) - float(tops[n])))
+	return [holes, step, proud, floor.size() / 3]
+
+
+## Whether `p` is on the carriageway of one of pocket `pk`'s roads, clear of its edge.
+static func _on_carriageway(net: RoadNet, pk: Dictionary, p: Vector2) -> bool:
+	for e: int in pk["edges"]:
+		if float(net.project(e, p.x, p.y)[2]) < net.width_of(e) * 0.5 - 0.2:
+			return true
+	return false
+
+
 ## The highest of `faces`' (triangles, region frame) heights at `p`, or NAN where none is.
 static func _deck_y(faces: PackedVector3Array, p: Vector2) -> float:
 	var best := NAN

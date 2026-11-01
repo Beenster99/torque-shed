@@ -1594,7 +1594,9 @@ static func _is_round(region: RealRegion, edge_ids: PackedInt32Array) -> bool:
 	return mean >= 4.0 and mean <= 45.0 and std <= RING_ROUNDNESS * mean
 
 
-## The junctions the route passes: [{k (the nearest road knot), type, arms, ri, ro}] in order along the road.
+## The junctions the route passes: [{k (the nearest road knot), type, arms, ri, ro, and for a ring rr (its own radius, as
+## the map has it: the network ride's real ring, where the planned road lays its own of ri and ro) and ring (its
+## nodes)}] in order along the road.
 ## (Where a crossing comes before a step, `ferries` as plan's, the junction at its foot isn't one the road rides through.)
 static func junctions_along(region: RealRegion, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array,
 		ferries: Array = []) -> Array:
@@ -1648,7 +1650,7 @@ static func junctions_along(region: RealRegion, steps: Array[Vector3i], xs: Pack
 						arms.append(arm)
 			var ri := clampf(radius - 5.0, 4.0, 9.0)
 			out.append({"k": k, "type": "mini" if radius <= MINI_RING_M else "roundabout", "arms": _one_per_side(arms),
-				"ri": snappedf(ri, 0.1), "ro": snappedf(ri + 6.8, 0.1)})
+				"ri": snappedf(ri, 0.1), "ro": snappedf(ri + 6.8, 0.1), "rr": snappedf(radius, 0.1), "ring": ring})
 			for q in range(i, j):
 				used[q] = true
 			i = j

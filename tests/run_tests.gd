@@ -23002,6 +23002,10 @@ func _test_road_join_caps() -> void:
 	_roads().test_join_caps()
 
 
+func _test_road_pockets() -> void:
+	_roads().test_pockets()
+
+
 func _test_road_cell() -> void:
 	_roads().test_cell()
 
@@ -23748,6 +23752,10 @@ func _test_adv_roads_instructions() -> void:
 
 func _test_adv_roads_lights_cycle() -> void:
 	await _adv_roads().test_lights_cycle()
+
+
+func _test_adv_roads_real_rings() -> void:
+	_adv_roads().test_real_rings()
 
 
 func _test_adv_roads_traffic_stops() -> void:
