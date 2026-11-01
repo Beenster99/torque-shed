@@ -49,6 +49,8 @@ var _orbit_angle := 0.0
 var _smoothed_pos := Vector3.ZERO
 var _look := Vector3.ZERO
 var _initialized := false
+var _tick_xf := Transform3D()  # where the last physics tick left the camera (see _smooth_jumps)
+var _jumped := true           # put somewhere new since (snapped): drawn there at once
 var _idle := 0.0          # seconds since the rider last swung the camera
 var _pivot := Vector3.ZERO
 var _heading := 0.0       # smoothed world angle the camera sits at round the bike
@@ -64,6 +66,8 @@ var fly_by := false
 
 
 func _ready() -> void:
+	# Drawn smoothly between physics ticks, with the bike it follows (see Bike._ready).
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON
 	near = 0.05
 	far = 2500.0
 	fov = 70.0 + Graphics.fov_offset()
@@ -80,6 +84,7 @@ func cycle_mode() -> void:
 
 func set_mode(new_mode: Mode) -> void:
 	_crash = false
+	_jumped = true
 	if new_mode == Mode.RIDE_BY:
 		fly_by = true
 		_by_return = Mode.CHASE
@@ -102,6 +107,7 @@ func _set_helmet_hidden(hidden: bool) -> void:
 
 func snap() -> void:
 	_initialized = false
+	_jumped = true
 
 
 ## The world's origin moved by `d` (see AdventureWorld): everything the camera remembers moves
@@ -112,6 +118,8 @@ func shift_origin(d: Vector3) -> void:
 	_look -= d
 	_pivot -= d
 	_by_pos -= d
+	reset_physics_interpolation()
+	_tick_xf = global_transform
 
 
 ## Swings the chase view round the bike (or turns your head in first person) by `yaw` and
@@ -182,6 +190,7 @@ func watching_crash() -> bool:
 
 ## Picks the roadside spot ahead of the bike and how long to stay there.
 func _place_ride_by() -> void:
+	_jumped = true
 	var t := target.global_transform
 	var flat := _flat_forward(t)
 	var right := flat.cross(Vector3.UP)
@@ -222,7 +231,29 @@ func ride_by_spot() -> Vector3:
 func _physics_process(delta: float) -> void:
 	var pt := Perf.t0()
 	_physics_process_body(delta)
+	_smooth_jumps()
 	Perf.add("camera", pt)
+
+
+## A cut (a new view, the reverse view on or off, the ride-by camera hopping on ahead, a snap) is drawn at once; only
+## the camera's ordinary moves are drawn eased between the ticks.
+func _smooth_jumps() -> void:
+	# (the recovery truck and its trailer are drawn as they're left at each tick, so the camera following them is too)
+	var live := is_instance_valid(target)
+	var mode_now := Node.PHYSICS_INTERPOLATION_MODE_OFF if live and target is Car else Node.PHYSICS_INTERPOLATION_MODE_ON
+	if physics_interpolation_mode != mode_now:
+		physics_interpolation_mode = mode_now
+		_jumped = true
+	var xf := global_transform
+	var speed := 0.0
+	if live and (target is Bike or target is Car):
+		speed = absf(target.speed)
+	var step := speed / Engine.physics_ticks_per_second
+	if _jumped or _cut or xf.origin.distance_to(_tick_xf.origin) > step * 3.0 + 0.75 \
+			or (xf.basis.get_rotation_quaternion().angle_to(_tick_xf.basis.get_rotation_quaternion()) > 0.6):
+		reset_physics_interpolation()
+	_jumped = false
+	_tick_xf = xf
 
 
 func _physics_process_body(delta: float) -> void:

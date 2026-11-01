@@ -331,6 +331,7 @@ func _run_all() -> void:
 	await _t(&"_test_recorded_sounds")
 	print("Riding: camera orbit, ride-by camera, circle burnouts, headlight and fog, bikes left on the road")
 	await _t(&"_test_ride_camera_orbit")
+	await _t(&"_test_ride_smooth_between_ticks")
 	await _t(&"_test_ride_by_camera")
 	await _t(&"_test_circle_burnout")
 	await _t(&"_test_headlight_sequence")
@@ -12007,6 +12008,58 @@ func _horn(sound: String) -> HornAudio:
 
 ## Third person: the mouse or right stick swings the chase camera round the bike, never
 ## through it, and it eases back behind after a moment; first person turns your head.
+## The ridden bike and the camera riding with it are drawn eased between the physics ticks (Main turns physics
+## interpolation on for them alone), so a screen drawing at its own rate sees a steady ride, not one that stands still a
+## frame and jumps two ticks the next (Simon, v0.43.0: "the ride feels shaky in first person"); and a jump (placed,
+## the world's origin moved, a new view) is drawn there at once, not slid across.
+func _test_ride_smooth_between_ticks() -> void:
+	var was_on := get_tree().physics_interpolation
+	var root_mode := get_tree().root.physics_interpolation_mode
+	get_tree().physics_interpolation = true
+	get_tree().root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var r := await ride({}, 3.0, func(b, _t): b.throttle = 0.6)
+	var bike: Bike = r["bike"]
+	var cam := ChaseCamera.new()
+	r["root"].add_child(cam)
+	cam.target = bike
+	cam.set_mode(ChaseCamera.Mode.HELMET)
+	for i in 20:
+		bike.throttle = 0.6
+		await get_tree().physics_frame
+	check(bike.is_physics_interpolated() and bike.model.is_physics_interpolated() and cam.is_physics_interpolated(),
+		"the ridden bike, its model and the camera are drawn eased between the ticks")
+	check(not (r["root"] as Node3D).is_physics_interpolated(), "and nothing else is")
+	# Drawn, the eye sits where it does on the bike as drawn (both eased the same way).
+	await get_tree().process_frame
+	var drawn_eye: Transform3D = bike.model.get_global_transform_interpolated().affine_inverse() * cam.get_global_transform_interpolated()
+	var eye: Transform3D = bike.model.global_transform.affine_inverse() * cam.global_transform
+	check(drawn_eye.origin.distance_to(eye.origin) < 0.02, "drawn, the eye rides with the bike (%.3f m off)" % drawn_eye.origin.distance_to(eye.origin))
+	# Put 300 m away: drawn there at once, camera and all.
+	bike.place(bike.global_position + Vector3(300.0, 0.0, 0.0), 0.0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	check(bike.get_global_transform_interpolated().origin.distance_to(bike.global_position) < 1.0, "a bike placed far away is drawn there at once")
+	check(cam.get_global_transform_interpolated().origin.distance_to(cam.global_position) < 1.0, "and so is the camera riding it")
+	# A new view (first person to the chase view) cuts to it too.
+	cam.set_mode(ChaseCamera.Mode.CHASE)
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	check(cam.get_global_transform_interpolated().origin.distance_to(cam.global_position) < 0.5, "a new view is cut to, not slid to")
+	# The recovery truck isn't eased, so nor is the camera following it.
+	var car := Car.new()
+	r["root"].add_child(car)
+	car.place(Transform3D(Basis(), bike.global_position + Vector3(0.0, 0.0, 20.0)))
+	cam.target = car
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(not cam.is_physics_interpolated(), "following the recovery truck the camera is drawn as each tick leaves it")
+	cam.target = bike
+	r["root"].queue_free()
+	get_tree().physics_interpolation = was_on
+	get_tree().root.physics_interpolation_mode = root_mode
+
+
 func _test_ride_camera_orbit() -> void:
 	var r := await ride({}, 0.5, func(_b, _t): pass)
 	var bike: Bike = r["bike"]
