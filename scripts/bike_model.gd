@@ -132,10 +132,6 @@ var _bore_r := 0.048             # cylinder barrel radius
 var _tank_a := Vector3.ZERO      # the tank's underside line, nose to tail (see _draw_tank)
 var _tank_b := Vector3.ZERO
 var _tank_secs: Array = []       # the tank's sections as drawn, for what sits on top of it (see tank_top_at)
-## Rig built look: the lines the bike rig hands the bodywork (lines agreement, section 3), filled
-## before anything is drawn; empty in the Classic look. The tank, seat and tail fit to them (see
-## RigBodywork).
-var rig := {}
 var _seat_fit := {}              # Rig built: how the seat sat on the rails (see RigBodywork.seat_fit)
 var _seat_end := {}              # Rig built: the seat's last section, for the tail cowl to carry on from
 ## The middle of the tank's filler cap, on top of it (model space; zero with no tank), where the
@@ -1618,8 +1614,10 @@ func _draw_tank() -> void:
 		secs = RigBodywork.tank_secs(rig, shape, fit, steps)
 		var first: Dictionary = secs[0]
 		var last: Dictionary = secs[steps]
-		_tank_a = (first["c"] as Vector3) - Vector3(0.0, float(first["down"]), 0.0)
-		_tank_b = (last["c"] as Vector3) - Vector3(0.0, float(last["down"]), 0.0)
+		# Its base (tank_base_y, what the engine has to clear) is the flanks' bottom edge.
+		var under := float(fit["sink"]) - float(fit["flank"])
+		_tank_a = (first["c"] as Vector3) + Vector3(0.0, under - float(first["down"]), 0.0)
+		_tank_b = (last["c"] as Vector3) + Vector3(0.0, under - float(last["down"]), 0.0)
 		body = _rig_part(BlenderParts.path_for("tank", shape_name), fit, {"": mat})
 	if body == null:
 		body = _blender_tank(shape_key if TANK_SHAPES.has(shape_key) else style, a, b, front, length, size, sc, mat)
@@ -1865,6 +1863,12 @@ func _draw_saddle() -> void:
 	if _rig_bodywork() and rig.has("seat_rails"):
 		# Rig built: the pan on the seat rails, the foam up to the seat height at the hip point and
 		# the nose matched to the tank's rear.
+		# A tail cowl starts under the back of the seat (a sports bike's pillion pad sits on it).
+		var cowl_keys: Array = TAIL_COWLS.get(str(_build.part("tail").get("look", {}).get("cowl", "")), [])
+		var cowl_z := INF
+		if not cowl_keys.is_empty() and is_fitted("tail"):
+			var ln := float(_build.part("tail").get("look", {}).get("length", 1.0))
+			cowl_z = RigBodywork.cowl_start(rig, cowl_keys, ln, (rig["seat_rails"][0] as Vector3).z)
 		_seat_fit = RigBodywork.seat_fit(rig, shape, sc, float(shape.get("span", 1.0)), _tank_secs[_tank_secs.size() - 1] if not _tank_secs.is_empty() else {}, 0.0)
 		z0 = float(_seat_fit["z0"])
 		z1 = float(_seat_fit["z1"])
@@ -1881,7 +1885,10 @@ func _draw_saddle() -> void:
 				"w": (k[0] + RigBodywork.SEAT_NOSE_W * float(w.get("nose_width", 0.0)) * nose) * sc.y,
 				"up": (k[1] + RigBodywork.SEAT_FOAM * float(w.get("foam", 0.0)) + RigBodywork.SEAT_NOSE_H * float(w.get("nose_height", 0.0)) * nose) * sc.z,
 				"down": low, "n": shape["n"], "bw": 0.85})
+		# (A tail cowl matches the seat where it starts.)
 		_seat_end = secs[steps]
+		if cowl_z < z1:
+			_seat_end = secs[clampi(roundi((cowl_z - z0) / maxf(z1 - z0, 0.01) * steps), 0, steps)]
 		pad = _rig_part(BlenderParts.path_for("saddle", seat_name), _seat_fit, {"leather": mat})
 	if pad == null:
 		pad = _blender_seat(seat_name, y, z0, z1, sc, mat)
@@ -9478,7 +9485,7 @@ func _blender_seat(shape: String, y: float, z0: float, z1: float, sc: Vector3, m
 ## Rig built: whether the tank, seat and tail fit to the rig's lines (see RigBodywork): Blender
 ## parts on, in the Rig built look, with a rig to fit to.
 func _rig_bodywork() -> bool:
-	return _blender_on() and RigBodywork.has_rig(rig)
+	return _blender_on() and RigBodywork.on and RigBodywork.has_rig(rig)
 
 
 ## Rig built: a Blender part (its glb at `path`) with its shape keys mixed and bent onto its lines
@@ -9502,9 +9509,8 @@ func _cowl_fit(keys: Array, ln: float) -> Dictionary:
 	if not _rig_bodywork() or _seat_fit.is_empty():
 		return {}
 	var rail_y: Callable = _seat_fit["rail_y"]
-	var z1 := RigBodywork.cowl_start(rig, keys, ln, float(_seat_fit["z0"]), float(_seat_fit["z1"]))
-	var rails: Array = rig["seat_rails"]
-	var slope := ((rails[1] as Vector3).y - (rails[0] as Vector3).y) / maxf((rails[1] as Vector3).z - (rails[0] as Vector3).z, 0.01)
+	var z1 := RigBodywork.cowl_start(rig, keys, ln, (rig["seat_rails"][0] as Vector3).z)
+	var slope := float(_seat_fit["slope"])
 	var from := Vector3(0.0, float(rail_y.call(z1)), z1)
 	var fit := RigBodywork.cowl_fit(rig, keys, from, slope, ln, _seat_end)
 	fit["t"] = from + Vector3(0.0, float(keys[0][3]) - 0.02, -float(keys[0][0]) * ln)

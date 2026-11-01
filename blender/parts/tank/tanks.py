@@ -13,9 +13,11 @@ tunnel sits on the backbone whatever its shape, and stretches the tank from the 
 Shape keys (glTF morph targets, Godot blend shapes) that the game sets per bike:
 - `tunnel_height`: the tunnel 80 mm taller inside the tank, the whole shell sitting that much
   lower round the backbone (a fat bob straddles its backbone deep); weights past 1 go deeper;
+- `flank_depth`: the flanks and floor 60 mm lower, the top where it was, to cover a deep spine;
 - `tunnel_width`: the channel 50 mm wider each side (twin top tubes, a wide airbox lid);
-- `tunnel_length`: the tunnel open right out of the back; at 0 it closes from 80% of the
-  length, where the frame drops away under the tank's rear;
+- `tunnel_close`: the tunnel closed from 80% of the length, where the frame drops away under
+  the tank's rear; at 0 it runs open right out of the back (the base is drawn open, so the
+  other keys move the floor and flanks the same whether it's closed or not);
 - `nose_reach`: the nose's two cheeks reaching 120 mm further forward round the head stock,
   the middle left where it is;
 - `knee_fore`, `knee_aft`: knee recesses 30 mm deep in the lower flanks centred at 58% and 84%
@@ -37,11 +39,12 @@ DETAIL = [
 ]
 FACET_RINGS = [40, 20, 6]
 
-BASE = {"T": 0.035, "sink": 0.0, "tw": 0.035, "ut": 0.8, "reach": 0.0, "kf": 0.0, "ka": 0.0}
+BASE = {"T": 0.035, "skirt": 0.0, "sink": 0.0, "tw": 0.035, "ut": 1.25, "reach": 0.0, "kf": 0.0, "ka": 0.0}
 KEYS = {
     "tunnel_height": {"sink": 0.08},
+    "flank_depth": {"skirt": 0.06},
     "tunnel_width": {"tw": 0.085},
-    "tunnel_length": {"ut": 1.25},
+    "tunnel_close": {"ut": 0.8},
     "nose_reach": {"reach": 0.12},
     "knee_fore": {"kf": 0.03},
     "knee_aft": {"ka": 0.03},
@@ -111,7 +114,7 @@ def smooth_half(shape, p, u):
     e = 2.0 / shape["n"]
     bw = shape["bw"]
     cy = down - p["sink"]
-    depth = down + p["T"]
+    depth = down + p["T"] + p["skirt"]
     tuck = 0.3 * (1.0 - smoothstep(0.0, 0.7, u))
     knee = knee_at(p, u)
 
@@ -145,7 +148,7 @@ def facet_half(shape, p, u):
     w, up, down = key_at(shape["keys"], u)
     bw = shape["bw"]
     cy = down - p["sink"]
-    depth = down + p["T"]
+    depth = down + p["T"] + p["skirt"]
     k = own_knee(shape, u)
     knee = knee_at(p, u)
     pts = [(w * 0.42, cy + up * 0.96), (w * 0.84, cy + up * 0.7), (w * (1.0 - k * 0.45) - knee * 0.5, cy + up * 0.18),

@@ -12,12 +12,21 @@ extends RefCounted
 ## published seat height at the hip point, its nose matched to the tank's rear. The tail cowl
 ## carries on from the seat's end along the rails to the rig's tail.
 
+## Whether the bodywork fits to the rig (the shots and tests turn it off to see the rig's own
+## layout with the bodywork placed the old way).
+static var on := true
+
 const TANK_KNEE := {"sport": 1.0, "race": 1.0, "wedge": 1.0, "streetfighter": 1.0, "gt": 0.8, "adv": 0.8, "touring": 0.7,
 	"cafe": 0.8, "enduro": 0.5, "teardrop": 0.35}   # how deep each shape's knee recesses go (none on the rest)
 const KNEE_AT := [0.58, 0.84]    # where the tank's two knee keys are centred, share of its length
 const BASE_TUNNEL_HALF := 0.035  # m: the glb's own tunnel half width and depth below the roof
 const BASE_TUNNEL_DEEP := 0.035
 const TUNNEL_SINK := 0.08        # m the tank sinks round the spine at tunnel_height 1
+const FLANK_SKIRT := 0.06        # m its flanks come down at flank_depth 1
+## How far the flanks keep over the engine's head tops (its rocker covers and fins stand up to
+## 27 mm over the hard points), and how far fore and aft of each top its head reaches.
+const HEAD_CLEAR := 0.035
+const HEAD_LONG := 0.08
 const TUNNEL_SPARE := 0.006      # m kept between the spine and the tunnel's walls
 const SEAT_NOSE_W := 0.06        # m each key moves at weight 1 (see the Blender scripts)
 const SEAT_NOSE_H := 0.04
@@ -64,57 +73,102 @@ static func tank_fit(rig: Dictionary, shape_name: String, shape: Dictionary, siz
 	var floor_line: PackedVector3Array = rig["tank_floor"]
 	var nose: Vector3 = rig["tank_nose"]
 	var rear: Vector3 = rig["tank_rear"]
-	var length := maxf(rear.z - nose.z, 0.2)
+	# As long as the rig laid it out for (BikeRig: its own length, down to TANK_SQUEEZE of it),
+	# its back on the seat's nose.
+	var back := rear.z + 0.03
+	var room := back - (nose.z + 0.03)
+	var length := minf(clampf(float(shape["len"]) * lerpf(0.85, 1.0, size) * sc.x, 0.25, maxf(room, 0.25)), room)
+	var front := back - length
 	var kx := size * sc.y
 	var ky := size * sc.z
-	var half_w := float(rig.get("tunnel_half_w", 0.02))
-	# The flanks come down past the bottom of the spine: the tank sinks round it, its tunnel taller.
-	var sink := maxf(2.0 * half_w + 0.012 - BASE_TUNNEL_DEEP * ky, 0.0)
-	# Line 2: the tank's top no higher than the rig allows. It sinks further round the spine (as a
-	# fat bob does), up to half its height, and what's left over is squashed.
+	var half_w := float(rig.get("tunnel_half_w", 0.04))
+	# The flanks come down past the bottom of the spine (it runs under the floor line, as wide as
+	# the tunnel less its spare).
+	var skirt := maxf(2.0 * (half_w - 0.01) + 0.012 - BASE_TUNNEL_DEEP * ky, 0.0)
+	# Line 2: the tank's top no higher than the rig allows. It sinks round the spine (as a fat bob
+	# does), up to half its height, and what's left over is squashed.
+	var sink := 0.0
 	if rig.has("tank_top_max"):
 		var top_max := float(rig["tank_top_max"])
 		var over := 0.0
 		var tallest := 0.0
 		for k in shape["keys"]:
-			var at: Vector3 = line_at(floor_line, nose.z + float(k[0]) * length)[0]
+			var at: Vector3 = line_at(floor_line, front + float(k[0]) * length)[0]
 			var rise := (float(k[2]) + float(k[3])) * ky
 			tallest = maxf(tallest, rise)
 			over = maxf(over, at.y + rise - top_max)
-		sink = maxf(sink, minf(over, tallest * 0.5))
+		sink = clampf(over, 0.0, tallest * 0.5)
 		var left := over - sink
-		if left > 0.0 and tallest > 0.01:
+		if left > 0.002 and tallest > 0.01:
 			var squash := maxf((tallest - left) / tallest, 0.6)
 			ky *= squash
 			sink *= squash
+	# Neither the sinking nor the skirt takes the flanks down onto the engine's heads under the
+	# tank: what can't sink is squashed instead, and the skirt stops short.
+	var below := clear_under(rig, floor_line, front, front + length) - BASE_TUNNEL_DEEP * ky
+	if sink > below:
+		var short := sink - maxf(below, 0.0)
+		sink = maxf(below, 0.0)
+		if tank_tall(shape, ky) > 0.01:
+			var squash := maxf((tank_tall(shape, ky) - short) / tank_tall(shape, ky), 0.6)
+			ky *= squash
+			sink *= squash
+	# (Where the heads come up close under the floor, the flanks come up off it, keeping a lip.)
+	skirt = maxf(minf(skirt, below), -0.8 * BASE_TUNNEL_DEEP * ky)
 	var weights := {
 		"tunnel_width": clampf((half_w + TUNNEL_SPARE - BASE_TUNNEL_HALF) / 0.05 / maxf(kx, 0.5), -0.3, 1.5),
 		"tunnel_height": sink / (TUNNEL_SINK * ky),
-		"tunnel_length": 1.0,
+		"flank_depth": (skirt if skirt < 0.0 else maxf(skirt - sink, 0.0)) / (FLANK_SKIRT * ky),
 		"nose_reach": 0.6,
 	}
 	var depth := float(TANK_KNEE.get(shape_name, 0.0))
 	if depth > 0.0 and rig.has("knee_r"):
-		var t := clampf(((rig["knee_r"] as Vector3).z - nose.z) / length, KNEE_AT[0], KNEE_AT[1])
+		var t := clampf(((rig["knee_r"] as Vector3).z - front) / length, KNEE_AT[0], KNEE_AT[1])
 		var f := (t - KNEE_AT[0]) / (KNEE_AT[1] - KNEE_AT[0])
 		weights["knee_fore"] = depth * (1.0 - f)
 		weights["knee_aft"] = depth * f
 	var warp := func(p: Vector3) -> Vector3:
-		var on: Array = line_at(floor_line, nose.z + p.z * length)
+		var on: Array = line_at(floor_line, front + p.z * length)
 		return (on[0] as Vector3) + up_from(on[1]) * (p.y * ky) + Vector3(p.x * kx, 0.0, 0.0)
-	return {"weights": weights, "warp": warp, "len": length, "kx": kx, "ky": ky, "sink": sink}
+	return {"weights": weights, "warp": warp, "len": length, "front": front, "kx": kx, "ky": ky, "sink": sink,
+		"flank": (skirt if skirt < 0.0 else maxf(sink, skirt)) + BASE_TUNNEL_DEEP * ky}
+
+
+## How tall a tank shape stands (top of its tallest section to its floor) at height scale `ky`.
+static func tank_tall(shape: Dictionary, ky: float) -> float:
+	var tallest := 0.0
+	for k in shape["keys"]:
+		tallest = maxf(tallest, (float(k[2]) + float(k[3])) * ky)
+	return tallest
+
+
+## How far below the tank floor the flanks may come between `z0` and `z1` and stay HEAD_CLEAR
+## over the tops of the engine's heads (the rig's hard points) there.
+static func clear_under(rig: Dictionary, floor_line: PackedVector3Array, z0: float, z1: float) -> float:
+	if not rig.has("hard") or not rig.has("crank"):
+		return INF
+	var crank: Vector3 = rig["crank"]
+	var tops: Array = rig["hard"].get("head_top", [])
+	var out := INF
+	for t: Vector3 in tops:
+		var at := crank + t
+		for dz in [-HEAD_LONG, -HEAD_LONG * 0.5, 0.0, HEAD_LONG * 0.5, HEAD_LONG]:
+			var z: float = at.z + dz
+			if z < z0 or z > z1:
+				continue
+			out = minf(out, (line_at(floor_line, z)[0] as Vector3).y - at.y - HEAD_CLEAR)
+	return out
 
 
 ## The tank's loft sections as the rest of the bike reads them (BikeModel._tank_secs: the filler
 ## cap, badges, stripes, the fairing's and the kit's lines), from its shape fitted as `fit`.
 static func tank_secs(rig: Dictionary, shape: Dictionary, fit: Dictionary, steps: int) -> Array:
 	var floor_line: PackedVector3Array = rig["tank_floor"]
-	var nose: Vector3 = rig["tank_nose"]
 	var out := []
 	for i in steps + 1:
 		var u := float(i) / steps
 		var k := BikeModel._key_at(shape["keys"], u)
-		var on: Array = line_at(floor_line, nose.z + u * float(fit["len"]))
+		var on: Array = line_at(floor_line, float(fit["front"]) + u * float(fit["len"]))
 		var down: float = k[2] * float(fit["ky"])
 		out.append({"c": (on[0] as Vector3) + Vector3(0.0, down - float(fit["sink"]), 0.0), "w": k[0] * float(fit["kx"]), "up": k[1] * float(fit["ky"]),
 			"down": down, "n": shape["n"], "bw": shape["bw"]})
@@ -126,16 +180,21 @@ static func tank_secs(rig: Dictionary, shape: Dictionary, fit: Dictionary, steps
 ## The seat on the rails: {"weights", "warp", "z0", "z1", "rail_y" (Callable z -> y)} for a seat of
 ## `shape` (SEAT_SHAPES's) and look `sc`, reaching back to the rails' end (or the `span` of them a
 ## solo seat covers), its nose against `tank_rear_sec` (the tank's last section).
-static func seat_fit(rig: Dictionary, shape: Dictionary, sc: Vector3, span: float, tank_rear_sec: Dictionary, foam_extra: float) -> Dictionary:
+static func seat_fit(rig: Dictionary, shape: Dictionary, sc: Vector3, span: float, tank_rear_sec: Dictionary, foam_extra: float, z_limit := INF) -> Dictionary:
 	var rails: Array = rig["seat_rails"]
 	var a: Vector3 = rails[0]
 	var b: Vector3 = rails[1]
+	var slope := (b.y - a.y) / maxf(b.z - a.z, 0.01)
+	if rig.has("seat_surface") and b.z - (rig["seat_surface"] as Vector3).z > 0.05:
+		# The rails run under the seat as its top does behind the hip (the seat's own shape makes
+		# any step or hump).
+		var hip: Vector3 = rig["seat_surface"]
+		slope = minf(slope, (b.y - hip.y) / (b.z - hip.z))
 	var z0 := a.z
 	if rig.has("tank_rear"):
 		# Line 3: the seat's nose meets the tank's rear (or runs over it on an MX bike).
 		z0 = maxf(a.z, (rig["tank_rear"] as Vector3).z - 0.01) if not rig.get("seat_overlap", false) else a.z + float(shape.get("from", 0.0))
-	var z1 := lerpf(z0, maxf(b.z + float(shape.get("to", 0.0)), z0 + 0.25), span * sc.x)
-	var slope := (b.y - a.y) / maxf(b.z - a.z, 0.01)
+	var z1 := lerpf(z0, maxf(minf(b.z + float(shape.get("to", 0.0)), z_limit), z0 + 0.25), span * sc.x)
 	var rail_y := func(z: float) -> float: return a.y + slope * (z - a.z)
 	var length := z1 - z0
 	var keys: Array = shape["keys"]
@@ -159,32 +218,27 @@ static func seat_fit(rig: Dictionary, shape: Dictionary, sc: Vector3, span: floa
 	var warp := func(p: Vector3) -> Vector3:
 		var z := z0 + p.z * length
 		return Vector3(p.x * sc.y, rail_y.call(z), z) + up * (p.y * sc.z)
-	return {"weights": weights, "warp": warp, "z0": z0, "z1": z1, "rail_y": rail_y, "sc": sc}
+	return {"weights": weights, "warp": warp, "z0": z0, "z1": z1, "rail_y": rail_y, "slope": slope, "sc": sc}
 
 
 # ---------------------------------------------------------------------------- tail cowl
 
-## Where a cowl of `keys` (TAIL_COWLS's) starts along the rails: as long as its look's `ln` says,
-## ending at the rig's tail (lines agreement line 4), but not over the front of the seat.
-static func cowl_start(rig: Dictionary, keys: Array, ln: float, seat_z0: float, seat_z1: float) -> float:
-	var ref_len := maxf(float(keys[keys.size() - 1][0]) - float(keys[0][0]), 0.05)
-	if not rig.has("tail"):
-		return seat_z1
-	return clampf(float((rig["tail"] as Vector3).z) - ref_len * ln, seat_z0 + 0.3, seat_z1)
+## Where a cowl of `keys` (TAIL_COWLS's) starts along the rails: as the code's own cowl hangs
+## from the end of the subframe (the rig's "tail"), its front under the back of the seat, at its
+## look's length `ln`.
+static func cowl_start(rig: Dictionary, keys: Array, ln: float, seat_z0: float) -> float:
+	var tail: Vector3 = rig["tail"] if rig.has("tail") else (rig["seat_rails"][1] as Vector3)
+	return maxf(tail.z + float(keys[0][0]) * ln, seat_z0 + 0.3)
 
 
-## A cowl from `from` (on the rails) to the rig's tail: {"weights", "warp"}. `keys` are
-## TAIL_COWLS's, `seat_end` the seat's last section (for the join), `ln` the look's length (the
-## rig's tail wins when there is one).
+## A cowl from `from` (on the rails, see cowl_start) back along them: {"weights", "warp"}.
+## `keys` are TAIL_COWLS's, `seat_end` the seat's section where it starts (for the join), `ln`
+## the look's length.
 static func cowl_fit(rig: Dictionary, keys: Array, from: Vector3, slope: float, ln: float, seat_end: Dictionary) -> Dictionary:
-	var ref_len := maxf(float(keys[keys.size() - 1][0]) - float(keys[0][0]), 0.05)
-	var to_z := float((rig["tail"] as Vector3).z) if rig.has("tail") else from.z + ref_len * ln
-	var kz := clampf((to_z - from.z) / ref_len, 0.5, 1.6)
+	var kz := ln
 	var weights := {}
 	if not seat_end.is_empty():
-		weights["front_width"] = clampf((float(seat_end["w"]) - float(keys[0][1])) / COWL_FRONT_W, -1.0, 1.0)
-	if rig.has("tail") and rig.has("tail_top"):
-		weights["kick"] = clampf((float(rig["tail_top"]) - from.y) / COWL_KICK, 0.0, 1.5)
+		weights["front_width"] = clampf((float(seat_end["w"]) - float(keys[0][1])) / COWL_FRONT_W, 0.0, 1.0)
 	var dir := Vector3(0.0, slope, 1.0).normalized()
 	var up := up_from(dir)
 	var warp := func(p: Vector3) -> Vector3:

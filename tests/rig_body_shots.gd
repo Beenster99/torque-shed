@@ -1,7 +1,7 @@
 extends Node
 ## Rig built bodywork (H3) side on: each style's stock bike in the Rig built look, bare (no rider),
 ## with its tank, seat and tail fitted to the rig's lines, against the same bike with the bodywork
-## placed the old way (no rig: BikeModel.rig left empty).
+## placed the old way (RigBodywork.on off).
 ##   xvfb-run -a godot --path . res://tests/rig_body_shots.tscn -- --out=/tmp/rig [--styles=cafe,sport] [--provisional]
 ## --provisional makes up a rig from the old layout's datums (for before the bike rig, H1, is in).
 ## Writes <style>_rig.png and <style>_old.png.
@@ -49,6 +49,7 @@ func _ready() -> void:
 			m.look = BikeLook.NEW
 			add_child(m)
 			var build := BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build(style)))
+			RigBodywork.on = with_rig
 			if with_rig and provisional:
 				m._lay_out(build)
 				m.rig = provisional_rig(m, build)
@@ -59,6 +60,7 @@ func _ready() -> void:
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png("%s/%s_%s.png" % [out_dir, style, "rig" if with_rig else "old"])
 			m.free()
+	RigBodywork.on = true
 	get_tree().quit()
 
 

@@ -94,10 +94,10 @@ func test_stock_on_lines() -> void:
 		var top := -INF
 		for s in m._tank_secs:
 			top = maxf(top, (s["c"] as Vector3).y + float(s["up"]))
-		# (The cruiser's fat tank stands over its V-twin's heads until the bodywork gives tanks a
-		# tunnel to straddle the backbone with, in H3.)
+		# (The rig's own fit report still reckons the cruiser's fat tank as the old one sitting over
+		# the V-twin's heads; drawn, its tunnel lets it sink round the backbone onto its line, H3.)
 		var tall_tank := style == "cruiser"
-		if top - float(r["tank_top_max"]) > BikeRig.TANK_HIGH + 0.001 and not tall_tank:
+		if top - float(r["tank_top_max"]) > BikeRig.TANK_HIGH + 0.001:
 			off.append("%s: tank top %.0f mm over its line" % [style, (top - float(r["tank_top_max"])) * 1000.0])
 		# The rider sits on the line, or a little behind it where the tank runs long; on a frame
 		# whose seat post passes behind the heads (a cradle, a softail), further back still.
