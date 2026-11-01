@@ -22,7 +22,13 @@
 				"bobber",
 				"naked",
 				"scrambler"
-			]
+			],
+			"rig": {
+				"twin": 0.07,
+				"split": true,
+				"gusset": true,
+				"steady": true
+			}
 		},
 		"steel_backbone": {
 			"name": "Steel backbone frame",
@@ -45,7 +51,11 @@
 				"supermoto",
 				"classic",
 				"naked"
-			]
+			],
+			"rig": {
+				"gusset": true,
+				"gauge": 1.0
+			}
 		},
 		"steel_trestle": {
 			"name": "Steel trestle frame",
@@ -70,7 +80,10 @@
 				"sport"
 			],
 			"price": 1150,
-			"pack": "naked"
+			"pack": "naked",
+			"rig": {
+				"gauge": 0.95
+			}
 		},
 		"alu_trestle": {
 			"name": "Cast alloy trestle frame",
@@ -99,7 +112,10 @@
 				"cast": true
 			},
 			"lightweight": true,
-			"pack": "sport"
+			"pack": "sport",
+			"rig": {
+				"gauge": 1.25
+			}
 		},
 		"alu_twin_spar": {
 			"name": "Aluminium twin-spar frame",
@@ -122,7 +138,11 @@
 				"race",
 				"tourer",
 				"roader"
-			]
+			],
+			"rig": {
+				"deep": 1.0,
+				"wide": 1.0
+			}
 		},
 		"carbon_monocoque": {
 			"name": "Carbon monocoque frame",
@@ -145,7 +165,11 @@
 			"styles": [
 				"race",
 				"sport"
-			]
+			],
+			"rig": {
+				"deep": 1.03,
+				"wide": 1.04
+			}
 		},
 		"softail_hardtail": {
 			"name": "Hardtail-look softail frame",
@@ -184,7 +208,11 @@
 				"bobber",
 				"chopper",
 				"cruiser"
-			]
+			],
+			"rig": {
+				"gusset": true,
+				"steady": true
+			}
 		},
 		"cruiser_cradle": {
 			"name": "Long-low cruiser frame",
@@ -223,7 +251,10 @@
 				"cruiser",
 				"bobber",
 				"tourer"
-			]
+			],
+			"rig": {
+				"steady": true
+			}
 		},
 		"chopper_raked": {
 			"name": "Raked chopper frame",
@@ -259,7 +290,10 @@
 			},
 			"styles": [
 				"chopper"
-			]
+			],
+			"rig": {
+				"steady": true
+			}
 		},
 		"alu_perimeter": {
 			"name": "Aluminium perimeter sport frame",
@@ -298,7 +332,11 @@
 				"sport",
 				"race",
 				"naked"
-			]
+			],
+			"rig": {
+				"deep": 1.0,
+				"wide": 1.0
+			}
 		},
 		"adv_trellis": {
 			"name": "Tall adventure tubular frame",
@@ -335,7 +373,10 @@
 				"adventure",
 				"roader",
 				"tourer"
-			]
+			],
+			"rig": {
+				"gusset": true
+			}
 		},
 		"mx_twin_loop": {
 			"name": "MX twin-loop frame",
@@ -374,7 +415,11 @@
 				"mx",
 				"supermoto",
 				"scrambler"
-			]
+			],
+			"rig": {
+				"gusset": true,
+				"loop": 0.06
+			}
 		},
 		"featherbed_cradle": {
 			"mass": 15.0,
@@ -400,7 +445,13 @@
 				"cafe"
 			],
 			"pack": "classic",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"twin": 0.11,
+				"top": 0.06,
+				"tank_low": 0.02,
+				"steady": true
+			}
 		},
 		"nickel_cradle": {
 			"mass": 16.0,
@@ -426,7 +477,12 @@
 				"bobber"
 			],
 			"pack": "classic",
-			"price": 1350
+			"price": 1350,
+			"rig": {
+				"twin": 0.075,
+				"gauge": 0.9,
+				"steady": true
+			}
 		},
 		"cafe_lowboy_cradle": {
 			"mass": 14.5,
@@ -450,7 +506,15 @@
 				"naked"
 			],
 			"pack": "cafe",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"twin": 0.095,
+				"top": 0.055,
+				"tank_low": 0.015,
+				"drop": 0.04,
+				"gauge": 0.95,
+				"steady": true
+			}
 		},
 		"bobber_rigid": {
 			"mass": 17.0,
@@ -489,7 +553,11 @@
 				"chopper"
 			],
 			"pack": "bobber",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 0.95,
+				"steady": true
+			}
 		},
 		"bobber_springer_frame": {
 			"mass": 19.0,
@@ -531,7 +599,12 @@
 				"cruiser"
 			],
 			"pack": "bobber",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 1.05,
+				"gusset": true,
+				"steady": true
+			}
 		},
 		"chopper_long_rake": {
 			"mass": 16.5,
@@ -568,7 +641,11 @@
 				"chopper"
 			],
 			"pack": "chopper",
-			"price": 1530
+			"price": 1530,
+			"rig": {
+				"gauge": 1.05,
+				"steady": true
+			}
 		},
 		"chopper_chrome_frame": {
 			"mass": 17.0,
@@ -609,7 +686,11 @@
 				"bobber"
 			],
 			"pack": "chopper",
-			"price": 1710
+			"price": 1710,
+			"rig": {
+				"gauge": 1.1,
+				"steady": true
+			}
 		},
 		"cruiser_low_glide": {
 			"mass": 19.0,
@@ -648,7 +729,11 @@
 				"bobber"
 			],
 			"pack": "cruiser",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"drop": 0.035,
+				"steady": true
+			}
 		},
 		"cruiser_bagger_frame": {
 			"mass": 20.0,
@@ -687,7 +772,12 @@
 				"tourer"
 			],
 			"pack": "cruiser",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 1.15,
+				"gusset": true,
+				"steady": true
+			}
 		},
 		"scrambler_desert_cradle": {
 			"mass": 15.5,
@@ -710,7 +800,12 @@
 				"classic"
 			],
 			"pack": "scrambler",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"twin": 0.08,
+				"gauge": 1.05,
+				"gusset": true
+			}
 		},
 		"scrambler_tracker_backbone": {
 			"mass": 15.0,
@@ -734,7 +829,11 @@
 				"naked"
 			],
 			"pack": "scrambler",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 0.85,
+				"gusset": true
+			}
 		},
 		"mx_alu_perimeter": {
 			"mass": 8.0,
@@ -776,7 +875,11 @@
 				"supermoto"
 			],
 			"pack": "mx",
-			"price": 1350
+			"price": 1350,
+			"rig": {
+				"gauge": 1.25,
+				"loop": 0.07
+			}
 		},
 		"mx_red_loop": {
 			"mass": 9.0,
@@ -815,7 +918,12 @@
 				"supermoto"
 			],
 			"pack": "mx",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 0.95,
+				"loop": 0.055,
+				"gusset": true
+			}
 		},
 		"sm_white_loop": {
 			"mass": 9.0,
@@ -854,7 +962,11 @@
 				"mx"
 			],
 			"pack": "supermoto",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"loop": 0.065,
+				"gusset": true
+			}
 		},
 		"adv_rally_trellis": {
 			"mass": 13.0,
@@ -890,7 +1002,11 @@
 				"adventure"
 			],
 			"pack": "adventure",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 1.1,
+				"gusset": true
+			}
 		},
 		"adv_tubular_black": {
 			"mass": 13.0,
@@ -928,7 +1044,11 @@
 				"roader"
 			],
 			"pack": "adventure",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 1.15,
+				"gusset": true
+			}
 		},
 		"sport_perimeter_red": {
 			"mass": 9.5,
@@ -967,7 +1087,11 @@
 				"race"
 			],
 			"pack": "sport",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"deep": 1.1,
+				"wide": 1.05
+			}
 		},
 		"sport_spar_black": {
 			"mass": 10.5,
@@ -990,7 +1114,11 @@
 				"roader"
 			],
 			"pack": "sport",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"deep": 1.02,
+				"wide": 0.95
+			}
 		},
 		"race_carbon_white": {
 			"mass": 7.0,
@@ -1029,7 +1157,11 @@
 				"race"
 			],
 			"pack": "race",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"deep": 1.01,
+				"wide": 1.02
+			}
 		},
 		"race_alu_perimeter": {
 			"mass": 9.5,
@@ -1071,7 +1203,11 @@
 				"sport"
 			],
 			"pack": "race",
-			"price": 1440
+			"price": 1440,
+			"rig": {
+				"deep": 1.15,
+				"wide": 0.95
+			}
 		},
 		"naked_cradle_black": {
 			"mass": 16.0,
@@ -1094,7 +1230,14 @@
 				"cafe"
 			],
 			"pack": "naked",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"twin": 0.085,
+				"split": true,
+				"top": 0.05,
+				"gauge": 1.05,
+				"gusset": true
+			}
 		},
 		"roader_trellis_grey": {
 			"mass": 13.0,
@@ -1131,7 +1274,10 @@
 				"tourer"
 			],
 			"pack": "roader",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 0.9
+			}
 		},
 		"roader_spar_red": {
 			"mass": 10.5,
@@ -1155,7 +1301,10 @@
 				"sport"
 			],
 			"pack": "roader",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"deep": 0.95
+			}
 		},
 		"tourer_heavy_spar": {
 			"mass": 12.0,
@@ -1178,7 +1327,11 @@
 				"tourer"
 			],
 			"pack": "tourer",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"wide": 1.2,
+				"gauge": 1.2
+			}
 		},
 		"tourer_cradle": {
 			"mass": 18.0,
@@ -1217,7 +1370,12 @@
 				"cruiser"
 			],
 			"pack": "tourer",
-			"price": 1170
+			"price": 1170,
+			"rig": {
+				"gauge": 1.1,
+				"gusset": true,
+				"steady": true
+			}
 		}
 	},
 	"fork": {
