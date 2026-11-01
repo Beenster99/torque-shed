@@ -20160,7 +20160,10 @@ static func fit_cases() -> Dictionary:
 				for race in fairings:
 					var gk := "%s|%s|%s" % [bar, dash, race]
 					if not dash_groups.has(gk):
-						dash_groups[gk] = {"build": seat_builds[seats[0]], "eyes": {},
+						# (Its own build: the shared seat builds carry the last tail case's wheel and
+						# parts, which would make the clocks' place depend on the order styles come in.)
+						var sb0: BikeBuild = seat_builds[seats[0]]
+						dash_groups[gk] = {"build": BikeBuild.new({"frame": sb0.parts["frame"], "saddle": sb0.parts["saddle"]}), "eyes": {},
 							"parts": {"handlebars": bar, "dashboard": dash, "fairing": fairings[race] if race else "none", "style": style}}
 					(dash_groups[gk]["eyes"] as Dictionary).merge(eyes)
 	probe.free()
