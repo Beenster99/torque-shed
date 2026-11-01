@@ -76,6 +76,12 @@ const WATER_SHORE := 0.8
 ## A ribbon of a beck is at least this wide (m), the width the land's trough along it shows (AdventureRoute.ground_at).
 const STREAM_MIN_W := 4.0
 const WATER_COLOUR := Color(0.08, 0.17, 0.22)
+## The banks (_bank): stone and shingle up to BANK_HIGH (m) over the water (an embankment's riprap, a beach of pebbles),
+## damp and darker to BANK_DAMP, and out from the water while its nearness (RealTerrain.water_at) is under BANK_REACH.
+const BANK_COLOUR := Color(0.6, 0.57, 0.5)
+const BANK_HIGH := 2.2
+const BANK_DAMP := 0.6
+const BANK_REACH := 0.3
 ## A lake's or river's colour on the far level's land (no water is drawn there).
 const FAR_WATER := Color(0.18, 0.34, 0.5)
 ## How many blocks are laid out at once, and put in the tree a frame.
@@ -546,7 +552,7 @@ static func _fine_vert(fine: Dictionary, I: int, J: int, n: int) -> int:
 func _refine(ox: float, oz: float, cells: int, sp: float, grid: PackedFloat32Array, bares: PackedFloat32Array, m: int,
 		net: Object, memo: Dictionary, fine: Dictionary,
 		verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, knot: PackedInt32Array,
-		lats: PackedFloat32Array, n: int) -> Dictionary:
+		lats: PackedFloat32Array, n: int, water := {}) -> Dictionary:
 	var fs := sp / FINE
 	var land := {}   # Vector2i fine point -> the land's height there (ground_at), as it's asked for
 	var land_at := func(I: int, J: int) -> float:
@@ -658,7 +664,7 @@ func _refine(ox: float, oz: float, cells: int, sp: float, grid: PackedFloat32Arr
 		var dz: float = y_at.call(I, J - 1) - y_at.call(I, J + 1)
 		var nm := Vector3(dx if is_finite(dx) else 0.0, 2.0 * fs, dz if is_finite(dz) else 0.0).normalized()
 		norms[vi] = nm
-		cols[vi] = _colour(knot[base + q], lats[base + q], ox + p.x, oz + p.z, p.y, nm, true)
+		cols[vi] = _colour(knot[base + q], lats[base + q], ox + p.x, oz + p.z, p.y, nm, true, water)
 	return out
 
 
@@ -676,6 +682,8 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 	var hi := Vector2(ox + BLOCK + BAND_FAR + sp, oz + BLOCK + BAND_FAR + sp)
 	var net: Object = roads
 	var memo := {}   # (this worker's own copy of the roads it asks after: RoadNet.ground_at)
+	# (the water's tiles round the block, where it's drawn: by_water and the banks' colours ask them at every vertex)
+	var water := terrain.water_view(Rect2(ox, oz, BLOCK - 1.0, BLOCK - 1.0)) if lod < WATER_LODS else {}
 	# (the far level lies past where the road blocks are drawn, RoadStreamer.REACH: the roads don't cut it)
 	var cut := net != null and lod < 2 and bool(net.call("roads_near", Rect2(ox - sp, oz - sp, BLOCK + sp * 2.0, BLOCK + sp * 2.0)))
 	for k in range(0, route.px.size(), 4):
@@ -718,6 +726,8 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			var bare := route.ground_at(x, z)
 			if is_nan(bare):
 				bare = route.base[k]
+			elif lod < WATER_LODS and i > 0 and j > 0 and i < m - 1 and j < m - 1:
+				bare = by_water(x, z, bare, water)   # (the block's own: not the border round it, for the normals)
 			bares[g] = bare
 			if net != null:
 				grid[g] = float(net.call("ground_at", x, z, bare, memo)) if cut else bare
@@ -744,13 +754,13 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 			var h := grid[g]
 			verts[j * n + i] = Vector3(i * sp, h, j * sp)
 			norms[j * n + i] = Vector3(grid[g - 1] - grid[g + 1], 2.0 * sp, grid[g - m] - grid[g + m]).normalized()
-			cols[j * n + i] = _colour(knot[g], lats[g], ox + i * sp, oz + j * sp, h, norms[j * n + i], lod < WATER_LODS)
+			cols[j * n + i] = _colour(knot[g], lats[g], ox + i * sp, oz + j * sp, h, norms[j * n + i], lod < WATER_LODS, water)
 	# On the road network, a near cell the roads cut or bank into is drawn FINE times finer (_refine), so the land
 	# follows the cuttings and banks as closely as the planned road's own land does.
 	var fine := {}   # Vector2i(fine x, fine z) in the block -> vertex index, for the finer cells' vertices
 	var refined := {}   # Vector2i cell -> true
 	if net != null and cut and lod == 0:
-		refined = _refine(ox, oz, cells, sp, grid, bares, m, net, memo, fine, verts, norms, cols, knot, lats, n)
+		refined = _refine(ox, oz, cells, sp, grid, bares, m, net, memo, fine, verts, norms, cols, knot, lats, n, water)
 	# Cells wholly under the chunks' own land are left out.
 	var idx := PackedInt32Array()
 	var any := false
@@ -808,8 +818,9 @@ func _block_arrays(key: Vector2i, lod: int) -> Variant:
 
 
 ## The water of block `key` at level `lod` (see WATER_LODS), or null when it has none. Any thread. A cell is water where
-## its middle is, and one either side of it too, at the water's height: the banks rise through it, so the shore follows
-## the land rather than the cells' squares.
+## its middle is (or the land there is let down under it beside it: RealTerrain.water_shore), and one either side of it
+## too, at the water's level (RealTerrain.water_level): the banks rise through it, so the shore follows the land rather
+## than the cells' squares.
 func _water_arrays(key: Vector2i, lod: int) -> Variant:
 	if lod >= WATER_LODS:
 		return null
@@ -817,12 +828,11 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 	var sp := BLOCK / cells
 	var ox := key.x * BLOCK
 	var oz := key.y * BLOCK
-	# Each cell's middle, a cell's border round the block: water there, and its height.
+	var water := terrain.water_view(Rect2(ox, oz, BLOCK - 1.0, BLOCK - 1.0))
+	# Each cell's middle, a cell's border round the block: water there.
 	var m := cells + 2
 	var wet := PackedByteArray()
-	var level := PackedFloat32Array()
 	wet.resize(m * m)
-	level.resize(m * m)
 	var any := false
 	for j in m:
 		if hold:
@@ -831,12 +841,20 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 			var cx := ox + (i - 0.5) * sp
 			var cz := oz + (j - 0.5) * sp
 			if terrain.cover(cx, cz) != RealPack.WATER:
+				# (or land let down under the water beside it, RealTerrain.water_shore, in the block: not the border
+				# round it, which would ask after the next block's water too)
+				if i == 0 or j == 0 or i == m - 1 or j == m - 1:
+					continue
+				var w := terrain.water_at(cx, cz, water)
+				if is_nan(w.x) or w.y <= 0.0:
+					continue
+				var hs := terrain.height(cx, cz)
+				if is_nan(hs) or RealTerrain.shore_of(w, hs) >= w.x:
+					continue
+			elif is_nan(terrain.height(cx, cz)):
 				continue
-			var h := terrain.height(cx, cz)
-			if not is_nan(h):
-				wet[j * m + i] = 1
-				level[j * m + i] = h
-				any = true
+			wet[j * m + i] = 1
+			any = true
 	var streams := lod == 0 and not route.real.streams.is_empty()
 	if not any and not streams:
 		return null
@@ -853,8 +871,9 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 		return null
 	if not any:
 		return _water_mesh(verts, idx)
-	# Each corner of the cells: the lowest water among the cells it's a corner of, or failing that among those round them
-	# (a corner on the shore, a little lower), so the water slopes down a river as it goes and is one surface, no steps.
+	# Each corner of the cells: the water's level there (RealTerrain.water_level: flat across a river, easing down along
+	# it, the same in every block), where it's a corner of a cell with water, or a cell round those (a corner on the
+	# shore, a little lower), so the water is one level surface, no steps.
 	var n := cells + 1
 	var corner := PackedFloat32Array()
 	corner.resize(n * n)
@@ -862,13 +881,15 @@ func _water_arrays(key: Vector2i, lod: int) -> Variant:
 		for vi in n:
 			var h := INF
 			for reach: int in [1, 2]:
+				var wet_by := false
 				for cj in range(vj + 1 - reach, vj + 1 + reach):
 					for ci in range(vi + 1 - reach, vi + 1 + reach):
 						if ci >= 0 and cj >= 0 and ci < m and cj < m and wet[cj * m + ci] == 1:
-							h = minf(h, level[cj * m + ci])
-				if h != INF:
-					if reach == 2:
-						h -= WATER_SHORE   # (on the shore: dipping into the bank, so the edge follows the land)
+							wet_by = true
+				if wet_by:
+					var lv := terrain.water_level(ox + vi * sp, oz + vj * sp, water)
+					if not is_nan(lv):
+						h = lv - (WATER_SHORE if reach == 2 else 0.0)   # (on the shore: dipping into the bank)
 					break
 			corner[vj * n + vi] = h
 	for j in cells:
@@ -991,6 +1012,32 @@ static func _lowest(h: PackedFloat32Array, k: int) -> float:
 	return out
 
 
+## The ground at (x, z) where the water is drawn (the near and middle levels: WATER_LODS), from the ground there
+## (AdventureRoute.ground_at, `bare`): under a river or a lake its bed under the water's level (RealTerrain.water_bed),
+## not under the map's heights there, which run up its banks and wander; beside it, land the map has level with the
+## water let down just under it (RealTerrain.water_shore). Any thread.
+func by_water(x: float, z: float, bare: float, water := {}) -> float:
+	if terrain.cover(x, z) == RealPack.WATER:
+		# (ground_at has the bed WATER_DEPTH under the map's height there)
+		return terrain.water_bed(x, z, bare + AdventureRoute.WATER_DEPTH, AdventureRoute.WATER_DEPTH, water)
+	return terrain.water_shore(x, z, bare, water)
+
+
+## Land colour `col` at (x, z), height y, on a river's or lake's bank: stone and shingle up from the water, darker where
+## it's damp just over it, out to BANK_HIGH above the water and as far from it as the water's nearness
+## (RealTerrain.water_at) reaches; under the water the same (the bed shows where a bank stands in it).
+func _bank(col: Color, x: float, z: float, y: float, water := {}) -> Color:
+	var w := terrain.water_at(x, z, water)
+	if w.y <= 0.0 or is_nan(w.x):
+		return col
+	var up := y - w.x
+	var k := smoothstep(BANK_REACH * 0.4, BANK_REACH, w.y) * (1.0 - smoothstep(BANK_HIGH * 0.5, BANK_HIGH, up))
+	if k <= 0.0:
+		return col
+	var bank := BANK_COLOUR.lerp(col, 0.15).darkened(0.25 * (1.0 - smoothstep(0.0, BANK_DAMP, up)))
+	return col.lerp(bank, k)
+
+
 ## Water arrays from `verts` and `idx`, or null when there are none.
 static func _water_mesh(verts: PackedVector3Array, idx: PackedInt32Array) -> Variant:
 	if verts.is_empty():
@@ -1100,13 +1147,15 @@ static func _edge_vert(e: int, t: int, n: int) -> int:
 ## meet without a line; rock where the ground itself is steep (by its normal: far from the road, how far it has risen
 ## from the road means nothing), and a beach by the sea. Under water it's the bed's, where the water is drawn (`wet`), and
 ## the water's own blue where it isn't (the far level).
-func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, wet := true) -> Color:
+func _colour(i: int, lat: float, x: float, z: float, y: float, normal: Vector3, wet := true, water := {}) -> Color:
 	var col := AdventureChunk._land_color(route, i, 3, lat, x, z, y, NET_SATELLITE if roads != null else 1.0)
 	if not wet and terrain.cover(x, z) == RealPack.WATER:
 		return col.lerp(FAR_WATER, 0.85)
 	if route.cover_at(x, z) == "":
 		col = col.lerp(route.look.get("woods", RealRidges.WOODS), 0.5)   # past the baked cover: about what the place is mostly (its climate's woods)
 	col = col.lerp(Color(0.45, 0.43, 0.4), smoothstep(0.32, 0.62, 1.0 - normal.y) * 0.7)
+	if wet:
+		col = _bank(col, x, z, y, water)
 	if route.sea and y < AdventureTheme.SEA_Y + 5.0:
 		col = col.lerp(AdventureChunk.BEACH, 1.0 - smoothstep(AdventureTheme.SEA_Y + 2.0, AdventureTheme.SEA_Y + 5.0, y))
 		if y < AdventureTheme.SEA_Y - 0.2:

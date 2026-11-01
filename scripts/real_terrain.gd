@@ -103,6 +103,24 @@ var _cover_cells: Array = []
 ## The trees of the cells it covers (tools/tree_bake.py, add_trees): [{south, west, north, east, rows, cols, trees, leaf}],
 ## the last two PackedByteArrays of rows x cols, from the north-west corner.
 var _tree_cells: Array = []
+## Rivers' and lakes' water (RealPack.WATER cover) lies flat across and eases down along a river (water_at): the heights
+## under the cover are the map's, which run up the banks and wander a metre or two from one sample to the next, so the
+## water drawn on them tilted and its bed broke through in patches. Its level is worked out on a lattice WATER_STEP (m)
+## apart, fixed to the frame so every block and level agrees on it: at each point the lowest of the water's heights
+## within WATER_LOW steps, then that eased over WATER_EASE steps either way. It's kept in tiles of WATER_TILE points a
+## side, the last WATER_KEPT of them, each worked out the first time it's asked for and again when its heights change.
+const WATER_STEP := 8.0
+const WATER_TILE := 64
+const WATER_LOW := 3
+const WATER_EASE := 2
+const WATER_KEPT := 192
+## How far a bank's foot at the water's edge lies under the water where the map has it level with it (m: water_bed).
+const WATER_LIP := 0.3
+## Land by the water this little above its level is let down under it (water_shore), and the water drawn over it.
+const WATER_FLAT := 0.5
+var _water_tiles := {}                  # Vector2i -> [levels, nearness, edges] (PackedFloat32Arrays; empty: none)
+var _water_order: Array[Vector2i] = []  # the tiles in the order they were worked out
+var _water_lock := Mutex.new()          # (its own: water_at is asked as often as the heights are)
 
 
 func _init(pack_dir := "", meta: Dictionary = {}) -> void:
@@ -161,6 +179,225 @@ func _level_height(lv: Level, x: float, z: float) -> float:
 	return lerpf(lerpf(a, b, tx), lerpf(c, d, tx), tz)
 
 
+## The water's level at route-frame (x, z) (x), how near the water is (y: the share of the water's lattice points
+## within WATER_EASE steps, 0 well away from it, 1 out on it) and how much it's the water's edge (z: 1 at a point of it
+## with dry land next to it, 0 out in it or off it), from the lattice round (x, z) (see WATER_STEP). x is NAN more than
+## (WATER_LOW + WATER_EASE) steps from any water. Any thread. With `view` (water_view) its tiles are read from there.
+func water_at(x: float, z: float, view := {}) -> Vector3:
+	var fx := x / WATER_STEP
+	var fz := z / WATER_STEP
+	var ix := floori(fx)
+	var iz := floori(fz)
+	var tx := fx - ix
+	var tz := fz - iz
+	var level := 0.0
+	var weight := 0.0
+	var near := 0.0
+	var edge := 0.0
+	var key := Vector2i(-2147483648, 0)   # (none yet)
+	var got: Array = []
+	for k in 4:
+		var px := ix + (k & 1)
+		var pz := iz + (k >> 1)
+		var w := (tx if k & 1 else 1.0 - tx) * (tz if k >> 1 else 1.0 - tz)
+		if w <= 0.0:
+			continue   # (on the lattice's line: the next tile isn't asked for)
+		var kk := Vector2i(floori(float(px) / WATER_TILE), floori(float(pz) / WATER_TILE))
+		if kk != key:
+			key = kk
+			got = view[key] if view.has(key) else _water_tile(key)
+		if got.is_empty():
+			continue
+		var at := posmod(pz, WATER_TILE) * WATER_TILE + posmod(px, WATER_TILE)
+		near += float((got[1] as PackedFloat32Array)[at]) * w
+		edge += float((got[2] as PackedFloat32Array)[at]) * w
+		var h: float = (got[0] as PackedFloat32Array)[at]
+		if h != INF:
+			level += h * w
+			weight += w
+	return Vector3(level / weight if weight > 0.0 else NAN, near, edge)
+
+
+## The water's level at (x, z) (water_at), NAN away from it.
+func water_level(x: float, z: float, view := {}) -> float:
+	return water_at(x, z, view).x
+
+
+## The water tiles round route-frame `area`, for water_at (and the rest) to read many points of it from without asking
+## for each tile each time.
+func water_view(area: Rect2) -> Dictionary:
+	var out := {}
+	var size := WATER_STEP * WATER_TILE
+	for tz in range(floori(area.position.y / size), floori(area.end.y / size) + 1):
+		for tx in range(floori(area.position.x / size), floori(area.end.x / size) + 1):
+			out[Vector2i(tx, tz)] = _water_tile(Vector2i(tx, tz))
+	return out
+
+
+## The ground at (x, z) off the water (not RealPack.WATER cover), where the map's height is `raw`: as it is, but where
+## it lies within WATER_FLAT of the water's level by the water (the map's own flat water beside the mapped water, where
+## the two disagree by a few metres, or a beach) let down to WATER_LIP under the level, so the water (RealLand) spreads
+## over it rather than standing level with it.
+func water_shore(x: float, z: float, raw: float, view := {}) -> float:
+	return shore_of(water_at(x, z, view), raw)
+
+
+## water_shore from water_at's answer `w` there.
+static func shore_of(w: Vector3, raw: float) -> float:
+	if is_nan(w.x) or w.y <= 0.0 or raw >= w.x + WATER_FLAT:
+		return raw
+	var drop := clampf((w.x + WATER_FLAT - raw) / WATER_FLAT, 0.0, 1.0) * smoothstep(0.0, 0.1, w.y)
+	return lerpf(raw, minf(raw, w.x - WATER_LIP), drop)
+
+
+## The bed under the water at (x, z), where the map's height is `raw`: WATER_DEPTH under the water's level (or under the
+## map's height where that's lower) out in it, and at its edge half-way up from the water to the map's height (a bank
+## the water laps, where the cover runs up it) rather than a step down from the dry land beside it.
+func water_bed(x: float, z: float, raw: float, depth: float, view := {}) -> float:
+	var w := water_at(x, z, view)
+	if is_nan(w.x):
+		return raw - depth
+	var low := minf(raw, w.x)
+	return lerpf(low - depth, low - WATER_LIP + maxf(0.0, raw - w.x) * 0.5, w.z)
+
+
+## Water tile `key` (water_at): [levels, nearness, edges], WATER_TILE squared each, or empty where there's no water
+## near it.
+func _water_tile(key: Vector2i) -> Array:
+	_water_lock.lock()
+	var got = _water_tiles.get(key)
+	_water_lock.unlock()
+	if got != null:
+		return got
+	var out := _work_water_tile(key)
+	_water_lock.lock()
+	if not _water_tiles.has(key):
+		_water_order.append(key)
+		while _water_order.size() > WATER_KEPT:
+			_water_tiles.erase(_water_order.pop_front())
+	_water_tiles[key] = out
+	_water_lock.unlock()
+	return out
+
+
+func _work_water_tile(key: Vector2i) -> Array:
+	var r := WATER_LOW + WATER_EASE
+	var g := WATER_TILE + 2 * r
+	var i0 := key.x * WATER_TILE - r
+	var j0 := key.y * WATER_TILE - r
+	# (none where every other point is dry: a tile of land with no water near it, the most of them, is told quickly)
+	var covers := _cover_grid(i0 * WATER_STEP, j0 * WATER_STEP, WATER_STEP, g, 2)
+	if not covers.has(RealPack.WATER):
+		return []
+	covers = _cover_grid(i0 * WATER_STEP, j0 * WATER_STEP, WATER_STEP, g)
+	# The water's heights round the tile (INF where it's dry)...
+	var raw := PackedFloat32Array()
+	raw.resize(g * g)
+	raw.fill(INF)
+	var any := false
+	for j in g:
+		for i in g:
+			var x := (i0 + i) * WATER_STEP
+			var z := (j0 + j) * WATER_STEP
+			if covers[j * g + i] != RealPack.WATER:
+				continue
+			var h := height(x, z)
+			if not is_nan(h):
+				raw[j * g + i] = h
+				any = true
+	if not any:
+		return []
+	# ...the lowest within WATER_LOW steps (along the rows, then down the columns)...
+	var low := _low_pass(raw, g, WATER_LOW, true)
+	low = _low_pass(low, g, WATER_LOW, false)
+	# ...and that eased (the mean of those within WATER_EASE that have water near), with how much water is about.
+	var sums := PackedFloat32Array()
+	var counts := PackedFloat32Array()
+	var wets := PackedFloat32Array()
+	sums.resize(g * g)
+	counts.resize(g * g)
+	wets.resize(g * g)
+	for j in g:
+		if low.slice(j * g, j * g + g).count(INF) == g and raw.slice(j * g, j * g + g).count(INF) == g:
+			continue   # (no water near this row: its sums and counts stay 0)
+		for i in g:
+			var e := WATER_EASE
+			var s := 0.0
+			var c := 0.0
+			var wv := 0.0
+			for d in range(-e, e + 1):
+				if i + d < 0 or i + d >= g:
+					continue
+				var v := low[j * g + i + d]
+				if v != INF:
+					s += v
+					c += 1.0
+				if raw[j * g + i + d] != INF:
+					wv += 1.0
+			sums[j * g + i] = s
+			counts[j * g + i] = c
+			wets[j * g + i] = wv
+	var levels := PackedFloat32Array()
+	var nears := PackedFloat32Array()
+	var edges := PackedFloat32Array()
+	levels.resize(WATER_TILE * WATER_TILE)
+	nears.resize(WATER_TILE * WATER_TILE)
+	edges.resize(WATER_TILE * WATER_TILE)
+	var span := float((2 * WATER_EASE + 1) * (2 * WATER_EASE + 1))
+	for j in WATER_TILE:
+		for i in WATER_TILE:
+			var s := 0.0
+			var c := 0.0
+			var wv := 0.0
+			for d in range(-WATER_EASE, WATER_EASE + 1):
+				var at := (j + r + d) * g + i + r
+				s += sums[at]
+				c += counts[at]
+				wv += wets[at]
+			levels[j * WATER_TILE + i] = s / c if c > 0.0 else INF
+			nears[j * WATER_TILE + i] = wv / span
+			var at := (j + r) * g + i + r
+			if raw[at] != INF:
+				for d: int in [-g - 1, -g, -g + 1, -1, 1, g - 1, g, g + 1]:
+					if raw[at + d] == INF:
+						edges[j * WATER_TILE + i] = 1.0
+						break
+	return [levels, nears, edges]
+
+
+## The lowest of `v` (g x g) within `reach` along each row (`rows`) or down each column.
+static func _low_pass(v: PackedFloat32Array, g: int, reach: int, rows: bool) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(g * g)
+	out.fill(INF)
+	for a in g:
+		var dry := true   # (a line with no water on it stays INF: most of them, most tiles)
+		for b in g:
+			if (v[a * g + b] if rows else v[b * g + a]) != INF:
+				dry = false
+				break
+		if dry:
+			continue
+		for b in g:
+			var m := INF
+			for d in range(maxi(0, b - reach), mini(g, b + reach + 1)):
+				m = minf(m, v[a * g + d] if rows else v[d * g + a])
+			out[a * g + b if rows else b * g + a] = m
+	return out
+
+
+## Lets go of the water tiles over `area` (their heights have changed: water_at works them out again).
+func _forget_water(area: Rect2) -> void:
+	var size := WATER_STEP * WATER_TILE
+	var grown := area.grow(WATER_STEP * (WATER_LOW + WATER_EASE + 1))
+	_water_lock.lock()
+	for key: Vector2i in _water_tiles.keys():
+		if Rect2(key.x * size, key.y * size, size, size).intersects(grown):
+			_water_tiles.erase(key)
+			_water_order.erase(key)
+	_water_lock.unlock()
+
+
 ## What covers the ground at route-frame (x, z): an id into the pack's "cover" list (RealPack.COVER), or -1 where no
 ## level with cover has it. The sample nearest to (x, z), from the finest level that has it.
 func cover(x: float, z: float) -> int:
@@ -182,6 +419,52 @@ func _cover_from(lvls: Array, x: float, z: float) -> int:
 		var ix := roundi(x / lv.spacing)
 		var iz := roundi(z / lv.spacing)
 		var t: PackedByteArray = _cover_tile(lv, Vector2i(floori(float(ix) / lv.cells), floori(float(iz) / lv.cells)))
+		if not t.is_empty():
+			return t[posmod(iz, lv.cells) * lv.cells + posmod(ix, lv.cells)]
+	return -1
+
+
+## cover() at g x g points from (x0, z0), `step` apart (every `stride`th of them; the rest -1): the same answers, each
+## cover tile looked up once (not under the lock for every point, which the heights the ride asks for wait on).
+func _cover_grid(x0: float, z0: float, step: float, g: int, stride := 1) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(g * g)
+	out.fill(-1)
+	var memo := {}
+	for j in range(0, g, stride):
+		for i in range(0, g, stride):
+			var x := x0 + i * step
+			var z := z0 + j * step
+			if _cover_cells.is_empty():
+				out[j * g + i] = _cover_memo(levels, x, z, memo)
+				continue
+			var lat := lat0 - z / _m.x
+			var lon := lon0 + x / _m.y
+			for c: Dictionary in _cover_cells:
+				if lat >= float(c["south"]) and lat < float(c["north"]) and lon >= float(c["west"]) and lon < float(c["east"]):
+					var m: Vector2 = c["m"]
+					out[j * g + i] = _cover_memo(c["levels"], (lon - float(c["lon"])) * m.y, -(lat - float(c["lat"])) * m.x, memo)
+					break
+	return out
+
+
+## _cover_from, with the tiles it has looked up in `memo`.
+func _cover_memo(lvls: Array, x: float, z: float, memo: Dictionary) -> int:
+	for lv: Level in lvls:
+		if not lv.has_cover:
+			continue
+		var ix := roundi(x / lv.spacing)
+		var iz := roundi(z / lv.spacing)
+		var key := Vector2i(floori(float(ix) / lv.cells), floori(float(iz) / lv.cells))
+		var mine: Dictionary = memo.get(lv, {})
+		if mine.is_empty():
+			memo[lv] = mine
+		var t: PackedByteArray
+		if mine.has(key):
+			t = mine[key]
+		else:
+			t = _cover_tile(lv, key)
+			mine[key] = t
 		if not t.is_empty():
 			return t[posmod(iz, lv.cells) * lv.cells + posmod(ix, lv.cells)]
 	return -1
@@ -612,6 +895,7 @@ func _take(keys: Array[Vector3i], riders: Array) -> void:
 		var grow := box.size.x * LIVE_EASE_PX / 512.0
 		if li == 2:
 			_forget_ridges(box.grow(grow))
+		_forget_water(box.grow(grow))
 		ground_arrived.emit(box.grow(grow), li)
 
 

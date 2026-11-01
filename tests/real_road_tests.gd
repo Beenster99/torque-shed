@@ -589,8 +589,8 @@ func test_real_land() -> void:
 				if nv[j * n + i].y < w.route.land_height(int(hit["i"]), float(hit["lat"]), x, z) - 1.0:
 					hidden += 1
 	check(under == 0 or hidden * 10 >= under * 9, "and within %d m of it they lie below it (%d of %d)" % [int(RealLand.BAND_NEAR), hidden, under])
-	# Rivers and lakes (RealPack.WATER cover): a block beside the road with water in it draws it at the water's height,
-	# over a bed WATER_DEPTH down, and none of it on the road.
+	# Rivers and lakes (RealPack.WATER cover): a block beside the road with water in it draws it at the water's level
+	# (RealTerrain.water_level), flat across, over a bed WATER_DEPTH down, and none of it on the road.
 	var wkey := Vector2i(1 << 30, 0)
 	var water = null
 	var sp := RealLand.BLOCK / RealLand.CELLS[0]
@@ -620,25 +620,71 @@ func test_real_land() -> void:
 			cells += 1
 			var cx := wkey.x * RealLand.BLOCK + wv[q].x + sp * 0.5
 			var cz := wkey.y * RealLand.BLOCK + wv[q].z + sp * 0.5
-			# Within a cell of mapped water, and no higher than the highest water round it.
+			# Within a cell of mapped water (or land let down under it beside it: RealTerrain.water_shore), and no higher
+			# than the highest water round it.
 			var top := -INF
 			for dz: float in [-sp, 0.0, sp]:
 				for dx: float in [-sp, 0.0, sp]:
+					var h := terr.height(cx + dx, cz + dz)
 					if terr.cover(cx + dx, cz + dz) == RealPack.WATER:
-						top = maxf(top, terr.height(cx + dx, cz + dz))
+						top = maxf(top, h)
+					elif terr.water_shore(cx + dx, cz + dz, h) < terr.water_level(cx + dx, cz + dz):
+						top = maxf(top, terr.water_level(cx + dx, cz + dz))
 			if top > -INF:
 				by_water += 1
-				if wv[q].y <= top + 0.01 and wv[q + 2].y <= top + 0.01:
+				if wv[q].y <= top + 0.05 and wv[q + 2].y <= top + 0.05:
 					not_up += 1
 			if terr.cover(cx, cz) == RealPack.WATER:
 				wet += 1
-				if is_equal_approx(w.route.ground_at(cx, cz), terr.height(cx, cz) - AdventureRoute.WATER_DEPTH):
+				var lv := terr.water_at(cx, cz)
+				var gr := land.by_water(cx, cz, w.route.ground_at(cx, cz))
+				# (out in it WATER_DEPTH under the level, at its edge no higher than half-way up to the map's height)
+				if not is_nan(lv.x) and is_equal_approx(gr, terr.water_bed(cx, cz, terr.height(cx, cz), AdventureRoute.WATER_DEPTH)) \
+						and (gr <= lv.x - AdventureRoute.WATER_DEPTH + 0.01 or lv.z > 0.0):
 					bed += 1
 			var hit := w.route.locate(cx, cz)
 			if not hit.is_empty() and float(hit["d"]) < w.route.width[int(hit["i"])] * 0.5 + 2.0 and not RealLand.near_deck(w.route, int(hit["i"])):
 				on_road += 1
 		check(cells > 0 and by_water == cells and not_up == cells and wet * 2 > cells and bed == wet and on_road == 0,
 			"its %d cells of water are on or beside the water (%d, %d on it), never up a bank (%d), over a bed below it (%d), none on the road (%d)" % [cells, by_water, wet, not_up, bed, on_road])
+		# Smooth, and never above the water's own heights: at the lattice's points on the water the level is at or under
+		# the map's heights, and lies close to the mean of its neighbours (flat across, an even fall along), where the map's
+		# heights wander a metre or two from one point to the next.
+		var over := 0
+		var points := 0
+		var rough_raw := 0
+		var rough := 0
+		var st := RealTerrain.WATER_STEP
+		for j in 64:
+			for i in 64:
+				var x := wkey.x * RealLand.BLOCK + i * st
+				var z := wkey.y * RealLand.BLOCK + j * st
+				if terr.cover(x, z) != RealPack.WATER or is_nan(terr.height(x, z)):
+					continue
+				points += 1
+				if terr.water_level(x, z) > terr.height(x, z) + 0.01:
+					over += 1
+				var nb := [Vector2(x - st, z), Vector2(x + st, z), Vector2(x, z - st), Vector2(x, z + st)]
+				if nb.all(func(v): return terr.cover(v.x, v.y) == RealPack.WATER):
+					var lv := 0.0
+					var hv := 0.0
+					for v: Vector2 in nb:
+						lv += terr.water_level(v.x, v.y) * 0.25
+						hv += terr.height(v.x, v.y) * 0.25
+					if absf(terr.water_level(x, z) - lv) > 0.15:
+						rough += 1
+					if absf(terr.height(x, z) - hv) > 0.15:
+						rough_raw += 1
+		check(points > 0 and over == 0, "the water's level is at or under the map's heights of it (%d of %d points over)" % [over, points])
+		# (the tiles' cover, read a grid at a time, is cover()'s)
+		var grid := terr._cover_grid(wkey.x * RealLand.BLOCK, wkey.y * RealLand.BLOCK, st, 64)
+		var same := 0
+		for j in 64:
+			for i in 64:
+				if grid[j * 64 + i] == terr.cover(wkey.x * RealLand.BLOCK + i * st, wkey.y * RealLand.BLOCK + j * st):
+					same += 1
+		check(same == 64 * 64, "its cover read a grid at a time is the same as a point at a time (%d of %d)" % [same, 64 * 64])
+		check(rough_raw > 0 and rough * 4 <= rough_raw, "and it's smooth where the map's heights aren't (%d points off their neighbours by 15 cm, the map's %d)" % [rough, rough_raw])
 		var mi := land._make_mesh(wkey, land._block_arrays(wkey, 0), water)
 		check(mi.mesh.get_surface_count() == 2 and mi.mesh.surface_get_material(1) == land._water_material, "and the block's mesh has it as water")
 		mi.free()
