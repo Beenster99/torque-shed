@@ -47,7 +47,7 @@ func _ready() -> void:
 			if frames == ["all"]:
 				frames = Array(PartsDB.by_kind["frame"])
 	DirAccess.make_dir_recursive_absolute(out_dir)
-	get_window().size = Vector2i(960, 600)
+	get_window().size = Vector2i(1920, 1200) if OS.get_cmdline_user_args().has("--big") else Vector2i(960, 600)
 	var env := WorldEnvironment.new()
 	env.environment = Environment.new()
 	env.environment.background_mode = Environment.BG_COLOR
@@ -139,6 +139,15 @@ func _ready() -> void:
 			await RenderingServer.frame_post_draw
 			var img := get_viewport().get_texture().get_image()
 			img.save_png("%s/%s_%s.png" % [out_dir, c[0], look])
+			if side:
+				# (Where the axles land in the picture, to line a reference photo up on them.)
+				var bb := m._build
+				var fa := cam.unproject_position(m.to_global(Vector3(0.0, bb.front_radius - bb.rear_radius, -bb.wheelbase * 0.5)))
+				var ra := cam.unproject_position(m.to_global(Vector3(0.0, 0.0, bb.wheelbase * 0.5)))
+				var top := cam.unproject_position(m.to_global(Vector3(0.0, bb.front_radius, -bb.wheelbase * 0.5)))
+				# (In the picture's pixels: the canvas is stretched to the window.)
+				var k := img.get_width() / get_viewport().get_visible_rect().size.x
+				print("AXLES %s %s %.1f %.1f %.1f %.1f %.1f %.4f" % [c[0], look, fa.x * k, fa.y * k, ra.x * k, ra.y * k, (fa.y - top.y) * k, bb.wheelbase])
 			shots[look] = img
 			m.free()
 		diffs[c[0]] = _diff(shots[BikeLook.CLASSIC], shots[BikeLook.NEW])

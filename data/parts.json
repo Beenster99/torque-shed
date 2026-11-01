@@ -6639,6 +6639,28 @@
 			],
 			"pack": "cruiser"
 		},
+		"fatbob_13": {
+			"name": "Fat bob tank, 13 L",
+			"description": "The Street Bob's: the fat bob shape cut down to one cap and no console, sat low on the backbone.",
+			"mass": 4.0,
+			"capacity": 13,
+			"style": "touring",
+			"color": [
+				0.1,
+				0.16,
+				0.24
+			],
+			"price": 260,
+			"look": {
+				"shape": "fatbob",
+				"badge": "wing"
+			},
+			"styles": [
+				"bobber",
+				"cruiser"
+			],
+			"pack": "bobber"
+		},
 		"sport_17": {
 			"name": "Sport tank, 17 L",
 			"description": "Angular, with a grippy pad where your chest lands. Tucks you in.",
