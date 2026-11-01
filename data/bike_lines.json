@@ -743,7 +743,7 @@
 					"nose_tol_mm": 20
 				},
 				"3_tank_seat": {
-					"tank_rear_u": 0.46,
+					"tank_rear_u": 0.45,
 					"seat_overlap": true,
 					"gap_mm": 15,
 					"step_tol_mm": 25
@@ -803,7 +803,7 @@
 					"nose_tol_mm": 20
 				},
 				"3_tank_seat": {
-					"tank_rear_u": 0.46,
+					"tank_rear_u": 0.44,
 					"seat_overlap": true,
 					"gap_mm": 15,
 					"step_tol_mm": 25
