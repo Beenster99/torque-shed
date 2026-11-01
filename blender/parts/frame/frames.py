@@ -15,7 +15,19 @@ scales to the tube and sets where the tube meets the one it's welded to. It and 
 (its origin on the end, the game's +Y out of it). "frame/battery_box.glb": the battery in its tray
 under the seat, a unit box the game scales to the room it has. "frame/footpeg.glb": a footpeg on
 its hinge, running out along +X from the hinge at x -0.05 to its tip at 0.05 (the game mirrors it
-for the left)."""
+for the left).
+
+"frame/gusset.glb": the plate welded into the angle where two tubes leave the head stock, a unit
+triangle the game shears into the angle: its corner at the origin, its legs along +X and the game's
++Y (Blender +Z), 1 long, its long edge curved in, and 1 thick across the game's Z (Blender Y), from
+-0.5 to 0.5 (BikeModel._neck_gussets).
+
+"frame/spar_beam.glb": one side's cast beam of a twin-spar frame (or a monocoque's side), from
+the head stock to the pivot plate: a rounded box section 1 either side and 1 up and down, running
+from the game's z 0 (the head stock) to 1 (the pivot), which the game bends onto the bike
+(BlenderParts.morphed), with shape keys: "deep", the section half as deep again in the middle,
+as a cast spar is; "arch", the middle bowed up by 1 (over a tall top end); "taper", narrower
+towards the head stock."""
 
 import math
 
@@ -123,6 +135,56 @@ def footpeg(lod):
     return kit.join(parts, "footpeg")
 
 
+def gusset(lod):
+    n = [8, 4, 1][lod]
+    outline = [(0.0, 0.0), (1.0, 0.0)]
+    for i in range(1, n):
+        t = i / n
+        k = 1.0 - 0.18 * math.sin(t * math.pi)
+        outline.append(((1.0 - t) * k, t * k))
+    outline.append((0.0, 1.0))
+    ob = kit.prism("gusset", outline, -0.5, 0.5, "paint")
+    # Its outline from the XY plane into the game's XY (Blender XZ), its thickness across.
+    ob.rotation_euler = (math.pi * 0.5, 0.0, 0.0)
+    return kit.join([ob], "gusset")
+
+
+SPAR = [
+    {"segs": 24, "rings": 24},
+    {"segs": 12, "rings": 12},
+    {"segs": 8, "rings": 6},
+]
+BEAM_BASE = {"deep": 0.0, "arch": 0.0, "taper": 0.0}
+BEAM_KEYS = {"deep": {"deep": 1.0}, "arch": {"arch": 1.0}, "taper": {"taper": 1.0}}
+
+
+def beam_with(lod, p):
+    d = SPAR[lod]
+    bm = bmesh.new()
+    rings = []
+    for i in range(d["rings"] + 1):
+        u = i / d["rings"]
+        bump = math.sin(math.pi * u)
+        hw = 1.0 - p["taper"] * 0.35 * (1.0 - u) ** 2
+        deep = 1.0 + p["deep"] * 0.5 * bump
+        lift = p["arch"] * bump
+        # (Along the game's +Z, Blender's -Y.)
+        rings.append([bm.verts.new((x, -u, lift + z)) for x, z in kit.superellipse(hw, deep, deep, 4.0, d["segs"])])
+    n = d["segs"]
+    for a, b in zip(rings, rings[1:]):
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+    bm.faces.new(rings[0])
+    bm.faces.new(list(reversed(rings[-1])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return kit._new_object("beam", bm, "paint")
+
+
+def spar_beam(lod):
+    return kit.keyed(lambda p: kit.join([beam_with(lod, p)], "spar_beam"), BEAM_BASE, BEAM_KEYS)
+
+
 def parts():
     return [
         {"kind": "frame", "path": "frame/tube/round.glb", "build": tube, "mounts": {}},
@@ -130,4 +192,6 @@ def parts():
         {"kind": "frame_fitting", "path": "frame/bearing_cup.glb", "build": bearing_cup, "mounts": {}},
         {"kind": "frame_fitting", "path": "frame/battery_box.glb", "build": battery_box, "mounts": {}},
         {"kind": "frame_fitting", "path": "frame/footpeg.glb", "build": footpeg, "mounts": {}},
+        {"kind": "frame_fitting", "path": "frame/gusset.glb", "build": gusset, "mounts": {}},
+        {"kind": "frame", "path": "frame/spar_beam.glb", "build": spar_beam, "mounts": {}},
     ]

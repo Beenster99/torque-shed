@@ -167,6 +167,10 @@ func show_bike(key: String, parts: Dictionary, paint: Color, cond := {}) -> void
 	var holder := Node3D.new()
 	var model := BikeModel.new()
 	model.baked = true
+	# The bike it replaces: on the same frame, the new one re-forms from it (see BikeReform).
+	for c in pivot.get_children():
+		if c.get_child_count() > 0 and c.get_child(0) is BikeModel:
+			model.reform_from = (c.get_child(0) as BikeModel).rig
 	model.position.y = build.rear_radius
 	holder.add_child(model)
 	model.build_from(build, paint, {}, null, false)

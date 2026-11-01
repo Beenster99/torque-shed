@@ -200,3 +200,126 @@ func test_fit_report() -> void:
 	var no := BikeRig.fit(BikeBuild.new(PartsDB.sanitize_build(mx)))
 	check(bolts["tier"] == BikeRig.TIER_BOLTS and fab["tier"] == BikeRig.TIER_FAB and not (fab["work"] as Array).is_empty() and no["tier"] == BikeRig.TIER_NO,
 		"the fit report: %s / %s (%s) / %s (%s)" % [bolts["tier"], fab["tier"], fab["reason"], no["tier"], no["reason"]])
+
+
+## H2: each of the 37 frames has its own Rig built numbers (its "rig" in parts.json, keys from
+## BikeRig.FRAME_RIG only), no two of a family alike; and they show: a Featherbed carries its tank
+## lower than the plain steel cradle on the same bike, and a Lowboy's backbone drops further to
+## its seat.
+func test_frame_numbers() -> void:
+	var bad := []
+	var seen := {}
+	for f in PartsDB.by_kind["frame"]:
+		var part := PartsDB.get_part(str(f))
+		var own = part.get("rig")
+		if not (own is Dictionary):
+			bad.append("%s has no rig" % f)
+			continue
+		for k in own:
+			if not BikeRig.FRAME_RIG.has(k):
+				bad.append("%s: unknown %s" % [f, k])
+		var key := str(part.get("style", "")) + var_to_str(BikeRig.frame_rig(part))
+		if seen.has(key):
+			bad.append("%s is %s over again" % [f, seen[key]])
+		seen[key] = f
+	check(PartsDB.by_kind["frame"].size() == 37 and bad.is_empty(), "all 37 frames have their own Rig built numbers %s" % [bad])
+	var at := {}
+	for f in ["steel_cradle", "featherbed_cradle", "cafe_lowboy_cradle"]:
+		var parts := Contracts.style_build("classic")
+		parts["frame"] = f
+		at[f] = BikeRig.solve(BikeBuild.new(PartsDB.sanitize_build(parts)))
+	var low: float = (at["steel_cradle"]["tank_top_max"] as float) - (at["featherbed_cradle"]["tank_top_max"] as float)
+	check(low > 0.01, "a Featherbed carries its tank lower than a plain cradle (%.0f mm)" % (low * 1000.0))
+	var end := func(r: Dictionary) -> float:
+		var sp: PackedVector3Array = r["spine"]
+		return sp[sp.size() - 1].y - (r["seat_front"] as Vector3).y
+	check(end.call(at["cafe_lowboy_cradle"]) < end.call(at["steel_cradle"]) - 0.03, "a Lowboy's backbone drops further to its seat")
+
+
+## H2: the frame shows how it holds the engine: plates from the cases' lugs to the frame, a head
+## steady up to the backbone where the frame has one, gussets under the neck where it has them,
+## each a frame piece; none in Classic.
+func test_frame_fittings() -> void:
+	var m := _model()
+	var counts := func(frame: String, look: String) -> Dictionary:
+		var parts := Contracts.style_build(str(PartsDB.get_part(frame)["styles"][0]))
+		parts["frame"] = frame
+		m.look = look
+		m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)), Color.RED, {}, null, false)
+		var c := {"EngineMount": 0, "HeadSteady": 0, "Gusset": 0}
+		for n in m.get_children():
+			for k in c:
+				if str(n.name).begins_with(k):
+					c[k] += 1
+		return c
+	var bad := []
+	for f in ["steel_cradle", "featherbed_cradle", "softail_hardtail", "adv_trellis", "mx_twin_loop", "cruiser_bagger_frame"]:
+		var c: Dictionary = counts.call(f, BikeLook.NEW)
+		var own := BikeRig.frame_rig(PartsDB.get_part(f))
+		if c["EngineMount"] < 2 or (bool(own["steady"]) and c["HeadSteady"] < 2) or (bool(own["gusset"]) != (c["Gusset"] > 0)):
+			bad.append("%s %s" % [f, c])
+	var classic: Dictionary = counts.call("steel_cradle", BikeLook.CLASSIC)
+	check(bad.is_empty() and classic["EngineMount"] + classic["HeadSteady"] + classic["Gusset"] == 0,
+		"Rig built frames show their engine mounts, head steadies and gussets, Classic none %s" % [bad])
+	m.queue_free()
+
+
+## H2: change the engine and the frame re-forms round the new one over half a second: the meshes
+## start in the old rig's shape (their base pulled back by how far the engine moved) and end in
+## the new, plain again; it costs the rebuild little. The same bike drawn again, Classic, or
+## another frame doesn't morph.
+func test_reform() -> void:
+	var parts := Contracts.style_build("classic")
+	var a := _model()
+	a.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)), Color.RED, {}, null, false)
+	var other := parts.duplicate()
+	other["engine"] = "twin_1200" if str(parts["engine"]) != "twin_1200" else "single_500"
+	var b := _model()
+	b.reform_from = a.rig
+	var t0 := Time.get_ticks_usec()
+	b.build_from(BikeBuild.new(PartsDB.sanitize_build(other)), Color.RED, {}, null, false)
+	var took := (Time.get_ticks_usec() - t0) / 1000.0
+	var moved := ((b.rig["crank"] as Vector3) - (a.rig["crank"] as Vector3)).length()
+	check(moved > 0.01 and not b._reform.is_empty(), "a new engine re-forms the frame (crank %.0f mm away, %d meshes)" % [moved * 1000.0, b._reform.size()])
+	var engine_mi: MeshInstance3D = null
+	for m in b._reform:
+		var mi: MeshInstance3D = m["mi"]
+		if mi.mesh.get_blend_shape_count() != 1 or mi.get_blend_shape_value(0) != 0.0:
+			engine_mi = null
+			break
+		if b._slot_meshes["engine"].has(mi):
+			engine_mi = mi
+	var shift := 0.0
+	if engine_mi != null:
+		var now: PackedVector3Array = engine_mi.mesh.surface_get_blend_shape_arrays(0)[0][Mesh.ARRAY_VERTEX]
+		var was: PackedVector3Array = engine_mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var shifts := []
+		for v in range(0, now.size(), maxi(1, now.size() / 50)):
+			shifts.append((engine_mi.transform * now[v]).distance_to(engine_mi.transform * was[v]))
+		shifts.sort()
+		shift = shifts[shifts.size() / 2]
+	check(engine_mi != null and absf(shift - moved) < moved * 0.25, "it starts with the engine where the old one was (%.0f of %.0f mm back)" % [shift * 1000.0, moved * 1000.0])
+	for i in 4:
+		b._process(BikeReform.LENGTH / 3.0)
+	var plain := b._reform.is_empty()
+	for c in b.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh is ArrayMesh and ((c as MeshInstance3D).mesh as ArrayMesh).get_blend_shape_count() > 0 \
+				and ((c as MeshInstance3D).mesh as ArrayMesh).get_blend_shape_name(0) == &"reform":
+			plain = false
+	check(plain, "after half a second the meshes are the plain new ones")
+	check(took < 1500.0, "the re-formed bike is drawn in %.0f ms" % took)
+	var c := _model()
+	c.reform_from = b.rig
+	c.build_from(BikeBuild.new(PartsDB.sanitize_build(other)), Color.RED, {}, null, false)
+	var d := _model()
+	d.look = BikeLook.CLASSIC
+	d.reform_from = a.rig
+	d.build_from(BikeBuild.new(PartsDB.sanitize_build(other)), Color.RED, {}, null, false)
+	var e := _model()
+	e.reform_from = a.rig
+	var swap := other.duplicate()
+	swap["frame"] = "featherbed_cradle" if str(parts["frame"]) != "featherbed_cradle" else "nickel_cradle"
+	e.build_from(BikeBuild.new(PartsDB.sanitize_build(swap)), Color.RED, {}, null, false)
+	check(c._reform.is_empty() and d._reform.is_empty() and e._reform.is_empty(), "the same rig, Classic, or another frame doesn't morph")
+	for m in [a, b, c, d, e]:
+		m.queue_free()

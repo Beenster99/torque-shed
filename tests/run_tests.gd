@@ -1014,6 +1014,9 @@ func _run_all() -> void:
 	await _t(&"_test_bike_rig_deterministic")
 	await _t(&"_test_bike_rig_everyone")
 	await _t(&"_test_bike_rig_fit")
+	await _t(&"_test_bike_rig_frame_numbers")
+	await _t(&"_test_bike_rig_fittings")
+	await _t(&"_test_bike_rig_reform")
 	await _t(&"_test_rig_body_on_rig")
 	await _t(&"_test_rig_body_deterministic")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -24148,6 +24151,18 @@ func _test_bike_rig_everyone() -> void:
 
 func _test_bike_rig_fit() -> void:
 	_bike_rig().test_fit_report()
+
+
+func _test_bike_rig_frame_numbers() -> void:
+	_bike_rig().test_frame_numbers()
+
+
+func _test_bike_rig_fittings() -> void:
+	_bike_rig().test_frame_fittings()
+
+
+func _test_bike_rig_reform() -> void:
+	_bike_rig().test_reform()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)

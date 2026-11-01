@@ -292,9 +292,14 @@ func sync_state() -> void:
 				sig += "|refit"
 		if _view_sigs.get(id, "") != sig:
 			_view_sigs[id] = sig
+			# (On the same frame, the bike re-forms from how it was: see BikeReform.)
+			var was := {}
 			if bike_views.has(id):
+				var shown := bike_model(id)
+				if shown:
+					was = shown.rig
 				bike_views[id].free()
-			bike_views[id] = _make_bike_view(id)
+			bike_views[id] = _make_bike_view(id, was)
 			_dirt_sigs[id] = Dirt.sig_of_bike(id)
 			_shine_sigs[id] = ""
 		_sync_dirt(id)
@@ -1012,7 +1017,7 @@ func _update_wash_fx_body(delta: float) -> void:
 		fx.update(delta, from, j.get("at", Vector3.ZERO), j.get("normal", Vector3.UP), not j.is_empty())
 
 
-func _make_bike_view(id: int) -> Node3D:
+func _make_bike_view(id: int, was := {}) -> Node3D:
 	var bike: Dictionary = Shed.bikes[id]
 	var view := Node3D.new()
 	view.name = "Bike%d" % id
@@ -1037,6 +1042,7 @@ func _make_bike_view(id: int) -> Node3D:
 	model.position.y = build.rear_radius + lift
 	model.stand_pose = stand
 	model.geometry = Shed.geometry_of(id)
+	model.reform_from = was
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
 	model.build_pickers({"bike": id})
 	if on_stand:
