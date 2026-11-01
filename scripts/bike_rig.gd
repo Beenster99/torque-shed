@@ -302,7 +302,9 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	if tank_look.get("scale") is Array and (tank_look["scale"] as Array).size() >= 1:
 		sc_x = float(tank_look["scale"][0])
 	var want_len := float(shape["len"]) * lerpf(0.85, 1.0, size) * sc_x * TANK_SQUEEZE
-	rear_z = clampf(nose.z + 0.03 + want_len - 0.03, rear_z, maxf(rear_z, pivot.z + 0.02))
+	# (Where the seat runs up over the tank's tail, an MX bike's, the tank stops at the line.)
+	if not overlap:
+		rear_z = clampf(nose.z + 0.03 + want_len - 0.03, rear_z, maxf(rear_z, pivot.z + 0.02))
 	if not overlap:
 		seat_front_z = maxf(seat_front_z, rear_z - 0.015)
 	# Where the frame's seat post comes up to the seat (a cradle's, a softail's), it passes
@@ -336,6 +338,10 @@ static func _solve(build: BikeBuild) -> Dictionary:
 			best = minf(best, (top_max - h - b.y * fz) / (1.0 - fz))
 	if best < INF:
 		a.y = best
+	# (Nor nose-down any steeper than nose-up may be: on a short run, an MX tank's under its
+	# seat, the solve above can't be trusted that far.)
+	var max_rise := tan(deg_to_rad(float(geo.get("tank_slope", 13.0)))) * maxf(b.z - a.z, 0.01)
+	a.y = clampf(a.y, b.y - max_rise, b.y + max_rise)
 	# Over the heads: first the tail comes up (the tank lies flatter, and the backbone drops from
 	# under it to the seat, as a softail's does), as far as level with the nose; then both.
 	var lifted := false
@@ -356,7 +362,6 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	a.y = minf(a.y, head.y - 0.02)
 	# A real tank lies nearly level along its frame: no steeper nose-up than the frame allows. The
 	# nose comes down first, as far as the heads let it; then the tail comes up.
-	var max_rise := tan(deg_to_rad(float(geo.get("tank_slope", 13.0)))) * maxf(b.z - a.z, 0.01)
 	if a.y - b.y > max_rise:
 		var floor_a := -INF
 		for need: Vector3 in over_heads:
@@ -387,11 +392,15 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	var tail := Vector3(0.0, seat_y - 0.02 + maxf(0.0, (tail_z - hip.z) * tan(rail)), tail_z)
 	var t5: Dictionary = l["5_rider"]
 	var peg := Vector3(0.17, seat_y - float(t5["peg_mm"][1]) / 1000.0, hip.z - float(t5["peg_mm"][0]) / 1000.0)
-	# (A set of rearsets or forward controls moves them by as much as it moves the frame's own.)
+	# (The lines are the stock bike's, on the controls it comes with (a tourer's floorboards, say).
+	# A set of rearsets or forward controls moves the feet by as much as it moves those.)
 	var sets := PartsDB.get_part(str(parts.get("rearsets", "none")))
 	if sets.get("peg") is Array:
 		var own: Array = geo.get("peg", [0.02, 0.02])
-		peg += Vector3(0.0, float(sets["peg"][0]) - float(own[0]), float(sets["peg"][1]) - float(own[1])) * 0.5
+		var stock := PartsDB.get_part(str(Contracts.style_build(style).get("rearsets", "none")))
+		if stock.get("peg") is Array:
+			own = stock["peg"]
+		peg += Vector3(0.0, float(sets["peg"][0]) - float(own[0]), float(sets["peg"][1]) - float(own[1]))
 	peg.y = maxf(peg.y, ground + clear_min + 0.02)
 	# Forward controls reach no further than just ahead of the downtubes, which carry them.
 	peg.z = maxf(peg.z, crank.z - 0.17 * s - 0.2)

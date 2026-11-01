@@ -63,8 +63,9 @@ func test_frames() -> void:
 		seen.append(id)
 		var m := _model(str((p["styles"] as Array)[0]), {"frame": id})
 		var beams := _named(m, "frame", "SparBeam")
-		if beams.size() != 2:
-			bad.append("%s: %d beams" % [id, beams.size()])
+		# (In the Rig built look a beam can bend up over a tall top end: two straight lengths a
+		# side, run end to end from the head stock to the pivot plate.)
+		var sides := {}
 		var line := []
 		for mi: MeshInstance3D in beams:
 			var r := float((mi.mesh as CylinderMesh).top_radius)
@@ -76,16 +77,29 @@ func test_frames() -> void:
 			if carbon and wide > MONO_WIDTH_MAX:
 				bad.append("%s: monocoque %.0f mm wide" % [id, wide * 1000.0])
 			var ends := _tube_ends(mi)
-			var front: Vector3 = ends[0] if (ends[0] as Vector3).z < (ends[1] as Vector3).z else ends[1]
-			var back: Vector3 = ends[1] if front == ends[0] else ends[0]
-			var side := signf(front.x)
+			var side := signf((ends[0] as Vector3).x + (ends[1] as Vector3).x)
+			if not sides.has(side):
+				sides[side] = {"front": ends[0], "back": ends[0], "wide": wide, "n": 0}
+			var sd: Dictionary = sides[side]
+			sd["n"] = int(sd["n"]) + 1
+			for e: Vector3 in ends:
+				if e.z < (sd["front"] as Vector3).z:
+					sd["front"] = e
+					sd["wide"] = wide
+				if e.z > (sd["back"] as Vector3).z:
+					sd["back"] = e
+		if sides.size() != 2 or sides.values().any(func(sd): return int(sd["n"]) > (2 if not m.rig.is_empty() else 1)):
+			bad.append("%s: %d beams" % [id, beams.size()])
+		for side in sides:
+			var front: Vector3 = sides[side]["front"]
+			var back: Vector3 = sides[side]["back"]
 			# Into the head stock: the beam's inner face reaches well inside the head tube (0.038 round).
 			var axis := m._steer_axis
 			var off := front - m._head_bottom
 			var from_axis := (off - axis * off.dot(axis)).length()
-			if from_axis - wide * 0.5 > 0.03:
-				bad.append("%s: beam's inner face %.0f mm out from the head stock's axis" % [id, (from_axis - wide * 0.5) * 1000.0])
-			var plate_top := m._pivot + Vector3(0.12 * side, 0.1, 0.0)
+			if from_axis - float(sides[side]["wide"]) * 0.5 > 0.03:
+				bad.append("%s: beam's inner face %.0f mm out from the head stock's axis" % [id, (from_axis - float(sides[side]["wide"]) * 0.5) * 1000.0])
+			var plate_top := m._pivot + Vector3(0.12 * float(side), 0.1, 0.0)
 			if back.distance_to(plate_top) > 0.005:
 				bad.append("%s: beam ends %.0f mm off its pivot plate" % [id, back.distance_to(plate_top) * 1000.0])
 		print("    %s%s: %s" % [id, " (carbon)" if carbon else "", ", ".join(line)])
