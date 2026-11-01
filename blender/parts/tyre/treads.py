@@ -22,7 +22,7 @@ SECTIONS = 32              # sections round a tyre
 TREADS = ["slick", "rib", "touring", "sport", "cruiser", "trail", "sipes", "knobs", "blocks", "studs"]
 OFFROAD = ["knobs", "blocks", "studs"]
 # The treads with a groove round the middle of the crown, and how far out (in the tyre's half
-# widths) the crown's points either side of it stand.
+# widths) the extra crown points either side of it stand, so the groove is a narrow cut.
 CENTRE_GROOVE = ["rib", "cruiser"]
 CENTRE_EDGE = 0.09
 
@@ -53,12 +53,14 @@ def profile(tread, d):
         crown.append((c, bulge + (top - bulge) * s))
     if tread in CENTRE_GROOVE and d["crown"] >= DETAIL[0]["crown"]:
         # A point either side just off the middle, so the centre groove is a narrow cut rather than
-        # a V across the whole middle of the crown (a wide one on a fat tyre looked like a gap).
+        # a V across the whole middle of the crown.
         th = math.acos(CENTRE_EDGE ** (sq / 2.0))
         crown.insert(len(crown) - 1, (CENTRE_EDGE, bulge + (top - bulge) * math.sin(th) ** (2.0 / sq)))
-    right = side + crown
-    left = [(-x, y) for x, y in reversed(right[:-1])]
-    pts = left + right
+    # (Up the right wall from the bead to the middle of the crown; the left half mirrors it, from
+    # its bead up to the middle, and then the right half runs back down to its bead, so the section
+    # is one strip from bead to bead with no hole down the middle.)
+    half = side + crown
+    pts = [(-x, y) for x, y in half[:-1]] + list(reversed(half))
     on_crown = [abs(x) < 0.97 and y > bulge + 0.05 for x, y in pts]
     return pts, on_crown
 
