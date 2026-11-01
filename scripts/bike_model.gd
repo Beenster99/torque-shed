@@ -132,6 +132,8 @@ var _bore_r := 0.048             # cylinder barrel radius
 var _tank_a := Vector3.ZERO      # the tank's underside line, nose to tail (see _draw_tank)
 var _tank_b := Vector3.ZERO
 var _tank_secs: Array = []       # the tank's sections as drawn, for what sits on top of it (see tank_top_at)
+var _seat_fit := {}              # Rig built: how the seat sat on the rails (see RigBodywork.seat_fit)
+var _seat_end := {}              # Rig built: the seat's last section, for the tail cowl to carry on from
 ## The middle of the tank's filler cap, on top of it (model space; zero with no tank), where the
 ## shed pump's nozzle goes in (see ShedPump).
 var filler := Vector3.ZERO
@@ -289,6 +291,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_plates.clear()
 	_dash_face = PackedVector3Array()
 	_tank_secs = []
+	_seat_fit = {}
+	_seat_end = {}
 	_rails = []
 	filler = Vector3.ZERO
 	_satnav_screen = null
@@ -1605,7 +1609,21 @@ func _draw_tank() -> void:
 		var down: float = k[2] * size * sc.z
 		secs.append({"c": Vector3(0.0, base_y + down, z), "w": k[0] * size * sc.y, "up": k[1] * size * sc.z, "down": down,
 			"n": shape["n"], "bw": shape["bw"]})
-	var body := _blender_tank(shape_key if TANK_SHAPES.has(shape_key) else style, a, b, front, length, size, sc, mat)
+	var body: MeshInstance3D = null
+	var shape_name := shape_key if TANK_SHAPES.has(shape_key) else (style if TANK_SHAPES.has(style) else "cafe")
+	if _rig_bodywork():
+		# Rig built: the tank's tunnel on the rig's tank floor, from its nose to its rear.
+		var fit := RigBodywork.tank_fit(rig, shape_name, shape, size, sc)
+		secs = RigBodywork.tank_secs(rig, shape, fit, steps)
+		var first: Dictionary = secs[0]
+		var last: Dictionary = secs[steps]
+		# Its base (tank_base_y, what the engine has to clear) is the flanks' bottom edge.
+		var under := float(fit["sink"]) - float(fit["flank"])
+		_tank_a = (first["c"] as Vector3) + Vector3(0.0, under - float(first["down"]), 0.0)
+		_tank_b = (last["c"] as Vector3) + Vector3(0.0, under - float(last["down"]), 0.0)
+		body = _rig_part(BlenderParts.path_for("tank", shape_name), fit, {"": mat})
+	if body == null:
+		body = _blender_tank(shape_key if TANK_SHAPES.has(shape_key) else style, a, b, front, length, size, sc, mat)
 	if body == null:
 		body = _facet_tank(secs, shape, mat) if facet else _shell(secs, mat)
 	body.name = "TankBody"
@@ -1843,7 +1861,40 @@ func _draw_saddle() -> void:
 		var rail_y := y + lerpf(0.0, _tail.y - (_seat_y - 0.02), (z - z0) / maxf(_tail.z - z0, 0.01)) * 0.5
 		secs.append({"c": Vector3(0.0, rail_y + k[3] * sc.z, z), "w": k[0] * sc.y, "up": k[1] * sc.z, "down": k[2], "n": shape["n"], "bw": 0.85})
 	var shape_key := str(look.get("shape", style))
-	var pad := _blender_seat(shape_key if SEAT_SHAPES.has(shape_key) else ("bench" if not SEAT_SHAPES.has(style) else style), y, z0, z1, sc, mat)
+	var seat_name: String = shape_key if SEAT_SHAPES.has(shape_key) else ("bench" if not SEAT_SHAPES.has(style) else style)
+	var pad: MeshInstance3D = null
+	if _rig_bodywork() and rig.has("seat_rails"):
+		# Rig built: the pan on the seat rails, the foam up to the seat height at the hip point and
+		# the nose matched to the tank's rear.
+		# A tail cowl starts under the back of the seat (a sports bike's pillion pad sits on it).
+		var cowl_keys: Array = TAIL_COWLS.get(str(_build.part("tail").get("look", {}).get("cowl", "")), [])
+		var cowl_z := INF
+		if not cowl_keys.is_empty() and is_fitted("tail"):
+			var ln := float(_build.part("tail").get("look", {}).get("length", 1.0))
+			cowl_z = RigBodywork.cowl_start(rig, cowl_keys, ln, (rig["seat_rails"][0] as Vector3).z)
+		_seat_fit = RigBodywork.seat_fit(rig, shape, sc, float(shape.get("span", 1.0)), _tank_secs[_tank_secs.size() - 1] if not _tank_secs.is_empty() else {}, 0.0)
+		z0 = float(_seat_fit["z0"])
+		z1 = float(_seat_fit["z1"])
+		var w: Dictionary = _seat_fit["weights"]
+		var rail_y: Callable = _seat_fit["rail_y"]
+		secs.clear()
+		for i in steps + 1:
+			var u := float(i) / steps
+			var k := _seat_key_at(keys, u)
+			var z := lerpf(z0, z1, u)
+			var nose := 1.0 - smoothstep(0.0, 0.2, u)
+			var low: float = (k[2] + k[3]) * sc.z
+			secs.append({"c": Vector3(0.0, float(rail_y.call(z)) + low, z),
+				"w": (k[0] + RigBodywork.SEAT_NOSE_W * float(w.get("nose_width", 0.0)) * nose) * sc.y,
+				"up": (k[1] + RigBodywork.SEAT_FOAM * float(w.get("foam", 0.0)) + RigBodywork.SEAT_NOSE_H * float(w.get("nose_height", 0.0)) * nose) * sc.z,
+				"down": low, "n": shape["n"], "bw": 0.85})
+		# (A tail cowl matches the seat where it starts.)
+		_seat_end = secs[steps]
+		if cowl_z < z1:
+			_seat_end = secs[clampi(roundi((cowl_z - z0) / maxf(z1 - z0, 0.01) * steps), 0, steps)]
+		pad = _rig_part(BlenderParts.path_for("saddle", seat_name), _seat_fit, {"leather": mat})
+	if pad == null:
+		pad = _blender_seat(seat_name, y, z0, z1, sc, mat)
 	if pad == null:
 		pad = _shell(secs, mat)
 	pad.name = "SeatPad"
@@ -4413,10 +4464,17 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 	if kind in ["sport", "racing"]:
 		_facet_cowl(keys, ln, mat, lk, kind)
 		return
+	var fit := _cowl_fit(keys, ln)
+	if not fit.is_empty():
+		t = fit["t"]
 	var secs := []
 	for k in keys:
 		secs.append({"c": t + Vector3(0.0, float(k[4]), float(k[0]) * ln), "w": k[1], "up": k[2], "down": k[3], "n": k[5]})
-	var cowl := _blender_cowl(kind, ln, mat)
+	var cowl: MeshInstance3D = null
+	if not fit.is_empty():
+		cowl = _rig_part(BlenderParts.ROOT + "tail/cowl/%s.glb" % kind, fit, {"": mat})
+	if cowl == null:
+		cowl = _blender_cowl(kind, ln, mat)
 	if cowl == null:
 		cowl = _shell(secs, mat)
 	cowl.name = "TailCowl"
@@ -4438,6 +4496,8 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 ## fairings: a tucked-in underside, a sharp crease along each flank, a ridged top, tapering to
 ## a point, with the accent colour as a stripe along the upper flank.
 func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary, kind := "") -> void:
+	var fit := _cowl_fit(keys, ln)
+	var t: Vector3 = _tail if fit.is_empty() else fit["t"]
 	var rows := []
 	for k in keys.size():
 		var a: Array = keys[k]
@@ -4448,10 +4508,14 @@ func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary, kind := 
 			var w := lerpf(float(a[1]), float(b[1]), f)
 			var up := lerpf(float(a[2]), float(b[2]), f)
 			var down := lerpf(float(a[3]), float(b[3]), f)
-			var c := _tail + Vector3(0.0, lerpf(float(a[4]), float(b[4]), f), z)
+			var c := t + Vector3(0.0, lerpf(float(a[4]), float(b[4]), f), z)
 			rows.append(PackedVector3Array([c + Vector3(0.0, -down, 0.0), c + Vector3(w * 0.62, -down, 0.0), c + Vector3(w, lerpf(-down, up, 0.4), 0.0),
 				c + Vector3(w * 0.72, up * 0.82, 0.0), c + Vector3(w * 0.3, up, 0.0), c + Vector3(0.0, up + 0.008, 0.0)]))
-	var cowl := _blender_cowl(kind, ln, mat)
+	var cowl: MeshInstance3D = null
+	if not fit.is_empty():
+		cowl = _rig_part(BlenderParts.ROOT + "tail/cowl/%s.glb" % kind, fit, {"": mat})
+	if cowl == null:
+		cowl = _blender_cowl(kind, ln, mat)
 	if cowl == null:
 		cowl = _facets(rows, mat)
 		for end in [0, rows.size() - 1]:
@@ -9436,6 +9500,41 @@ func _blender_seat(shape: String, y: float, z0: float, z1: float, sc: Vector3, m
 		if cover == null and (mi as MeshInstance3D).material_override == mat:
 			cover = mi
 	return cover
+
+
+## Rig built: whether the tank, seat and tail fit to the rig's lines (see RigBodywork): Blender
+## parts on, in the Rig built look, with a rig to fit to.
+func _rig_bodywork() -> bool:
+	return _blender_on() and RigBodywork.on and RigBodywork.has_rig(rig)
+
+
+## Rig built: a Blender part (its glb at `path`) with its shape keys mixed and bent onto its lines
+## as `fit` says ({"weights", "warp"}: see RigBodywork), drawn as the part being drawn (`over` as
+## _blender_meshes takes it). Returns the first of its meshes in `over`'s materials, or null.
+func _rig_part(path: String, fit: Dictionary, over: Dictionary) -> MeshInstance3D:
+	if BlenderParts.part(path).is_empty():
+		return null
+	var first: MeshInstance3D = null
+	var want: Array = over.values()
+	for mi in _blender_meshes(BlenderParts.morphed(path, fit["weights"], fit["warp"]), Transform3D.IDENTITY, over):
+		if first == null and (mi as MeshInstance3D).material_override in want:
+			first = mi
+	return first
+
+
+## Rig built: how a tail cowl of `keys` (TAIL_COWLS's) carries on from the seat's end along the
+## rails ({} when the bike isn't fitted that way), with "t", where the code's own cowl would hang
+## from for the same place (its stripe, number board and back stop are laid out from it).
+func _cowl_fit(keys: Array, ln: float) -> Dictionary:
+	if not _rig_bodywork() or _seat_fit.is_empty():
+		return {}
+	var rail_y: Callable = _seat_fit["rail_y"]
+	var z1 := RigBodywork.cowl_start(rig, keys, ln, (rig["seat_rails"][0] as Vector3).z)
+	var slope := float(_seat_fit["slope"])
+	var from := Vector3(0.0, float(rail_y.call(z1)), z1)
+	var fit := RigBodywork.cowl_fit(rig, keys, from, slope, ln, _seat_end)
+	fit["t"] = from + Vector3(0.0, float(keys[0][3]) - 0.02, -float(keys[0][0]) * ln)
+	return fit
 
 
 ## New look: a tail unit's Blender-made seat cowl or tail section (tail/cowl/<kind>.glb, see

@@ -616,7 +616,8 @@ func test_lamps() -> void:
 			var b := m.slot_bounds(slot)
 			var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
 				(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
-			if d > LOADED_GIVE:
+			# (A tail unit's cowl the Rig built look fits to the seat: see rig_body_tests.)
+			if d > LOADED_GIVE and not (slot in RIG_FITTED and m._rig_bodywork()):
 				out.append("%s %.3f m off" % [id, d])
 			for k in models:
 				(models[k] as Node).free()
@@ -786,6 +787,8 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
+## The parts the Rig built look fits to the bike's rig rather than where the code drew them.
+const RIG_FITTED := ["tank", "saddle", "tail", "air_filter"]
 ## A tank's: the code's loft leans its end sections with the dip of its middle line, where the
 ## Blender-made tank's stand upright, so a deep tank's ends sit a few centimetres apart (more on a
 ## big tank the Rig built look draws shorter to sit on its style's lines, see BikeRig.TANK_SQUEEZE).
@@ -830,6 +833,10 @@ func test_new_look() -> void:
 				if mine.any(func(mi): return (mi as Node).get_parent() != spin):
 					off.append("%s %s off its wheel" % [style, slot])
 		for slot in LOADED:
+			# (The Rig built look fits its own tank, seat and tail to the rig, and the air filter
+			# tucks under that tank: rig_body_tests checks them on their lines instead.)
+			if slot in RIG_FITTED and m._rig_bodywork():
+				continue
 			var a := (models["code"] as BikeModel).slot_bounds(slot)
 			var b := m.slot_bounds(slot)
 			if slot == "head":
