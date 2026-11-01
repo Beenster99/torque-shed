@@ -20,7 +20,8 @@ const USER_AGENT := "TorqueShed (+https://github.com/Beenster99/torque-shed)"
 ## the Highlands): sheer walls on the hillsides. So there is none there (a NONE file says so) and the coarser zoom,
 ## Mapterhorn's, is the ground.
 const AWS_TOP := 12
-## A tile Mapterhorn had none of is asked for again once its NONE file is this old (days): it may have one by then.
+## A tile Mapterhorn had none of is asked for again once its NONE file (one fetched, in `disk`) is this old (days): it
+## may have one by then.
 const NONE_DAYS := 30
 ## Where fetched tiles are kept (the tests keep theirs elsewhere).
 static var disk := "user://heights"
@@ -160,7 +161,8 @@ static func is_none(key: Vector3i) -> bool:
 	if v != null:
 		return v
 	var p := _none_path(key)
-	var yes := p != "" and (Time.get_unix_time_from_system() - FileAccess.get_modified_time(p)) < NONE_DAYS * 86400.0
+	# (only those fetched go stale: one among the game's own or the tests' tiles stands)
+	var yes := p != "" and (not p.begins_with(disk) or (Time.get_unix_time_from_system() - FileAccess.get_modified_time(p)) < NONE_DAYS * 86400.0)
 	_lock.lock()
 	_none[key] = yes
 	_lock.unlock()
