@@ -585,7 +585,9 @@ func _on_net(state: PackedFloat32Array, sent := -1.0) -> void:
 		var now := Time.get_ticks_usec() / 1000000.0
 		_host_clock.push(null, sent, now)
 		_host_clock.snaps.clear()
-		late = clampf(now - sent - _host_clock.offset, 0.0, 1.0)
+		# (against the quickest lately, not the timeline's eased mapping: after a hitch the host lost time to, the
+		# mapping would hold every vehicle drawn up to a second ahead of where it is for the best part of a minute)
+		late = clampf(now - sent - _host_clock.quickest(), 0.0, 1.0)
 	if state.size() >= 2 and state[state.size() - 1] == CLOCK_TAG:
 		# The host's lights clock: taken as it is when it's well out, else eased onto.
 		var theirs := state[state.size() - 2]

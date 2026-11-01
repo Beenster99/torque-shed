@@ -588,6 +588,9 @@ func _run_all() -> void:
 	await _t(&"_test_net_flats")
 	await _t(&"_test_net_sites")
 	await _t(&"_test_net_saves")
+	await _t(&"_test_net_timeline_bunched")
+	await _t(&"_test_net_timeline_late")
+	await _t(&"_test_net_timeline_host_hitch")
 	await _t(&"_test_real_pack")
 	await _t(&"_test_real_levels")
 	await _t(&"_test_real_epic")
@@ -24647,6 +24650,10 @@ func _test_net_timeline_bunched() -> void:
 
 func _test_net_timeline_late() -> void:
 	_net_timeline().test_late()
+
+
+func _test_net_timeline_host_hitch() -> void:
+	_net_timeline().test_host_hitch()
 
 
 # ---------------------------------------------------------------------------- smooth adventure roads (tests/smooth_tests.gd)
