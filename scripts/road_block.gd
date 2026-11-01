@@ -8,12 +8,17 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 20
+const VERSION := 21
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
 ## How far (m) a join's disc lies under the roads it joins (_join_y): out of sight where it overlaps them.
 const JOIN_SINK := 0.01
+## A pocket's floor (RoadNet.pocket_of) runs this far in under its roads' edges (m), just this far under their surface.
+const POCKET_UNDER := 0.4
+const POCKET_SINK := 0.02
+const POCKET_GRID := 1.0
+const POCKET_OVER := 0.06   # (over the land, where it's higher than its rim)
 ## A building stands at least this far past a road's verge (m), pushed back to it from as much as NUDGE_M over, or it's
 ## left out (_clear_of_roads).
 const CLEAR := 1.0
@@ -691,6 +696,7 @@ func _lay_out() -> void:
 	for j in junctions:
 		_junction_mesh(j)
 	_join_caps()
+	_pockets()
 	arrays["signals"] = _signals(kit)
 	_roadside(kit)
 	var houses := AdventureProps.new_arrays()
@@ -1434,6 +1440,180 @@ func _sheet(g: Dictionary, surf: String, col: Color, j: Dictionary, pts: Array) 
 		_face(surf, v[i0], v[i1], v[i2])
 	g["v"].append_array(v)
 	return true
+
+
+## The floors of the pockets of land this block lays (RoadNet.pocket_of): grass, flush with the roads round it.
+func _pockets() -> void:
+	var seen := {}
+	for ei in net.edges_in(key):   # (not just its pieces: a little loop's roads may be all junction, no piece between)
+		var pk := net.pocket_of(ei)
+		if pk.is_empty() or pk["key"] != key or seen.has(pk["edges"]):
+			continue
+		seen[pk["edges"]] = true
+		_pocket(pk)
+
+
+## A pocket's floor: grass over what of it its roads and junctions leave bare, run POCKET_UNDER in under their edges,
+## every point of its rim POCKET_SINK under the road surface it's under, so there's no step down off any of them into it.
+func _pocket(pk: Dictionary) -> void:
+	var edges: PackedInt32Array = pk["edges"]
+	var line: PackedVector2Array = pk["line"]
+	# What's left bare: the loop, less its roads' carriageways and its junctions' surfaces.
+	var bare: Array = [line]
+	var cover: Array = []
+	for ei in edges:
+		cover.append_array(Geometry2D.offset_polyline(net.line_of(ei), net.width_of(ei) * 0.5))
+		for n: int in [net.region.edge_a[ei], net.region.edge_b[ei]]:
+			var j := net.junction_of(n)
+			if not j.is_empty() and j["kind"] != "end" and j.has("outline"):
+				cover.append(j["outline"])
+	for c: PackedVector2Array in cover:
+		var left: Array = []
+		for piece: PackedVector2Array in bare:
+			for got: PackedVector2Array in Geometry2D.clip_polygons(piece, c):
+				if not Geometry2D.is_polygon_clockwise(got) or got.size() < 3:   # (no holes: a road can't leave one in it)
+					left.append(got)
+		bare = left
+	var o := anchor()
+	for piece: PackedVector2Array in bare:
+		var area := 0.0
+		for k in piece.size():
+			area += piece[k].cross(piece[(k + 1) % piece.size()])
+		if absf(area) * 0.5 < 0.5:
+			continue
+		for grown: PackedVector2Array in Geometry2D.offset_polygon(piece, POCKET_UNDER):
+			_floor(_every(grown, POCKET_GRID), edges, o)
+
+
+## A pocket's floor over `rim` (region frame), a point every POCKET_GRID m over it: each POCKET_SINK under the road
+## surface laid there, or out past the roads, eased across from those; grass between.
+func _floor(rim: PackedVector2Array, edges: PackedInt32Array, o: Vector3) -> void:
+	if Geometry2D.triangulate_polygon(rim).is_empty():
+		return
+	# The road surfaces already laid round it (block space).
+	var box := Rect2(rim[0], Vector2.ZERO)
+	for q in rim:
+		box = box.expand(q)
+	var near_box := Rect2(box.position - Vector2(o.x, o.z), box.size).grow(1.0)
+	var round := PackedVector3Array()
+	for surf: String in arrays["deck"]:
+		var f: PackedVector3Array = _faces_of(surf)
+		for t in f.size() / 3:
+			var a := f[t * 3]
+			var b := f[t * 3 + 1]
+			var c := f[t * 3 + 2]
+			if near_box.intersects(Rect2(a.x, a.z, 0.0, 0.0).expand(Vector2(b.x, b.z)).expand(Vector2(c.x, c.z)), true):
+				round.append_array([a, b, c])
+	# Its rim, then a grid over its middle.
+	var flat := PackedVector2Array(rim)
+	for gz in range(int(ceil(box.size.y / POCKET_GRID))):
+		for gx in range(int(ceil(box.size.x / POCKET_GRID))):
+			var q := box.position + Vector2(gx + 0.5, gz + 0.5) * POCKET_GRID
+			if Geometry2D.is_point_in_polygon(q, rim) and _clear_of(q, rim, POCKET_GRID * 0.4):
+				flat.append(q)
+	var ys := PackedFloat32Array()
+	ys.resize(flat.size())
+	var free := PackedInt32Array()   # (the points out past the roads, eased across from those that are under them)
+	for k in flat.size():
+		var q := flat[k]
+		var y := _top_of(round, Vector2(q.x - o.x, q.y - o.z))
+		if is_nan(y) and k < rim.size():
+			# (a rim point beside the roads, not under one: the nearest one's surface)
+			var near := INF
+			for ei in edges:
+				var pr := net.project(ei, q.x, q.y)
+				if float(pr[2]) < near:
+					near = float(pr[2])
+					y = net.road_y(ei, clampf(float(pr[0]), 0.0, net.length_of(ei))) - o.y
+			if is_nan(y):
+				return
+		if is_nan(y):
+			free.append(k)
+			continue
+		ys[k] = y - POCKET_SINK
+	# Eased across from them, each the more the nearer (its inverse distance to the fourth: the nearest has its way).
+	var loose := PackedByteArray()
+	loose.resize(flat.size())
+	for k in free:
+		loose[k] = 1
+	for k in free:
+		var sw := 0.0
+		var sy := 0.0
+		for f in flat.size():
+			if loose[f] == 1:
+				continue
+			var d2 := maxf(flat[k].distance_squared_to(flat[f]), 0.01)
+			var w := 1.0 / (d2 * d2)
+			sw += w
+			sy += w * ys[f]
+		ys[k] = sy / sw
+		# (and never under the land there, where it rises a little in the middle of a bigger one)
+		var bare: float = net.height.call(flat[k].x, flat[k].y)
+		if not is_nan(bare):
+			ys[k] = maxf(ys[k], net.ground_at(flat[k].x, flat[k].y, bare) - o.y + POCKET_OVER)
+	var tris := Geometry2D.triangulate_delaunay(flat)
+	var keep := PackedInt32Array()
+	for t in tris.size() / 3:
+		var i0 := tris[t * 3]
+		var i1 := tris[t * 3 + 1]
+		var i2 := tris[t * 3 + 2]
+		if Geometry2D.is_point_in_polygon((flat[i0] + flat[i1] + flat[i2]) / 3.0, rim):
+			keep.append_array([i0, i1, i2])
+	var a: Dictionary = arrays["island"]
+	var col := _verge_colour(net.region.surface_of(edges[0]), true)
+	for t in keep.size() / 3:
+		var i0 := keep[t * 3]
+		var i1 := keep[t * 3 + 1]
+		var i2 := keep[t * 3 + 2]
+		var p0 := Vector3(flat[i0].x - o.x, ys[i0], flat[i0].y - o.z)
+		var p1 := Vector3(flat[i1].x - o.x, ys[i1], flat[i1].y - o.z)
+		var p2 := Vector3(flat[i2].x - o.x, ys[i2], flat[i2].y - o.z)
+		if (p1 - p0).cross(p2 - p0).y < 0.0:
+			var sw := p1
+			p1 = p2
+			p2 = sw
+		_up(a, p0, p1, p2, col)
+		_face("grass", p0, p1, p2)
+
+
+## Whether `q` is at least `d` m from every point of `line`.
+static func _clear_of(q: Vector2, line: PackedVector2Array, d: float) -> bool:
+	for p in line:
+		if p.distance_squared_to(q) < d * d:
+			return false
+	return true
+
+
+## The highest of triangles `tris`' heights at `p` (x, z), or NAN where none is.
+static func _top_of(tris: PackedVector3Array, p: Vector2) -> float:
+	var best := NAN
+	for t in tris.size() / 3:
+		var a := tris[t * 3]
+		var b := tris[t * 3 + 1]
+		var c := tris[t * 3 + 2]
+		var den := (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z)
+		if absf(den) < 1e-9:
+			continue
+		var u := ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.y - c.z)) / den
+		var v := ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.y - c.z)) / den
+		if u < -1e-4 or v < -1e-4 or u + v > 1.0 + 1e-4:
+			continue
+		var y := a.y * u + b.y * v + c.y * (1.0 - u - v)
+		if is_nan(best) or y > best:
+			best = y
+	return best
+
+
+## Closed line `line` with a point at least every `step` m along it.
+static func _every(line: PackedVector2Array, step: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for k in line.size():
+		var a := line[k]
+		var b := line[(k + 1) % line.size()]
+		var n := maxi(1, int(ceil(a.distance_to(b) / step)))
+		for i in n:
+			out.append(a.lerp(b, float(i) / n))
+	return out
 
 
 ## A roundabout's island: a kerbed disc of grass a little above the ring, its kerb round the ring's own inner edge

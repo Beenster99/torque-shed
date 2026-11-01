@@ -104,6 +104,13 @@ const CROWN_FLAT := 20.0
 const RAMP := 0.05
 ## A bridge's deck eases onto the land over this many STEPs at each end (its abutments).
 const DECK_EASE := AdventureRoute.DECK_EASE
+## A pocket of land a short loop of road closes round (pocket_of): no more than POCKET_EDGES roads round it, POCKET_M
+## all told.
+const POCKET_EDGES := 6
+const POCKET_M := 240.0
+## A loop is a pocket where no more of the land in it than this far (m) from all its roads' reach (LAND_PAD past the
+## widest one's verge) is left at its own height: a little more is floored over too, eased across.
+const POCKET_CORE := 4.0
 var _none := [PackedInt32Array(), []]   # (what _near_at gives where no road is)
 
 var region: RealRegion
@@ -147,6 +154,7 @@ var _planes := {}           # roundabout's first node -> [Vector2 its nodes' mid
 var _rims := {}             # roundabout's first node -> its island's rim (island_rim)
 var _profiles := {}         # edge -> PackedFloat32Array: its road's heights as ridden (profile)
 var _ring_of := {}          # edge -> PackedInt32Array: the ring of nodes it's part of, or empty
+var _pockets := {}          # edge -> Dictionary: the pocket of land it closes round (pocket_of), or {}
 var _bridges := {}          # edge -> PackedInt32Array: its bridges, as samples [first, last, ...] (bridges_of)
 var _decks := {}            # edge -> Dictionary: its bridges' heights (_deck_plan)
 var _mapped_of := {}        # edge -> PackedInt32Array: its bridges as the map has them (_mapped)
@@ -1568,6 +1576,115 @@ func _ring(edge: int) -> PackedInt32Array:
 ## Whether edge `edge` is part of a roundabout's carriageway.
 func on_ring(edge: int) -> bool:
 	return not _ring(edge).is_empty()
+
+
+## The pocket of land a short loop of road through edge `edge` closes round, where all of it is near enough its roads to
+## be held under them (ground_at: every bit of it within LAND_PAD of a verge): a roundabout the map draws with corners
+## (too square to be taken for one: RoutePlanner._turns_gently), a little triangle of roads at a fork. Sunk under its
+## roads all round, the land in it would be a pit with the roads' edges for its walls, one a bike can drop into and not
+## climb out of, so RoadBlock lays a floor over it flush with its roads (_pocket). {edges: PackedInt32Array (round it,
+## in order), line: PackedVector2Array (round it, closed, along the roads' middle lines), key: Vector2i (the block
+## that lays it: its middle's)}, or {} where there's none (or the loop is a roundabout's ring: its island fills it).
+func pocket_of(edge: int) -> Dictionary:
+	_lock.lock()
+	var got = _pockets.get(edge)
+	_lock.unlock()
+	if got != null:
+		return got
+	var out := _find_pocket(edge)
+	_lock.lock()
+	if out.is_empty():
+		_pockets[edge] = out
+	else:
+		for ei in out["edges"] as PackedInt32Array:
+			if not _pockets.has(ei):
+				_pockets[ei] = out
+		out = _pockets[edge] if _pockets.has(edge) else out
+	_lock.unlock()
+	return out
+
+
+func _find_pocket(edge: int) -> Dictionary:
+	var a := region.edge_a[edge]
+	var b := region.edge_b[edge]
+	if a == b or region.edge_len[edge] > POCKET_M * 0.5 or on_ring(edge):
+		return {}
+	# The shortest way back round from b to a, not by this road (a node visited once).
+	var best_len := POCKET_M - region.edge_len[edge]
+	var best := PackedInt32Array()
+	var best_nodes := PackedInt32Array()
+	var stack: Array = [[b, PackedInt32Array([edge]), PackedInt32Array([a, b]), 0.0]]
+	while not stack.is_empty():
+		var item: Array = stack.pop_back()
+		var node: int = item[0]
+		var used: PackedInt32Array = item[1]
+		var nodes: PackedInt32Array = item[2]
+		var run: float = item[3]
+		for ei in region.adjacent[node]:
+			if used.has(ei):
+				continue
+			var far := region.other_end(ei, node)
+			var len := run + region.edge_len[ei]
+			if len >= best_len:
+				continue
+			if far == a:
+				if used.size() >= 2:
+					best_len = len
+					best = used.duplicate()
+					best.append(ei)
+					best_nodes = nodes.duplicate()
+				continue
+			if nodes.has(far) or used.size() + 1 >= POCKET_EDGES:
+				continue
+			var u2 := used.duplicate()
+			u2.append(ei)
+			var n2 := nodes.duplicate()
+			n2.append(far)
+			stack.append([far, u2, n2, len])
+	if best.is_empty():
+		return {}
+	# Its line round, along each road's (smoothed) middle line in turn.
+	var line := PackedVector2Array()
+	var widest := 0.0
+	for i in best.size():
+		var ei := best[i]
+		var from := best_nodes[i]
+		var l := line_of(ei)
+		if region.edge_a[ei] != from:
+			l = l.duplicate()
+			l.reverse()
+		for k in l.size() - 1:
+			line.append(l[k])
+		widest = maxf(widest, width_of(ei) * 0.5)
+	if line.size() < 3 or Geometry2D.triangulate_polygon(line).is_empty():
+		return {}
+	# All of it near its roads (little or none of it far enough from them to be left at the land's own height), and no
+	# other road in it (a loop with a road across it is two pockets, each its own).
+	if not Geometry2D.offset_polygon(line, -(widest + VERGE + LAND_PAD + POCKET_CORE)).is_empty():
+		return {}
+	var box := Rect2(line[0], Vector2.ZERO)
+	for p in line:
+		box = box.expand(p)
+	var mid := Vector2.ZERO
+	for p in line:
+		mid += p
+	mid /= line.size()
+	var k0 := RoadBlock.key_of(box.position.x, box.position.y)
+	var k1 := RoadBlock.key_of(box.end.x, box.end.y)
+	for bz in range(k0.y, k1.y + 1):
+		for bx in range(k0.x, k1.x + 1):
+			for n in nodes_in(Vector2i(bx, bz)):
+				if not best_nodes.has(n) and Geometry2D.is_point_in_polygon(region.node_pos[n], line):
+					return {}
+	# (nor round a roundabout's island: a slip road beside one closes round the ring's own middle)
+	for n in best_nodes:
+		for ei in region.adjacent[n]:
+			if on_ring(ei):
+				var j := junction_of(n, false)
+				if not j.is_empty() and Geometry2D.is_point_in_polygon(Vector2(j["pos"].x, j["pos"].z), line):
+					return {}
+				break
+	return {"edges": best, "line": line, "key": RoadBlock.key_of(mid.x, mid.y)}
 
 
 ## The junction at node `node` (see road-block.md), or {} where just two roads join end to end. Without `heights`, its

@@ -337,12 +337,111 @@ func _tables() -> void:
 			jn["ro"] = float(st["ro"])
 			jn["rc"] = float(st["rc"])
 		js.append(jn)
+	if world.roads != null and r.real != null:
+		_real_rings(js)
 	for i in range(stream.vehicles.size() - 1, -1, -1):
 		if stream.vehicles[i].has("arm"):
 			stream._remove(i)
 	if bikers:
 		bikers.drop_arms()
 	stream.junctions = js
+
+
+## The network ride's roundabouts, as the map has them, into the traffic's junctions `js`. The planned line runs on
+## through each ring (RoutePlanner.junctions_along), so the traffic goes round the ring's own road from where the line
+## comes into it to where it leaves (AdventureJunctions.swing's "sides") and gives way at its edge, not round the
+## planned road's own island (put down a few metres off the ring's middle, where the plan's junctions keep clear of its
+## chunks' seams, or not at all where the road bends through it). A planned roundabout's junction is moved onto the
+## ring; a ring the plan has as a crossroads, or not at all, is made one. Where the line only runs along the ring's
+## edge (it rides one of its roads, not into it), the traffic keeps to that road: no swinging out round an island.
+func _real_rings(js: Array) -> void:
+	var r := world.route
+	var net: RoadNet = world.roads.net
+	for row: Dictionary in r.real.junctions:
+		if not str(row["type"]) in ["roundabout", "mini"] or not row.has("rr"):
+			continue
+		var rr := float(row["rr"])
+		var s := int(row["k"]) * AdventureRoute.STEP
+		if s < rr + 20.0 or s > r.total - rr - 20.0:
+			continue
+		var jn: Dictionary = {}
+		for got: Dictionary in js:
+			if absf(float(got["s"]) - s) < rr + 12.0:
+				jn = got
+				break
+		var sides := ring_sides(r, net, row.get("ring", PackedInt32Array()), s, rr * 2.0 + 20.0)
+		if sides.is_empty():
+			for k: String in ["ro", "rc"]:
+				jn.erase(k)
+			continue
+		if jn.is_empty():
+			jn = {"s": s, "lights": false, "village": busy_at(s) >= 0.99, "site": {}, "arms": []}
+			js.append(jn)
+		# (its middle where the line's through it: the plan's knot is only the nearest to the ring's middle)
+		var span: Vector2 = sides["span"]
+		var mid := (span.x + span.y) * 0.5
+		jn.merge(sides, true)
+		jn["s"] = s + mid
+		jn["from"] = float(sides["from"]) - mid
+		jn["span"] = span - Vector2(mid, mid)
+		jn["lights"] = false
+		jn["ro"] = (span.y - span.x) * 0.5 + AdventureJunctions.RING_HALF
+		jn["rc"] = jn["ro"]
+		jn["stop"] = float(jn["ro"]) + 0.8
+	js.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["s"]) < float(b["s"]))
+
+
+## Where ring `ring` (its nodes in order round it) on network `net` is either side of route `r`'s planned line, from its
+## `s` `reach` m either way: {sides: [right, left] (PackedFloat32Array: how far its middle line is to that side, every
+## metre from `from`, NAN where the planned line's outside it), from, span: Vector2(the first and last ds inside it)},
+## or {} where the ring isn't round it.
+static func ring_sides(r: AdventureRoute, net: RoadNet, ring: PackedInt32Array, s: float, reach: float) -> Dictionary:
+	var reg := net.region
+	var poly := PackedVector2Array()
+	for i in ring.size():
+		var a := ring[i]
+		var b := ring[(i + 1) % ring.size()]
+		var e := -1
+		for ei in reg.adjacent[a]:
+			if reg.other_end(ei, a) == b:
+				e = ei
+				break
+		if e < 0:
+			return {}
+		var l := net.line_of(e)
+		if reg.edge_a[e] != a:
+			l = l.duplicate()
+			l.reverse()
+		for k in l.size() - 1:
+			poly.append(l[k])
+	if poly.size() < 3:
+		return {}
+	var right := PackedFloat32Array()
+	var left := PackedFloat32Array()
+	var span := Vector2(INF, -INF)
+	var steps := int(ceil(reach))
+	for k in range(-steps, steps + 1):
+		var at := s + k
+		var xz := r.xz_at(at)
+		var p := Vector2(xz[0], xz[1])
+		var h := r.heading_at_s(at)
+		var n := Vector2(cos(h), sin(h))
+		if not Geometry2D.is_point_in_polygon(p, poly):
+			right.append(NAN)
+			left.append(NAN)
+			continue
+		span = Vector2(minf(span.x, k), maxf(span.y, k))
+		for side: float in [1.0, -1.0]:
+			var near := NAN
+			var far := p + n * side * reach * 2.0
+			for q in poly.size():
+				var hit = Geometry2D.segment_intersects_segment(p, far, poly[q], poly[(q + 1) % poly.size()])
+				if hit != null and (is_nan(near) or p.distance_to(hit) < near):
+					near = p.distance_to(hit)
+			(right if side > 0.0 else left).append(near)
+	if span.x > span.y:
+		return {}
+	return {"sides": [right, left], "from": float(-steps), "span": span}
 
 
 # ---------------------------------------------------------------------------- each tick
