@@ -62,6 +62,20 @@ const FAMILY := {
 	"chopper": {"layouts": ["vtwin"], "cc": 2000.0},
 	"cruiser": {"layouts": ["vtwin", "boxer", "inline"], "cc": 2000.0},
 }
+## Each frame's own proportions in the Rig built look, over its family's (a frame's "rig" in
+## parts.json). They change the picture only: the physics' numbers are the frame's "geo".
+##   gauge     its tubes' size, against the family's
+##   twin      how far either side of the middle its cradle rails run under the engine (0, one rail)
+##   split     its pair of cradle rails part from one downtube low in front of the engine
+##   top       the same for its top rails under the tank (0, one backbone)
+##   tank_low  how far its tank line sits under the style's (a Featherbed's low tank) (m)
+##   drop      how far its backbone drops to the seat behind the tank (a Lowboy's) (m)
+##   gusset    a gusset plate under the neck
+##   steady    a head steady from the top of the engine up to the backbone
+##   deep, wide  a spar or perimeter beam's depth and width, against the family's
+##   loop      how far either side an MX frame's loops run under the engine (m)
+const FRAME_RIG := {"gauge": 1.0, "twin": 0.0, "split": false, "top": 0.0, "tank_low": 0.0, "drop": 0.0, "gusset": false, "steady": false,
+	"deep": 1.0, "wide": 1.0, "loop": 0.06}
 const NO_FIT := {"mx": ["boxer", "inline", "triple"], "perimeter": ["boxer"], "spar": ["boxer"]}
 
 ## Off lays the Rig built look out as Classic does (for the checks that compare the two looks'
@@ -196,6 +210,17 @@ static func hard_points(engine: Dictionary) -> Dictionary:
 	return out
 
 
+## A frame's own Rig built proportions (see FRAME_RIG), every key there.
+static func frame_rig(frame: Dictionary) -> Dictionary:
+	var r := FRAME_RIG.duplicate()
+	var own = frame.get("rig", {})
+	if own is Dictionary:
+		for k in own:
+			if r.has(k):
+				r[k] = own[k]
+	return r
+
+
 ## The bike laid out in the Rig built look: datums in the model's space (see the lines agreement
 ## for each key). Worked out once per set of parts and kept.
 static func solve(build: BikeBuild) -> Dictionary:
@@ -216,6 +241,8 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	var frame := PartsDB.get_part(str(parts.get("frame", "")))
 	var geo: Dictionary = frame.get("geo", {})
 	var family := str(frame.get("style", "cradle"))
+	var frig := frame_rig(frame)
+	var drawn_r := SPINE_R * float(frig["gauge"])
 	var engine := PartsDB.get_part(str(parts.get("engine", "")))
 	var wb := build.wheelbase
 	var zf := -wb * 0.5
@@ -263,8 +290,11 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	# What the backbone (or a spar frame's airbox lid) has to pass over: each head, front and back.
 	# (A bay frame's single backbone is a tube, whatever the style's own backbone is.)
 	var tube := str(l["1_backbone"].get("kind", "tube")) == "tube" or family in POST_FAMILIES
-	var spine_r := SPINE_R if tube else 0.0
+	var spine_r := drawn_r if tube else 0.0
 	var clear_over := float(l["1_backbone"]["clear_mm"]) / 1000.0 + spine_r * 2.0
+	# (Twin top rails run out over the heads' shoulders, not their middle: a little more room.)
+	if float(frig["top"]) > 0.0:
+		clear_over += 0.012
 	var over_heads := []
 	for t: Vector3 in hp["head_top"]:
 		over_heads.append(Vector3(0.0, crank.y + t.y + clear_over, crank.z + t.z))
@@ -290,7 +320,8 @@ static func _solve(build: BikeBuild) -> Dictionary:
 		tall = maxf(tall, (float(k[2]) + float(k[3])) * size * sc_z)
 	var end_k: Array = keys[keys.size() - 1]
 	var end_h := (float(end_k[2]) + float(end_k[3])) * size * sc_z
-	var top_max := head.y + float(t2["top_over_yoke_mm"]) / 1000.0
+	# (A frame built with a low tank line (a Featherbed's) carries its tank that much lower.)
+	var top_max := head.y + float(t2["top_over_yoke_mm"]) / 1000.0 - float(frig["tank_low"])
 	var nose := head + Vector3(0.0, -0.03, float(t2["nose_behind_axis_mm"]) / 1000.0)
 	var seat_front_z: float = at_u.call(float(t4["front_u"]))
 	var rear_z: float = at_u.call(float(t3["tank_rear_u"]))
@@ -425,9 +456,10 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	# The backbone: from the neck along under the tank's floor, then (where the tank stands higher
 	# than the seat) down to the seat behind the engine in one smooth bend, as a softail's drops.
 	var neck := head + Vector3(0.0, -0.01, 0.02)
-	var seat_end := seat_front + Vector3(0.0, -0.04, 0.0)
-	var under_a := a + Vector3(0.0, -SPINE_R, 0.0)
-	var under_b := b + Vector3(0.0, -SPINE_R, 0.0)
+	# (A frame with a drop in it (a Lowboy's) comes down that much further to meet the seat.)
+	var seat_end := seat_front + Vector3(0.0, -0.04 - float(frig["drop"]), 0.0)
+	var under_a := a + Vector3(0.0, -drawn_r, 0.0)
+	var under_b := b + Vector3(0.0, -drawn_r, 0.0)
 	var path := [neck, under_a.lerp(under_b, 0.33), under_a.lerp(under_b, 0.75), under_b]
 	if under_b.y - seat_end.y > 0.03:
 		path.append(under_b.lerp(seat_end, 0.5) + Vector3(0.0, 0.0, -0.02))
@@ -444,10 +476,10 @@ static func _solve(build: BikeBuild) -> Dictionary:
 		box = box.expand(crank + t + Vector3(0.0, 0.0, -0.08)).expand(crank + t + Vector3(0.0, 0.0, 0.08))
 
 	var r := {
-		"style": style, "family": family, "hard": hp, "head_k": float(hp["k"]), "eng_s": s,
+		"style": style, "family": family, "frame": str(parts.get("frame", "")), "hard": hp, "head_k": float(hp["k"]), "eng_s": s,
 		"crank": crank, "output": crank + Vector3(0.0, (hp["output"] as Vector3).y, (hp["output"] as Vector3).z),
 		"spine": spine, "tank_floor": floor, "tank_nose": a, "tank_rear": b, "tank_top_max": top_max,
-		"tunnel_half_w": SPINE_R + 0.01, "knee_l": Vector3(-0.17, knee.y, knee.z), "knee_r": Vector3(0.17, knee.y, knee.z),
+		"tunnel_half_w": drawn_r + 0.01, "spine_r": drawn_r, "frame_rig": frig, "knee_l": Vector3(-0.17, knee.y, knee.z), "knee_r": Vector3(0.17, knee.y, knee.z),
 		"seat_front": seat_front, "seat_rails": [seat_front, tail], "rail_half_w": 0.075, "seat_surface": hip, "hip": hip,
 		"tail": tail, "tail_top": tail.y + float(t4["tail_rise_mm"]) / 1000.0, "seat_overlap": overlap, "peg": peg, "grip_r": grip,
 		"stay_head": head + Vector3(0.0, 0.0, -0.05), "screen_base": head + Vector3(0.0, 0.04, -0.12),
