@@ -907,6 +907,7 @@ func _run_all() -> void:
 	await _t(&"_test_rail_timetable")
 	await _t(&"_test_rail_regions")
 	await _t(&"_test_rail_viaduct")
+	await _t(&"_test_rail_stock")
 	await _t(&"_test_rail_ride")
 	print("Ride Anywhere v2, phase D: water and coast (dams, falls, locks, harbours)")
 	await _t(&"_test_water_kits")
@@ -23081,8 +23082,14 @@ func _test_rail_viaduct() -> void:
 	_rail().test_viaduct()
 
 
+func _test_rail_stock() -> void:
+	_rail().test_stock()
+
+
 func _test_rail_ride() -> void:
 	await _rail().test_ride()
+
+
 func _water() -> RefCounted:
 	return load("res://tests/water_works_tests.gd").new(self)
 
