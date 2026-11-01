@@ -1503,8 +1503,14 @@ func _draw_rig_trellis(frame_mat: Material) -> void:
 		# (Its corners cut, so the bend doesn't sag between them after the drop from the neck.)
 		top = _cut_corners(top)
 		_bend(top, r, frame_mat)
-		# The lower rail, down to the front of the cases (see _engine_hangers for its line).
+		# The front hanger: down from under the neck only as far as the cylinders, ahead of the
+		# heads (see _hanger_line), the engine hung from it there as a stressed member. Nothing
+		# runs on down to the cases or under them: below the cylinders it's all engine.
 		var low := _hanger_line(side)
+		var e: Vector3 = low[2]
+		e.y = maxf(e.y, _engine_c.y + float(hard["top_y"]) * 0.45)
+		low[2] = e
+		low[1] = (low[0] as Vector3).lerp(e, 0.5)
 		_bend(low, r, frame_mat)
 		# The braces: up from the lower rail to the top one, and back down, as a trellis's are.
 		var top_line := ShapeKit.smooth(top, 6)
