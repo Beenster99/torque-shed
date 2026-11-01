@@ -204,11 +204,11 @@ func test_follows_glass() -> void:
 		and mcam.global_transform.origin.distance_to((want["xf"] as Transform3D).origin) < 1e-3,
 		"turning the bars swings the glass, and its camera follows (%.3f m)" % mcam.global_transform.origin.distance_to(before.origin))
 	bike.model.update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-	await _frames(1)
+	await _frames(2)   # (posed here, between the ticks: drawn eased over a tick, as the bike is, see Bike._ready)
 	# A floating-origin shift: everything moves together, and the camera stays put on the glass.
 	var rel := (side_view["frame"] as Node3D).global_transform.affine_inverse() * mcam.global_transform
 	var shift := Vector3(-4000.0, 0.0, 2500.0)
-	bike.global_position += shift
+	bike.shift_origin(-shift)   # (as AdventureTrip moves it: drawn there at once, not eased across)
 	cam.global_position += shift
 	await _frames(2)
 	var rel2 := (side_view["frame"] as Node3D).global_transform.affine_inverse() * mcam.global_transform
