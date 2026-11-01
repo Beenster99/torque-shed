@@ -133,6 +133,8 @@ var _tank_a := Vector3.ZERO      # the tank's underside line, nose to tail (see 
 var _tank_b := Vector3.ZERO
 var _tank_secs: Array = []       # the tank's sections as drawn, for what sits on top of it (see tank_top_at)
 var _seat_fit := {}              # Rig built: how the seat sat on the rails (see RigBodywork.seat_fit)
+var _fairing_mounts := {}        # Rig built: a fairing set's mounts (mirror_r, mirror_l, lamp), model space
+var _set_drawn := ""             # Rig built: the fairing set drawn ("" for none)
 var _seat_end := {}              # Rig built: the seat's last section, for the tail cowl to carry on from
 ## The middle of the tank's filler cap, on top of it (model space; zero with no tank), where the
 ## shed pump's nozzle goes in (see ShedPump).
@@ -293,6 +295,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_tank_secs = []
 	_seat_fit = {}
 	_seat_end = {}
+	_fairing_mounts = {}
+	_set_drawn = ""
 	_rails = []
 	filler = Vector3.ZERO
 	_satnav_screen = null
@@ -4956,6 +4960,106 @@ func _number_plate(at: Vector3, size: Vector2, tilt: float, mat: Material) -> Me
 ## curved shells lofted round the headlight, open at the nose so the headlight shines through;
 ## the race fairing adds side panels and a belly pan wrapped under the engine.
 func _draw_fairing() -> void:
+	_draw_fairing_code()
+	_rig_fairing()
+
+
+## The Blender-made fairing set a frame-mounted fairing is drawn as in the Rig built look (see
+## blender/parts/fairing/sets.py): "" for one on the bars (a flyscreen, bikini or batwing, sized
+## to the headlight) or none.
+func fairing_set() -> String:
+	var p := PartsDB.get_part(str(_build.parts.get("fairing", "none"))) if _build else {}
+	if p.is_empty() or not p.get("frame_mount", false):
+		return ""
+	var lk: Dictionary = p.get("look", {})
+	var shape := str(lk.get("shape", p.get("style", "")))
+	match shape:
+		"race":
+			return "race" if not lk.get("lamps", true) else "sport"
+		"seeley", "adventure", "touring", "half":
+			return shape
+	return ""
+
+
+## Rig built: the frame-mounted fairing as its Blender-made panel set on a stay from the head
+## stock (the rig's "stay_head"), widened round the engine, its belly pan down to the style's
+## ground line and a full one's side panels back to the seat's nose, in place of the code's
+## shells. The code's layout still decides what the fairing covers.
+func _rig_fairing() -> void:
+	if not _rig_bodywork() or not is_fitted("fairing") or _fit_only:
+		return
+	var set_name := fairing_set()
+	var path := BlenderParts.ROOT + "fairing/set/%s.glb" % set_name
+	if set_name == "" or BlenderParts.part(path).is_empty():
+		return
+	_current_slot = "fairing"
+	for mi in _slot_meshes.get("fairing", []):
+		if is_instance_valid(mi):
+			(mi as Node).free()
+	_slot_meshes["fairing"] = []
+	_fairing_grids.clear()
+	var fit := RigBodywork.fairing_fit(rig, set_name, (BlenderParts.part(path)["lods"][0] as Mesh).get_aabb(), slot_bounds("engine").merge(slot_bounds("head")), slot_bounds("frame").size.x * 0.5)
+	var dark := _mat(Color(0.04, 0.04, 0.045), 0.2, 0.6)
+	var lens := _lamp(Color(1.0, 0.97, 0.9), 3.0, "head")
+	var over := {"paint": _fairing_paint, "glass": _fairing_glass, "plastic": dark, "lens_white": lens}
+	var names := {"paint": "FairingShell", "glass": "Screen", "plastic": "FairingTrim", "black_metal": "FairingDucts", "carbon": "FairingWings"}
+	for mi: MeshInstance3D in _blender_meshes(BlenderParts.morphed(path, fit["weights"], fit["warp"]), Transform3D.IDENTITY, over):
+		var tag := BlenderParts.tag_of(mi.mesh.surface_get_material(0))
+		mi.name = names.get(tag, "Fairing")
+		if tag == "lens_white":
+			# One lamp each side, as the code's eyes were.
+			for half in _split_x(mi.mesh):
+				_mesh_instance(half, lens, Vector3.ZERO).name = "FairingLamp"
+			_slot_meshes["fairing"].erase(mi)
+			mi.free()
+	var warp: Callable = fit["warp"]
+	var mounts: Dictionary = BlenderParts.part(path)["mounts"]
+	_fairing_mounts = {}
+	_set_drawn = set_name
+	for m in mounts:
+		var at: Vector3 = (mounts[m] as Transform3D).origin
+		_fairing_mounts[m] = warp.call(Vector3(at.x * float(fit["kx"]), at.y, at.z))
+	# What a full one covers: from its nose back, down to its belly (and nothing under the seat:
+	# the code's side panels there are gone, the subframe open as a real one's is).
+	if not _covered.is_empty():
+		var box := slot_bounds("fairing")
+		var first: AABB = _covered[0]
+		# Up to the side panels' top edge behind the head stock (not the nose's crown): what sits
+		# above it, under the tank, still shows.
+		var top_y := -INF
+		for mi in _slot_meshes["fairing"]:
+			if str((mi as Node).name) != "FairingShell":
+				continue
+			for v: Vector3 in (mi as MeshInstance3D).mesh.get_faces():
+				if v.z > _head.z + 0.1 and absf(v.x) > 0.1:
+					top_y = maxf(top_y, v.y)
+		if top_y == -INF:
+			top_y = first.end.y
+		_covered = [AABB(Vector3(-1.0, box.position.y, box.position.z - 0.02), Vector3(2.0, top_y - box.position.y, maxf(first.end.z, box.end.z) - box.position.z + 0.02))]
+
+
+## A mesh cut down the middle into its left and right halves (whole triangles, by which side
+## their middle falls).
+static func _split_x(mesh: Mesh) -> Array:
+	var out := []
+	for side in [-1.0, 1.0]:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var arrays := mesh.surface_get_arrays(0)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(v.size()))
+		for t in range(0, idx.size() - 2, 3):
+			if (v[idx[t]].x + v[idx[t + 1]].x + v[idx[t + 2]].x) * side < 0.0:
+				continue
+			for k in 3:
+				st.set_normal(n[idx[t + k]])
+				st.add_vertex(v[idx[t + k]])
+		out.append(st.commit())
+	return out
+
+
+func _draw_fairing_code() -> void:
 	_current_slot = "fairing"
 	var p := _part()
 	if p.is_empty():
@@ -5670,6 +5774,10 @@ const COVERED_SLOTS := ["engine", "head", "gearbox", "cooling", "air_filter", "f
 
 func _hide_covered() -> void:
 	for slot in COVERED_SLOTS:
+		# (Rig built: a panel set's sides stop below the tank, and the airbox lives under the
+		# tank, reached past its flank rather than through a cap in the panel.)
+		if slot == "air_filter" and _set_drawn != "":
+			continue
 		for mi in _slot_meshes.get(slot, []):
 			var box := _model_aabb(mi as VisualInstance3D)
 			for c in (_covered.slice(0, 1) if slot == "exhaust" else _covered):
@@ -5694,6 +5802,8 @@ func _service_caps() -> void:
 			for v in (mi as MeshInstance3D).mesh.get_faces():
 				skin.append(xf * v)
 	for slot in SERVICE_CAPS:
+		if slot == "air_filter" and _set_drawn != "":
+			continue
 		var meshes: Array = _slot_meshes.get(slot, [])
 		var box := slot_bounds(slot)
 		# Partly behind the panels is behind them: the cap stands in for the lot (an oil filter
@@ -5820,7 +5930,11 @@ func _draw_mirrors() -> void:
 				var from := _mirror_clamp(side, mat)
 				_mirror_on_stalk(from, from + Vector3(0.12 * side, 0.27, 0.0), Vector2(0.13, 0.09), 0.008, mat, glass, _steer_node, MIRROR_RISE)
 			"fairing":
-				if fairing.get("frame_mount", false):
+				if fairing.get("frame_mount", false) and _fairing_mounts.has("mirror_r"):
+					# Rig built: on the set's own mounts on its upper panels.
+					var at: Vector3 = _fairing_mounts["mirror_r" if side > 0.0 else "mirror_l"]
+					_mirror_on_stalk(at, at + Vector3(0.05 * side, 0.03, 0.03), Vector2(0.11, 0.055), 0.01, mat, glass, self)
+				elif fairing.get("frame_mount", false):
 					var wide := 0.27 if str(fairing.get("style", "")) == "touring" else 0.2
 					var h := lamp_position()
 					_mirror_on_stalk(h + Vector3((wide - 0.01) * side, 0.08, 0.04), h + Vector3((wide + 0.05) * side, 0.1, 0.06), Vector2(0.11, 0.055),

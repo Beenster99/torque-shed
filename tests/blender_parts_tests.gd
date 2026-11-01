@@ -371,6 +371,9 @@ func test_fairings() -> void:
 			m.look = look
 			t.add_child(m)
 			m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+			# (Rig built: a frame-mounted fairing is its Blender-made panel set, with its own dzus
+			# fasteners, rather than the code's shape thickened; rig_body_tests checks it.)
+			var set_drawn: bool = look == BikeLook.NEW and m._rig_bodywork() and m.fairing_set() != ""
 			var tags := {}
 			var shells := 0
 			for mi in m._slot_meshes.get("fairing", []):
@@ -389,7 +392,7 @@ func test_fairings() -> void:
 				var real: AABB = mesh.get_aabb()
 				var d := maxf(((real.position - code.position).abs()).x, maxf(((real.position - code.position).abs()).y, ((real.position - code.position).abs()).z))
 				d = maxf(d, maxf(((real.end - code.end).abs()).x, maxf(((real.end - code.end).abs()).y, ((real.end - code.end).abs()).z)))
-				if code.size == Vector3.ZERO or d > 0.006:
+				if not set_drawn and (code.size == Vector3.ZERO or d > 0.006):
 					out.append("%s %s: %.3f m off the code's outline" % [id, mi.name, d])
 			if look == BikeLook.NEW:
 				for name in ["FairingShell", "Screen"]:
@@ -398,7 +401,7 @@ func test_fairings() -> void:
 						out.append("%s: its %s is the code's" % [id, name])
 				if shells == 0:
 					out.append("%s: no thick panels" % id)
-				if not tags.has("rubber" if not race else "chrome"):
+				if not set_drawn and not tags.has("rubber" if not race else "chrome"):
 					out.append("%s: no %s fasteners %s" % [id, "quarter-turn" if race else "well-nut", tags.keys()])
 			m.free()
 	check(out.is_empty(), "every fairing in the new look is drawn thick, its Blender-made edges round the code's shape, held on by its own kind of fastener; Classic's is the code's %s" % str(out.slice(0, 6)))
@@ -789,6 +792,9 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 const LOADED_GIVE := 0.035
 ## The parts the Rig built look fits to the bike's rig rather than where the code drew them.
 const RIG_FITTED := ["tank", "saddle", "tail", "air_filter"]
+## And under a frame-mounted fairing's panel set: the set, its mirrors on its own mounts and the
+## filters' service caps on its panels.
+const SET_FITTED := ["fairing", "mirrors", "oil_filter"]
 ## A tank's: the code's loft leans its end sections with the dip of its middle line, where the
 ## Blender-made tank's stand upright, so a deep tank's ends sit a few centimetres apart (more on a
 ## big tank the Rig built look draws shorter to sit on its style's lines, see BikeRig.TANK_SQUEEZE).
@@ -835,7 +841,7 @@ func test_new_look() -> void:
 		for slot in LOADED:
 			# (The Rig built look fits its own tank, seat and tail to the rig, and the air filter
 			# tucks under that tank: rig_body_tests checks them on their lines instead.)
-			if slot in RIG_FITTED and m._rig_bodywork():
+			if slot in RIG_FITTED and m._rig_bodywork() or slot in SET_FITTED and m._rig_bodywork() and m.fairing_set() != "":
 				continue
 			var a := (models["code"] as BikeModel).slot_bounds(slot)
 			var b := m.slot_bounds(slot)

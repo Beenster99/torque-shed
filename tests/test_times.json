@@ -691,5 +691,6 @@
 	"_test_bike_rig_everyone": 3600,
 	"_test_bike_rig_fit": 600,
 	"_test_rig_body_on_rig": 4000,
-	"_test_rig_body_deterministic": 3000
+	"_test_rig_body_deterministic": 3000,
+	"_test_rig_body_fairings": 6000
 }
