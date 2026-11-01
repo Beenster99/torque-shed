@@ -1007,6 +1007,8 @@ func _run_all() -> void:
 	await _t(&"_test_bike_look_parts_detail")
 	await _t(&"_test_bike_look_finishes")
 	await _t(&"_test_bike_look_wear")
+	print("Rig built: the eight lines of each style's reference bike")
+	await _t(&"_test_bike_rig_lines")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -24103,6 +24105,16 @@ func _test_bike_look_wear() -> void:
 ## Not in the suite: records the Classic bikes again (see bike_look_tests.gd).
 func _test_bike_look_write_classic() -> void:
 	_bike_look().write_classic()
+
+
+# ---------------------------------------------------------------------------- Rig built (tests/bike_rig_tests.gd)
+
+func _bike_rig() -> RefCounted:
+	return load("res://tests/bike_rig_tests.gd").new(self)
+
+
+func _test_bike_rig_lines() -> void:
+	_bike_rig().test_lines_table()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
