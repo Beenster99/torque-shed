@@ -8,6 +8,8 @@ extends Node
 ## --side takes them square side on (the right side), for the lines.
 ## --front takes them close on the nose of the fairing, for its edges; --bars on the handlebars.
 ## --lamps=round_7,square_xl puts each of those headlights on a naked bike with no fairing, close up.
+## --frames=featherbed_cradle,mx_red_loop puts each of those frames on the stock bike of the first
+## style it suits (all 37 for --frames=all), the frame painted orange.
 ## Writes <style>_classic.png, <style>_new.png and diff.json (mean and worst pixel difference, 0..255).
 var out_dir := "/tmp/look"
 var styles: Array = []
@@ -18,6 +20,7 @@ var front := false
 var bars := false
 var side := false
 var lamps: Array = []
+var frames: Array = []
 
 
 func _ready() -> void:
@@ -39,6 +42,10 @@ func _ready() -> void:
 			bars = true
 		elif a.begins_with("--lamps="):
 			lamps = Array(a.trim_prefix("--lamps=").split(","))
+		elif a.begins_with("--frames="):
+			frames = Array(a.trim_prefix("--frames=").split(","))
+			if frames == ["all"]:
+				frames = Array(PartsDB.by_kind["frame"])
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(960, 600)
 	var env := WorldEnvironment.new()
@@ -88,7 +95,12 @@ func _ready() -> void:
 		cam.look_at(Vector3(0.05, 0.75, -0.55), Vector3.UP)
 	var diffs := {}
 	var cases := []
-	for style in styles if lamps.is_empty() else []:
+	for id in frames:
+		var b: Dictionary = Contracts.style_build(str(PartsDB.get_part(id)["styles"][0])).duplicate()
+		b["frame"] = id
+		# (In orange, so its tubes read against the engine.)
+		cases.append([id, b, {"frame": {"color": Color(0.95, 0.45, 0.1)}}])
+	for style in styles if lamps.is_empty() and frames.is_empty() else []:
 		cases.append([style, Contracts.style_build(style), null])
 	for id in lamps:
 		var b: Dictionary = Contracts.style_build("naked").duplicate()
@@ -106,7 +118,7 @@ func _ready() -> void:
 		for s in PartsDB.SLOTS:
 			worn[s] = {"wear": 0.9}
 		cases.append(["worn", Contracts.style_build("classic"), worn])
-	if styles.size() == PartsDB.STYLES.size() and lamps.is_empty():
+	if styles.size() == PartsDB.STYLES.size() and lamps.is_empty() and frames.is_empty():
 		cases.append(["rusty", Contracts.style_build("classic"), rusty])
 		cases.append(["patina", Contracts.style_build("cafe"), patina])
 	for c in cases:

@@ -68,15 +68,17 @@ func test_frames() -> void:
 		var sides := {}
 		var line := []
 		for mi: MeshInstance3D in beams:
-			var r := float((mi.mesh as CylinderMesh).top_radius)
-			var wide := 2.0 * r * mi.basis.x.length()
-			var deep := 2.0 * r * mi.basis.z.length()
+			# (A Rig built cast beam is the Blender beam bent onto the bike: its size and ends come with it.)
+			var cast: Dictionary = mi.get_meta("beam", {})
+			var r := float((mi.mesh as CylinderMesh).top_radius) if cast.is_empty() else 0.0
+			var wide := 2.0 * r * mi.basis.x.length() if cast.is_empty() else float(cast["wide"])
+			var deep := 2.0 * r * mi.basis.z.length() if cast.is_empty() else float(cast["deep"])
 			line.append("%.0f x %.0f mm" % [wide * 1000.0, deep * 1000.0])
 			if maxf(wide, deep) > SPAR_DEPTH_MAX:
 				bad.append("%s: a beam %.0f mm at its thickest" % [id, maxf(wide, deep) * 1000.0])
 			if carbon and wide > MONO_WIDTH_MAX:
 				bad.append("%s: monocoque %.0f mm wide" % [id, wide * 1000.0])
-			var ends := _tube_ends(mi)
+			var ends := _tube_ends(mi) if cast.is_empty() else [cast["front"], cast["back"]]
 			var side := signf((ends[0] as Vector3).x + (ends[1] as Vector3).x)
 			if not sides.has(side):
 				sides[side] = {"front": ends[0], "back": ends[0], "wide": wide, "n": 0}

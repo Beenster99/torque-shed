@@ -163,6 +163,14 @@ var _cyls := []                  # {base, up} per cylinder barrel
 ## The Rig built look's layout of this bike (BikeRig.solve): empty in the Classic look. The
 ## bodywork reads its lines from here (see the lines agreement's keys).
 var rig := {}
+## Rig built: the frame's own proportions (BikeRig.frame_rig), and its tubes' size against its family's.
+var _frig: Dictionary = BikeRig.FRAME_RIG
+## Rig built: the rig the bike was drawn on before (the one being replaced): set before build_from
+## and the new model re-forms from it (see BikeReform). Used up by build_from.
+var reform_from := {}
+var _reform := []
+var _reform_t := 0.0
+var _g := 1.0
 ## Whether this model is laid out by the rig in the Rig built look: a whole bike is; a loose part
 ## on its own (assembly_display) isn't.
 var use_rig := true
@@ -398,6 +406,12 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_show_dirt()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
+	BikeReform.finish(_reform)
+	_reform = BikeReform.start(self, reform_from) if BikeLook.is_new(self) else []
+	reform_from = {}
+	_reform_t = 0.0
+	if not _reform.is_empty():
+		set_process(true)
 
 
 ## Where everything is placed from, for `build`: the steering head, the swingarm pivot, the seat
@@ -428,9 +442,13 @@ func _lay_out(build: BikeBuild) -> float:
 		peg = sets["peg"]
 	_peg = Vector3(0.17, float(peg[0]), _pivot.z + float(peg[1]))
 	rig = {}
+	_frig = BikeRig.FRAME_RIG
+	_g = 1.0
 	if BikeLook.is_new(self) and BikeRig.on and use_rig:
 		# The Rig built look: the engine, seat, tail and pegs where the style's lines put them.
 		rig = BikeRig.solve(build)
+		_frig = rig["frame_rig"]
+		_g = float(_frig["gauge"])
 		_engine_c = rig["crank"]
 		_seat_front = rig["seat_front"]
 		_tail = rig["tail"]
@@ -677,7 +695,7 @@ func _fit_bay(build: BikeBuild) -> void:
 	# (The Rig built look's rig has already put the engine where it goes and the backbone over it.)
 	if _bay and not rig.is_empty():
 		# The downtubes in front of the engine the rig placed, and the rails under its sump.
-		_rail_low = minf(_rail_low, _rig_low(BAY_DOWN_R))
+		_rail_low = _rig_low(BAY_DOWN_R)
 		var front := _bay_front(_engine_corners(), 0.0, _rail_low)
 		if front > -INF:
 			_down_z = minf(_down_z, front)
@@ -925,6 +943,9 @@ const SPAR_HALF := Vector2(0.045, 0.063)
 const MONO_HALF := Vector2(0.048, 0.063)
 ## How far out the beams start at the head stock (m): close enough in that they run into it.
 const SPAR_FRONT_X := 0.065
+## Rig built: a twin-spar frame's cast beam, with its shape keys (see _spar_beam).
+const SPAR_BEAM := BlenderParts.ROOT + "frame/spar_beam.glb"
+const SPAR_DEEPEST := 0.065   # m: the half depth of a cast beam at its deepest
 
 
 func _draw_frame(build: BikeBuild, zr: float) -> void:
@@ -940,11 +961,21 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			# Two deep beams from the head stock to the pivot plates, a carbon monocoque's a little
 			# wider. Each starts inside the head stock, so it meets it with no gap.
 			var half := MONO_HALF if carbon else SPAR_HALF
+			# (Rig built: each spar frame's beams as deep and wide as its own.)
+			half = Vector2(half.x * float(_frig["wide"]), half.y * float(_frig["deep"]))
+			# (Rig built, the Blender beam: cast, so deeper in the middle; a monocoque more so.)
+			var cast := 0.0
+			if not rig.is_empty() and _blender_on() and not BlenderParts.part(SPAR_BEAM).is_empty():
+				# Cast: its own depth in the middle (no deeper than SPAR_DEEPEST), slimmer at the ends.
+				cast = 0.6 if carbon else 0.4
+				half.y = minf(half.y, SPAR_DEEPEST) / (1.0 + 0.5 * cast)
 			for side in [-1.0, 1.0]:
 				var front := hb + Vector3(SPAR_FRONT_X * side, 0.05, 0.0)
 				var back := _pivot + Vector3(0.12 * side, 0.1, 0.0)
-				var over := _spar_over(front, back, half.y)
-				if over != Vector3.ZERO:
+				var over := _spar_over(front, back, half.y * (1.0 + 0.5 * cast))
+				if cast > 0.0:
+					_spar_beam(front, back, over, half, cast, frame_mat)
+				elif over != Vector3.ZERO:
 					# Rig built: the beams rise over the top end on their way back (see _spar_over).
 					over.x = lerpf(front.x, back.x, 0.5)
 					for seg in [[front, over], [over, back]]:
@@ -953,8 +984,10 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 					var beam := _tube(front, back, SPAR_R, frame_mat, Vector3(half.x / SPAR_R, 1.0, half.y / SPAR_R))
 					beam.name = "SparBeam"
 				_tube(_pivot + Vector3(0.12 * side, 0.1, 0.0), _pivot + Vector3(0.12 * side, -0.12, 0.02), 0.04, frame_mat)
-				_tube(_seat_front + Vector3(0.08 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.016, frame_mat)
-				_tube(_pivot + Vector3(0.1 * side, 0.12, 0.0), _tail + Vector3(0.06 * side, -0.02, -0.05), 0.014, frame_mat)
+				_tube(_seat_front + Vector3(0.08 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.016 * _g, frame_mat)
+				_tube(_pivot + Vector3(0.1 * side, 0.12, 0.0), _tail + Vector3(0.06 * side, -0.02, -0.05), 0.014 * _g, frame_mat)
+		"adv" when not rig.is_empty():
+			_draw_rig_trellis(frame_mat)
 		"adv":
 			# A tall steel tubular frame: twin top rails and twin cradle rails round the engine,
 			# an upright and one brace a side, and a bolt-on rack out past the tail.
@@ -975,12 +1008,12 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 					var cr := _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z
 					bottom = [bottom[0], Vector3(x, lerpf(hb.y, low, 0.6), cf - 0.04), Vector3(x, low, cf + 0.03),
 						Vector3(x, low, minf(cr, _pivot.z - 0.06)), bottom[4]]
-				_bend(top, 0.014, frame_mat)
-				_bend(bottom, 0.014, frame_mat)
-				_tube(top[1], bottom[2 if rig.is_empty() else 1], 0.011, frame_mat)
-				_tube(top[4], bottom[4], 0.013, frame_mat)
-				_tube(_seat_front + Vector3(0.07 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.012, frame_mat)
-				_tube(top[3], _tail + Vector3(0.06 * side, -0.03, -0.05), 0.01, frame_mat)
+				_bend(top, 0.014 * _g, frame_mat)
+				_bend(bottom, 0.014 * _g, frame_mat)
+				_tube(top[1], bottom[2 if rig.is_empty() else 1], 0.011 * _g, frame_mat)
+				_tube(top[4], bottom[4], 0.013 * _g, frame_mat)
+				_tube(_seat_front + Vector3(0.07 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.012 * _g, frame_mat)
+				_tube(top[3], _tail + Vector3(0.06 * side, -0.03, -0.05), 0.01 * _g, frame_mat)
 				var rail := _rack_mat()
 				_bend([_tail + Vector3(0.09 * side, 0.02, -0.25), _tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.08 * side, 0.03, 0.22),
 					_tail + Vector3(0.0, 0.03, 0.26)], 0.009, rail)
@@ -989,10 +1022,14 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 		"trestle":
 			_draw_trestle(frame_mat)
 		"backbone":
-			_tube(_head, _pivot + Vector3(0.0, 0.22, 0.0), 0.045, frame_mat)
-			_tube(_pivot + Vector3(0.0, 0.22, 0.0), _pivot, 0.035, frame_mat)
-			_tube(_seat_front, _tail, 0.018, frame_mat)
-			_tube(_pivot + Vector3(0.0, 0.2, 0.0), _tail + Vector3(0.0, -0.03, -0.05), 0.016, frame_mat)
+			_tube(_head, _pivot + Vector3(0.0, 0.22, 0.0), 0.045 * _g, frame_mat)
+			_tube(_pivot + Vector3(0.0, 0.22, 0.0), _pivot, 0.035 * _g, frame_mat)
+			_tube(_seat_front, _tail, 0.018 * _g, frame_mat)
+			_tube(_pivot + Vector3(0.0, 0.2, 0.0), _tail + Vector3(0.0, -0.03, -0.05), 0.016 * _g, frame_mat)
+			if not rig.is_empty():
+				# Rig built: the engine hangs from the backbone, a stressed member: a pair of short
+				# downtubes from under the neck to the lugs on the front of its cases.
+				_engine_hangers(frame_mat)
 		"softail", "chopper", "cruiser":
 			# A single big backbone from the neck to the seat, twin downtubes cradling the
 			# engine, and a seat post behind the gearbox down to the swingarm pivot.
@@ -1002,7 +1039,7 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			var seat := _seat_front + Vector3(0.0, -0.04, 0.0)
 			if not rig.is_empty():
 				# Rig built: the backbone the rig drew, arched over the heads where it has to be.
-				_bend(Array(rig["spine"]), BikeRig.SPINE_R, frame_mat)
+				_bend(Array(rig["spine"]), float(rig["spine_r"]), frame_mat)
 				spine_mid = (rig["spine"] as PackedVector3Array)[4]
 			elif _spine_kink != Vector3.ZERO:
 				# Over a big engine the backbone runs back over the heads under the tank, then
@@ -1023,11 +1060,25 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			var low_y := _rail_low
 			for side in [-1.0, 1.0]:
 				var x: float = BAY_RAIL_X * side
-				_bend([hb + Vector3(0.045 * side, -0.01, 0.02), Vector3(x, _engine_c.y - 0.02, _down_z),
-					Vector3(x, low_y, _engine_c.z - 0.2 * _eng_s), Vector3(x, low_y - 0.01, _pivot.z - BAY_RISE), Vector3(x, _pivot.y - 0.03, _pivot.z - 0.02)], BAY_DOWN_R, frame_mat)
+				var down := Vector3(x, _engine_c.y - 0.02, _down_z)
+				var dip := 0.01
+				if not rig.is_empty():
+					# Rig built: clear of the front tyre, and level under the sump, close up to it.
+					down = _behind_front_tyre(down, BAY_DOWN_R * _g, down.z)
+					dip = 0.0
+				var cradle := [hb + Vector3(0.045 * side, -0.01, 0.02), down,
+					Vector3(x, low_y, _engine_c.z - 0.2 * _eng_s), Vector3(x, low_y - dip, _pivot.z - BAY_RISE), Vector3(x, _pivot.y - 0.03, _pivot.z - 0.02)]
+				if not rig.is_empty():
+					# Straight down past the case's front and round under it, not across its corner,
+					# and up to the pivot only once it's behind the gearbox.
+					cradle.insert(2, Vector3(x, low_y + 0.035, down.z))
+					cradle.insert(3, Vector3(x, low_y, down.z + 0.04))
+					var case_back := _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z + BAY_DOWN_R * _g + 0.012
+					cradle[5] = Vector3(x, low_y, clampf(case_back, _pivot.z - BAY_RISE, _pivot.z - 0.05))
+				_bend(cradle if rig.is_empty() else _cut_corners(cradle), BAY_DOWN_R * _g, frame_mat)
 				# Rails from the seat back to the tail, carrying the fender.
 				_bend([_seat_front + Vector3(0.07 * side, -0.02, -0.04), _seat_front.lerp(_tail, 0.5) + Vector3(0.075 * side, -0.02, 0.0),
-					_tail + Vector3(0.07 * side, -0.03, 0.02)], 0.015, frame_mat)
+					_tail + Vector3(0.07 * side, -0.03, 0.02)], 0.015 * _g, frame_mat)
 			var post_mid := _seat_front.lerp(_pivot, 0.5) + Vector3(0.0, 0.0, -0.05)
 			var post_low := _pivot + Vector3(0.0, 0.05, -0.04)
 			if not rig.is_empty():
@@ -1035,12 +1086,12 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 				var behind := _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z + 0.026 + 0.015
 				post_mid.z = maxf(post_mid.z, behind)
 				post_low.z = maxf(post_low.z, behind + 0.01)
-			_bend([_seat_front + Vector3(0.0, -0.04, -0.02), post_mid, post_low], 0.026, frame_mat)
+			_bend([_seat_front + Vector3(0.0, -0.04, -0.02), post_mid, post_low], 0.026 * _g, frame_mat)
 			_tube(_pivot + Vector3(-0.1, 0.0, 0.0), _pivot + Vector3(0.1, 0.0, 0.0), 0.022, frame_mat)
 			if style == "cruiser":
 				# Twin shocks need upper rails to push against, from the seat post back to the tail.
 				for side in [-1.0, 1.0]:
-					_bend([_pivot + Vector3(0.09 * side, 0.08, -0.04), _pivot + Vector3(0.12 * side, 0.3, _arm_rest_z() - 0.2), _tail + Vector3(0.075 * side, -0.05, 0.0)], 0.014, frame_mat)
+					_bend([_pivot + Vector3(0.09 * side, 0.08, -0.04), _pivot + Vector3(0.12 * side, 0.3, _arm_rest_z() - 0.2), _tail + Vector3(0.075 * side, -0.05, 0.0)], 0.014 * _g, frame_mat)
 		"perimeter":
 			# Two big cast beams wrapped round the engine from the head stock to the pivot, deep
 			# pivot plates, and a light subframe kicking up to the tail.
@@ -1057,41 +1108,50 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 				var secs := []
 				for k in smooth.size():
 					var f := float(k) / (smooth.size() - 1)
-					secs.append({"c": smooth[k], "w": 0.022, "up": lerpf(0.05, 0.065, sin(f * PI)), "down": lerpf(0.04, 0.06, sin(f * PI)), "n": 6.0})
+					var deep := float(_frig["deep"])
+					secs.append({"c": smooth[k], "w": 0.022 * float(_frig["wide"]), "up": lerpf(0.05, 0.065, sin(f * PI)) * deep, "down": lerpf(0.04, 0.06, sin(f * PI)) * deep, "n": 6.0})
 				_shell(secs, frame_mat)
 				var plate := _shell([{"c": _pivot + Vector3((wide - 0.02) * side, 0.12, -0.06), "w": 0.022, "up": 0.04, "down": 0.04, "n": 6.0},
 					{"c": _pivot + Vector3((wide - 0.03) * side, 0.0, -0.02), "w": 0.022, "up": 0.05, "down": 0.05, "n": 6.0},
 					{"c": _pivot + Vector3((wide - 0.04) * side, -0.12, 0.0), "w": 0.02, "up": 0.03, "down": 0.03, "n": 6.0}], frame_mat)
 				plate.name = "PivotPlate"
-				_bend([_pivot + Vector3((wide - 0.04) * side, 0.14, -0.04), _seat_front + Vector3(0.075 * side, -0.02, 0.02), _tail + Vector3(0.05 * side, -0.01, -0.02)], 0.014, frame_mat)
-				_tube(_pivot + Vector3((wide - 0.04) * side, 0.06, 0.0), _tail + Vector3(0.05 * side, -0.05, -0.08), 0.012, frame_mat)
+				_bend([_pivot + Vector3((wide - 0.04) * side, 0.14, -0.04), _seat_front + Vector3(0.075 * side, -0.02, 0.02), _tail + Vector3(0.05 * side, -0.01, -0.02)], 0.014 * _g, frame_mat)
+				_tube(_pivot + Vector3((wide - 0.04) * side, 0.06, 0.0), _tail + Vector3(0.05 * side, -0.05, -0.08), 0.012 * _g, frame_mat)
 		"mx":
 			# A single downtube that splits into twin loops under the engine, a big backbone
 			# to the top of the pivot, and a subframe sweeping up to the tail.
 			var split := Vector3(0.0, _engine_c.y - 0.06, _engine_c.z - 0.22 * _eng_s - 0.05)
-			_bend([hb + Vector3(0.0, -0.01, 0.02), hb.lerp(split, 0.55) + Vector3(0.0, 0.0, -0.01), split], 0.022, frame_mat)
+			if not rig.is_empty():
+				split = _behind_front_tyre(split, 0.022 * _g, split.z)
+			_bend([hb + Vector3(0.0, -0.01, 0.02), hb.lerp(split, 0.55) + Vector3(0.0, 0.0, -0.01), split], 0.022 * _g, frame_mat)
 			var low_y := _engine_c.y - 0.2 * _eng_s
 			var top := _pivot + Vector3(0.0, 0.22, -0.06)
 			# (Rig built: the loops under the sump, and the subframe from behind the heads.)
 			var sub := _seat_front
 			var rise_z := _pivot.z - 0.14
 			if not rig.is_empty():
-				low_y = minf(low_y, _rig_low(0.016))
+				low_y = _rig_low(0.016)
 				sub.z = maxf(sub.z, top.z + 0.08)
 				# The loops turn up behind the gearbox, not through it.
 				rise_z = maxf(rise_z, _engine_c.z + (rig["hard"]["case_rear"] as Vector3).z + 0.03)
 			for side in [-1.0, 1.0]:
-				var x: float = 0.06 * side
-				_bend([split, Vector3(x, low_y + 0.04, split.z + 0.06), Vector3(x, low_y, _engine_c.z + 0.05),
-					Vector3(x + 0.01 * side, low_y + 0.01, rise_z), Vector3(0.08 * side, _pivot.y - 0.05, maxf(_pivot.z - 0.03, rise_z + 0.02)), _pivot + Vector3(0.09 * side, 0.08, -0.04)], 0.016, frame_mat)
+				var x: float = float(_frig["loop"]) * side
+				var loop := [split, Vector3(x, low_y + 0.04, split.z + 0.06), Vector3(x, low_y, _engine_c.z + 0.05),
+					Vector3(x + 0.01 * side, low_y + 0.01, rise_z), Vector3(0.08 * side, _pivot.y - 0.05, maxf(_pivot.z - 0.03, rise_z + 0.02)), _pivot + Vector3(0.09 * side, 0.08, -0.04)]
+				if not rig.is_empty():
+					# (Down nearly to the sump's line before it heads back, clear of the cases' sides.)
+					loop[1] = Vector3(x, low_y + 0.02, split.z + 0.06)
+				_bend(loop if rig.is_empty() else _cut_corners(loop), 0.016 * _g, frame_mat)
 				var px := 0.09
 				if not rig.is_empty():
 					# Rig built: the loops come down to the pivot outside a wide engine's cases.
 					px = maxf(px, float(rig["hard"]["case_half_w"]) + 0.032)
-				_bend([top + Vector3(0.0, 0.0, 0.0), _pivot + Vector3(px * side, 0.16, -0.06), _pivot + Vector3(px * side, 0.02, -0.03)], 0.02, frame_mat)
-				_bend([top + Vector3(0.05 * side, 0.02, 0.02), sub + Vector3(0.07 * side, 0.0, 0.06), _tail + Vector3(0.06 * side, -0.02, 0.02)], 0.012, frame_mat)
-				_tube(_pivot + Vector3(0.08 * side, 0.06, 0.0), sub.lerp(_tail, 0.6) + Vector3(0.065 * side, -0.03, 0.0), 0.011, frame_mat)
-			_bend([_head + Vector3(0.0, -0.02, 0.02), _head.lerp(top, 0.5) + Vector3(0.0, 0.03, 0.0), top], 0.034, frame_mat)
+				_bend([top + Vector3(0.0, 0.0, 0.0), _pivot + Vector3(px * side, 0.16, -0.06), _pivot + Vector3(px * side, 0.02, -0.03)], 0.02 * _g, frame_mat)
+				_bend([top + Vector3(0.05 * side, 0.02, 0.02), sub + Vector3(0.07 * side, 0.0, 0.06), _tail + Vector3(0.06 * side, -0.02, 0.02)], 0.012 * _g, frame_mat)
+				_tube(_pivot + Vector3(0.08 * side, 0.06, 0.0), sub.lerp(_tail, 0.6) + Vector3(0.065 * side, -0.03, 0.0), 0.011 * _g, frame_mat)
+			_bend([_head + Vector3(0.0, -0.02, 0.02), _head.lerp(top, 0.5) + Vector3(0.0, 0.03, 0.0), top], 0.034 * _g, frame_mat)
+		_ when not rig.is_empty():
+			_draw_rig_cradle(frame_mat)
 		_:
 			_tube(_head, _seat_front, 0.024, frame_mat)
 			_tube(_seat_front, _tail, 0.018, frame_mat)
@@ -1137,12 +1197,46 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 		elif absf(_peg.y - 0.02) > 0.04 or absf(_peg.z - _pivot.z) > 0.04:
 			# Rearsets: a hanger plate from the frame by the pivot down to the peg.
 			_box((peg + Vector3(0.12 * side, _pivot.y, _pivot.z - 0.02)) * 0.5, Vector3(0.012, absf(_peg.y - _pivot.y) + 0.06, 0.06), frame_mat)
+	if not rig.is_empty():
+		_draw_rig_fittings(style, frame_mat)
 	_draw_swingarm(build, zr, frame_mat)
 
 
-## Rig built: how low a tube of radius `r` runs to pass under the engine's sump (see BikeRig).
+## Rig built: how low a tube of radius `r` runs to pass under the engine's sump (see BikeRig):
+## close up under it, as a real cradle hugs the cases.
 func _rig_low(r: float) -> float:
-	return _engine_c.y + (rig["hard"]["sump"] as Vector3).y - r - 0.012
+	return _engine_c.y + (rig["hard"]["sump"] as Vector3).y - r * _g - 0.004
+
+
+## Rig built: `path` with each inner corner cut (a quarter of the way along each side), so the
+## smooth bend through it (see _bend) rounds the corner instead of swinging out past it: a rail
+## laid close under the sump stays there.
+static func _cut_corners(path: Array) -> Array:
+	if path.size() < 3:
+		return path
+	var out := [path[0]]
+	for i in range(1, path.size() - 1):
+		var p: Vector3 = path[i]
+		out.append(p.lerp(path[i - 1], 0.25))
+		out.append(p.lerp(path[i + 1], 0.25))
+	out.append(path[path.size() - 1])
+	return out
+
+
+## Rig built: `p` moved back as far as it takes to keep a tube of radius `r` there clear of the
+## front tyre as the bike stands, with room to spare. (Fully compressed, the tyre comes up
+## between a pair of downtubes, as a real one does; the engine's own cases clear it there, see
+## BikeRig.)
+## No further back than `limit` (the engine's in the way there): an engine too big for the frame
+## comes first.
+func _behind_front_tyre(p: Vector3, r: float, limit := INF) -> Vector3:
+	var b := _build
+	var axle := Vector3(0.0, b.front_radius - b.rear_radius, -b.wheelbase * 0.5)
+	var reach := b.front_radius + r + 0.03
+	var dy := p.y - axle.y
+	if absf(dy) >= reach:
+		return p
+	return Vector3(p.x, p.y, minf(maxf(p.z, axle.z + sqrt(reach * reach - dy * dy)), maxf(limit, p.z)))
 
 
 ## Rig built: where a straight spar beam from `a` to `b` (half `half_h` deep) would run into the
@@ -1297,7 +1391,7 @@ func _draw_trestle(frame_mat: Material) -> void:
 			_shell([{"c": l0.lerp(u0, 0.3), "w": 0.016, "up": 0.02, "down": 0.02, "n": 6.0}, {"c": f + Vector3(0.0, 0.02, 0.0), "w": 0.016, "up": 0.025, "down": 0.02, "n": 6.0}], frame_mat)
 		else:
 			for t in [[u0, u1], [u1, a], [l0, f], [l0, u1], [f, u1], [f, a]]:
-				_tube(t[0], t[1], 0.012, frame_mat)
+				_tube(t[0], t[1], 0.012 * _g, frame_mat)
 		# The lugs it bolts to the engine by.
 		for at in [f, a]:
 			var b := _mesh_instance(_cylinder(0.016, 0.03), lug, at + Vector3(0.006 * side, 0.0, 0.0), self)
@@ -1308,8 +1402,352 @@ func _draw_trestle(frame_mat: Material) -> void:
 			{"c": _pivot + Vector3(px, 0.07, -0.03), "w": 0.012, "up": 0.04, "down": 0.04, "n": 6.0},
 			{"c": _pivot + Vector3(px, -0.02, 0.0), "w": 0.012, "up": 0.03, "down": 0.03, "n": 6.0}], frame_mat).name = "PivotPlate"
 		# The subframe, bolted to the back of the engine, out to the tail.
-		_bend([a + Vector3(0.0, 0.01, 0.01), _seat_front + Vector3(0.075 * side, -0.02, 0.02), _tail + Vector3(0.055 * side, -0.01, 0.0)], 0.012, frame_mat)
-		_tube(_pivot + Vector3(px, 0.1, -0.03), _tail + Vector3(0.05 * side, -0.05, -0.08), 0.011, frame_mat)
+		_bend([a + Vector3(0.0, 0.01, 0.01), _seat_front + Vector3(0.075 * side, -0.02, 0.02), _tail + Vector3(0.055 * side, -0.01, 0.0)], 0.012 * _g, frame_mat)
+		_tube(_pivot + Vector3(px, 0.1, -0.03), _tail + Vector3(0.05 * side, -0.05, -0.08), 0.011 * _g, frame_mat)
+
+
+## Rig built: a cradle frame round the engine the rig placed, to the frame's own numbers (see
+## BikeRig.FRAME_RIG). The backbone (or a Featherbed's twin top rails) runs under the tank's floor
+## along the rig's line; one downtube, or two, comes down ahead of the cases; the cradle rails
+## (one under the middle, or a pair either side) run under the sump and rise behind the gearbox
+## to the pivot; the seat post and the seat rails carry the seat.
+func _draw_rig_cradle(frame_mat: Material) -> void:
+	var hb := _head_bottom
+	var spine: PackedVector3Array = rig["spine"]
+	var r := float(rig["spine_r"])
+	var top := float(_frig["top"])
+	var twin := float(_frig["twin"])
+	var low := _rig_low(0.017)
+	var cf := _engine_c.z - 0.17 * _eng_s - 0.045
+	var seat_end: Vector3 = spine[spine.size() - 1]
+	# The top: one backbone, or a pair of rails that start together at the neck and part to
+	# either side of the tank's tunnel.
+	if top > 0.0:
+		for side in [-1.0, 1.0]:
+			var rail := []
+			for i in spine.size():
+				var f := float(i) / (spine.size() - 1)
+				rail.append(spine[i] + Vector3(lerpf(0.035, top, smoothstep(0.0, 0.3, f)) * side, 0.0, 0.0))
+			_bend(rail, r * 0.8, frame_mat)
+	else:
+		_bend(Array(spine), r, frame_mat)
+	# The cradle: the downtube(s), the rails under the sump and up behind the gearbox. A pair
+	# comes in to the sprocket's inside (0.08) behind the cases.
+	var back_x := minf(twin, 0.075)
+	var split := bool(_frig["split"]) and twin > 0.0
+	# The downtubes pass ahead of the engine: of its heads (a V-twin's front one sits right
+	# under the neck) and of its cases, as a bay frame's do (see _bay_front).
+	var front := _bay_front(_engine_corners(), 0.0, low)
+	var knee := Vector3(0.0, _engine_c.y - 0.02, front if front > -INF else cf - 0.03)
+	knee.z = minf(knee.z, lerpf(hb.z, cf, (hb.y - knee.y) / maxf(hb.y - low, 0.01)))
+	# (And behind the front tyre, the fork fully compressed.)
+	knee = _behind_front_tyre(knee, 0.024 * _g, knee.z)
+	var mid := _behind_front_tyre(hb.lerp(knee, 0.5), 0.024 * _g, hb.lerp(knee, 0.5).z + 0.03)
+	var fork := knee
+	if split:
+		# One downtube from the neck, parting into the pair in front of the cases.
+		_bend([hb + Vector3(0.0, -0.01, 0.02), mid, fork], 0.024 * _g, frame_mat)
+	for side in ([-1.0, 1.0] if twin > 0.0 else [0.0]):
+		var x: float = twin * side
+		var bx: float = back_x * side
+		# Down in front of the cases, round under the sump close up to it, and up behind the
+		# gearbox to the pivot, each corner rounded with a point either side so the bend doesn't
+		# swing out past them.
+		var foot := _behind_front_tyre(Vector3(x, low, minf(cf, knee.z + 0.02)), 0.022 * _g, cf)
+		var path := [hb + Vector3(0.035 * side, -0.01, 0.02), mid + Vector3(x * 0.4, 0.0, 0.0), knee + Vector3(x * 0.8, 0.0, 0.0),
+			Vector3(x, low + 0.035, foot.z), Vector3(x, low, foot.z + 0.04), Vector3(lerpf(x, bx, 0.5), low, _pivot.z - 0.14),
+			Vector3(bx, low + 0.01, _pivot.z - 0.08), Vector3(bx, low + 0.05, _pivot.z - 0.04), Vector3(bx, _pivot.y - 0.03, _pivot.z - 0.02)]
+		if split:
+			path = [fork + Vector3(0.0, 0.015, -0.005), fork.lerp(foot, 0.4) + Vector3(x * 0.7, 0.0, 0.0)] + path.slice(3)
+		_bend(_cut_corners(path), 0.017 * _g, frame_mat)
+	if twin > 0.0:
+		_tube(Vector3(-back_x, low + 0.01, _pivot.z - 0.08), Vector3(back_x, low + 0.01, _pivot.z - 0.08), 0.016 * _g, frame_mat)
+	# The seat post from the backbone's end down to the pivot (a pair from twin top rails).
+	for side in ([-1.0, 1.0] if top > 0.0 else [0.0]):
+		var up := seat_end + Vector3(top * side, 0.0, 0.0)
+		var at := _pivot + Vector3(back_x * side if top > 0.0 else 0.0, 0.02, -0.01)
+		_tube(up, at, (0.02 if top > 0.0 else 0.022) * _g, frame_mat)
+	_tube(_pivot + Vector3(-0.1, 0.0, 0.0), _pivot + Vector3(0.1, 0.0, 0.0), 0.02, frame_mat)
+	# The seat rails, a pair under the seat out to the tail, and the rear loop's stays.
+	for side in [-1.0, 1.0]:
+		var x: float = 0.07 * side
+		_bend([Vector3(x, seat_end.y + 0.01, seat_end.z - 0.02), _seat_front.lerp(_tail, 0.35) + Vector3(x, -0.01, 0.0), _tail + Vector3(0.065 * side, -0.01, 0.0)],
+			0.016 * _g, frame_mat)
+		_tube(_pivot + Vector3(back_x * side if back_x > 0.0 else 0.06 * side, 0.04, 0.0), _tail + Vector3(0.065 * side, -0.03, -0.05), 0.014 * _g, frame_mat)
+
+
+## Rig built: an adventure bike's steel trellis (a GS's, a Tracer's), the engine a stressed
+## member in it: on each side a top rail from the head stock back over the engine to the pivot
+## plate, a lower rail from the head stock down to the lugs on the front of the cases, and
+## braces zig-zagging between them; the pivot plates the rear of the cases bolt to; a bolted-on
+## subframe and rack. Nothing runs under the engine.
+func _draw_rig_trellis(frame_mat: Material) -> void:
+	var hb := _head_bottom
+	var spine: PackedVector3Array = rig["spine"]
+	var n := spine.size()
+	var hard: Dictionary = rig["hard"]
+	var r := 0.014 * _g
+	for side in [-1.0, 1.0]:
+		# The top rail: at the backbone's height over the engine, out to the sides.
+		var plate_top := _pivot + Vector3(0.1 * side, 0.17, -0.06)
+		# (Out over the heads' shoulders, so never lower than over their cam covers, which stand
+		# up to 20 mm over the head's deck: a style whose backbone isn't a tube has its spine's
+		# line closer down to them.)
+		var over := _engine_c.y + float(hard["top_y"]) + 0.02 + r + 0.006
+		var top := [_head + Vector3(0.04 * side, -0.03, 0.03), spine[int(n * 0.3)] + Vector3(0.09 * side, 0.0, 0.0),
+			spine[int(n * 0.6)] + Vector3(0.11 * side, 0.0, 0.0), plate_top]
+		for i in [1, 2]:
+			var q: Vector3 = top[i]
+			q.y = maxf(q.y, over)
+			top[i] = q
+		# (Its corners cut, so the bend doesn't sag between them after the drop from the neck.)
+		top = _cut_corners(top)
+		_bend(top, r, frame_mat)
+		# The front hanger: down from under the neck only as far as the cylinders, ahead of the
+		# heads (see _hanger_line), the engine hung from it there as a stressed member. Nothing
+		# runs on down to the cases or under them: below the cylinders it's all engine.
+		var low := _hanger_line(side)
+		var e: Vector3 = low[2]
+		e.y = maxf(e.y, _engine_c.y + float(hard["top_y"]) * 0.45)
+		low[2] = e
+		low[1] = (low[0] as Vector3).lerp(e, 0.5)
+		_bend(low, r, frame_mat)
+		# The braces: up from the lower rail to the top one, and back down, as a trellis's are.
+		var top_line := ShapeKit.smooth(top, 6)
+		var at := func(line: Array, f: float) -> Vector3: return line[clampi(int(f * (line.size() - 1)), 0, line.size() - 1)]
+		var low_line := ShapeKit.smooth(low, 6)
+		# (All of them ahead of the engine: the furthest back they reach on the top rail is over
+		# the lower rail's end, so none crosses the heads.)
+		var end: Vector3 = low_line[low_line.size() - 1]
+		var reach := 0
+		while reach + 1 < top_line.size() and (top_line[reach + 1] as Vector3).z <= end.z + 0.01:
+			reach += 1
+		var f := float(reach) / float(top_line.size() - 1)
+		_tube(at.call(low_line, 0.5), at.call(top_line, f * 0.45), r * 0.8, frame_mat)
+		_tube(at.call(low_line, 1.0), at.call(top_line, f * 0.6), r * 0.8, frame_mat)
+		_tube(at.call(low_line, 1.0), at.call(top_line, f), r * 0.8, frame_mat)
+		# The pivot plate, the back of the cases bolted to it, and a brace from it up to the rail.
+		_tube(plate_top, _pivot + Vector3(0.1 * side, -0.06, 0.0), 0.022 * _g, frame_mat)
+		_tube(_pivot + Vector3(0.1 * side, 0.06, -0.02), at.call(top_line, 0.7), r * 0.8, frame_mat)
+		# The bolted-on subframe, and the rack out past the tail.
+		_tube(_seat_front + Vector3(0.07 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.012 * _g, frame_mat)
+		_tube(plate_top + Vector3(0.0, -0.02, 0.02), _tail + Vector3(0.06 * side, -0.03, -0.05), 0.01 * _g, frame_mat)
+		_tube(at.call(top_line, 0.85), _seat_front + Vector3(0.07 * side, -0.01, 0.02), 0.011 * _g, frame_mat)
+		var rail := _rack_mat()
+		_bend([_tail + Vector3(0.09 * side, 0.02, -0.25), _tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.08 * side, 0.03, 0.22),
+			_tail + Vector3(0.0, 0.03, 0.26)], 0.009, rail)
+		_tube(_tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.12 * side, -0.16, 0.0), 0.008, rail)
+	_box(_tail + Vector3(0.0, 0.035, 0.1), Vector3(0.16, 0.008, 0.2), _rack_mat())
+	_tube(_pivot + Vector3(-0.1, 0.0, 0.0), _pivot + Vector3(0.1, 0.0, 0.0), 0.02, frame_mat)
+
+
+## Rig built: the line of a tube from under the neck down to the lug on the front of the cases,
+## on `side`: ahead of the heads (see _bay_front) and behind the front tyre.
+func _hanger_line(side: float) -> Array:
+	var hb := _head_bottom
+	var hard: Dictionary = rig["hard"]
+	var lug: Vector3 = _engine_c + (hard["mount_fu"] as Vector3)
+	var face := _engine_c.z + (hard["case_front"] as Vector3).z
+	var x := minf(float(hard["case_half_w"]) * 0.6, 0.08) * side
+	var front := _bay_front(_engine_corners(), 0.0, _rig_low(0.02))
+	var knee_z := minf(face - 0.03, front) if front > -INF else face - 0.03
+	var end := _behind_front_tyre(Vector3(x, lug.y, knee_z), 0.02, knee_z)
+	var mid := _behind_front_tyre(hb.lerp(end, 0.5) + Vector3(x * 0.5, 0.0, 0.0), 0.02, hb.lerp(end, 0.5).z + 0.03)
+	return [hb + Vector3(0.035 * side, -0.01, 0.02), mid, end]
+
+
+## Rig built: a backbone frame's engine hangers, a short downtube a side from under the neck to
+## the front of the cases (the plates from their ends to the lugs come with the fittings).
+func _engine_hangers(frame_mat: Material) -> void:
+	for side in [-1.0, 1.0]:
+		_bend(_hanger_line(side), 0.018 * _g, frame_mat)
+
+
+## Rig built: one side's spar beam, the Blender beam (SPAR_BEAM) bent from `front` to `back`
+## through `over` where it has to rise over the top end (ZERO where it doesn't), `half` its half
+## width and depth at the ends, `cast` how much deeper it is in the middle. Its shape keys do
+## the work: "deep" by `cast`, "arch" by how far `over` stands above the straight line (its peak
+## moved along to `over`), and "taper" to the head stock.
+func _spar_beam(front: Vector3, back: Vector3, over: Vector3, half: Vector2, cast: float, mat: Material) -> void:
+	var dir := (back - front).normalized()
+	var up := (Vector3.UP - dir * dir.dot(Vector3.UP)).normalized()
+	var across := up.cross(dir)
+	var peak := 0.5
+	var lift := 0.0
+	if over != Vector3.ZERO:
+		peak = clampf((over.z - front.z) / maxf(back.z - front.z, 0.01), 0.15, 0.85)
+		lift = over.y - lerpf(front.y, back.y, peak)
+	var warp := func(q: Vector3) -> Vector3:
+		# (Not clamped: the warp's turned by its slope at the beam's ends too.)
+		var u := q.z
+		u = u / 0.5 * peak if u < 0.5 else peak + (u - 0.5) / 0.5 * (1.0 - peak)
+		return front.lerp(back, u) + across * q.x * half.x + up * q.y * half.y
+	var weights := {"deep": cast, "arch": lift / half.y, "taper": 1.0}
+	for mi in _blender_meshes(BlenderParts.morphed(SPAR_BEAM, weights, warp), Transform3D.IDENTITY, {"": mat}):
+		mi.name = "SparBeam"
+		# (Its ends and size, for the checks: the mesh is bent, not a tube.)
+		mi.set_meta("beam", {"front": front, "back": back, "wide": half.x * 2.0, "deep": half.y * 2.0 * (1.0 + 0.5 * cast)})
+	# Its line for the fit checks: a short tube at a time along its middle, each as deep as the beam is there.
+	var lift_k := lift / half.y
+	for i in 12:
+		var u0 := i / 12.0
+		var u1 := (i + 1) / 12.0
+		var deep := 1.0 + 0.5 * cast * maxf(sin(PI * u0), sin(PI * u1))
+		_rails.append({"pts": [warp.call(Vector3(0.0, lift_k * sin(PI * u0), u0)), warp.call(Vector3(0.0, lift_k * sin(PI * u1), u1))],
+			"r": maxf(half.x, half.y * deep), "round": false, "mat": mat})
+
+
+## Rig built: what shows of how the frame holds the engine, at the engine's hard points (see
+## BikeRig.hard_points): a plate from each of the cases' mounting lugs to the frame tube beside
+## or under them, a head steady from the top of the heads up to the backbone, and a gusset under
+## the neck. (Drawn after the welds, and kept out of the frame's tubes (_rails), since they bolt
+## to the engine.)
+func _draw_rig_fittings(style: String, frame_mat: Material) -> void:
+	var hard: Dictionary = rig["hard"]
+	var sump_y := _engine_c.y + (hard["sump"] as Vector3).y
+	var half := float(hard["case_half_w"])
+	var bolt := _mat(Color(0.5, 0.5, 0.52), 0.9, 0.3)
+	var rails := _rails.duplicate()
+	if style != "trestle":
+		for key in ["mount_fu", "mount_fl", "mount_ru", "mount_rl"]:
+			var at: Vector3 = _engine_c + (hard[key] as Vector3)
+			var front: bool = key.begins_with("mount_f")
+			# The lug is on the cases' front or back face; the plate runs from it out to the tube.
+			var face := _engine_c.z + (hard["case_front" if front else "case_rear"] as Vector3).z
+			for side in [-1.0, 1.0]:
+				var q := _nearest_rail(rails, Vector3(half * 0.6 * side, at.y, face), side)
+				if q.x == INF:
+					continue
+				if q.y < sump_y + 0.01:
+					# A rail under the cases: a tab down from the case's underside to it.
+					var from := Vector3(q.x, sump_y + 0.004, q.z)
+					if from.y - q.y > 0.006 and from.y - q.y < 0.09 and absf(q.z - at.z) < 0.08:
+						_lug(from, q, 0.035, frame_mat, bolt)
+					continue
+				var m := Vector3(clampf(q.x, -half + 0.01, half - 0.01), at.y, face)
+				var out := q.z - face if not front else face - q.z
+				if out > 0.01 and m.distance_to(q) < 0.14:
+					_lug(m, q, 0.04, frame_mat, bolt)
+	if bool(_frig["steady"]) and _build.layout != "boxer":
+		# The head steady: a pair of plates from the top of the heads up to the backbone over them.
+		var hs: Vector3 = _engine_c + (hard["head_steady"] as Vector3)
+		var q := _nearest_rail(rails, hs + Vector3(0.0, 0.06, 0.0), 0.0)
+		if q.x != INF and q.y > hs.y + 0.012 and q.y - hs.y < 0.16 and absf(q.x) < 0.1:
+			for side in [-1.0, 1.0]:
+				var x: float = q.x + 0.024 * side
+				_lug(Vector3(x, hs.y - 0.012, hs.z), Vector3(x, q.y, q.z), 0.03, frame_mat, bolt).name = "HeadSteady"
+	if bool(_frig["gusset"]):
+		_neck_gussets(rails, frame_mat)
+
+
+## The point on the frame's tubes nearest `p`, on the `side` of the bike given (0: any), or INF.
+func _nearest_rail(rails: Array, p: Vector3, side: float) -> Vector3:
+	var best := Vector3(INF, INF, INF)
+	var best_d := INF
+	for rail in rails:
+		var pts: Array = rail["pts"]
+		for k in pts.size() - 1:
+			var a: Vector3 = pts[k]
+			var ab: Vector3 = (pts[k + 1] as Vector3) - a
+			var q := a + ab * clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-9), 0.0, 1.0)
+			if side != 0.0 and q.x * side < -0.01:
+				continue
+			var d := p.distance_to(q)
+			if d < best_d:
+				best_d = d
+				best = q
+	return best
+
+
+## A mounting plate `width` wide from `a` to `b`, edge on to the side, with a bolt through each end.
+func _lug(a: Vector3, b: Vector3, width: float, mat: Material, bolt: Material) -> MeshInstance3D:
+	var along := b - a
+	var length := maxf(along.length(), 0.01)
+	var y := along / length
+	var across := y.cross(Vector3.RIGHT)
+	if across.length() < 0.2:
+		across = y.cross(Vector3.FORWARD)
+	across = across.normalized()
+	var nrm := y.cross(across).normalized()
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.006, length + width * 0.6, width)
+	var mi := _mesh_instance(mesh, mat, (a + b) * 0.5)
+	mi.basis = Basis(nrm, y, across)
+	mi.name = "EngineMount"
+	for end in [a, b]:
+		var head := _mesh_instance(_cylinder(0.008, 0.016, -1.0, 8), bolt, end)
+		head.basis = Basis(y, nrm, y.cross(nrm))
+	return mi
+
+
+## A gusset plate in the angle between the backbone and the downtube where they leave the neck
+## (each side's, on a frame with a pair of either).
+func _neck_gussets(rails: Array, frame_mat: Material) -> void:
+	var hb := _head_bottom
+	var groups := {-1: [], 0: [], 1: []}
+	for rail in rails:
+		var pts: Array = rail["pts"]
+		var start: Vector3 = pts[0]
+		if start.distance_to(hb) > 0.14 and start.distance_to(_head) > 0.14:
+			continue
+		var far := start
+		for p: Vector3 in pts:
+			far = p
+			if p.distance_to(start) >= 0.1:
+				break
+		if far.distance_to(start) < 0.05:
+			continue
+		var sx := 0 if absf(start.x) < 0.012 else (1 if start.x > 0.0 else -1)
+		groups[sx].append([start, (far - start).normalized(), float(rail["r"])])
+	for sx in groups:
+		var g: Array = groups[sx]
+		if g.size() < 2:
+			continue
+		g.sort_custom(func(a: Array, b: Array) -> bool: return (a[1] as Vector3).y > (b[1] as Vector3).y)
+		var up: Array = g[0]
+		var down: Array = g[g.size() - 1]
+		var u: Vector3 = up[1]
+		var d: Vector3 = down[1]
+		if u.angle_to(d) < deg_to_rad(12.0) or u.z < 0.2:
+			continue
+		var corner: Vector3 = ((up[0] as Vector3) + (down[0] as Vector3)) * 0.5
+		var n := u.cross(d).normalized()
+		var thick := minf(float(up[2]), float(down[2])) * 0.35
+		var xf := Transform3D(Basis(u * 0.12, d * 0.12, n * thick), corner)
+		var mi: MeshInstance3D = null
+		if _blender_on():
+			var got := _blender_pieces(BlenderParts.ROOT + "frame/gusset.glb", xf, {"": frame_mat})
+			if not got.is_empty():
+				mi = got[0]
+		if mi == null:
+			mi = _mesh_instance(_gusset_mesh(), frame_mat, Vector3.ZERO)
+			mi.transform = xf
+		mi.name = "Gusset"
+
+
+## A unit gusset: a triangle with its corner at the origin and its legs along +X and +Y, its
+## long edge curved in, from z -0.5 to 0.5 (see _neck_gussets).
+static func _gusset_mesh() -> ArrayMesh:
+	var outline := PackedVector2Array([Vector2.ZERO, Vector2(1.0, 0.0)])
+	for i in range(1, 8):
+		var t := i / 8.0
+		var p := Vector2(1.0 - t, t)
+		outline.append(p * (1.0 - 0.18 * sin(t * PI)))
+	outline.append(Vector2(0.0, 1.0))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for z in [-0.5, 0.5]:
+		for i in range(1, outline.size() - 1):
+			var tri := [outline[0], outline[i], outline[i + 1]] if z > 0.0 else [outline[0], outline[i + 1], outline[i]]
+			for v: Vector2 in tri:
+				st.add_vertex(Vector3(v.x, v.y, z))
+	for i in outline.size():
+		var a := outline[i]
+		var b := outline[(i + 1) % outline.size()]
+		for v in [Vector3(a.x, a.y, -0.5), Vector3(b.x, b.y, -0.5), Vector3(b.x, b.y, 0.5), Vector3(a.x, a.y, -0.5), Vector3(b.x, b.y, 0.5), Vector3(a.x, a.y, 0.5)]:
+			st.add_vertex(v)
+	st.generate_normals()
+	return st.commit()
 
 
 ## Which swingarm the bike has: its own (a swingarm part, see SWINGARM_TYPES) if one's fitted,
@@ -7872,7 +8310,7 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
-	set_process(_gesture != "" or look_back != 0.0)
+	set_process(_gesture != "" or look_back != 0.0 or not _reform.is_empty())
 
 
 ## The look this bike is drawn in now: its own, or the player's (see BikeLook).
@@ -7895,6 +8333,15 @@ func redraw_look() -> void:
 
 
 func _process(delta: float) -> void:
+	if not _reform.is_empty():
+		_reform_t += delta
+		BikeReform.step(_reform, _reform_t)
+		if _reform_t >= BikeReform.LENGTH:
+			BikeReform.finish(_reform)
+			_reform = []
+		if _gesture == "" and look_back == 0.0 and _look_shown == 0.0:
+			set_process(not _reform.is_empty())
+			return
 	var p := {"nod": 0.0, "arm": Vector3.ZERO, "w": 0.0}
 	if _gesture != "":
 		_gesture_t += delta
@@ -7911,7 +8358,7 @@ func _process(delta: float) -> void:
 			turn = Quaternion(_arm_rest, arm.normalized())
 		# From on its grip (see _pose_limbs) up into the wave and back.
 		_arm_left.basis = Basis(_arm_follow.slerp(turn, float(p["w"])))
-	if _gesture == "" and look_back == 0.0 and _look_shown == 0.0:
+	if _gesture == "" and look_back == 0.0 and _look_shown == 0.0 and _reform.is_empty():
 		set_process(false)
 
 
