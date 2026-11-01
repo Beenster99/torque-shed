@@ -20,6 +20,8 @@ const PLACES := {
 	"iow": {"geo": [Vector2(50.8960, -1.4062), Vector2(50.7591, -1.2906)], "fixture": false},
 	"shodo": {"geo": [Vector2(34.3540, 134.0489), Vector2(34.4890, 134.1729)], "fixture": false},
 	"islesboro": {"geo": [Vector2(44.2805, -69.0057), Vector2(44.2809, -68.9429)], "fixture": false},
+	"mallaig": {"geo": [Vector2(57.0062, -5.8282), Vector2(57.0648, -5.8946)], "fixture": false},
+	"holyhead": {"geo": [Vector2(53.3179, -4.6198), Vector2(53.3477, -6.1989)], "fixture": false},
 }
 ## The pins are road junctions this far (m) from each terminal, on its side of the water.
 const PIN_FROM := [2500.0, 3500.0]
