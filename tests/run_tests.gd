@@ -1014,6 +1014,8 @@ func _run_all() -> void:
 	await _t(&"_test_bike_rig_deterministic")
 	await _t(&"_test_bike_rig_everyone")
 	await _t(&"_test_bike_rig_fit")
+	await _t(&"_test_rig_body_on_rig")
+	await _t(&"_test_rig_body_deterministic")
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
 const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
 	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
@@ -25066,3 +25068,17 @@ func _test_ferry_kits() -> void:
 
 func _test_ferry_lay_out() -> void:
 	_ferry().test_lay_out()
+
+
+# ---------------------------------------------------------------------------- Rig built bodywork (tests/rig_body_tests.gd)
+
+func _rig_body() -> RefCounted:
+	return load("res://tests/rig_body_tests.gd").new(self)
+
+
+func _test_rig_body_on_rig() -> void:
+	_rig_body().test_on_rig()
+
+
+func _test_rig_body_deterministic() -> void:
+	_rig_body().test_deterministic()

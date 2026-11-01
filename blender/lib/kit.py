@@ -453,3 +453,26 @@ def weld(ob, dist=1e-6):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(ob.data)
     bm.free()
+
+
+def keyed(make, base, keys):
+    """A part with shape keys (agreement v8: Godot's blend shapes): `make(params)` builds the part
+    from a dict of parameters and must give the same vertices in the same order whatever they
+    are. The part is made from `base`; each key in `keys` ({name: changes to base}) is the same
+    part made with those changes, kept as a shape key named for it. The game mixes them by
+    weight (BlenderParts.morphed), negative weights too."""
+    ob = make(dict(base))
+    if not keys:
+        return ob
+    ob.shape_key_add(name="Basis", from_mix=False)
+    for name, change in keys.items():
+        params = dict(base)
+        params.update(change)
+        other = make(params)
+        assert len(other.data.vertices) == len(ob.data.vertices), name
+        key = ob.shape_key_add(name=name, from_mix=False)
+        key.value = 0.0
+        for i, v in enumerate(other.data.vertices):
+            key.data[i].co = v.co
+        bpy.data.objects.remove(other)
+    return ob
