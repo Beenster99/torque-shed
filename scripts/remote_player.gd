@@ -232,9 +232,12 @@ func _physics_process_body(delta: float) -> void:
 	var span: float = b["t"] - a["t"]
 	var f := 1.0 if span <= 0.0 else clampf((render_t - a["t"]) / span, 0.0, 1.0)
 	var pos := Vector3(sa[1], sa[2], sa[3]).lerp(Vector3(sb[1], sb[2], sb[3]), f)
+	# (on the crew's ferry: on where the boat's taken them since, and walking about its deck at their own pace)
+	var carried := FerryCrossing.deck_velocity(pos)
+	pos += carried * DELAY
 	_figure.global_transform = Transform3D(Basis(Vector3.UP, lerp_angle(sa[4], sb[4], f)), pos)
-	_footsteps(pos)
-	_walk(pos, delta)
+	_footsteps(pos, carried * delta)
+	_walk(pos, delta, carried)
 	_head.rotation.x = lerpf(sa[5], sb[5], f) * 0.6
 	_hand.rotation.x = _head.rotation.x
 	# Crouching: squash the figure down to about two thirds of its height.
@@ -243,10 +246,10 @@ func _physics_process_body(delta: float) -> void:
 
 
 ## Swings their legs as they walk, by how fast they're going.
-func _walk(pos: Vector3, delta: float) -> void:
+func _walk(pos: Vector3, delta: float, carried := Vector3.ZERO) -> void:
 	var speed := 0.0
 	if _walk_from != Vector3.INF and delta > 0.0:
-		speed = Vector2(pos.x - _walk_from.x, pos.z - _walk_from.z).length() / delta
+		speed = (Vector2(pos.x - _walk_from.x, pos.z - _walk_from.z) / delta - Vector2(carried.x, carried.z)).length()
 	_walk_from = pos
 	if speed > 12.0:
 		speed = 0.0   # a jump across the shed, not a walk
@@ -266,9 +269,9 @@ static func step_walk(body: Node3D, phase: float, speed: float, delta: float, ho
 
 
 ## Their footsteps, by the floor they walk on (a step every 0.7 m or so).
-func _footsteps(pos: Vector3) -> void:
+func _footsteps(pos: Vector3, carried := Vector3.ZERO) -> void:
 	if _step_from != Vector3.INF:
-		var moved := Vector2(pos.x - _step_from.x, pos.z - _step_from.z).length()
+		var moved := Vector2(pos.x - _step_from.x - carried.x, pos.z - _step_from.z - carried.z).length()
 		if moved < 2.0:
 			_stride += moved
 	_step_from = pos

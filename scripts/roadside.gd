@@ -255,10 +255,28 @@ static func spot_for(world: AdventureWorld, xf: Transform3D) -> Dictionary:
 	return {"x": xz[0], "y": xf.origin.y, "z": xz[1], "yaw": atan2(-fwd.x, -fwd.z), "s": maxf(s, 0.0)}
 
 
-## The local transform of a roadside record in `world`.
-static func xf_in(world: AdventureWorld, r: Dictionary) -> Transform3D:
+## The local transform of a roadside record in `world`: on the crew's ferry's deck where it was left on one (and the
+## boat's there to stand on: FerryCrossing.deck_xf), as the boat's drawn when `drawn` (between physics ticks).
+static func xf_in(world: AdventureWorld, r: Dictionary, drawn := false) -> Transform3D:
+	var deck = r.get("deck")
+	if deck is Dictionary and world != null:
+		var ferry := world.get_node_or_null("FerryCrossing") as FerryCrossing
+		var boat = ferry.deck_xf(str(deck.get("id", "")), drawn) if ferry != null else null
+		if boat is Transform3D:
+			return (boat as Transform3D) * Transform3D(Basis(Vector3.UP, float(deck.get("yaw", 0.0))),
+				Vector3(float(deck.get("x", 0.0)), float(deck.get("y", 0.0)), float(deck.get("z", 0.0))))
 	return Transform3D(Basis(Vector3.UP, float(r.get("yaw", 0.0))),
 		world.to_local_pos(float(r.get("x", 0.0)), float(r.get("y", 0.0)), float(r.get("z", 0.0))))
+
+
+## A roadside record's place on a ferry's deck, sanitised (null for none): {id (the ferry route's), x, y, z (in the
+## boat's frame), yaw (against the boat's)}.
+static func deck_of(r: Dictionary):
+	var d = r.get("deck")
+	if not d is Dictionary or str(d.get("id", "")) == "":
+		return null
+	return {"id": str(d["id"]), "x": float(d.get("x", 0.0)), "y": float(d.get("y", 0.0)), "z": float(d.get("z", 0.0)),
+		"yaw": float(d.get("yaw", 0.0))}
 
 
 ## The next stop along the road after `s` (any site but the start), or {}.

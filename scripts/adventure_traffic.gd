@@ -32,6 +32,9 @@ static var current: AdventureTraffic
 
 ## The tables of how busy the road is and its limit, every BIN metres.
 const BIN := 16.0
+## How far up the road from each terminal's junction a ferry's gap runs on (m): its slipway and the ramp's foot, kept
+## clear of the queue (a slipway road runs down under the ramp to the water; dry_foot finds it up to ~30 m on).
+const GAP_PAD := 40.0
 ## A village is town within VILLAGE_REACH of its middle, fading to open road over VILLAGE_FADE.
 const VILLAGE_REACH := 130.0
 const VILLAGE_FADE := 280.0
@@ -127,6 +130,7 @@ func _ready() -> void:
 	stream.weigh_busy = true
 	stream.keep_left = keeps_left
 	stream.one_way = one_way
+	stream.gaps = ferry_gaps(world)
 	_find_sides()
 	_find_ways()
 	add_child(stream)
@@ -152,6 +156,29 @@ func _exit_tree() -> void:
 
 
 # ---------------------------------------------------------------------------- the road
+
+## The stretches of route `r` that are a ferry's water ([[s from, s to], ...], TrafficStream.gaps): from one terminal's
+## junction to the other's, and GAP_PAD on up the road from each. Nothing drives or rides over them (Simon on v0.43.0:
+## the Skye ferry had cars and bikes on the water), and what's waiting for the boat waits back from the ramp's foot.
+static func ferry_gaps(w: AdventureWorld) -> Array:
+	var out: Array = []
+	var r := w.route if w != null else null
+	if r == null or r.real == null or r.real.ferries.is_empty() or w.roads == null:
+		return out
+	var region: RealRegion = w.roads.net.region
+	for f: Dictionary in r.real.ferries:
+		var ends: Array = []
+		for key: String in ["from", "to"]:
+			var n := int(f[key])
+			if n < 0 or n >= region.node_count():
+				continue
+			var at := r.locate(region.node_pos[n].x, region.node_pos[n].y)
+			if not at.is_empty():
+				ends.append(float(at["s"]))
+		if ends.size() == 2 and absf(float(ends[1]) - float(ends[0])) > 1.0:
+			out.append([minf(ends[0], ends[1]) - GAP_PAD, maxf(ends[0], ends[1]) + GAP_PAD])
+	return out
+
 
 ## Whether the traffic drives on the left at `s` along the road (the country's side, see SIDE_BIN).
 func keeps_left(s: float) -> bool:

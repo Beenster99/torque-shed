@@ -188,6 +188,9 @@ var respawn_at := Callable()
 ## The way it was last ridden (the heading place takes, radians), NAN before it has moved: a respawn faces on this way
 ## rather than whichever way the crash left the bike lying.
 var heading_ridden := NAN
+## Bodies the tyres roll through as if they weren't there, as the bike's own collision does (its collision exceptions):
+## the land's ground by the shore where a ferry terminal's ramp is cut into the bank (FerryCrossing._cut).
+var let_through: Array[RID] = []
 ## How fast (m/s) it has to be going for that to count as the way it's ridden.
 const RIDDEN_SPEED := 2.0
 var engine_on := true      # a parked bike you get on starts with it off; tests ride with it running
@@ -1590,7 +1593,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	# Leaned over, a round tyre sits lower than a thin disc would: look a little further.
 	var ray_len := travel + radius + crown * 2.0
 	var query := PhysicsRayQueryParameters3D.create(mount, mount - up * ray_len, 1)
-	query.exclude = [get_rid()]
+	query.exclude = [get_rid()] + let_through
 	var hit := space.intersect_ray(query)
 	var inertia_w: float = w["inertia"]
 

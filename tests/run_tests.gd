@@ -971,6 +971,7 @@ func _run_all() -> void:
 	await _t(&"_test_ferry_timeline")
 	await _t(&"_test_ferry_kits")
 	await _t(&"_test_ferry_lay_out")
+	await _t(&"_test_ferry_traffic")
 	print("Ride Anywhere v2: regional kits, and road markings and signs by country")
 	await _t(&"_test_region_kit_countries")
 	await _t(&"_test_region_kit_choose")
@@ -25269,6 +25270,10 @@ func _test_ferry_kits() -> void:
 
 func _test_ferry_lay_out() -> void:
 	_ferry().test_lay_out()
+
+
+func _test_ferry_traffic() -> void:
+	_ferry().test_traffic()
 
 
 # ---------------------------------------------------------------------------- Rig built bodywork (tests/rig_body_tests.gd)
