@@ -84,6 +84,83 @@ static func ride_mismatch(info: Dictionary, mine: String, ride: String) -> Strin
 	return ""
 
 
+## The host's map of a ride on area `region_id` of the world's cells, so every game on it rides the host's: {profiles:
+## {"ROW_COL": the place profile the host has for it}, cells: {"ROW_COL": {meta (the hash in the host's copy's
+## region.json), hash and url (where the host's index has it)}}}. Only what the host has without asking the network
+## (it's worked out as the ride starts). {} for a bundled region.
+static func host_map(region_id: String) -> Dictionary:
+	var cells := RealRegion.area_cells(region_id)
+	if cells.is_empty():
+		return {}
+	var idx := CellStore.index_now()
+	var named: Dictionary = idx.get("cells", {}) if idx.get("cells") is Dictionary else {}
+	var profiles := {}
+	var out := {}
+	for c in cells:
+		var key := "%d_%d" % [c.x, c.y]
+		var p := PlaceProfile.cached(c)
+		if not p.is_empty():
+			profiles[key] = p
+		var d := RealRegion.cell_dir(c)
+		if d == "":
+			continue
+		var meta = JSON.parse_string(FileAccess.get_file_as_string(d.path_join("region.json")))
+		var cell := {"meta": str(meta.get("hash", "")) if meta is Dictionary else ""}
+		var e = named.get(key)
+		if e is Dictionary and str(e.get("url", "")) != "" and str(e.get("hash", "")) != "":
+			cell["hash"] = str(e["hash"])
+			cell["url"] = str(e["url"])
+		out[key] = cell
+	return {"profiles": profiles, "cells": out}
+
+
+## A guest takes the host's map of ride `info` (host_map): the host's place profiles in place of any this game had or
+## guessed (the kits made from the old ones forgotten), and the host's copies of the cells this game hasn't got or has a
+## different copy of returned ({"ROW_COL": {hash, url}}), to fetch (CellStore.fetch_entries) before it plans the ride.
+static func use_host_map(info: Dictionary) -> Dictionary:
+	var map: Dictionary = info.get("map", {}) if info.get("map") is Dictionary else {}
+	var changed := false
+	var profiles: Dictionary = map.get("profiles", {}) if map.get("profiles") is Dictionary else {}
+	for key in profiles:
+		if profiles[key] is Dictionary and PlaceProfile.pin(str(key), profiles[key]):
+			changed = true
+	if changed:
+		RegionKit.forget()
+	var fetch := {}
+	var cells: Dictionary = map.get("cells", {}) if map.get("cells") is Dictionary else {}
+	for key in cells:
+		var want = cells[key]
+		var rc := str(key).split("_")
+		if not want is Dictionary or rc.size() != 2 or not from_store(str(want.get("url", ""))):
+			continue
+		var d := RealRegion.cell_dir(Vector2i(int(rc[0]), int(rc[1])))
+		if d.begins_with("res://"):
+			continue   # (the game's own copy: it can't be swapped)
+		var meta = JSON.parse_string(FileAccess.get_file_as_string(d.path_join("region.json"))) if d != "" else null
+		var mine := str(meta.get("hash", "")) if meta is Dictionary else ""
+		if mine != str(want.get("meta", "")):
+			fetch[str(key)] = {"hash": str(want["hash"]), "url": str(want["url"])}
+	return fetch
+
+
+## How long (s) message `text` stays on the screen: a player turned away from a ride, or told why a mate was, long
+## enough to read what to do (up to 12 s, or till the next message); any other the usual `usual`.
+static func read_time(text: String, usual: float) -> float:
+	var long := text == MAP_CHANGED or text == AdventurePlans.FINISHING or text.ends_with(MAP_CHANGED_CREW.trim_prefix("%s")) \
+		or text.begins_with("Your copy of the ") or text.begins_with("Your game planned a different road")
+	return clampf(text.length() / 16.0, usual, 12.0) if long else usual
+
+
+## Whether `url` is one of the world's store's (a cell's release asset, or beside the index): the only place a host's
+## map may send a guest's game for a cell.
+static func from_store(url: String) -> bool:
+	return url.begins_with(STORE_RELEASES) or (url != "" and url.begins_with(CellStore.index_url.get_base_dir() + "/"))
+
+
+## Where the world's store keeps its cells.
+const STORE_RELEASES := "https://github.com/Beenster99/torque-shed-world/releases/download/"
+
+
 ## Why a guest whose game is the host's version still can't join: their copies of the map differ. The world's store
 ## changed part way (cells baked, or their place profiles made, while the route was planned), so planning again fixes it.
 const MAP_CHANGED := "Your game's map of this area isn't the same as the host's: the map changed while the route was planned. Ask the host to end the ride and start it again."

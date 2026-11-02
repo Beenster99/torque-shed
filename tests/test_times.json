@@ -170,6 +170,7 @@
 	"_test_controls_nod_wave": 5509,
 	"_test_coop_call": 5,
 	"_test_coop_catch_up": 3000,
+	"_test_coop_host_map": 300,
 	"_test_coop_hashes": 400,
 	"_test_coop_perf_close": 9953,
 	"_test_coop_positions": 5,

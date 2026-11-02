@@ -260,3 +260,64 @@ func test_catch_up() -> void:
 	PlaceProfile.forget()
 	RegionKit.forget()
 	RegionStore._remove_tree(store)
+
+
+## The host decides the map: the ride carries the host's place profiles and copies of its cells (AdventureCrew.host_map),
+## and a guest's game takes them in place of its own (use_host_map), so the two can't differ over a guess or an older copy.
+func test_host_map() -> void:
+	var was := [RealRegion.cell_dirs, CellStore.dir, CellStore.offline]
+	var store := "user://test_host_map"
+	RegionStore._remove_tree(store)
+	DirAccess.make_dir_recursive_absolute(store.path_join("c577_711"))
+	for f in DirAccess.get_files_at("res://tests/fixtures/cells/c577_711"):
+		DirAccess.copy_absolute("res://tests/fixtures/cells/c577_711".path_join(f), store.path_join("c577_711").path_join(f))
+	var dirs: Array[String] = [store]
+	RealRegion.cell_dirs = dirs
+	CellStore.dir = store
+	CellStore.offline = true
+	CellStore.forget_index()
+	PlaceProfile.forget()
+	RegionKit.forget()
+	var a := Vector2i(577, 711)
+	var area := "area:@577_711,577_712"
+	# The host: what it has, the profile it rode with and its copy of the cell.
+	var host_profile := PlaceProfile.parse({"format": PlaceProfile.FORMAT, "cell": "577_711", "lat": 54.3, "lon": -2.1, "country": "GB",
+		"hash": "hostprofile0", "guessed": false})
+	PlaceProfile.pin("577_711", host_profile)
+	var map := AdventureCrew.host_map(area)
+	var meta = JSON.parse_string(FileAccess.get_file_as_string(store.path_join("c577_711/region.json")))
+	check(str(map["profiles"]["577_711"]["hash"]) == "hostprofile0" and not (map["profiles"] as Dictionary).has("577_712"),
+		"the host's map carries the profiles it has (not ones it would have to fetch)")
+	check(str(map["cells"]["577_711"]["meta"]) == str(meta["hash"]) and not (map["cells"] as Dictionary).has("577_712"),
+		"and the copy of each cell it has, by its hash")
+	check(AdventureCrew.host_map("dales").is_empty(), "a bundled region needs no map")
+	# The guest: it had guessed that cell's profile; it takes the host's.
+	PlaceProfile.forget()
+	check(bool(PlaceProfile.of_cell(a)["guessed"]), "the guest's game guessed the profile")
+	var url := AdventureCrew.STORE_RELEASES + "cells-x/c577_711-abc.zip"
+	map["cells"]["577_711"]["hash"] = "abc"
+	map["cells"]["577_711"]["url"] = url
+	var fetch := AdventureCrew.use_host_map({"map": map})
+	check(str(PlaceProfile.of_cell(a)["hash"]) == "hostprofile0" and not PlaceProfile.of_cell(a)["guessed"], "and rides the host's instead")
+	check(fetch.is_empty(), "the same copy of the cell as the host's: nothing to fetch")
+	check(not AdventureCrew.use_host_map({"map": map}).size() and str(PlaceProfile.of_cell(a)["hash"]) == "hostprofile0", "taking it again changes nothing")
+	map["cells"]["577_711"]["meta"] = "newer"
+	map["cells"]["577_712"] = {"meta": "m2", "hash": "h2", "url": AdventureCrew.STORE_RELEASES + "cells-x/c577_712-h2.zip"}
+	fetch = AdventureCrew.use_host_map({"map": map})
+	check(str(fetch.get("577_711", {}).get("url", "")) == url and (fetch as Dictionary).has("577_712"),
+		"a cell the host has another copy of, or the guest hasn't got, is fetched as the host has it (%s)" % str(fetch.keys()))
+	map["cells"]["577_711"]["url"] = "https://example.com/c577_711.zip"
+	fetch = AdventureCrew.use_host_map({"map": map})
+	check(not (fetch as Dictionary).has("577_711"), "but only from the world's store")
+	check(AdventureCrew.read_time(AdventureCrew.MAP_CHANGED, 2.0) >= 9.0 and AdventureCrew.read_time(AdventureCrew.MAP_CHANGED_CREW % "Sam", 2.5) >= 9.0
+		and AdventureCrew.read_time("Wait for the balls to stop.", 2.0) == 2.0 and AdventureCrew.read_time("x".repeat(300), 2.5) == 2.5,
+		"being turned away from a ride stays on screen long enough to read; any other message as long as ever")
+	check(AdventureCrew.use_host_map({}).is_empty() and AdventureCrew.use_host_map({"map": "junk"}).is_empty(), "no map, or junk: nothing")
+	RealRegion.cell_dirs = was[0]
+	CellStore.dir = was[1]
+	CellStore.offline = was[2]
+	CellStore.forget_index()
+	RealRegion.forget_areas()
+	PlaceProfile.forget()
+	RegionKit.forget()
+	RegionStore._remove_tree(store)

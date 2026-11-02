@@ -300,28 +300,63 @@ static func _fetch_cells(cells: Array[Vector2i], progress: Callable) -> String:
 	DirAccess.make_dir_recursive_absolute(dir)
 	var done := 0
 	for c in want:
-		var e: Dictionary = idx["cells"]["%d_%d" % [c.x, c.y]]
-		var res := http_get(str(e["url"]))
-		if int(res["code"]) != 200:
-			return "Couldn't fetch that part of the world (HTTP %d): are you online?" % int(res["code"])
-		var name := "c%d_%d" % [c.x, c.y]
-		var zip := dir.path_join(name + ".zip")
-		var f := FileAccess.open(zip, FileAccess.WRITE)
-		if f == null:
-			return "Couldn't save that part of the world to %s." % zip
-		f.store_buffer(res["body"])
-		f.close()
-		var why := RegionStore.install_zip(zip, name, str(e["hash"]), dir)
-		DirAccess.remove_absolute(zip)
+		var why := _fetch_one(c, idx["cells"]["%d_%d" % [c.x, c.y]])
 		if why != "":
 			return why
-		touch([c])
 		done += 1
 		if progress.is_valid():
 			progress.call(done, want.size())
 	RealRegion.forget_areas()
 	prune()
 	return ""
+
+
+## Fetches cell `c` as index entry `e` ({hash, url}) names it, checked against its hash, in place of any copy kept.
+## Returns "" or why not. Blocks.
+static func _fetch_one(c: Vector2i, e: Dictionary) -> String:
+	var res := http_get(str(e["url"]))
+	if int(res["code"]) != 200:
+		return "Couldn't fetch that part of the world (HTTP %d): are you online?" % int(res["code"])
+	DirAccess.make_dir_recursive_absolute(dir)
+	var name := "c%d_%d" % [c.x, c.y]
+	var zip := dir.path_join(name + ".zip")
+	var f := FileAccess.open(zip, FileAccess.WRITE)
+	if f == null:
+		return "Couldn't save that part of the world to %s." % zip
+	f.store_buffer(res["body"])
+	f.close()
+	var why := RegionStore.install_zip(zip, name, str(e["hash"]), dir)
+	DirAccess.remove_absolute(zip)
+	if why == "":
+		touch([c])
+	return why
+
+
+## Fetches each of `entries` ({"ROW_COL": {hash, url}}: the host's copies of cells, see AdventureCrew.host_map) in place
+## of the copy this game keeps. Returns "" or why not. Never call it on the main thread.
+static func fetch_entries(entries: Dictionary) -> String:
+	if entries.is_empty():
+		return ""
+	if offline:
+		return "This game doesn't have the host's copy of that part of the world, and it's offline."
+	_fetching.lock()
+	var why := ""
+	for key in entries:
+		var rc := str(key).split("_")
+		why = _fetch_one(Vector2i(int(rc[0]), int(rc[1])), entries[key])
+		if why != "":
+			break
+	_fetching.unlock()
+	RealRegion.forget_areas()
+	return why
+
+
+## The index as this game has it now, without asking the network: the one fetched last, else the copy on disk.
+static func index_now() -> Dictionary:
+	_lock.lock()
+	var have := _index
+	_lock.unlock()
+	return have if not have.is_empty() else saved_index()
 
 
 ## Notes cells `cells` used now (fetched, or stitched into a region): kept the longest, and never pruned this run.
