@@ -378,7 +378,8 @@ func _spawn() -> void:
 	var f := float(spots[rng.randi() % spots.size()])
 	var s := f + rng.randf_range(stream.spawn_near, stream.spawn_far) * (1.0 if rng.randf() < 0.5 else -1.0)
 	var dir := 1 if rng.randf() < 0.5 else -1
-	if s < stream.s_min + 20.0 or s > stream.s_max - 20.0 or stream.from_focus(s) < stream.spawn_near - 0.01:
+	if s < stream.s_min + 20.0 or s > stream.s_max - 20.0 or stream.from_focus(s) < stream.spawn_near - 0.01 \
+			or stream.in_gap(s, TrafficStream.GAP_CLEAR + 40.0):
 		return
 	if float(stream.sample.call(s).get("hw", 3.5)) < 2.0:
 		size = 1   # single file down a single-track lane
@@ -405,6 +406,14 @@ func step(delta: float, draw := true) -> void:
 			var d: Dictionary = bikers[i]
 			var s := float(d["s"])
 			d["age"] = float(d.get("age", 0.0)) + delta
+			if not d.has("arm") and (stream.in_gap(s) or (float(d["v"]) < 0.5 and stream.gap_ahead(s, int(d["dir"])) < TrafficStream.GAP_WAIT)):
+				# (stopped at a ferry's terminal, its water on ahead: off with a wave if riding with the crew, gone once
+				# nobody's looking)
+				if int(d["rider"]) >= 0:
+					_part(d, true)
+				if stream.in_gap(s) or stream.unseen(stream.sample.call(s)["pos"]):
+					_drop(i)
+					continue
 			if int(d["rider"]) < 0 and (stream.from_focus(s) > stream.despawn or s < stream.s_min or s > stream.s_max \
 					or (float(d["age"]) > LINGER and stream.from_focus(s) > UNSEEN and int(d["lead"]) < 0 and not _group_near(d)) \
 					or (d.has("arm") and float(d["t"]) > _arm_len(d) - 6.0 and stream.unseen(_place_arm(d)[0]))):
@@ -512,6 +521,7 @@ func _ride(d: Dictionary, delta: float) -> void:
 		_try_join(d, delta)
 	if d.has("peel"):
 		allow = minf(allow, _peel_ahead(d))
+	allow = minf(allow, TrafficStream._stop_for(stream.gap_ahead(s, dir) - 3.0, BRAKE))   # (a ferry's water ahead)
 	v = move_toward(v, maxf(allow, 0.0), (BRAKE * 1.5 if allow < v else ACCEL) * delta)
 	d["v"] = v
 	d["s"] = s + dir * v * delta

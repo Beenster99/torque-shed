@@ -353,7 +353,7 @@ func to_go() -> float:
 		return -1.0
 	var r := net.region
 	if status == "on_route":
-		return maxf(route.at_m[route.dest_step] - route.metres_at(progress, float(hit["s"])), 0.0)
+		return maxf(route.at_m[route.dest_step] - route.metres_at(progress, float(hit.get("s", 0.0))), 0.0)   # (just landed off a ferry: no fix yet)
 	var m := r.edge_len[way[way_at].x] - along()
 	for k in range(way_at + 1, way.size()):
 		m += r.edge_len[way[k].x]
@@ -382,7 +382,7 @@ func line_ahead(metres: float) -> PackedVector2Array:
 		var fwd := st.y == r.edge_a[st.x]
 		var d := along() if first else 0.0
 		if first:
-			out.append(net.point_at(st.x, float(hit["s"])))
+			out.append(net.point_at(st.x, float(hit.get("s", 0.0))))
 		first = false
 		while d < len and gone < metres:
 			d = minf(d + STEP, len)

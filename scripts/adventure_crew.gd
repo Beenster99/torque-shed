@@ -283,6 +283,16 @@ static func board(ferry: Dictionary, peer: int, id: String, from: int, to: int, 
 	return out
 
 
+## `ferry` with `peer` off it again before it's left (sailing number `sail`): {} once nobody's aboard, so the next to
+## ride on starts a new sailing (from either end).
+static func got_off(ferry: Dictionary, peer: int, sail: int) -> Dictionary:
+	if ferry.is_empty() or int(ferry["sail"]) != sail or int(ferry["departs"]) != 0:
+		return ferry
+	var out := ferry.duplicate(true)
+	(out["aboard"] as Dictionary).erase(peer)
+	return {} if (out["aboard"] as Dictionary).is_empty() else out
+
+
 ## Whether the ferry should leave at the host's `now` (msec), with `riders` the peers out on the ride.
 static func should_sail(ferry: Dictionary, riders: Array, now: int) -> bool:
 	if ferry.is_empty() or int(ferry["departs"]) != 0:

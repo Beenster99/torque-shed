@@ -74,6 +74,11 @@ const BUS_PULL_IN := 70.0
 ## Now and then a supercar comes past on the open road, going well over the limit: the chance a
 ## vehicle turning up out of town is one (never more than one out at a time).
 const SUPERCAR_CHANCE := 0.035
+## The gaps (a ferry's water, see gaps): how far ahead one's looked for (m), how near one a vehicle stood waiting at it
+## is let go once nobody's looking (m), and how far either side of one nothing turns up (m).
+const GAP_LOOK := 200.0
+const GAP_WAIT := 40.0
+const GAP_CLEAR := 30.0
 ## Numbers sent for each vehicle (see pack).
 const PACKED := 7
 ## Junctions: the share of drivers that turn off at one with a side road they can take (more in
@@ -124,6 +129,10 @@ var keep_left: Callable
 var one_way: Callable
 ## Whether this machine runs it (the host, or a solo game); a client only moves them on between unpacks.
 var host := true
+## Stretches of the road that aren't road ([[s from, s to], ...]: a ferry's crossing, its water between the terminals).
+## Nothing turns up on one or drives onto it: traffic coming to one stops short at the terminal, as if waiting for the
+## boat, and is gone once nobody's looking.
+var gaps: Array = []
 ## The junctions along it, in order of s: [{s (the middle), stop (m before the middle where traffic
 ## stops or gives way), lights (bool), village (bool: in or by one), ro and rc (a roundabout's
 ## outer and going-round radii; absent for none), arms: [{side (+1 right of the way s grows), len,
@@ -191,6 +200,25 @@ func wrong_way(s: float, dir: int) -> bool:
 	return w.x != 0.0 and int(w.x) != dir and is_nan(w.y)
 
 
+## Whether `s` is on one of the gaps (a ferry's water), or within `margin` m of one.
+func in_gap(s: float, margin := 0.0) -> bool:
+	for g: Array in gaps:
+		if s > float(g[0]) - margin and s < float(g[1]) + margin:
+			return true
+	return false
+
+
+## How far (m) from `s` going `dir` to the start of the next gap ahead (INF for none within GAP_LOOK).
+func gap_ahead(s: float, dir: int) -> float:
+	var best := INF
+	for g: Array in gaps:
+		var edge := float(g[0]) if dir > 0 else float(g[1])
+		var along := (edge - s) * dir
+		if along >= -1.0 and along < minf(best, GAP_LOOK):
+			best = maxf(along, 0.0)
+	return best
+
+
 ## How far `s` is from the nearest focus.
 func from_focus(s: float) -> float:
 	var best := INF
@@ -214,7 +242,9 @@ func step(delta: float, draw := true) -> void:
 			if d.get("scripted", false):
 				continue
 			var s := float(d["s"])
-			if from_focus(s) > despawn or s < s_min or s > s_max or (d.get("parked", false) and unseen(_place_arm(d)[0])):
+			if from_focus(s) > despawn or s < s_min or s > s_max or (d.get("parked", false) and unseen(_place_arm(d)[0])) \
+					or in_gap(s) or (not d.has("arm") and float(d["v"]) < 0.5 and gap_ahead(s, int(d["dir"])) < GAP_WAIT \
+					and unseen(sample.call(s)["pos"])):
 				_remove(i)
 		_spawn_timer -= delta
 		if _spawn_timer <= 0.0:
@@ -291,7 +321,7 @@ func spawn_one(near := spawn_near, far := spawn_far) -> Dictionary:
 	var at_focus: Array = spots()
 	var f := float(at_focus[rng.randi() % at_focus.size()])
 	var s := f + rng.randf_range(near, minf(far, reach)) * (1.0 if rng.randf() < 0.5 else -1.0)
-	if s < s_min or s > s_max or from_focus(s) < near - 0.01:
+	if s < s_min or s > s_max or from_focus(s) < near - 0.01 or in_gap(s, GAP_CLEAR):
 		return {}
 	var dir := 1 if rng.randf() < 0.5 else -1
 	if wrong_way(s, dir) or wrong_way(lerpf(s, f, 0.5), dir):
@@ -475,6 +505,7 @@ func _drive(d: Dictionary, delta: float) -> void:
 	var allow := minf(minf(float(d["bend"]), float(d["climb"])), float(d["pace"]) * _limit(at))
 	var half := TrafficVehicle.half_length_of(str(d["kind"]))
 	allow = minf(allow, _junction_ahead(d, half, brake))
+	allow = minf(allow, _stop_for(gap_ahead(s, dir) - half - 2.0, brake))
 	for o in vehicles:
 		if o != d and int(o["dir"]) == dir and _in_lane(o, float(at["hw"])):
 			_follow(d, float(o["s"]), TrafficVehicle.half_length_of(str(o["kind"])), half)

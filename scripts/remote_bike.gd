@@ -127,6 +127,7 @@ func _process_body(delta: float) -> void:
 	var sb: PackedFloat32Array = at["b"]
 	var f: float = at["f"]
 	var pos: Vector3 = at["pos"]
+	pos += FerryCrossing.lead(pos, timeline.delay)   # (on the crew's ferry: where the boat's taken them since)
 	global_transform = Transform3D(Basis(at["rot"]), pos)
 	if collision_layer == 0:
 		collision_layer = 2   # where they are: solid now, so bikes can bump into each other

@@ -3946,6 +3946,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 				var r: Dictionary = action["roadside"]
 				bikes[bike_id]["roadside"] = {"trip": int(adventure["id"]), "x": float(r.get("x", 0.0)), "y": float(r.get("y", 0.0)),
 					"z": float(r.get("z", 0.0)), "yaw": float(r.get("yaw", 0.0)), "s": float(r.get("s", 0.0)), "open": false, "out": []}
+				var deck = Roadside.deck_of(r)
+				if deck != null:
+					bikes[bike_id]["roadside"]["deck"] = deck   # (left on a ferry's deck: it goes where the boat goes)
 			_park(bike_id)
 			if bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over. Fit a side stand."
