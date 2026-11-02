@@ -76,7 +76,7 @@ func _place() -> void:
 	for id in _views:
 		var r := Roadside.spot_of(int(id))
 		if not r.is_empty():
-			(_views[id]["node"] as Node3D).global_transform = Roadside.xf_in(world, r)
+			(_views[id]["node"] as Node3D).global_transform = Roadside.xf_in(world, r, true)
 
 
 ## The bike stood on its stand, its pickers, and the cloth with what's laid out on it.

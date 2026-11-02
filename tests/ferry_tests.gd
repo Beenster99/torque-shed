@@ -197,6 +197,12 @@ func test_crew() -> void:
 	check(AdventureCrew.sailing_over(all, riders, 6000 + int((total * AdventureCrew.FERRY_LATE + 120.0) * 1000.0) + 1, total), "or long after (a game that dropped out)")
 	(all["landed"] as Dictionary)[7] = true
 	check(AdventureCrew.sailing_over(all, riders, 7000, total), "or when everyone's off")
+	# Ridden off again before it sails: off it, and with nobody left aboard there's no sailing (the next on starts one).
+	var two := AdventureCrew.board(f, 7, "f1", 1, 3, 60.0, 1, 1200)
+	var one := AdventureCrew.got_off(two, 7, 1)
+	check((one["aboard"] as Dictionary).keys() == [1] and AdventureCrew.got_off(one, 1, 1).is_empty()
+		and AdventureCrew.got_off(one, 1, 2) == one and AdventureCrew.got_off(all, 1, int(all["sail"])) == all,
+		"off again before it sails: off it, the sailing gone once nobody's aboard (not once it's left)")
 
 
 ## The crossing's timeline: a short route sailed all the way, easing out and in; a long one out of one harbour and
@@ -258,6 +264,21 @@ func test_kits() -> void:
 			fits = fits and absf(at.z) < float(b["len"]) * 0.5 and absf(at.x) < float(b["beam"]) * 0.5
 		fits = fits and seen.size() == 4 and float(b["len"]) <= 32.0
 	check(fits, "every boat's small (two to four cars) and takes the crew's four bikes")
+	# Drive-through: the lane down the deck clear of everything solid from one ramp's hinge to the other's, the cabin
+	# beside it; on the deck is aboard, over the side isn't.
+	var clear := true
+	for size: String in FerryScenery.BOATS:
+		var b: Dictionary = FerryScenery.BOATS[size]
+		var lane: Vector2 = b["lane"]
+		for part: Array in FerryScenery.solids(size).slice(1):
+			var box := AABB((part[0] as Vector3) - (part[1] as Vector3) * 0.5, part[1])
+			var path := AABB(Vector3(lane.x + 0.1, float(b["deck"]) + 0.05, -float(b["half"])), Vector3(lane.y - lane.x - 0.2, 2.0, float(b["half"]) * 2.0))
+			clear = clear and not box.intersects(path)
+		clear = clear and lane.y - lane.x > 5.0 and FerryScenery.hinge(size, 1.0).z == float(b["half"]) and FerryScenery.hinge(size, -1.0).z == -float(b["half"])
+		clear = clear and FerryScenery.on_deck(size, FerryScenery.slot_at(size, 3) + Vector3.UP * 0.4) \
+			and not FerryScenery.on_deck(size, Vector3(float(b["beam"]), float(b["deck"]), 0.0)) and not FerryScenery.on_deck(size, Vector3(0, -3.0, 0))
+		clear = clear and FerryScenery.boat_mesh(size, {}, false).get_surface_count() > 0 and FerryScenery.flap_mesh(size, {}).get_surface_count() > 0
+	check(clear, "every boat's drive-through: a clear lane from end to end, more than 5 m wide, a ramp at each end and the cabin beside it")
 
 
 ## A block at the mainland's terminal: its ramp at the road's end out over the water, its office off the road, the
@@ -278,8 +299,8 @@ func test_lay_out() -> void:
 	var items: Dictionary = b["items"]
 	var corner := Vector2(key) * RoadBlock.SIZE
 	var ramps: Array = items.get("ramp", [])
-	check(ramps.size() == 1 and Vector2((ramps[0] as Transform3D).origin.x + corner.x, (ramps[0] as Transform3D).origin.z + corner.y).distance_to(r.node_pos[1]) < 0.5,
-		"a ramp where the road meets the water (%d)" % ramps.size())
+	check(ramps.size() == 1 and Vector2((ramps[0] as Transform3D).origin.x + corner.x, (ramps[0] as Transform3D).origin.z + corner.y).distance_to(r.node_pos[1]) < 3.5,
+		"a ramp where the road meets the water, out on its bank (%d)" % ramps.size())
 	if ramps.size() == 1:
 		var fwd := -(ramps[0] as Transform3D).basis.z.normalized()
 		check(fwd.x > 0.9, "facing out over the water (%s)" % str(fwd))
@@ -308,6 +329,66 @@ func test_lay_out() -> void:
 		"a boat lies afloat past a headland (%.0f m out) and at the ramp's end where it's sea (%.0f m)" % [afloat, FerryScenery.lies(line, land, 0.0)])
 	check(FerryScenery.lies(line, func(_x: float, _z: float) -> float: return NAN, 0.0) == FerryScenery.berth(line),
 		"and at the ramp's end while the heights aren't there")
+	# A ramp where the road runs on down a slipway under the water starts up the road where it's dry.
+	var slip := func(x: float, _z: float) -> float: return -6.0 if x > 1010.0 and x < 1590.0 else (2.0 if x < 980.0 else -1.0)
+	var wet := RoadNet.new(r, slip)
+	var links := FerryLinks.of(r)
+	var dry: Dictionary = FerryScenery.ramp_of(wet, links, 0, 1)
+	var plain: Dictionary = FerryScenery.ramp_of(net, links, 0, 1)
+	check(not dry.is_empty() and (dry["road"] as Vector3).x < 997.0 and (dry["road"] as Vector3).y > FerryScenery.DRY
+		and not plain.is_empty() and Vector2((plain["road"] as Vector3).x, (plain["road"] as Vector3).z).distance_to(r.node_pos[1]) < 0.5,
+		"a ramp starts at the road's end, or up a slipway where it's dry (at %s)" % (str(dry["road"]) if not dry.is_empty() else "none"))
+	# A bank that stays high a few metres on past the road's end: the ramp starts out on it, never runs into it.
+	var bank := func(x: float, _z: float) -> float: return 2.0 if x < 1002.5 else (-6.0 if x < 1590.0 else 2.0)
+	var banked := RoadNet.new(r, bank)
+	var over: Dictionary = FerryScenery.ramp_of(banked, links, 0, 1)
+	var clear := not over.is_empty()
+	if clear:
+		var fa: Vector3 = over["foot"]
+		var fb: Vector3 = over["tip"]
+		for k in range(1, 41):   # (on from its joint with the bank, a metre on at most)
+			var q := fa.lerp(fb, minf(1.0, k / 40.0 + 1.0 / fa.distance_to(fb)))
+			clear = clear and FerryScenery.surface_at(banked, Vector2(q.x, q.z)) <= q.y - FerryScenery.RAMP_CLEAR + 0.05
+	check(clear and (over["foot"] as Vector3).x > 1001.5 and (over["road"] as Vector3).x < 1000.5,
+		"a ramp starts out on a bank past the road's end, clear of it all along (%s)" % (str(over["foot"]) if not over.is_empty() else "none"))
 	var boats: Array = dress.get("boats", [])
 	var f1: Array = boats.filter(func(x): return str(x["id"]) == "f1")
 	check(not f1.is_empty() and (f1[0]["afloat"] as Vector2).x < 20.0, "the scenery's boats afloat too (%s)" % (str(f1[0]["afloat"]) if not f1.is_empty() else "none"))
+
+
+## The road's traffic and the other bikers never go out over a ferry's water (Simon on v0.43.0: cars and bikes on the
+## water by the Skye ferry): what comes to it stops short at the terminal, as if for the boat, and is gone once nobody
+## sees it; nothing turns up on it.
+func test_traffic() -> void:
+	var stream := TrafficStream.new()
+	stream.sample = func(s: float) -> Dictionary:
+		return {"pos": Vector3(0.0, 0.0, -s), "fwd": Vector3(0, 0, -1), "hw": 3.6, "busy": 0.0, "limit": 22.0, "grade": 0.0}
+	stream.gaps = [[600.0, 1200.0]]
+	t.add_child(stream)
+	stream.set_physics_process(false)
+	stream.focus_s = 400.0
+	stream.despawn = 5000.0
+	stream._spawn_timer = 1.0e9
+	check(stream.in_gap(900.0) and not stream.in_gap(300.0) and stream.in_gap(590.0, 20.0) and stream.gap_ahead(500.0, 1) == 100.0
+		and stream.gap_ahead(1300.0, -1) == 100.0 and stream.gap_ahead(1300.0, 1) == INF, "the ferry's water is a gap in the road")
+	var car: Dictionary = stream.find(stream.spawn_at("hatchback", 300.0, 1, 20.0))
+	var back: Dictionary = stream.find(stream.spawn_at("hatchback", 1500.0, -1, 20.0))
+	car["pace"] = 1.0
+	back["pace"] = 1.0
+	var furthest := 0.0
+	var nearest := INF
+	for i in 400:
+		stream.step(0.05, false)
+		furthest = maxf(furthest, float(car["s"]))
+		nearest = minf(nearest, float(back["s"]))
+	check(furthest < 600.0 and furthest > 580.0 and float(car["v"]) < 0.5 and nearest > 1200.0 and nearest < 1220.0,
+		"both ways the traffic stops short of the water at the terminal (%.0f and %.0f m: the water's 600 to 1200)" % [furthest, nearest])
+	var spawned := 0
+	for i in 300:
+		var d := stream.spawn_one(0.0, 1500.0)
+		if not d.is_empty():
+			spawned += 1
+			check(not stream.in_gap(float(d["s"]), TrafficStream.GAP_CLEAR), "nothing turns up on the water (%.0f)" % float(d["s"]))
+			stream.remove_id(int(d["seed"]))
+	check(spawned > 0, "but it does either side of it (%d)" % spawned)
+	stream.queue_free()

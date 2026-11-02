@@ -404,8 +404,6 @@ func _unload() -> void:
 		world.origin_shifted.disconnect(_on_shift)
 		world.queue_free()
 		world = null
-	if ferry != null and main != null and main.bike != null and ferry.holding():
-		main.bike.freeze = false   # (home from the deck: the bike's its own again)
 	ferry = null
 	trip_id = 0
 	_sleep_town(false)
@@ -631,14 +629,28 @@ func _on_shift(d: Vector3) -> void:
 # ---------------------------------------------------------------------------- network
 
 ## Your snapshot for the network, with your origin on it while you're out here.
+## On the crew's ferry's deck, where on it too (FerryCrossing.deck_tag), before the origin.
 func tag_state(state: PackedFloat32Array) -> PackedFloat32Array:
-	return world.tag_state(state) if world and not state.is_empty() else state
+	if world == null or state.is_empty():
+		return state
+	if ferry != null:
+		state = state + ferry.deck_tag(state)
+	return world.tag_state(state)
 
 
-## Someone's snapshot put into your frame.
+## Someone's snapshot put into your frame: where they are on the crew's ferry's deck, on this game's boat (the boat's a
+## moment behind or ahead on each machine, as each sails it from when it hears it's left: FerryCrossing.put_on_deck).
 func untag_state(state: PackedFloat32Array) -> PackedFloat32Array:
+	var deck := PackedFloat32Array()
+	var n := state.size()
+	if n >= 9 and state[n - 1] == AdventureWorld.NET_TAG and state[n - 4] == FerryCrossing.DECK_TAG:
+		deck = state.slice(n - 8, n - 3)
+		state = state.slice(0, n - 8) + state.slice(n - 3)
 	if world:
-		return world.untag_state(state)
+		var out := world.untag_state(state)
+		if ferry != null and not deck.is_empty():
+			out = ferry.put_on_deck(out, deck)
+		return out
 	return AdventureWorld.untag(state, Vector3.ZERO) if not state.is_empty() and state[state.size() - 1] == AdventureWorld.NET_TAG else state
 
 
@@ -651,8 +663,8 @@ func _physics_process(delta: float) -> void:
 	var p: Vector3 = focus_points()[0]
 	world.follow(p)
 	var hit := world.locate_local(p, "own")
-	if ferry != null and ferry.holding():
-		pass   # (on a ferry: the bike's held on its deck)
+	if ferry != null and ferry.carrying(p):
+		pass   # (on a ferry, or its ramp and bridge out to it: off the road, and meant to be)
 	elif main.bike and not hit.is_empty():
 		_keep_on_road(hit)
 	elif main.walker and not hit.is_empty():
@@ -902,6 +914,8 @@ func step_off_spot(ground: Vector3, heading: float) -> Vector3:
 func respawn_spot(p: Vector3):
 	if world == null:
 		return null
+	if ferry != null and ferry.on_deck(p, 0.5):
+		return null   # (down on a ferry's deck: picked up where it lies, aboard)
 	var xf = world.back_on_road(p, main.bike.respawn_heading() if main and is_instance_valid(main.bike) else NAN)
 	# (on the network's road it's picked up where it lies, only turned to face along the road)
 	if xf is Transform3D and (xf as Transform3D).origin.distance_to(p) > 1.0:
@@ -1168,10 +1182,10 @@ func crew_waiting() -> Array[String]:
 	return out
 
 
-## Whether this rider is held at the start, waiting for the crew (see crew_waiting), or aboard a ferry (FerryCrossing):
-## Main brakes the bike.
+## Whether this rider is held at the start, waiting for the crew (see crew_waiting): Main brakes the bike. (Aboard a
+## ferry you're free to ride about its deck, or get off and walk: FerryCrossing.)
 func crew_hold() -> bool:
-	return not crew_waiting().is_empty() or (ferry != null and ferry.holding())
+	return not crew_waiting().is_empty()
 
 
 ## The title card (the destination's name, the ride, how long it took) and the photo.

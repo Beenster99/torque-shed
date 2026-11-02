@@ -5,9 +5,10 @@ extends RefCounted
 ## which roads they join are FerryLinks'; the crew's own crossing is FerryCrossing's, on a boat made here (boat_mesh).
 ##
 ## Three sizes of boat, by the route (FerryLinks.size_of), all small (two to four cars: Simon's crew is four bikes at
-## most): a chain ferry (a floating bridge, ramps at both ends, its wheelhouse to one side) on the short ones, a
-## roll-on roll-off car ferry (an open car deck, a little bridge over the bow) on most, and an island ferry (a cabin
-## and wheelhouse forward, an open vehicle deck aft) on the long ones. Their
+## most) and all drive-through, a ramp at each end and the cabin to one side of the vehicle deck (so the crew ride on at
+## one end and off at the other: FerryCrossing): a chain ferry (a floating bridge, its wheelhouse at the side) on the
+## short ones, a roll-on roll-off car ferry (a long cabin down one side, the bridge on top) on most, and an island ferry
+## (bigger, the same way about) on the long ones. Their
 ## colours are their region's (the kit library's ferry rows), with a default for anywhere a region has none.
 ##
 ## Every boat sails its route from the start, back and forth on a timetable from the route alone (its length and its
@@ -16,25 +17,39 @@ extends RefCounted
 ## windows and mast lights come on. A route the crew is crossing on is left to their own boat (crew_ids).
 ##
 ## Simon's first rule, as here: nothing has collision, nothing stands on a road (a ticket office is stood off it, by
-## SceneryStreamer.stand), and a ramp starts where the road already ends at the water and goes out over it.
+## SceneryStreamer.stand), and a ramp starts where the road already ends at the water (or up its slipway, where it's
+## dry) and goes out over it. The crew's own boat, and the ramps at its terminals, are made solid by FerryCrossing.
 
 const Clock := preload("res://scripts/scenery/rail_train.gd")
 
 ## Part of what a block lays out: bump it with the look (SceneryStreamer folds the scripts' versions into its own).
-const VERSION := 3
+const VERSION := 4
 ## How fast the scenery's boats sail (m/s) and how long each waits at either end (s).
 const SPEED := 9.0
 const DWELL := 90.0
-## Each size's boat: its length, beam, deck height above the water (m) and where on its deck bikes stand (z from the
-## middle, bow at -z, and how wide).
+## Each size's boat: its length, beam and deck height above the water (m); how far its open deck runs either side of
+## its middle (m, bow at -z), the lane along it a bike can ride (x from, x to: clear of the rails and the cabin) and the
+## cabin standing on it to one side ({x, z (its middle), w, l (its footprint), h}). All three are drive-through, as the
+## small Scottish car ferries are: a ramp at each end and the cabin beside the vehicle deck, never across it, so the
+## crew ride on at one end and off at the other (and the boat never turns round: its bow's always towards its route's
+## b end, FerryCrossing).
 const BOATS := {
-	"chain": {"len": 20.0, "beam": 9.0, "deck": 0.7, "slots": Vector3(-6.0, 6.0, 6.6)},
-	"roro": {"len": 24.0, "beam": 8.5, "deck": 1.0, "slots": Vector3(-4.0, 10.0, 6.6)},
-	"ship": {"len": 32.0, "beam": 10.0, "deck": 1.6, "slots": Vector3(-2.0, 14.0, 6.6)},
+	"chain": {"len": 20.0, "beam": 9.0, "deck": 0.7, "half": 8.0, "lane": Vector2(-4.2, 2.5), "rail": 0.9,
+		"house": {"x": 3.55, "z": 0.0, "w": 1.6, "l": 2.4, "h": 3.0}},
+	"roro": {"len": 24.0, "beam": 8.5, "deck": 1.0, "half": 11.0, "lane": Vector2(-3.9, 1.4), "rail": 1.2,
+		"house": {"x": 2.75, "z": 0.0, "w": 2.4, "l": 10.0, "h": 2.6}},
+	"ship": {"len": 32.0, "beam": 10.0, "deck": 1.6, "half": 15.0, "lane": Vector2(-4.6, 1.3), "rail": 1.2,
+		"house": {"x": 3.25, "z": -2.0, "w": 3.2, "l": 16.0, "h": 3.0}},
 }
+## How long a boat's end ramp is (m), and how far up it's raised at sea (radians): it's the gate across the deck's end.
+const FLAP_LEN := 4.0
+const FLAP_UP := 1.25
 ## The linkspan's size (m) and how far it drops to the water over its length.
 const RAMP_LEN := 14.0
 const RAMP_W := 8.0
+## A ramp starts where the road's this high (m) over the water at least, this far (m) up a slipway at most (dry_foot).
+const DRY := 0.4
+const DRY_MOST := 120.0
 ## How far out from the road's end (m) a boat lies, at least and at most: where the route itself sets out from (the
 ## slipway's end), as near as that allows.
 const BERTH_LEAST := 10.0
@@ -46,6 +61,10 @@ const WET_STEP := 8.0
 const WET_MOST := 3000.0
 ## How steeply a ramp may climb or fall to a boat's deck (rise over run).
 const RAMP_STEEP := 0.25
+## How far under a ramp's surface the shore has to be all along it (m), so a bike's wheels ride over the joint.
+const RAMP_CLEAR := 0.12
+## How far over the road's end a ramp may start out on its bank (m): higher, it's left as it is.
+const KNEE_UP := 0.5
 ## A route's water is the sea unless both its ends are higher than this (m): then it's a lake, just under its banks.
 const LAKE_FROM := 15.0
 ## Bikes on a deck stand this far apart (m) across and along it.
@@ -90,19 +109,14 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 			var at := n.region.node_pos[end]
 			if not SceneryStreamer.in_block(key, at):
 				continue
-			var line := links.line_from(i, end)
-			var out_dir := _out_of(line)
-			var on := n.locate(at.x, at.y)
-			var y := float(on["y"]) if not on.is_empty() and bool(on.get("on_road", false)) else float(n.height.call(at.x, at.y))
-			if is_nan(y):
+			var ramp := ramp_of(n, links, i, end)
+			if ramp.is_empty():
 				out["skipped"] += 1
 				continue
-			# (the ramp's foot is the road's end: it runs on out to where the boat lies, down to its deck)
-			var h := atan2(out_dir.x, -out_dir.y)
-			var rb := ramp_basis(h, berth(line), y - water_of(n, line) - float(BOATS[str(l["size"])]["deck"]))
-			var foot := Vector3(at.x, y + 0.02, at.y) - o
+			var rb: Basis = ramp["basis"]
+			var foot: Vector3 = ramp["foot"] - o
 			_add(out, "ramp", Transform3D(rb, foot))
-			_add(out, "gantry", Transform3D(Basis(Vector3.UP, -h), foot + rb * Vector3(0, 0, -RAMP_LEN + 0.6)))
+			_add(out, "gantry", Transform3D(Basis(Vector3.UP, -float(ramp["h"])), foot + rb * Vector3(0, 0, -RAMP_LEN + 0.6)))
 	var boats: Array = []
 	var box := Rect2(corner, Vector2.ONE * RoadBlock.SIZE).grow(BOATS["ship"]["len"])
 	for route: Dictionary in links.routes:
@@ -122,6 +136,118 @@ static func lay_out(n: RoadNet, key: Vector2i, rows: Dictionary) -> Dictionary:
 	if not boats.is_empty() or lamps:
 		out["dress"] = {"corner": corner, "boats": boats, "lamps": lamps}
 	return out
+
+
+## The ramp (linkspan) at end `end` of link `i` (FerryLinks), in the region frame: {road (the road's end it's reached
+## from), foot (where it starts, on the road's or the ground's surface), tip (its outer end, on its surface), basis (the
+## "ramp" model's: turned, tilted and stretched), h (its heading)}; {} where the ground's not there yet. It starts at
+## the road's end, or on up the road from there where the road runs on down a slipway under the water (DRY over it),
+## and runs out to where the boat lies, down (or up) to its deck; where the shore bulges up over that straight line
+## (a ramp ridden into the bank would stop a bike dead), it starts further out instead, on the ground where it
+## clears it all the way (the shore ridden over to it).
+static func ramp_of(n: RoadNet, links: FerryLinks, i: int, end: int) -> Dictionary:
+	var at := n.region.node_pos[end]
+	var line := links.line_from(i, end)
+	var out_dir := _out_of(line)
+	var level := water_of(n, line)
+	var road := dry_foot(n, end, out_dir, level)
+	if is_nan(road.y):
+		return {}
+	var tip_at := at + out_dir * berth(line)
+	var deck := float(BOATS[str(links.links[i]["size"])]["deck"])
+	var ramp := _ramp_from(road, tip_at, out_dir, level, deck)
+	for k in 3:
+		var knee := _knee(n, ramp, tip_at)
+		if is_nan(knee.y) or knee.y > road.y + KNEE_UP:
+			break   # (clear; or a bank higher than the road there, never ridden up onto)
+		ramp = _ramp_from(knee, tip_at, out_dir, level, deck)
+	road.y += 0.02
+	ramp["road"] = road
+	return ramp
+
+
+## A straight ramp from `foot` (on a surface) out to `tip_at`, down (or up) to the deck.
+static func _ramp_from(foot: Vector3, tip_at: Vector2, out_dir: Vector2, level: float, deck: float) -> Dictionary:
+	var run := tip_at - Vector2(foot.x, foot.z)
+	var long := maxf(run.length(), RAMP_LEN * 0.5)
+	var dir := run.normalized() if run.length() > 0.5 else out_dir
+	var h := atan2(dir.x, -dir.y)
+	var rb := ramp_basis(h, long, foot.y - level - deck)
+	foot.y += 0.02
+	return {"foot": foot, "tip": foot + rb * Vector3(0, 0, -RAMP_LEN), "basis": rb, "h": h}
+
+
+## Where on the ground a `ramp` that runs into the shore (the ground within RAMP_CLEAR of its surface)
+## should start instead: the point it can run straight on from to its tip clear of it all (y NAN where it's clear as it
+## is). Kept RAMP_LEN / 2 from the tip at least.
+static func _knee(n: RoadNet, ramp: Dictionary, tip_at: Vector2) -> Vector3:
+	var foot: Vector3 = ramp["foot"]
+	var tip: Vector3 = ramp["tip"]
+	var from := Vector2(foot.x, foot.z)
+	var long := from.distance_to(tip_at)
+	var most := long - RAMP_LEN * 0.5
+	var hit := false
+	var best := -INF
+	var knee := Vector3(0, NAN, 0)
+	var side := (tip_at - from).normalized().orthogonal() * RAMP_W * 0.4
+	var s := 1.0
+	while s < long - 0.5:
+		var p := from.lerp(tip_at, s / long)
+		var g := surface_at(n, p)   # (the highest across it: a bike rides on at an angle from the road)
+		for q: Vector2 in [p - side, p + side]:
+			var gq := surface_at(n, q)
+			if not is_nan(gq) and (is_nan(g) or gq > g):
+				g = gq
+		if not is_nan(g):
+			if g > lerpf(foot.y, tip.y, s / long) - RAMP_CLEAR:
+				hit = true
+			var slope := (g - tip.y) / (long - s)
+			if s <= most and slope > best:
+				best = slope
+				knee = Vector3(p.x, g, p.y)
+		s += 1.0
+	return knee if hit else Vector3(0, NAN, 0)
+
+
+## The height of the ground at `p` (region frame; NAN where it's not there yet).
+static func surface_at(n: RoadNet, p: Vector2) -> float:
+	return float(n.height.call(p.x, p.y))
+
+
+## Where a ramp at terminal junction `node` starts (region frame, on the road; y NAN where the ground's not there yet):
+## the road's end, or as far on up the road leading away from the water (`out_dir`) as it takes to be DRY over the water
+## at `level` (a slipway runs on down under it), DRY_MOST at most.
+static func dry_foot(n: RoadNet, node: int, out_dir: Vector2, level: float) -> Vector3:
+	var r := n.region
+	var at := r.node_pos[node]
+	var on := n.locate(at.x, at.y)
+	var y := float(on["y"]) if not on.is_empty() and bool(on.get("on_road", false)) else float(n.height.call(at.x, at.y))
+	if is_nan(y) or y >= level + DRY:
+		return Vector3(at.x, y, at.y)
+	var best := -1
+	var best_dot := INF
+	for e in r.adjacent[node]:
+		var line := r.line_from(e, node)
+		var d := (line[mini(1, line.size() - 1)] - line[0]).normalized()
+		if d.dot(out_dir) < best_dot:
+			best_dot = d.dot(out_dir)
+			best = e
+	if best < 0:
+		return Vector3(at.x, y, at.y)
+	var len := r.edge_len[best]
+	var s := 4.0
+	while true:
+		var last := s >= minf(DRY_MOST, len)
+		s = minf(s, len)
+		var p := n.point_at(best, s if r.edge_a[best] == node else len - s)
+		var got := n.locate(p.x, p.y, best)
+		var py := float(got["y"]) if not got.is_empty() else float(n.height.call(p.x, p.y))
+		if is_nan(py):
+			return Vector3(p.x, NAN, p.y)
+		if py >= level + DRY or last:
+			return Vector3(p.x, py, p.y)
+		s += 4.0
+	return Vector3(at.x, y, at.y)
 
 
 static func _add(out: Dictionary, model: String, xf: Transform3D) -> void:
@@ -200,16 +326,84 @@ static func along(pts: PackedVector2Array, s: float) -> Vector3:
 	return Vector3(pts[n - 1].x, pts[n - 1].y, atan2(last.x, -last.y))
 
 
-## Where bike `slot` stands on a `size` boat's deck, in the boat's frame (bow at -z).
+## Where bike `slot` stands on a `size` boat's deck, in the boat's frame (bow at -z): two abreast down the lane, from the
+## stern on.
 static func slot_at(size: String, slot: int) -> Vector3:
 	var b: Dictionary = BOATS.get(size, BOATS["roro"])
-	var s: Vector3 = b["slots"]
-	var across := maxi(1, int(s.z / SLOT_X))
+	var lane: Vector2 = b["lane"]
+	var across := maxi(1, int((lane.y - lane.x) / SLOT_X))
 	var row := slot / across
 	var col := slot % across
-	var x := (col - (across - 1) * 0.5) * SLOT_X
-	var z := s.y - 3.0 - row * SLOT_Z
-	return Vector3(x, float(b["deck"]), maxf(z, s.x))
+	var x := (lane.x + lane.y) * 0.5 + (col - (across - 1) * 0.5) * SLOT_X
+	var z := float(b["half"]) - 3.0 - row * SLOT_Z
+	return Vector3(x, float(b["deck"]), maxf(z, -float(b["half"]) + 3.0))
+
+
+## The solid parts of a `size` boat over the water, in its frame (bow at -z), as [[middle, size], ...] boxes: the deck
+## (its top the deck's height), the rails down either side, the bits of each end beside the lane, and the cabin. The
+## crew's boat stands on them (FerryCrossing); the ends' gates and ramps are the ramps' own (flap).
+static func solids(size: String) -> Array:
+	var b: Dictionary = BOATS.get(size, BOATS["roro"])
+	var B := float(b["beam"])
+	var D := float(b["deck"])
+	var H := float(b["half"])
+	var R := float(b["rail"])
+	var lane: Vector2 = b["lane"]
+	var house: Dictionary = b["house"]
+	var out: Array = [[Vector3(0, D - 0.6, 0), Vector3(B, 1.2, H * 2.0)]]
+	for side: float in [-1.0, 1.0]:
+		out.append([Vector3(side * (B * 0.5 - 0.15), D + R * 0.5, 0), Vector3(0.3, R, H * 2.0)])
+	var beside := B * 0.5 - 0.3 - lane.y
+	if beside > 0.05:
+		for end: float in [-1.0, 1.0]:
+			out.append([Vector3(lane.y + beside * 0.5, D + R * 0.5, end * (H - 0.15)), Vector3(beside, R, 0.3)])
+	out.append([Vector3(float(house["x"]), D + float(house["h"]) * 0.5, float(house["z"])),
+		Vector3(float(house["w"]), float(house["h"]), float(house["l"]))])
+	return out
+
+
+## Whether boat-frame point `p` is over a `size` boat's deck (anywhere inside its rails, from just under the deck to well
+## over it): what stands there is aboard, and goes where the boat goes.
+static func on_deck(size: String, p: Vector3, margin := 0.0) -> bool:
+	var b: Dictionary = BOATS.get(size, BOATS["roro"])
+	return absf(p.x) <= float(b["beam"]) * 0.5 + margin and absf(p.z) <= float(b["half"]) + margin \
+		and p.y > float(b["deck"]) - 1.2 and p.y < float(b["deck"]) + 4.5
+
+
+## Where the end ramp at end `end` (+1 the stern, -1 the bow) of a `size` boat is hinged, in its frame: the lane's
+## middle at the deck's end.
+static func hinge(size: String, end: float) -> Vector3:
+	var b: Dictionary = BOATS.get(size, BOATS["roro"])
+	var lane: Vector2 = b["lane"]
+	return Vector3((lane.x + lane.y) * 0.5, float(b["deck"]), end * float(b["half"]))
+
+
+## An end ramp: the lane wide, FLAP_LEN long, hinged at the origin running out along -z (turned to each end and raised or
+## lowered by the crew's boat, FerryCrossing; the scenery's boats have theirs part raised).
+static func flap_mesh(size: String, kit: Dictionary) -> Mesh:
+	var key := "flap|%s|%s" % [size, kit.get("deck", "")]
+	_lock.lock()
+	var have: Mesh = _meshes.get(key)
+	_lock.unlock()
+	if have != null:
+		return have
+	var b: Dictionary = BOATS.get(size, BOATS["roro"])
+	var lane: Vector2 = b["lane"]
+	var w := lane.y - lane.x
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lit := SurfaceTool.new()
+	lit.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var deck := _col(kit, "deck", Color(0.33, 0.35, 0.33))
+	_box(st, Vector3(0, -0.12, -FLAP_LEN * 0.5), Vector3(w, 0.24, FLAP_LEN), deck)
+	for k in 6:
+		# (the ribs across it, for grip)
+		_box(st, Vector3(0, 0.01, -0.4 - k * 0.65), Vector3(w - 0.2, 0.04, 0.08), deck.darkened(0.25))
+	var out := _finish(st, lit)
+	_lock.lock()
+	_meshes[key] = out
+	_lock.unlock()
+	return out
 
 
 # ---------------------------------------------------------------------------- dress: the boats sailing
@@ -294,10 +488,11 @@ static func mesh(model: String) -> Mesh:
 
 
 ## A `size` boat ("chain", "roro" or "ship") in kit `kit`'s colours (hull, upper, funnel, stripe, deck), its
-## waterline at y 0, its bow at -z. Made once a look, shared.
-static func boat_mesh(size: String, kit: Dictionary) -> Mesh:
-	var key := "%s|%s|%s|%s|%s|%s" % [size, kit.get("hull", ""), kit.get("upper", ""), kit.get("funnel", ""),
-		kit.get("stripe", ""), kit.get("deck", "")]
+## waterline at y 0, its bow at -z; with its end ramps part raised unless `flaps` is off (the crew's boat moves its own,
+## flap_mesh). Made once a look, shared.
+static func boat_mesh(size: String, kit: Dictionary, flaps := true) -> Mesh:
+	var key := "%s|%s|%s|%s|%s|%s|%s" % [size, kit.get("hull", ""), kit.get("upper", ""), kit.get("funnel", ""),
+		kit.get("stripe", ""), kit.get("deck", ""), flaps]
 	_lock.lock()
 	var have: Mesh = _meshes.get(key)
 	_lock.unlock()
@@ -313,50 +508,55 @@ static func boat_mesh(size: String, kit: Dictionary) -> Mesh:
 	var lit := SurfaceTool.new()
 	lit.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var b: Dictionary = BOATS.get(size, BOATS["roro"])
-	var L := float(b["len"])
 	var B := float(b["beam"])
 	var D := float(b["deck"])
-	match size:
-		"chain":
-			_box(st, Vector3(0, (D - 0.9) * 0.5, 0), Vector3(B, D + 0.9, L - 4.0), hull)
-			_box(st, Vector3(0, D + 0.02, 0), Vector3(B - 0.8, 0.04, L - 4.0), deck)
-			for e: float in [-1.0, 1.0]:
-				# (the ramps at either end, hinged half up)
-				var r := Basis(Vector3.RIGHT, e * deg_to_rad(18.0))
-				_box(st, Vector3(0, D + 0.6, e * (L * 0.5 - 1.0)), Vector3(B - 2.0, 0.25, 3.0), deck, r)
-			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * (B * 0.5 - 0.1), D + 0.45, 0), Vector3(0.15, 0.9, L - 4.0), stripe)
-			_box(st, Vector3(B * 0.5 - 0.9, D + 1.5, 0), Vector3(1.6, 3.0, 2.4), upper)
-			_box(lit, Vector3(B * 0.5 - 0.9, D + 2.4, 0), Vector3(1.7, 0.6, 2.5), Color.WHITE)
-			_box(st, Vector3(B * 0.5 - 0.9, D + 3.1, 0), Vector3(2.0, 0.2, 2.8), funnel)
-		"roro":
-			_box(st, Vector3(0, (D - 1.5) * 0.5, 2.0), Vector3(B, D + 1.5, L - 4.0), hull)
-			_wedge(st, Vector3(0, (D - 1.5) * 0.5, -L * 0.5 + 2.0), Vector3(B, D + 1.5, 4.0), hull)
-			_box(st, Vector3(0, D - 0.3, 2.0), Vector3(B + 0.02, 0.2, L - 4.0), stripe)
-			_box(st, Vector3(0, D + 0.02, 3.0), Vector3(B - 0.8, 0.04, L - 8.0), deck)
-			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * (B * 0.5 - 0.15), D + 0.6, 4.0), Vector3(0.3, 1.2, L - 10.0), hull)
-			# (the little bridge over the bow, its windows; the funnel and the mast)
-			_box(st, Vector3(0, D + 1.3, -L * 0.5 + 4.0), Vector3(B - 1.0, 2.6, 3.0), upper)
-			_box(lit, Vector3(0, D + 1.9, -L * 0.5 + 4.0), Vector3(B - 0.9, 0.7, 3.1), Color.WHITE)
-			_box(st, Vector3(B * 0.5 - 1.5, D + 3.3, -L * 0.5 + 4.5), Vector3(1.0, 1.4, 1.2), funnel)
-			_box(st, Vector3(0, D + 3.8, -L * 0.5 + 3.5), Vector3(0.15, 2.4, 0.15), upper)
-			_box(lit, Vector3(0, D + 5.1, -L * 0.5 + 3.5), Vector3(0.35, 0.3, 0.35), Color.WHITE)
-		_:
-			_box(st, Vector3(0, (D - 2.0) * 0.5, 3.0), Vector3(B, D + 2.0, L - 6.0), hull)
-			_wedge(st, Vector3(0, (D - 2.0) * 0.5, -L * 0.5 + 3.0), Vector3(B, D + 2.0, 6.0), hull)
-			_box(st, Vector3(0, D - 0.5, 3.0), Vector3(B + 0.05, 0.35, L - 6.0), stripe)
-			_box(st, Vector3(0, D + 0.02, 6.0), Vector3(B - 1.2, 0.04, 18.0), deck)
-			for side: float in [-1.0, 1.0]:
-				_box(st, Vector3(side * (B * 0.5 - 0.2), D + 0.6, 6.0), Vector3(0.4, 1.2, 18.0), hull)
-			# (the cabin forward, its windows in a band, the wheelhouse on top; one funnel)
-			_box(st, Vector3(0, D + 1.5, -8.0), Vector3(B - 1.2, 3.0, 12.0), upper)
-			_box(lit, Vector3(0, D + 1.8, -8.0), Vector3(B - 1.1, 0.8, 12.1), Color.WHITE)
-			_box(st, Vector3(0, D + 4.0, -10.0), Vector3(B - 4.0, 2.0, 4.0), upper)
-			_box(lit, Vector3(0, D + 4.2, -10.0), Vector3(B - 3.9, 0.7, 4.1), Color.WHITE)
-			_box(st, Vector3(0, D + 4.0, -5.0), Vector3(1.4, 2.0, 1.8), funnel)
-			_box(st, Vector3(0, D + 6.0, -11.0), Vector3(0.2, 3.0, 0.2), upper)
-			_box(lit, Vector3(0, D + 7.6, -11.0), Vector3(0.4, 0.35, 0.4), Color.WHITE)
+	var H := float(b["half"])
+	var R := float(b["rail"])
+	var lane: Vector2 = b["lane"]
+	var house: Dictionary = b["house"]
+	var hx := float(house["x"])
+	var hz := float(house["z"])
+	var hw := float(house["w"])
+	var hl := float(house["l"])
+	var hh := float(house["h"])
+	var draft := 0.9 if size == "chain" else (1.5 if size == "roro" else 2.0)
+	# The hull, a little blunt at either end (they're alike: it sails either way), the band along its top, the deck.
+	_box(st, Vector3(0, (D - draft) * 0.5, 0), Vector3(B, D + draft, H * 2.0), hull)
+	for end: float in [-1.0, 1.0]:
+		_box(st, Vector3(0, (D - draft) * 0.5 + 0.3, end * (H + 0.5)), Vector3(B - 1.6, D + draft - 0.6, 1.0), hull)
+	_box(st, Vector3(0, D - 0.35, 0), Vector3(B + 0.04, 0.25, H * 2.0 - 0.2), stripe)
+	_box(st, Vector3(0, D + 0.02, 0), Vector3(B - 0.6, 0.04, H * 2.0 - 0.2), deck)
+	# (the lane's lines, for the crew to keep to)
+	for x: float in [lane.x + 0.15, lane.y - 0.15]:
+		_box(st, Vector3(x, D + 0.045, 0), Vector3(0.12, 0.01, H * 2.0 - 1.0), Color(0.85, 0.8, 0.3))
+	for part: Array in solids(size).slice(1):
+		var c: Vector3 = part[0]
+		var sz: Vector3 = part[1]
+		if absf(c.x - hx) < 0.01 and absf(c.z - hz) < 0.01:
+			continue   # (the cabin's drawn below)
+		_box(st, c, sz, hull)
+	# The cabin beside the deck: its windows in a band, the wheelhouse on top, the funnel and the mast.
+	_box(st, Vector3(hx, D + hh * 0.5, hz), Vector3(hw, hh, hl), upper)
+	_box(lit, Vector3(hx, D + hh * 0.62, hz), Vector3(hw + 0.04, minf(0.8, hh * 0.3), hl - 0.6), Color.WHITE)
+	var top := D + hh
+	if size == "chain":
+		_box(st, Vector3(hx, top + 0.1, hz), Vector3(hw + 0.4, 0.2, hl + 0.4), funnel)
+	else:
+		var wl := minf(4.0, hl * 0.4)
+		var wz := hz - hl * 0.5 + wl * 0.5 + 0.6
+		_box(st, Vector3(hx - 0.3, top + 0.9, wz), Vector3(hw + 0.6, 1.8, wl), upper)
+		_box(lit, Vector3(hx - 0.3, top + 1.15, wz), Vector3(hw + 0.64, 0.7, wl + 0.04), Color.WHITE)
+		_box(st, Vector3(hx, top + 0.8, hz + hl * 0.25), Vector3(1.2, 1.6, 1.4), funnel)
+		_box(st, Vector3(hx, top + 2.8, wz), Vector3(0.15, 2.4, 0.15), upper)
+		_box(lit, Vector3(hx, top + 4.1, wz), Vector3(0.35, 0.3, 0.35), Color.WHITE)
+	if flaps:
+		var w := lane.y - lane.x
+		for end: float in [-1.0, 1.0]:
+			# (hinged at the deck's end, half up)
+			var r := Basis(Vector3.RIGHT, -end * 0.7)
+			var hinge_at := hinge(size, end)
+			var mid := hinge_at + r * Vector3(0, 0, end * FLAP_LEN * 0.5)
+			_box(st, mid + Vector3(0, -0.12, 0), Vector3(w, 0.24, FLAP_LEN), deck, r)
 	var out := _finish(st, lit)
 	_lock.lock()
 	_meshes[key] = out

@@ -803,6 +803,10 @@ func _get_off() -> void:
 	if trip.on_trip():
 		# Out on an adventure it stays where it's left, for everyone (see Roadside, RoadsideView).
 		off["roadside"] = Roadside.spot_for(trip.world, Transform3D(Basis(Vector3.UP, heading), ground))
+		if trip.ferry != null:
+			var deck = trip.ferry.deck_spot(Transform3D(Basis(Vector3.UP, heading), ground))
+			if deck != null:
+				off["roadside"]["deck"] = deck   # left on the ferry's deck: it sails with the boat
 	Shed.request(off)
 	_stop_riding()
 

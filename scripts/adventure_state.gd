@@ -34,7 +34,7 @@ extends RefCounted
 ## call whose time is up): see AdventureCrew. adventure_ferry_board {id, from, to, seconds} (a rider at a ferry's ramp:
 ## aboard), adventure_ferry_landed {sail} (a rider off on the far side) and adventure_ferry_tick (the host: lets it go
 ## when the crew's aboard, clears it once they've all landed): the crew's sailing is Shed.adventure "ferry"
-## (AdventureCrew, FerryCrossing).
+## (AdventureCrew, FerryCrossing). adventure_ferry_off {sail}: a rider who'd gone aboard rode off again before it left.
 
 const MIN_KM := 5.0
 const MAX_KM := 400.0
@@ -183,7 +183,7 @@ static func check(peer: int, action: Dictionary) -> String:
 		"adventure_route_tick", "adventure_ferry_tick":
 			if not _is_host(peer) or not active():
 				return "Only the host keeps time."
-		"adventure_ferry_landed":
+		"adventure_ferry_landed", "adventure_ferry_off":
 			if not active():
 				return "There's no adventure on."
 		"adventure_ferry_board":
@@ -329,6 +329,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if not ferry.is_empty() and int(ferry["sail"]) == int(action.get("sail", 0)):
 				(ferry["landed"] as Dictionary)[peer] = true
 				Shed.adventure["ferry"] = ferry
+			return _ferry_tick()
+		"adventure_ferry_off":
+			Shed.adventure["ferry"] = AdventureCrew.got_off(AdventureCrew.sanitize_ferry(Shed.adventure.get("ferry", {})), peer,
+				int(action.get("sail", 0)))
 			return _ferry_tick()
 	return ""
 
