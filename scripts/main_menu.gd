@@ -734,14 +734,10 @@ func show_pause() -> void:
 	_resume.grab_focus()
 
 
-## The Debug tab is the host's alone: a player who has joined someone's shed doesn't see it
-## (and their bike isn't fixed up by itself).
+## The Debug tab is the host's in full; a player who has joined someone's shed sees only Max my
+## XP and Max my money, for their own player.
 func _refresh_debug() -> void:
-	var client := Net.is_online() and not Net.is_host()
-	var at := _tabs.get_tab_idx_from_control(debug)
-	if client and _tabs.current_tab == at:
-		_tabs.current_tab = 0
-	_tabs.set_tab_hidden(at, client)
+	debug.set_guest(Net.is_online() and not Net.is_host())
 
 
 ## Shows "Back to the garage" while you're out in the world, greyed out (and saying why) when

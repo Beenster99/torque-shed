@@ -106,6 +106,39 @@ func test_fix_bike() -> void:
 	await _frames(1)
 
 
+## Debug for a guest (Simon: "add the debug menu back in for guests but only add: Max my money and
+## max my XP"): just those two, working on the guest's own player; the host sees the lot.
+## And the Bike look row: its label on one line, the picker its own height, not stretched.
+func test_guest_debug() -> void:
+	Shed.start_new("Tester", 82)
+	var tab := DebugTab.new()
+	tab.size = Vector2(1000, 700)
+	t.add_child(tab)
+	await _frames(2)
+	var look := tab.find_child("BikeLookPicker", true, false) as OptionButton
+	var look_label := look.get_parent().get_child(0) as Label
+	check(look_label.autowrap_mode == TextServer.AUTOWRAP_OFF and look_label.size.x > look_label.size.y,
+		"the Bike look label reads across, not down (%s)" % str(look_label.size))
+	check(look.size.y < 60.0, "the Bike look picker isn't stretched tall (%.0f px)" % look.size.y)
+	check(not tab.is_guest() and _shown_buttons(tab).has("Reset everyone's XP"), "the host sees the whole Debug tab")
+	tab.set_guest(true)
+	await _frames(1)
+	var shown := _shown_buttons(tab)
+	check(shown == ["Max my XP", "Max my money"], "a guest sees only Max my XP and Max my money %s" % str(shown))
+	var was_money := Progress.money()
+	var was_xp := int(Progress.profile.get("xp", 0))
+	tab.press("Max my money")
+	tab.press("Max my XP")
+	check(Progress.money() == Progress.MAX_MONEY and Progress.level() == Progress.MAX_LEVEL,
+		"and they max the guest's own money and XP (%d, level %d)" % [Progress.money(), Progress.level()])
+	tab.set_guest(false)
+	check(_shown_buttons(tab).has("Reset everyone's XP"), "back as host, the lot again")
+	Progress.set_money(was_money)
+	Progress.profile["xp"] = was_xp
+	tab.queue_free()
+	await _frames(1)
+
+
 ## The opening film (SplashVideo): a headless run never plays it, and played anyway it shows
 ## the film over everything, a key press skips it, and it fades away and is gone.
 func test_splash() -> void:

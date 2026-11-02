@@ -25,7 +25,7 @@ extends Node
 ## The shed's petrol pump: the host stands Old Faithful by it with its tank low, the client lifts
 ## the nozzle and fills it (the host must see the nozzle in the client's figure's hand), then
 ## hangs it back up: both see the litres in the tank and the petrol in the business's books.
-## The Esc menu's Debug tab is there for the host and hidden from the client.
+## The Esc menu's Debug tab is there in full for the host, and the client sees only Max my XP and Max my money.
 
 var role := "host"
 var main: Node
@@ -66,7 +66,7 @@ func _ready() -> void:
 			turned_away.append(text))
 	var moved := false
 	var shed_ok := false
-	var debug_ok := false   # the Esc menu's Debug tab: the host's, hidden from the client
+	var debug_ok := false   # the Esc menu's Debug tab: the host's in full, the client's two buttons only
 	var start := Vector3.ZERO
 	var span := AABB()
 	var own := AABB()   # how far this side's own walker went (for the diagnostic)
@@ -802,7 +802,8 @@ func _ready() -> void:
 			and home_log.size() == home_logged + 1 and absi(int(home_log[-1]["amt"])) == HOME_OFFER)
 		if not debug_ok and Net.is_online():
 			main.menu._refresh_debug()
-			debug_ok = main.menu._tabs.is_tab_hidden(main.menu._tabs.get_tab_idx_from_control(main.menu.debug)) == (role == "client")
+			debug_ok = not main.menu._tabs.is_tab_hidden(main.menu._tabs.get_tab_idx_from_control(main.menu.debug)) \
+				and main.menu.debug.is_guest() == (role == "client")
 		if rest_ok and copy_ok and home_ok and debug_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
