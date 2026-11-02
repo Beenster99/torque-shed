@@ -986,6 +986,7 @@ func _run_all() -> void:
 	await _t(&"_test_coop_positions")
 	await _t(&"_test_coop_call")
 	await _t(&"_test_coop_state")
+	await _t(&"_test_coop_catch_up")
 	print("Simon's v0.39.0 round: the optional parts a bike is complete and ridable without")
 	await _t(&"_test_optional_parts_list")
 	await _t(&"_test_optional_parts_random_bikes")
