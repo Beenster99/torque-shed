@@ -6,6 +6,8 @@ extends ScrollContainer
 ## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
 ## the recovery jobs with the truck granted if the garage hasn't got it. Remove all the Adventure
 ## Diaries. The performance profiler and its recording (see PerfOverlay). Every reset asks first.
+## A guest in someone's shed sees only Max my XP and Max my money (see set_guest): their XP and
+## cash are their own, kept in their profile and reported to the host as usual.
 
 var _info: Label
 var _all_xp: Button
@@ -20,15 +22,33 @@ var _diary_note: Label
 var _perf_toggle: CheckButton
 var _perf_note: Label
 var _adv_note: Label
+var _full: VBoxContainer     # everything, for the host or a solo player
+var _guest_box: VBoxContainer   # a guest's two buttons
+var _guest_info: Label
 
 
 func _ready() -> void:
 	name = "Debug"
 	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var outer := VBoxContainer.new()
+	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(outer)
+	_guest_box = VBoxContainer.new()
+	_guest_box.name = "GuestDebug"
+	_guest_box.add_theme_constant_override("separation", 10)
+	_guest_box.visible = false
+	outer.add_child(_guest_box)
+	_guest_box.add_child(UITheme.title("Debug", 26))
+	_guest_box.add_child(UITheme.label("Testing helpers for your own player.", 15, Color(1, 1, 1, 0.6)))
+	_guest_info = UITheme.label("", 16, UITheme.ACCENT)
+	_guest_box.add_child(_guest_info)
+	_guest_box.add_child(_row([_button("Max my XP", max_my_xp), _button("Max my money", max_my_money)]))
 	var box := VBoxContainer.new()
+	box.name = "FullDebug"
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 10)
-	add_child(box)
+	outer.add_child(box)
+	_full = box
 	box.add_child(UITheme.title("Debug", 26))
 	box.add_child(UITheme.label("Testing helpers. Resets can't be undone.", 15, Color(1, 1, 1, 0.6)))
 	_info = UITheme.label("", 16, UITheme.ACCENT)
@@ -43,8 +63,12 @@ func _ready() -> void:
 	look.selected = BikeLook.LOOKS.find(BikeLook.current())
 	look.tooltip_text = "Classic: the bikes as they were before the look overhaul. New: the overhaul. Only changes what you see."
 	look.item_selected.connect(func(i): BikeLook.choose(BikeLook.LOOKS[i]))
+	# The label sits on one line and the picker keeps its own height (a wrapping label in a row
+	# is squeezed to a letter wide, stacking its text down the page and stretching the picker).
+	look.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var look_label := UITheme.label("Bike look", 15)
 	look_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	look_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	var look_row := _row([look_label])
 	look_row.add_child(look)
 	box.add_child(look_row)
@@ -206,8 +230,22 @@ func _process(delta: float) -> void:
 		_perf_toggle.set_pressed_no_signal(Settings.perf.shown)
 		_perf_note.text = ("Recording... %d s left" % ceili(Settings.perf.record_left)) if Settings.perf.recording() \
 			else ("Last recording: %s" % Settings.perf.last_file if Settings.perf.last_file != "" else "")
+	_guest_info.text = "You: level %d, %d XP, %s" % [Progress.level(), int(Progress.profile.get("xp", 0)),
+		TvChannels.money_text(Progress.money())]
 	_info.text = "You: level %d, %d XP, %s     Garage: %s" % [Progress.level(), int(Progress.profile.get("xp", 0)),
 		TvChannels.money_text(Progress.money()), TvChannels.money_text(Shed.garage_money)]
+
+
+## A guest in someone else's shed (true) sees only Max my XP and Max my money; the host or a
+## solo player (false) sees everything.
+func set_guest(on: bool) -> void:
+	_guest_box.visible = on
+	_full.visible = not on
+
+
+## Whether it's showing a guest's two buttons only.
+func is_guest() -> bool:
+	return _guest_box.visible
 
 
 ## Asks before doing `then`.
@@ -313,7 +351,8 @@ func press_named(node_name: String) -> void:
 ## Presses the button labelled `text` (for tests).
 func press(text: String) -> void:
 	for b in find_children("*", "Button", true, false):
-		if (b as Button).text == text and not (b as Button).disabled and not _confirm.is_ancestor_of(b):
+		if (b as Button).text == text and not (b as Button).disabled and not _confirm.is_ancestor_of(b) \
+				and not (_full.is_ancestor_of(b) and not _full.visible) and not (_guest_box.is_ancestor_of(b) and not _guest_box.visible):
 			(b as Button).pressed.emit()
 			return
 
