@@ -44,12 +44,15 @@ static func of_cell(cell: Vector2i) -> Dictionary:
 	if have is Dictionary:
 		return have
 	var p := {}
-	var v = CellStore._kept_json("profiles", "profile", key, CellStore.index(), profile_url(key))
+	var idx := CellStore.index()
+	var v = CellStore._kept_json("profiles", "profile", key, idx, profile_url(key))
 	if v is Dictionary and int(v.get("format", 0)) == FORMAT:
 		p = parse(v)
 	else:
 		var mid := RealRegion.cell_middle(cell)
 		p = guess(mid.x, mid.y, _cell_meta(cell))
+		if not CellStore.finishing([cell], idx).is_empty():
+			return p   # (its profile is on its way: asked again, the index may name it by then, so the guess isn't kept)
 	_lock.lock()
 	_cells[key] = p
 	_lock.unlock()

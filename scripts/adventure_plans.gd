@@ -23,6 +23,14 @@ static var _stages := {}
 ## The steps of planning a road, in order (stage_of): fetching the map of that part of the world, reading its roads,
 ## rivers and trees, planning the road along them, and shaping the land along it.
 const STAGES: Array[String] = ["map", "roads", "route", "land"]
+## The index of the world's cells is fetched afresh before planning when it's older than this (ms), so a plan takes in
+## cells and profiles baked minutes ago.
+const INDEX_FRESH_MS := 60000
+## A plan that couldn't be made only for now (the map there still being finished) is planned again once it's this old
+## (ms), instead of being kept.
+const RETRY_MS := 30000
+## Why a plan can't be made while the map is still being finished.
+const FINISHING := "The map of this part of the world is still being finished (its place profiles are on their way): try again in a minute or two."
 
 
 ## `v` as a plan this game can plan, or {} when it is not one (no such region, too few or too many pins, a pin off the map).
@@ -76,19 +84,30 @@ static func _request(plan: Dictionary) -> Dictionary:
 static func _run(plan: Dictionary) -> Dictionary:
 	var k := key(plan)
 	if str(plan["region"]).begins_with(RealRegion.AREA_PREFIX):
-		# An area of the world's cells: those the game hasn't got are fetched first (on this worker).
+		# An area of the world's cells: those the game hasn't got are fetched first (on this worker), from an index
+		# no more than a minute old.
 		_say(k, "the map", 0)
+		var refreshed := CellStore.index_age() > INDEX_FRESH_MS
+		CellStore.index(refreshed)
 		var why := RealRegion.fetch_area(str(plan["region"]), func(done: int, total: int):
 			_say(k, "the map, %d of %d parts of the world" % [done, total], 0, done, total))
 		if why != "":
 			_say(k, "")
 			return {"ok": false, "error": why, "pack": null}
+		# Cells whose place profiles are still being made: asked again once, then it's too soon.
+		var cells := RealRegion.area_cells(str(plan["region"]))
+		if not CellStore.finishing(cells, CellStore.index()).is_empty() and not refreshed:
+			CellStore.index(true)
+		if not CellStore.finishing(cells, CellStore.index()).is_empty():
+			_say(k, "")
+			return {"ok": false, "error": FINISHING, "pack": null, "map": true, "retry": true}
 	_say(k, "the roads, the rivers and the trees", 1)
 	var region := RealRegion.get_region(str(plan["region"]))
 	if region == null:
 		return {"ok": false, "error": "This game doesn't have that part of the world.", "pack": null}
 	if str(plan.get("region_hash", "")) != "" and str(plan["region_hash"]) != region.hash:
-		return {"ok": false, "error": "Your copy of the %s map isn't the host's: update the game to join." % region.title, "pack": null}
+		return {"ok": false, "error": "Your copy of the %s map isn't the host's: update the game to join." % region.title, "pack": null,
+			"map": region.id.begins_with(RealRegion.AREA_PREFIX)}
 	_say(k, "the road", 2)
 	var res := RoutePlanner.plan(region, _request(plan), func(done: int, total: int):
 		_say(k, "the lie of the land, %d of %d map tiles" % [done, total], 3, done, total))
@@ -141,6 +160,9 @@ static func result(plan: Dictionary, wait := false) -> Dictionary:
 		return {"ok": false, "error": "Pin a start and somewhere to get to.", "pack": null}
 	var k := key(plan)
 	_lock.lock()
+	if _done.has(k) and bool((_done[k] as Dictionary).get("retry", false)) \
+			and Time.get_ticks_msec() - int(_done[k].get("at", 0)) > RETRY_MS:
+		_done.erase(k)   # (too soon then: planned again now)
 	if _done.has(k):
 		var got: Dictionary = _done[k]
 		_lock.unlock()
@@ -157,6 +179,7 @@ static func result(plan: Dictionary, wait := false) -> Dictionary:
 		return result(plan, true)
 	if wait:
 		var res := _run(plan)
+		res["at"] = Time.get_ticks_msec()
 		_lock.lock()
 		_done[k] = res
 		_lock.unlock()
@@ -164,11 +187,34 @@ static func result(plan: Dictionary, wait := false) -> Dictionary:
 	_lock.lock()
 	_tasks[k] = WorkerThreadPool.add_task(func():
 		var res := _run(plan)
+		res["at"] = Time.get_ticks_msec()
 		_lock.lock()
 		_done[k] = res
 		_lock.unlock())
 	_lock.unlock()
 	return {}
+
+
+## Forgets `plan`'s road, so the next ask plans it afresh (once a worker planning it now has finished).
+static func forget(plan: Dictionary) -> void:
+	_lock.lock()
+	_done.erase(key(plan))
+	_lock.unlock()
+
+
+## After this game's map of `plan`'s area turned out not to be the host's: the world's index fetched afresh, the
+## cells baked again since this game fetched them fetched again, every place profile and kit forgotten (fetched again
+## as they're asked for: a guessed one may now have come), and the plan forgotten, so the next ask plans it from
+## scratch. Blocks: a worker's job, and never while this game is out on a ride (its roads would change under it).
+static func refresh(plan: Dictionary) -> void:
+	var region_id := str(plan.get("region", ""))
+	var idx := CellStore.index(true)
+	if region_id.begins_with(RealRegion.AREA_PREFIX):
+		CellStore.refetch_stale(RealRegion.area_cells(region_id), idx)
+	PlaceProfile.forget()
+	RegionKit.forget()
+	RealRegion.forget_areas()
+	forget(plan)
 
 
 ## Collects the plans the workers have finished (call now and then from the main thread).

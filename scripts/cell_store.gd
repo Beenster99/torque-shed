@@ -62,6 +62,63 @@ static func index(refresh := false) -> Dictionary:
 	return got
 
 
+## How long ago (ms) the index was last fetched or read; a very large number when it never was.
+static func index_age() -> int:
+	_lock.lock()
+	var at := _index_at
+	var none := _index.is_empty()
+	_lock.unlock()
+	return 1 << 40 if none else Time.get_ticks_msec() - at
+
+
+## Those of `cells` the index names with roads but not yet with a place profile: baked minutes ago, their profiles
+## still being made (the world's store makes them just after the cells). A game riding them now would guess their
+## profiles and build different roads from one that had them, so they count as still being finished. None from an
+## index with no profiles at all (an old one, or the tests').
+static func finishing(cells: Array[Vector2i], idx: Dictionary) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var profiles = idx.get("profiles")
+	if not profiles is Dictionary or (profiles as Dictionary).is_empty():
+		return out
+	var named: Dictionary = idx.get("cells", {}) if idx.get("cells") is Dictionary else {}
+	for c in cells:
+		var key := "%d_%d" % [c.x, c.y]
+		var e = named.get(key)
+		if e is Dictionary and not bool(e.get("empty", false)) and not (profiles as Dictionary).has(key):
+			out.append(c)
+	return out
+
+
+## Fetches again those of `cells` kept under `dir` whose files aren't the ones index `idx` names (baked again since
+## this game fetched them). Returns "" or why not. Blocks: a worker's job.
+static func refetch_stale(cells: Array[Vector2i], idx: Dictionary) -> String:
+	var named: Dictionary = idx.get("cells", {}) if idx.get("cells") is Dictionary else {}
+	var stale: Array[Vector2i] = []
+	for c in cells:
+		var e = named.get("%d_%d" % [c.x, c.y])
+		var d := dir.path_join("c%d_%d" % [c.x, c.y])
+		if not e is Dictionary or str(e.get("hash", "")) == "" or not FileAccess.file_exists(d.path_join("region.json")):
+			continue
+		if RegionStore.hash_of_dir(d) != str(e["hash"]):
+			RegionStore._remove_tree(d)
+			stale.append(c)
+	if stale.is_empty():
+		return ""
+	RealRegion.forget_areas()
+	return fetch_cells(stale)
+
+
+## The cells of a box (degrees), every one it touches.
+static func cells_in_box(south: float, west: float, north: float, east: float) -> Array[Vector2i]:
+	var a := RealRegion.cell_of(south, west)
+	var b := RealRegion.cell_of(north - 1e-9, east - 1e-9)
+	var cells: Array[Vector2i] = []
+	for i in range(a.x, b.x + 1):
+		for j in range(a.y, b.y + 1):
+			cells.append(Vector2i(i, j))
+	return cells
+
+
 ## Forgets the index fetched (the tests change where it comes from).
 static func forget_index() -> void:
 	_lock.lock()
@@ -207,13 +264,7 @@ static func missing(south: float, west: float, north: float, east: float, idx: D
 ## Fetches the cells of a box the game hasn't got, one by one, each checked against its hash. Returns "" or why not.
 ## `progress(done, total)` is called as each comes. Never call it on the main thread.
 static func fetch_box(south: float, west: float, north: float, east: float, progress := Callable()) -> String:
-	var a := RealRegion.cell_of(south, west)
-	var b := RealRegion.cell_of(north - 1e-9, east - 1e-9)
-	var cells: Array[Vector2i] = []
-	for i in range(a.x, b.x + 1):
-		for j in range(a.y, b.y + 1):
-			cells.append(Vector2i(i, j))
-	return fetch_cells(cells, progress)
+	return fetch_cells(cells_in_box(south, west, north, east), progress)
 
 
 ## What the game knows of cell `c`: "here" (it has it), "baked" (the index has it, to fetch), "sea" (no roads), or

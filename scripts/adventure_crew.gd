@@ -80,8 +80,26 @@ static func ride_mismatch(info: Dictionary, mine: String, ride: String) -> Strin
 	if ride == "":
 		return "Your game doesn't have the part of the map this ride is on."
 	if str(info.get("ride_hash", "")) != ride:
-		return "Your game's map of this area differs from the host's (its map cells or place profiles): update the game to join."
+		return MAP_CHANGED
 	return ""
+
+
+## Why a guest whose game is the host's version still can't join: their copies of the map differ. The world's store
+## changed part way (cells baked, or their place profiles made, while the route was planned), so planning again fixes it.
+const MAP_CHANGED := "Your game's map of this area isn't the same as the host's: the map changed while the route was planned. Ask the host to end the ride and start it again."
+## What the crew's told when a guest can't join for that (the guest's name first).
+const MAP_CHANGED_CREW := "%s couldn't join the ride: their map of this area isn't the same as the host's (the map changed while the route was planned). Host, end the ride and start it again to bring them along."
+
+
+## Whether a guest turned away from ride `info` with plan result `res` (AdventurePlans.result) may have only an older
+## copy of the map, which fetching the latest could put right: their game is the host's version, and either the plan
+## failed over the map itself or it was planned and came out different.
+static func map_may_catch_up(info: Dictionary, res: Dictionary) -> bool:
+	if str(info.get("builds", "")) != builds():
+		return false
+	if not bool(res.get("ok", false)):
+		return bool(res.get("map", false))
+	return true
 
 
 ## The names of the crew whose game builds differently from `mine` ({peer: {name, builds}}, as Shed.crew). A player
