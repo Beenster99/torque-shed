@@ -987,6 +987,7 @@ func _run_all() -> void:
 	await _t(&"_test_coop_call")
 	await _t(&"_test_coop_state")
 	await _t(&"_test_coop_catch_up")
+	await _t(&"_test_coop_host_map")
 	print("Simon's v0.39.0 round: the optional parts a bike is complete and ridable without")
 	await _t(&"_test_optional_parts_list")
 	await _t(&"_test_optional_parts_random_bikes")
@@ -23417,6 +23418,10 @@ func _test_coop_state() -> void:
 
 func _test_coop_catch_up() -> void:
 	_coop().test_catch_up()
+
+
+func _test_coop_host_map() -> void:
+	_coop().test_host_map()
 
 
 func _planner() -> RefCounted:

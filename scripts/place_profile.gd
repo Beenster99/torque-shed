@@ -59,6 +59,27 @@ static func of_cell(cell: Vector2i) -> Dictionary:
 	return p
 
 
+## Cell `cell`'s profile if this game has already had a real one (none fetched, none guessed), else {}.
+static func cached(cell: Vector2i) -> Dictionary:
+	_lock.lock()
+	var have = _cells.get("%d_%d" % [cell.x, cell.y])
+	_lock.unlock()
+	return have if have is Dictionary and not bool(have.get("guessed", false)) else {}
+
+
+## Uses profile `p` (as the host of a ride has it, see AdventureCrew.host_map) for cell "ROW_COL" `key`, in place of any
+## this game had or guessed. Whether that changed it.
+static func pin(key: String, p: Dictionary) -> bool:
+	_lock.lock()
+	var have = _cells.get(key)
+	var same := have is Dictionary and not bool(have.get("guessed", false)) and str(have.get("hash", "")) == str(p.get("hash", "")) \
+		and str(p.get("hash", "")) != ""
+	if not same:
+		_cells[key] = parse(p)
+	_lock.unlock()
+	return not same
+
+
 ## The profile of the cell that (lat, lon) is in.
 static func at(lat: float, lon: float) -> Dictionary:
 	return of_cell(RealRegion.cell_of(lat, lon))

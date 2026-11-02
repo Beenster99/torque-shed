@@ -14,6 +14,8 @@ extends RefCounted
 ## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived), network (whether it's
 ## ridden on the road network: the host's Esc > Debug toggle when they set off, the same for everyone), builds and
 ## ride_hash (the host's builder and ride hashes, see AdventureCrew: on the network every machine must match them),
+## map (on an area of the world's cells: the host's place profiles and copies of its cells, which every game rides,
+## see AdventureCrew.host_map),
 ## route (the crew's agreed route and its "leave the route?" call, see AdventureCrew), left (the guests who've
 ## left the ride for the shed, see adventure_leave)}. Never
 ## carried over in a save: loading one finds everybody back at the shed.
@@ -223,6 +225,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if AdventureWorld.network:
 				var plan: Dictionary = planned["plan"]
 				Shed.adventure["ride_hash"] = AdventureCrew.ride_hash(RealRegion.get_region(str(plan.get("region", ""))))
+			# The host's map of the ride's cells, for every game to ride the same one (AdventureCrew.host_map).
+			var map := AdventureCrew.host_map(str((planned["plan"] as Dictionary).get("region", "")))
+			if not map.is_empty():
+				Shed.adventure["map"] = map
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
 			Shed.journey.erase("in")   # (said for this ride: the next is to be agreed afresh)
 			AdventureDiary.started(true)

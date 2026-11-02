@@ -97,6 +97,7 @@ var _builds_at := -100000    # ticks: when this game last told the shed its buil
 var _refreshing := -1        # worker task: the map fetched afresh after it turned out not to be the host's, or -1
 var _refreshed_for := 0      # the ride the map was last fetched afresh for (once a ride)
 var _told_for := 0           # the ride the host was last told this game couldn't join
+var _host_cells_for := 0     # the ride the host's copies of its cells were fetched for (AdventureCrew.use_host_map)
 ## A ride the host was told a guest couldn't join over the map (AdventureCrew.MAP_CHANGED_CREW): the host's own map
 ## is fetched afresh once it's back at the shed, so the ride started again is planned from the latest.
 static var host_refresh := {}
@@ -236,6 +237,20 @@ func enter() -> void:
 			return   # (_process asks again till it's done)
 		WorkerThreadPool.wait_for_task_completion(_refreshing)
 		_refreshing = -1
+	# The host's map of the ride: its place profiles used here whatever this game had, and its copies of the cells
+	# fetched where this game's differ, before the road is planned.
+	var host_cells := AdventureCrew.use_host_map(info)
+	if not host_cells.is_empty() and _host_cells_for != trip_id:
+		_host_cells_for = trip_id
+		_preparing = true
+		_preparing_line = "Getting the road ready: fetching the host's map of this area..."
+		_preparing_at = Time.get_ticks_msec()
+		Shed.feedback.emit(_preparing_line, true)
+		var clean := AdventurePlans.clean(plan)
+		_refreshing = WorkerThreadPool.add_task(func():
+			CellStore.fetch_entries(host_cells)
+			AdventurePlans.forget(clean))
+		return
 	var res := AdventurePlans.result(AdventurePlans.clean(plan))
 	var finishing := bool(res.get("retry", false)) and bool(res.get("map", false))
 	if finishing:
