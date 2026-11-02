@@ -143,6 +143,14 @@ static func use_host_map(info: Dictionary) -> Dictionary:
 	return fetch
 
 
+## How long (s) message `text` stays on the screen: a player turned away from a ride, or told why a mate was, long
+## enough to read what to do (up to 12 s, or till the next message); any other the usual `usual`.
+static func read_time(text: String, usual: float) -> float:
+	var long := text == MAP_CHANGED or text == AdventurePlans.FINISHING or text.ends_with(MAP_CHANGED_CREW.trim_prefix("%s")) \
+		or text.begins_with("Your copy of the ") or text.begins_with("Your game planned a different road")
+	return clampf(text.length() / 16.0, usual, 12.0) if long else usual
+
+
 ## Whether `url` is one of the world's store's (a cell's release asset, or beside the index): the only place a host's
 ## map may send a guest's game for a cell.
 static func from_store(url: String) -> bool:

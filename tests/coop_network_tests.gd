@@ -309,6 +309,9 @@ func test_host_map() -> void:
 	map["cells"]["577_711"]["url"] = "https://example.com/c577_711.zip"
 	fetch = AdventureCrew.use_host_map({"map": map})
 	check(not (fetch as Dictionary).has("577_711"), "but only from the world's store")
+	check(AdventureCrew.read_time(AdventureCrew.MAP_CHANGED, 2.0) >= 9.0 and AdventureCrew.read_time(AdventureCrew.MAP_CHANGED_CREW % "Sam", 2.5) >= 9.0
+		and AdventureCrew.read_time("Wait for the balls to stop.", 2.0) == 2.0 and AdventureCrew.read_time("x".repeat(300), 2.5) == 2.5,
+		"being turned away from a ride stays on screen long enough to read; any other message as long as ever")
 	check(AdventureCrew.use_host_map({}).is_empty() and AdventureCrew.use_host_map({"map": "junk"}).is_empty(), "no map, or junk: nothing")
 	RealRegion.cell_dirs = was[0]
 	CellStore.dir = was[1]
