@@ -227,8 +227,10 @@ var _dry_mu := -1.0        # the tyres' grip on dry tarmac, worked out the first
 var _flick_share := 1.0    # how much of the bike's flick the rider is using just now (see _update_flick)
 var lean_rate := 0.0
 var pitch_angle := 0.0     # radians, positive = nose up
-## The slope of the road under the wheels along the bike's heading (radians, + uphill), and the
-## bike's pitch measured from it: what a wheelie or a stoppie is, so a steep hill isn't taken for one.
+## The slope of the road under the bike along its heading (radians, + uphill), and the
+## bike's pitch measured from it: what the ECU's anti-wheelie goes by, so a steep hill isn't taken
+## for a wheelie. (The rider's own feel for a wheelie still goes by the horizon: over a whoop's crest
+## that brings a nose-high bike down before it lands.)
 var road_pitch := 0.0
 var pitch_over_road := 0.0
 var is_crashed := false
@@ -752,17 +754,17 @@ func _physics_process_body(delta: float) -> void:
 	_update_steering(delta)
 	_update_engine(delta)
 	var rear_grip := rear_brake
-	if not wheels[0]["contact"] and wheels[1]["contact"] and pitch_over_road > deg_to_rad(4.0):
+	if not wheels[0]["contact"] and wheels[1]["contact"] and pitch_angle > deg_to_rad(4.0):
 		# Past the wheelie angle the rider covers the back brake to bring the front down.
-		var over := pitch_over_road - wheelie_target()
+		var over := pitch_angle - wheelie_target()
 		var rising := angular_velocity.dot(global_transform.basis.x)
 		if over > 0.0:
 			rear_grip = maxf(rear_grip, clampf(over * 3.0 + rising * 0.6, 0.0, 1.0) * _steadiness())
 	var front_grip := front_brake
-	if not wheels[1]["contact"] and wheels[0]["contact"] and pitch_over_road < -deg_to_rad(3.0):
+	if not wheels[1]["contact"] and wheels[0]["contact"] and pitch_angle < -deg_to_rad(3.0):
 		# Holding a stoppie: ease the front brake as the back climbs past the balance angle.
 		# Not leaning forward for one, a rider stopping hard keeps the back tyre skimming the road.
-		var over := -pitch_over_road - (STOPPIE_PITCH if body_shift >= 0.25 else STOPPIE_SKIM)
+		var over := -pitch_angle - (STOPPIE_PITCH if body_shift >= 0.25 else STOPPIE_SKIM)
 		var falling := -angular_velocity.dot(global_transform.basis.x)
 		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * _steadiness(), 0.0, 1.0)
 	if paddling:
@@ -811,15 +813,12 @@ func _measure_attitude() -> void:
 	lean_angle = atan2(up.dot(right_flat), up.dot(Vector3.UP))
 	lean_rate = angular_velocity.dot(fwd_flat)
 	pitch_angle = asin(clampf(fwd.y, -1.0, 1.0))
-	# The road's slope from the ground the tyres last touched (it holds over a jump).
-	var n_sum := Vector3.ZERO
-	for w in wheels:
-		if w["contact"]:
-			n_sum += w.get("normal", Vector3.UP)
-	if n_sum.length() > 0.5:
-		var n := n_sum.normalized()
-		var along := fwd_flat - n * fwd_flat.dot(n)
-		road_pitch = asin(clampf(along.normalized().y, -1.0, 1.0))
+	# The road's slope: the line between the two tyres' contact patches while both are down. It
+	# holds while one wheel is up, so a wheelie is measured from the road it started on, not from
+	# the far face of a whoop under the back tyre (which made a level bike look like it was looping).
+	if wheels[0]["contact"] and wheels[1]["contact"] and wheels[0].has("contact_pos") and wheels[1].has("contact_pos"):
+		var d: Vector3 = wheels[0]["contact_pos"] - wheels[1]["contact_pos"]
+		road_pitch = atan2(d.y, maxf(d.dot(fwd_flat), 0.1))
 	pitch_over_road = pitch_angle - road_pitch
 
 
@@ -1306,8 +1305,8 @@ func _update_engine(delta: float) -> void:
 		tc_target = clampf(1.0 - (spin_ratio - tc_from) * tc_gain * tc, 0.15, 1.0)
 	# In a wheelie the rider feathers the throttle to hold the front up at the balance angle
 	# rather than looping it; more assist, steadier hands.
-	if not wheels[0]["contact"] and rear["contact"] and pitch_over_road > deg_to_rad(4.0):
-		var over := pitch_over_road - wheelie_target()
+	if not wheels[0]["contact"] and rear["contact"] and pitch_angle > deg_to_rad(4.0):
+		var over := pitch_angle - wheelie_target()
 		var rising := angular_velocity.dot(global_transform.basis.x)
 		var hands := _steadiness()
 		tc_target = minf(tc_target, clampf(1.0 - (over * 8.0 + rising * 1.2) * hands, 0.0, 1.0))
