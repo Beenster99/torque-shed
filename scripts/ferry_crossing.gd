@@ -88,6 +88,8 @@ var _gates := {}       # end (+1 the stern, -1 the bow) -> CollisionShape3D acro
 var _flaps := {}       # end -> Node3D, its ramp, hinged at the deck's end
 var _quays: Node3D     # the terminals' ramps and bridges out to the boat, solid, in the region frame (see _build_quays)
 var _quay_key := ""
+var _quay_tried := ""   # the link the quays were last made for, still waiting on a terminal's ground, and when
+var _quay_tried_at := 0
 var _quay_lines: Array = []   # [[a, b] (Vector3, region frame), ...]: each ramp and bridge, for carrying()
 var _quay_ends := {}   # node -> {end (+1, -1), down (the boat's ramp's angle, down on the bridge's end)}
 var _quay_gates := {}  # node -> CollisionShape3D across the bridge's end, there while the boat's not
@@ -225,11 +227,14 @@ static func lead(p: Vector3, delay: float) -> Vector3:
 	return deck_velocity(p) * delay
 
 
+## Whether local `p` is on the crew's boat's deck (or just over its edge).
+static func on_crew_deck(p: Vector3) -> bool:
+	return current != null and current.on_deck(p, 1.0)
+
+
 ## How fast whatever's at local `p` is carried along by the crew's boat (m/s): its velocity on its deck, else nothing.
 static func deck_velocity(p: Vector3) -> Vector3:
-	if current == null or not current.on_deck(p, 1.0):
-		return Vector3.ZERO
-	return current.velocity
+	return current.velocity if on_crew_deck(p) else Vector3.ZERO
 
 
 ## The HUD's line while there's something to say about a ferry ("" for nothing).
@@ -537,6 +542,7 @@ func _make_boat(pose: Vector4) -> void:
 		_gates[end] = _add_box(_body, Transform3D(Basis.IDENTITY, hinge + Vector3(0, 1.0, end * 0.6)),
 			Vector3(lane.y - lane.x + 0.2, 2.0, 0.6))
 	_quay_key = ""
+	_quay_tried = ""
 
 
 static func _add_box(body: Node3D, xf: Transform3D, size: Vector3) -> CollisionShape3D:
@@ -558,16 +564,22 @@ func _tick_quays() -> void:
 		_quays.name = "FerryQuays"
 		world.add_child(_quays)
 	var key := "%s|%d" % [_size(), link]
-	if _quay_key != key:
-		_build_quays()
-		if _quay_lines.size() >= 2:
+	var now := Time.get_ticks_msec()
+	if _quay_key != key and (key != _quay_tried or now - _quay_tried_at > 1000):
+		# (tried again a second later while the far side's ground isn't in, not every tick: each try makes the quays
+		# anew under whoever's on them)
+		_quay_tried = key
+		_quay_tried_at = now
+		if _build_quays() >= 2:
 			_quay_key = key
 	_quays.visible = true
 	_quays.process_mode = Node.PROCESS_MODE_INHERIT
 	_quays.global_position = world.to_local_pos(_quay_at.x, 0.0, _quay_at.z)
 
 
-func _build_quays() -> void:
+## (how many of the two terminals' ramps it could make: one's left out while the ground there's not in yet)
+func _build_quays() -> int:
+	var built := 0
 	for c in _quays.get_children():
 		c.queue_free()
 	_quay_lines.clear()
@@ -589,6 +601,7 @@ func _build_quays() -> void:
 		var ramp := FerryScenery.ramp_of(net, links, link, node)
 		if ramp.is_empty():
 			continue
+		built += 1
 		var foot: Vector3 = ramp["foot"]
 		var tip: Vector3 = ramp["tip"]
 		_solid_span(body, foot, tip, FerryScenery.RAMP_W, false, RAIL_FROM)
@@ -623,6 +636,7 @@ func _build_quays() -> void:
 		var gate_xf := Transform3D(Basis.looking_at(out_way, Vector3.UP), reach + out_way * -0.4 + Vector3.UP * 1.0)
 		_quay_gates[node] = _add_box(body, Transform3D(gate_xf.basis, gate_xf.origin - _quay_at), Vector3(lane_w + 1.5, 2.0, 0.5))
 		_quay_ends[node] = {"end": end, "down": 0.0}
+	return built
 
 
 ## Lets this rider (on the bike, or on foot) through the land's ground while on a terminal's ramp: the real heights
@@ -639,6 +653,15 @@ func _cut() -> void:
 		if me == null or not _on_ramp(me.global_position):
 			return
 	_cut_for = me
+	# (the land's blocks come and go as it streams: a freed one's RID may be handed on to a new body, the quays' own
+	# even, so those gone are let go of at once)
+	var kept := _cut_bodies.filter(func(c): return is_instance_valid(c))
+	if kept.size() != _cut_bodies.size():
+		_cut_bodies = kept
+		if me is Bike:
+			(me as Bike).let_through.clear()
+			for c: Object in kept:
+				(me as Bike).let_through.append((c as PhysicsBody3D).get_rid())
 	var q := PhysicsShapeQueryParameters3D.new()
 	var ball := SphereShape3D.new()
 	ball.radius = CUT_R

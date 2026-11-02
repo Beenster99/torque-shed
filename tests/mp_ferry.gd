@@ -117,7 +117,7 @@ func _ready() -> void:
 		# Ridden on: up the ramp, over the bridge out to the boat and down the lane onto its deck.
 		var slot := 0 if role != "client" else 1
 		var way_on: Array = await _way_on(trip, int(f["from"]), slot)
-		boarded = await _ride(trip, way_on, func(): return trip.ferry.phase in ["aboard", "sailing"], 60.0)
+		boarded = await _ride(trip, way_on, func(): return trip.ferry.phase in ["aboard", "sailing"], 60.0, true)
 		if role == "host":
 			# (still at the ramp a while on, alone aboard: it waits for the client)
 			await _wait(5.0)
@@ -141,6 +141,11 @@ func _ready() -> void:
 						taken[k[0]] = true
 						_shot("%s_%d_%s" % [place, int(f["step"]), k[0]])
 			var me: Node3D = main.bike if main.bike != null else main.walker
+			if me != null and trip.ferry.phase == "sailing" and int(trip.ferry.t / 8.0) != int(taken.get("log", -1)):
+				taken["log"] = int(trip.ferry.t / 8.0)
+				var rel := trip.ferry._xf.affine_inverse() * me.global_transform
+				print("MP ferry note %s: on deck at t %.1f: %s, facing %.2f, v %s" % [role, trip.ferry.t, rel.origin, rel.basis.get_euler().y,
+					(me as Bike).linear_velocity if me is Bike else Vector3.ZERO])
 			if not solo and trip.ferry.phase == "sailing" and trip.ferry.t > FerryCrossing.PREP + 10.0 and not taken.has("mate"):
 				# (the mate drawn aboard with us, out on the water: not left behind the boat by the network's delay)
 				taken["mate"] = true
@@ -307,8 +312,14 @@ func _way_off(trip: AdventureTrip, node: int) -> Array:
 	var end := trip.ferry.end_at(node)
 	var hinge := FerryScenery.hinge(size, end)
 	var pts: Array = []
-	for local: Vector3 in [hinge, hinge + Vector3(0, 0, end * FerryScenery.FLAP_LEN)]:
-		pts.append(_region(trip, boat * local))
+	# (straight on down its own track of the lane to the boat's ramp, then over it to the bridge, aimed a way on along
+	# it: the boat may lie at an angle to it, too sharp to turn into at the ramp's end from where the bike's parked)
+	var at: Vector3 = boat.affine_inverse() * main.bike.global_position if main.bike != null else hinge
+	var reach := _region(trip, boat * (hinge + Vector3(0, 0, end * FerryScenery.FLAP_LEN)))
+	var along: Vector3 = (ramp["tip"] as Vector3) - reach
+	along.y = 0.0
+	pts.append_array([_region(trip, boat * Vector3(at.x, hinge.y, hinge.z)), _region(trip, boat * (hinge + Vector3(0, 0, end * 1.5))),
+		reach + along.normalized() * minf(4.0, along.length() * 0.5)])
 	var road: Vector3 = ramp["road"]
 	var inland: Vector3 = road - (ramp["tip"] as Vector3)
 	inland.y = 0.0
@@ -323,15 +334,16 @@ func _region(trip: AdventureTrip, p: Vector3) -> Vector3:
 
 
 ## Rides the bike slowly through `points` (region frame) in turn until `done` (or `seconds` pass): leaning for each
-## point ahead, a jogging pace on the throttle, stopping at the last.
-func _ride(trip: AdventureTrip, points: Array, done: Callable, seconds: float) -> bool:
+## point ahead, a jogging pace on the throttle, stopping at the last (and only done there when `to_end`: aboard, on to its
+## place on the deck, not stopped just inside its end).
+func _ride(trip: AdventureTrip, points: Array, done: Callable, seconds: float, to_end := false) -> bool:
 	var pilot := Pilot.new()
 	pilot.trip = trip
 	pilot.points = points
 	pilot.role = role
 	main.process_physics_priority = -2   # (Main reads the keys first, then the pilot has the bike: see Pilot)
 	add_child(pilot)
-	var ok := await _until(func(): return done.call() or (pilot.k >= points.size() and main.bike != null and absf(main.bike.speed) < 0.3 and done.call()), seconds)
+	var ok := await _until(func(): return (done.call() and not to_end) or (pilot.k >= points.size() and main.bike != null and absf(main.bike.speed) < 0.3 and done.call()), seconds)
 	print("MP ferry note %s: rode %d of %d points, done %s, bike %s, phase \"%s\"" % [role, pilot.k, points.size(), ok, main.bike.global_position if main.bike else null, trip.ferry.phase if is_instance_valid(trip) and trip.ferry else "gone"])
 	pilot.queue_free()
 	if main.bike != null:

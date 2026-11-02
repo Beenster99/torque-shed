@@ -129,7 +129,11 @@ func _process_body(delta: float) -> void:
 	var pos: Vector3 = at["pos"]
 	pos += FerryCrossing.lead(pos, timeline.delay)   # (on the crew's ferry: where the boat's taken them since)
 	global_transform = Transform3D(Basis(at["rot"]), pos)
-	if collision_layer == 0:
+	if FerryCrossing.on_crew_deck(pos):
+		# (aboard the crew's ferry they're drawn a moment late on a deck that's moving and turning: solid, a parked
+		# bike beside them got shoved round and over on a crossing, so on deck bikes pass through each other)
+		collision_layer = 0
+	elif collision_layer == 0:
 		collision_layer = 2   # where they are: solid now, so bikes can bump into each other
 	_last = sb
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
