@@ -149,3 +149,114 @@ func test_state() -> void:
 	AdventureWorld.network = net_was
 	Shed.adventure = was_adv
 	Shed.crew = was_crew
+
+
+## A guest whose copy of the map is only older than the host's (the world's store baked cells, or made their place
+## profiles, while the route was planned) catches up instead of being turned away: a cell baked but not yet profiled
+## counts as still being finished (no plan over it, and no guessed profile kept for it), a plan that can't be made only
+## for now is planned again later, a guest on the host's version fetches the latest before giving up, and when that
+## doesn't do it the crew's told to start the ride again.
+func test_catch_up() -> void:
+	var a := Vector2i(577, 711)
+	var b := Vector2i(577, 712)
+	var sea := Vector2i(577, 713)
+	var idx := {"cells": {"577_711": {"hash": "h1"}, "577_712": {"hash": "h2"}, "577_713": {"empty": true}},
+		"profiles": {"577_711": "p1"}}
+	var cells: Array[Vector2i] = [a, b, sea, Vector2i(1, 1)]
+	check(Array(CellStore.finishing(cells, idx)) == [b], "a cell baked but not yet profiled is still being finished; one profiled, the sea and one nobody baked aren't")
+	check(CellStore.finishing(cells, {"cells": idx["cells"]}).is_empty(), "an index with no profiles at all has nothing being finished (an old one)")
+	check(Array(RealRegion.area_cells("area:@577_711,577_712")) == [a, b] and RealRegion.area_cells("dales").is_empty(),
+		"an area's cells are known whether the game has them or not; a bundled region has none")
+	# The world's store as a game saw it in the minutes between: both cells baked, one with its profile.
+	var store := "user://test_catch_up"
+	RegionStore._remove_tree(store)
+	DirAccess.make_dir_recursive_absolute(store)
+	var was := [CellStore.dir, CellStore.offline, RealRegion.cell_dirs, HeightTiles.dirs, HeightTiles.offline]
+	var save := func(index: Dictionary) -> void:
+		var f := FileAccess.open(store.path_join("index.json"), FileAccess.WRITE)
+		f.store_string(JSON.stringify(index))
+		f.close()
+		CellStore.forget_index()
+	save.call({"format": 1, "cells": {"577_711": {"hash": "h1"}, "577_712": {"hash": "h2"}}, "profiles": {"577_711": "p1"}})
+	CellStore.dir = store
+	CellStore.offline = true
+	PlaceProfile.forget()
+	RegionKit.forget()
+	var guessed := PlaceProfile.of_cell(b)
+	check(bool(guessed["guessed"]), "a cell still being finished gets a guessed profile for now")
+	# Its profile comes.
+	var text := JSON.stringify({"format": PlaceProfile.FORMAT, "cell": "577_712", "lat": 54.3, "lon": -1.9, "country": "GB", "hash": "fresh0000000",
+		"guessed": false})
+	DirAccess.make_dir_recursive_absolute(store.path_join("profile"))
+	var f := FileAccess.open(store.path_join("profile/c577_712.json"), FileAccess.WRITE)
+	f.store_string(text)
+	f.close()
+	save.call({"format": 1, "cells": {"577_711": {"hash": "h1"}, "577_712": {"hash": "h2"}}, "profiles": {"577_711": "p1", "577_712": text.sha1_text().left(12)}})
+	var real := PlaceProfile.of_cell(b)
+	check(not bool(real["guessed"]) and str(real["hash"]) == "fresh0000000", "and once it's come the guess isn't kept: the real one's had (%s)" % str(real["hash"]))
+	# A plan over cells still being finished waits for them, and is planned again once they're done.
+	RealRegion.cell_dirs = ["res://tests/fixtures/cells"]
+	HeightTiles.dirs = ["res://tests/fixtures/heights"]
+	HeightTiles.offline = true
+	HeightTiles.reset()
+	RealRegion.forget_areas()
+	save.call({"format": 1, "cells": {"577_711": {"hash": "h1"}, "577_712": {"hash": "h2"}}, "profiles": {"577_711": "p1"}})
+	var plan := AdventurePlans.clean({"region": "area:swaledale", "pins": [[-2422, -4363], [7187, -4599]], "mode": "main"})
+	AdventurePlans.forget(plan)
+	var res := AdventurePlans.result(plan, true)
+	check(not bool(res["ok"]) and bool(res.get("retry", false)) and bool(res.get("map", false)) and str(res["error"]) == AdventurePlans.FINISHING,
+		"no plan over a cell still being finished: it says to try again shortly (%s)" % str(res["error"]))
+	check(AdventurePlans.result(plan, true).get("at") == res.get("at"), "asked again at once, the answer's kept (not planned every frame)")
+	save.call({"format": 1, "cells": {"577_711": {"hash": "h1"}, "577_712": {"hash": "h2"}}, "profiles": {"577_711": "p1", "577_712": text.sha1_text().left(12)}})
+	AdventurePlans._lock.lock()
+	AdventurePlans._done[AdventurePlans.key(plan)]["at"] = Time.get_ticks_msec() - AdventurePlans.RETRY_MS - 1
+	AdventurePlans._lock.unlock()
+	res = AdventurePlans.result(plan, true)
+	check(bool(res["ok"]), "once the map's finished, the plan's made (%s)" % str(res.get("error", "")))
+	# A guest turned away: on the host's version, a different map may only be an older one; another version can't catch up.
+	var mine := AdventureCrew.builds()
+	check(AdventureCrew.map_may_catch_up({"builds": mine}, {"ok": true}), "the same version but a different map: fetch the latest first")
+	check(AdventureCrew.map_may_catch_up({"builds": mine}, {"ok": false, "map": true}), "the same version and the map not the host's: the same")
+	check(not AdventureCrew.map_may_catch_up({"builds": mine}, {"ok": false}), "a plan that failed for another reason: no")
+	check(not AdventureCrew.map_may_catch_up({"builds": "older"}, {"ok": true}), "another version: fetching the map won't help")
+	check(AdventureCrew.ride_mismatch({"builds": mine, "ride_hash": "x"}, mine, "y").contains("Ask the host to end the ride and start it again")
+		and not AdventureCrew.ride_mismatch({"builds": mine, "ride_hash": "x"}, mine, "y").contains("update the game"),
+		"a different map on the same version is told to start the ride again, not to update")
+	# The refresh: the index fetched afresh, the plan and every profile forgotten.
+	PlaceProfile.of_cell(b)
+	AdventurePlans.refresh(plan)
+	AdventurePlans._lock.lock()
+	var forgot := not AdventurePlans._done.has(AdventurePlans.key(plan))
+	AdventurePlans._lock.unlock()
+	PlaceProfile._lock.lock()
+	forgot = forgot and PlaceProfile._cells.is_empty()
+	PlaceProfile._lock.unlock()
+	check(forgot, "fetching the latest forgets the plan and the profiles, so the next ask starts afresh")
+	# The host's told, and its own map fetched afresh once it's back.
+	var was_adv := Shed.adventure
+	var was_crew := Shed.crew
+	Shed.crew = {1: {"name": "Host"}, 2: {"name": "Sam"}}
+	Shed.adventure = Adventure.sanitize({"id": 7, "plan": plan, "riders": {1: 0}, "network": true})
+	AdventureTrip.host_refresh = {}
+	check(Adventure.check(2, {"a": "adventure_cant", "id": 6}).contains("over"), "a ride that's over isn't told about")
+	check(Adventure.check(1, {"a": "adventure_cant", "id": 7}) != "", "the host doesn't tell itself")
+	check(Adventure.check(2, {"a": "adventure_cant", "id": 7}) == "", "a guest tells the host")
+	var said := Adventure.apply(2, {"a": "adventure_cant", "id": 7})
+	check(said.begins_with("*Sam couldn't join the ride") and said.contains("end the ride and start it again")
+		and AdventurePlans.key(AdventureTrip.host_refresh) == AdventurePlans.key(plan),
+		"the whole crew's told what to do, and the host's map is to be fetched afresh (%s)" % said)
+	AdventureTrip.host_refresh = {}
+	Shed.adventure = was_adv
+	Shed.crew = was_crew
+	AdventurePlans.forget(plan)
+	CellStore.dir = was[0]
+	CellStore.offline = was[1]
+	RealRegion.cell_dirs = was[2]
+	HeightTiles.dirs = was[3]
+	HeightTiles.offline = was[4]
+	HeightTiles.reset()
+	CellStore.forget_index()
+	RealRegion.forget_areas()
+	PlaceProfile.forget()
+	RegionKit.forget()
+	RegionStore._remove_tree(store)

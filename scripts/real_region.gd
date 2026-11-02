@@ -359,6 +359,19 @@ static func fetch_area(region_id: String, progress := Callable()) -> String:
 	return CellStore.fetch_box(float(a["south"]), float(a["west"]), float(a["north"]), float(a["east"]), progress)
 
 
+## The cells area `region_id` ("area:NAME" or "area:@ROW_COL,...") is made of, whether the game has them or not; none
+## for a bundled region.
+static func area_cells(region_id: String) -> Array[Vector2i]:
+	if region_id.begins_with(CELLS_PREFIX):
+		return cells_of_area(region_id)
+	if not region_id.begins_with(AREA_PREFIX):
+		return [] as Array[Vector2i]
+	var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
+	if a.is_empty():
+		return [] as Array[Vector2i]
+	return CellStore.cells_in_box(float(a["south"]), float(a["west"]), float(a["north"]), float(a["east"]))
+
+
 ## The box and frame of an area of listed cells, as areas.json has a named area's: {frame, south, west, north, east}.
 static func _cells_box(region_id: String) -> Dictionary:
 	var cells := cells_of_area(region_id)

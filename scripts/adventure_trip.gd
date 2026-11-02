@@ -94,6 +94,12 @@ var _call_label: Label       # the crew's "leave the route?" call
 var _call_seen := {}         # call id -> ticks when it came in here (the count down is from then)
 var _tick_at := 0            # ticks: when the host last settled a call
 var _builds_at := -100000    # ticks: when this game last told the shed its builder hash
+var _refreshing := -1        # worker task: the map fetched afresh after it turned out not to be the host's, or -1
+var _refreshed_for := 0      # the ride the map was last fetched afresh for (once a ride)
+var _told_for := 0           # the ride the host was last told this game couldn't join
+## A ride the host was told a guest couldn't join over the map (AdventureCrew.MAP_CHANGED_CREW): the host's own map
+## is fetched afresh once it's back at the shed, so the ride started again is planned from the latest.
+static var host_refresh := {}
 
 
 func _ready() -> void:
@@ -166,6 +172,9 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if current == self:
 		current = null
+	if _refreshing >= 0:
+		WorkerThreadPool.wait_for_task_completion(_refreshing)
+		_refreshing = -1
 	AdventurePlans.wait_all()   # journeys still being planned
 
 
@@ -222,11 +231,21 @@ func enter() -> void:
 	var info := Shed.adventure.duplicate(true)
 	trip_id = int(info["id"])
 	var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
+	if _refreshing >= 0:
+		if not WorkerThreadPool.is_task_completed(_refreshing):
+			return   # (_process asks again till it's done)
+		WorkerThreadPool.wait_for_task_completion(_refreshing)
+		_refreshing = -1
 	var res := AdventurePlans.result(AdventurePlans.clean(plan))
+	var finishing := bool(res.get("retry", false)) and bool(res.get("map", false))
+	if finishing:
+		res = {}   # (the map here is still being finished: waited for, and planned again shortly)
 	if res.is_empty():
 		# What it's doing, as it changes (the map's parts and tiles counted as they come).
 		var doing := AdventurePlans.progress_of(AdventurePlans.clean(plan))
 		var line := "Getting the road ready: %s..." % (doing if doing != "" else "the map and the lie of the land")
+		if finishing:
+			line = "Getting the road ready: waiting for the map of this area to be finished..."
 		if not _preparing or (line != _preparing_line and Time.get_ticks_msec() - _preparing_at > 400):
 			_preparing = true
 			_preparing_line = line
@@ -236,9 +255,24 @@ func enter() -> void:
 	_preparing = false
 	_preparing_line = ""
 	var why := _mismatch_of(info, res)
+	if why != "" and _refreshed_for != trip_id and AdventureCrew.map_may_catch_up(info, res):
+		# The same version as the host's but not the same map: this game's copy may be older than the host's (cells or
+		# their profiles that came since it looked). Fetched afresh, once, before turning you away.
+		_refreshed_for = trip_id
+		_preparing = true
+		_preparing_line = "Getting the road ready: fetching the latest map of this area..."
+		_preparing_at = Time.get_ticks_msec()
+		Shed.feedback.emit(_preparing_line, true)
+		var clean := AdventurePlans.clean(plan)
+		_refreshing = WorkerThreadPool.add_task(func(): AdventurePlans.refresh(clean))
+		return
 	if why != "":
 		_busy = false
+		_preparing = false
 		Shed.feedback.emit(why, false)   # (trip_id stays, so this isn't tried again every frame)
+		if _told_for != trip_id and AdventureCrew.map_may_catch_up(info, res):
+			_told_for = trip_id
+			Shed.request({"a": "adventure_cant", "id": trip_id})   # (the host's told, and what to do)
 		return
 	_busy = true
 	_arrive_sent = false
@@ -1152,6 +1186,20 @@ func _process(delta: float) -> void:
 		enter()
 	elif _preparing and int(Shed.adventure.get("id", 0)) != trip_id:
 		_preparing = false   # (the ride ended before this machine got to it)
+	_host_refresh()
+
+
+## The host, back at the shed after a guest couldn't join a ride over the map: its own map fetched afresh (on a worker),
+## so the ride started again is planned from the latest the world's store has.
+func _host_refresh() -> void:
+	if _refreshing >= 0 and not _preparing and WorkerThreadPool.is_task_completed(_refreshing):
+		WorkerThreadPool.wait_for_task_completion(_refreshing)
+		_refreshing = -1
+	if host_refresh.is_empty() or on_trip() or Adventure.active() or _refreshing >= 0:
+		return
+	var plan := host_refresh
+	host_refresh = {}
+	_refreshing = WorkerThreadPool.add_task(func(): AdventurePlans.refresh(plan))
 
 
 ## Never left in the black: going out on the road or back to the shed happens in a blink behind

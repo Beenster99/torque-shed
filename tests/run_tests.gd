@@ -23414,6 +23414,10 @@ func _test_coop_state() -> void:
 	_coop().test_state()
 
 
+func _test_coop_catch_up() -> void:
+	_coop().test_catch_up()
+
+
 func _planner() -> RefCounted:
 	return load("res://tests/route_planner_tests.gd").new(self)
 

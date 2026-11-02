@@ -29,7 +29,9 @@ extends RefCounted
 ## adventure_highlight (see
 ## AdventureDiary, which keeps the crew's highlights here as "log").
 ## adventure_builds {builds} (each player as they join the shed: their game's builder hash, kept in Shed.crew, and
-## the crew told when it isn't the host's); adventure_route_call {kind: "leave" or "rejoin"} (any rider: asks the
+## the crew told when it isn't the host's); adventure_cant {id} (a guest whose game is the host's version but couldn't
+## join ride id over the map, even after fetching the latest: the crew's told to start it again, and the host's map is
+## fetched afresh, AdventureTrip.host_refresh); adventure_route_call {kind: "leave" or "rejoin"} (any rider: asks the
 ## crew), adventure_route_vote {id, yes} (any rider: their answer) and adventure_route_tick (the host, settling a
 ## call whose time is up): see AdventureCrew. adventure_ferry_board {id, from, to, seconds} (a rider at a ferry's ramp:
 ## aboard), adventure_ferry_landed {sail} (a rider off on the far side) and adventure_ferry_tick (the host: lets it go
@@ -172,6 +174,12 @@ static func check(peer: int, action: Dictionary) -> String:
 			return AdventureDiary.check(peer, action)
 		"adventure_builds":
 			return ""
+		"adventure_cant":
+			if not active() or int(action.get("id", 0)) != int(Shed.adventure.get("id", 0)):
+				return "That ride's over."
+			if peer == 1:
+				return "You're the host."
+			return ""
 		"adventure_route_call":
 			if not active():
 				return "There's no adventure on."
@@ -301,6 +309,11 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if peer != Shed.me() and b != AdventureCrew.builds():
 				return "*%s's game is a different version from the host's: fine in the shed, but you'll all need the same one to ride the road network together." % who
 			return ""
+		"adventure_cant":
+			# A guest's game couldn't join over the map: the host's own is fetched afresh once it's back at the shed,
+			# so the ride started again is planned from the latest, and the crew's told what to do.
+			AdventureTrip.host_refresh = (Shed.adventure.get("plan", {}) as Dictionary).duplicate(true)
+			return "*" + AdventureCrew.MAP_CHANGED_CREW % who
 		"adventure_route_call":
 			var route := _route()
 			var kind := str(action.get("kind", ""))
