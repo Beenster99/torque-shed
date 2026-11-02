@@ -97,12 +97,12 @@ func landed(air: float, clean: bool) -> void:
 
 
 func _one_wheel(b: Bike, front: bool, rear: bool, v: float, delta: float) -> void:
-	if rear and not front and b.pitch_angle > deg_to_rad(8.0) and v > 3.0:
+	if rear and not front and b.pitch_over_road > deg_to_rad(8.0) and v > 3.0:
 		_wheelie += v * delta
 	elif _wheelie > 0.0:
 		wheelie_done(_wheelie)
 		_wheelie = 0.0
-	if front and not rear and b.pitch_angle < -deg_to_rad(5.0) and v > 1.5:
+	if front and not rear and b.pitch_over_road < -deg_to_rad(5.0) and v > 1.5:
 		_stoppie += v * delta
 	elif _stoppie > 0.0:
 		stoppie_done(_stoppie)

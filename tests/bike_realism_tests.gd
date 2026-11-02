@@ -114,3 +114,43 @@ func test_corners() -> void:
 			"%s: leans %.0f deg (most %.0f; real ones %.0f-%.0f)" % [nm, lean, rad_to_deg(r["max_lean"]), real["lean"][0], real["lean"][1]])
 		check(_in(g, real["g"]), "%s: pulls %.2f g round it (real ones %.2f-%.2f)" % [nm, g, real["g"][0], real["g"][1]])
 		await t._done(r)
+
+
+## Simon: "the cruiser I was on (~70 hp) couldn't make it up some of the hills" in the mountains of
+## Japan. The ECU's anti-wheelie read the bike's nose-up against the horizon, so a steep road looked
+## like a wheelie and it shut the power down to a trickle. Flat out from a standstill and from 50 km/h
+## on a 20% climb (steeper than any road the planner lays, see RoutePlanner.MAX_GRADE), with the
+## anti-wheelie at its firmest: it pulls away and keeps climbing. And the aid still catches a real
+## wheelie on that hill.
+func test_hills() -> void:
+	const GRADE := 0.20
+	for start_v in [0.0, 14.0]:
+		for ecu in ["none", "ecu_safety"]:
+			var b := Contracts.style_build("cruiser")
+			b["ecu"] = ecu
+			var st := {"end": 0.0, "slowest": 99.0}
+			var r: Dictionary = await t.ride_slope(b, 8.0, GRADE, start_v, func(bike, at):
+				bike.build.tune["aid_anti_wheelie"] = 5.0
+				bike.throttle = 1.0
+				bike.body_shift = 0.3
+				if at > 2.0:
+					st["slowest"] = minf(st["slowest"], bike.speed)
+				st["end"] = bike.speed)
+			var what := "with %s anti-wheelie" % ("firm" if ecu != "none" else "no")
+			check(not r["crashed"] and st["end"] > 25.0 and st["slowest"] > 8.0,
+				"cruiser %s climbs a %.0f%% hill from %.0f km/h: %.0f km/h after 8 s, never under %.0f" % [what, GRADE * 100.0,
+				start_v * 3.6, st["end"] * 3.6, st["slowest"] * 3.6])
+			await t._done(r)
+	# Weight right back and full gas on the same hill on a big four: the anti-wheelie still keeps the front down.
+	for level in [0.0, 3.0]:
+		var most := [0.0]
+		var r: Dictionary = await t.ride_slope({"engine": "four_1000", "ecu": "race_ecu"}, 5.0, GRADE, 0.0, func(bike, at):
+			bike.build.tune["aid_anti_wheelie"] = level
+			bike.body_shift = -1.0
+			bike.throttle = 1.0 if at > 0.5 else 0.0
+			most[0] = maxf(most[0], rad_to_deg(bike.pitch_over_road)))
+		if level > 0.0:
+			check(not r["crashed"] and most[0] < 15.0, "on the hill the anti-wheelie still keeps the front near the road (%.0f deg up off it)" % most[0])
+		else:
+			check(most[0] > 15.0, "and with it off the front comes up there (%.0f deg)" % most[0])
+		await t._done(r)
