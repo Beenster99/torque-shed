@@ -7299,7 +7299,7 @@ func _draw_lever_guards() -> void:
 		# On the bar's own line out past its end (see _bar_end_basis).
 		var end := bar_end(side)
 		var b := _bar_end_basis(side)
-		if _blender_tagged("guards/lever_boss.glb", Transform3D(_basis_up(b.x * side), end + b * Vector3(0.026 * side, 0.0, 0.0)), {"paint": mat}, {"paint": "LeverGuardBoss"}, _steer_node).is_empty():
+		if _blender_tagged("guards/lever_boss.glb", Transform3D(_basis_up(b.x * side), end + b * Vector3(0.026 * side, 0.0, 0.0)), {"paint": mat}, {"paint": "GuardBoss"}, _steer_node).is_empty():
 			var boss := _mesh_instance(_cylinder(0.019, 0.016), mat, end + b * Vector3(0.026 * side, 0.0, 0.0), _steer_node)
 			boss.basis = _basis_up(b.x)
 		# Out from the boss, forward past the lever's tip and back in across the front of it.
