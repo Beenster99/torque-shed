@@ -19,6 +19,9 @@ const LINES_PATH := "res://data/bike_lines.json"
 const TIER_BOLTS := "bolts on"
 const TIER_FAB := "fabricate"
 const TIER_NO := "won't fit"
+## The slots whose parts the rig's fit report reads (see part_fit): the engine and frame, the tank
+## over them, and the fork and front wheel that the engine has to clear.
+const RIG_SLOTS: Array[String] = ["frame", "engine", "tank", "fork", "front_wheel", "front_tyre"]
 ## The backbone's radius, which the tank's tunnel straddles (m).
 const SPINE_R := 0.03
 ## How far the barrels and head stand above the base of the barrel as drawn at full size (see
@@ -544,3 +547,93 @@ static func _fit(r: Dictionary, engine: Dictionary, family: String, front_clear:
 ## The fit report for a set of parts (see _fit).
 static func fit(build: BikeBuild) -> Dictionary:
 	return solve(build)["fit"]
+
+
+## What each job the fit report names takes the shed to make (FAB_WORK, matched on the start of
+## its words): hours at the bench for someone new to it, and the steel, welding gas and paint (£).
+const FAB_WORK := [
+	["engine mounts and cradle made for", 6.0, 380],
+	["cradle widened and backbone stretched", 8.0, 520],
+	["downtubes reshaped", 4.0, 240],
+	["raised tank mounts", 2.0, 110],
+]
+## For anything else the rig names.
+const FAB_OTHER := [3.0, 180]
+
+
+## The hours and cost of one job of fabrication the fit report named: {what, hours, cost}.
+static func fab_job(what: String) -> Dictionary:
+	for w in FAB_WORK:
+		if what.begins_with(str(w[0])):
+			return {"what": what, "hours": float(w[1]), "cost": int(w[2])}
+	return {"what": what, "hours": float(FAB_OTHER[0]), "cost": int(FAB_OTHER[1])}
+
+
+## How part `id` goes on a bike built of `parts` (slot -> part id) in place of what its `slot`
+## has now ("none" to take it off), the one call for anything that fits or takes off parts (the
+## configurator, the parts computer, the shed, the roadside spanner):
+##   {"tier": TIER_BOLTS, TIER_FAB or TIER_NO,
+##    "reason": why, in a sentence for the screen ("" when it bolts on),
+##    "work": [{what, hours, cost}], the fabrication it takes (TIER_FAB only)}
+## Fabrication the bike already needs, or the shed has already done (`done`, the jobs' "what"),
+## isn't put down to this part. Worked out from the parts alone, the same on every machine and
+## in either look.
+static func part_fit(parts: Dictionary, slot: String, id: String, done: Array = []) -> Dictionary:
+	var ok := {"tier": TIER_BOLTS, "reason": "", "work": []}
+	var no := func(why: String) -> Dictionary: return {"tier": TIER_NO, "reason": why, "work": []}
+	if not PartsDB.SLOT_KIND.has(slot):
+		return no.call("A bike has no %s." % slot)
+	var on := func(s: String) -> String: return str(parts.get(s, "none"))
+	var name := PartsDB.slot_name(slot).to_lower()
+	if id == "none" or id == "":
+		if on.call(slot) == "none":
+			return ok
+		if not PartsDB.may_be_empty(slot):
+			return no.call("A bike can't do without its %s." % name)
+		for s in PartsDB.SLOTS:
+			if s != slot and on.call(s) != "none" and PartsDB.part_mounts(s, on.call(s)).has(slot):
+				return no.call("The %s is mounted on it: take that off first." % PartsDB.slot_name(s).to_lower())
+		return ok
+	if PartsDB.get_part(id).is_empty() or PartsDB.kind_of(id) != str(PartsDB.SLOT_KIND[slot]):
+		return no.call("That isn't a %s." % name)
+	# A tyre has to go on its wheel, and a wheel take its tyre.
+	var wheel_of := {"front_tyre": "front_wheel", "rear_tyre": "rear_wheel"}
+	var tyre_of := {"front_wheel": "front_tyre", "rear_wheel": "rear_tyre"}
+	if wheel_of.has(slot) and on.call(wheel_of[slot]) != "none" and PartsDB.tyre_fit(id, on.call(wheel_of[slot])) != 0:
+		return no.call(PartsDB.tyre_fit_reason(id, on.call(wheel_of[slot])))
+	if tyre_of.has(slot) and on.call(tyre_of[slot]) != "none" and PartsDB.tyre_fit(on.call(tyre_of[slot]), id) != 0:
+		return no.call(PartsDB.tyre_fit_reason(on.call(tyre_of[slot]), id))
+	# The extras it hangs off (a fairing's headlight, fairing mirrors' fairing).
+	for m in PartsDB.part_mounts(slot, id):
+		if PartsDB.may_be_empty(str(m)) and on.call(str(m)) == "none":
+			return no.call("It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower())
+	# The engine, frame and the rest round them: the rig's fit report, with and without it.
+	if not slot in RIG_SLOTS or PartsDB.get_part(on.call("frame")).is_empty() or PartsDB.get_part(on.call("engine")).is_empty():
+		return ok
+	var after := parts.duplicate()
+	after[slot] = id
+	var now: Dictionary = fit(BikeBuild.new(parts))
+	var then: Dictionary = fit(BikeBuild.new(after))
+	if str(then["tier"]) == TIER_NO:
+		return no.call(str(then["reason"]).substr(0, 1).to_upper() + str(then["reason"]).substr(1) + ".")
+	var work := []
+	for what in then["work"]:
+		if not (now["work"] as Array).has(what) and not done.has(what):
+			work.append(fab_job(str(what)))
+	if work.is_empty():
+		return ok
+	var words := ", ".join(work.map(func(w): return str(w["what"])))
+	return {"tier": TIER_FAB, "reason": "Needs fabrication: %s." % words, "work": work}
+
+
+## part_fit for one of the shed's bikes as it stands (Shed.build_of), counting the fabrication
+## already done on it (its "fab_done").
+static func part_tier(bike_id: int, slot: String, part: String) -> Dictionary:
+	if not Shed.bikes.has(bike_id):
+		return {"tier": TIER_NO, "reason": "That bike has gone.", "work": []}
+	return part_fit(Shed.build_of(bike_id).parts, slot, part, Shed.bikes[bike_id].get("fab_done", []))
+
+
+## Whether `id` goes in `slot` on a bike built of `parts` with nothing made for it (part_fit).
+static func bolts_on(parts: Dictionary, slot: String, id: String, done: Array = []) -> bool:
+	return str(part_fit(parts, slot, id, done)["tier"]) == TIER_BOLTS

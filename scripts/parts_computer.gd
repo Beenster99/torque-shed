@@ -557,7 +557,35 @@ static func fit_problem(id: String, bike_id: int) -> String:
 			if on.call(str(m)) == "none":
 				return "It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower()
 		break
+	# The engine, frame and tank round each other (the rig's fit report, BikeRig.part_tier): one
+	# that won't go in this frame. (One that needs fabrication goes on, and the shed makes it.)
+	var tier := fit_tier(id, bike_id)
+	if str(tier["tier"]) == BikeRig.TIER_NO:
+		return str(tier["reason"])
 	return ""
+
+
+## How a part goes on a bike as it is now (BikeRig.part_tier, in its kind's first slot).
+static func fit_tier(id: String, bike_id: int) -> Dictionary:
+	var slots := PartsDB.slots_for_kind(PartsDB.kind_of(id))
+	if slots.is_empty() or not Shed.bikes.has(bike_id):
+		return {"tier": BikeRig.TIER_BOLTS, "reason": "", "work": []}
+	return BikeRig.part_tier(bike_id, str(slots[0]), id)
+
+
+## The fabrication a part takes on a bike, priced, for its page: "Needs fabrication: raised tank
+## mounts (2 h at the bench, £110 of steel and gas)." ("" when it bolts on).
+static func fab_text(id: String, bike_id: int) -> String:
+	var tier := fit_tier(id, bike_id)
+	if str(tier["tier"]) != BikeRig.TIER_FAB:
+		return ""
+	var hours := 0.0
+	var cost := 0
+	for w in tier["work"]:
+		hours += float(w["hours"])
+		cost += int(w["cost"])
+	return "%s It's a shed job: about %s at the bench and %s of steel and gas." % [str(tier["reason"]),
+		"%d h" % roundi(hours) if hours >= 1.0 else "an hour", TvChannels.money_text(cost)]
 
 
 ## Everything in the shop whose name, kind or description matches every word typed.
@@ -960,7 +988,8 @@ func _fill_part(id: String) -> void:
 		_spec.text += "\n" + need
 	if fits_bike != 0 and Shed.bikes.has(fits_bike):
 		var why := fit_problem(id, fits_bike)
-		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), "goes on it as it is" if why == "" else why]
+		var fab := fab_text(id, fits_bike) if why == "" else ""
+		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), why if why != "" else (fab if fab != "" else "goes on it as it is")]
 		var slots := PartsDB.slots_for_kind(_kind)
 		if not PartsDB.styles_of(id).is_empty() and not slots.is_empty():
 			var now := Contracts.current_parts(fits_bike)

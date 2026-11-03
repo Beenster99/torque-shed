@@ -121,7 +121,18 @@ func show_mode(m: String) -> void:
 			ob.clip_text = true
 			var opts := BikeShop.options(slot, style, parts)
 			for id in opts:
-				ob.add_item("None" if id == "none" else PartsDB.part_name(str(id)))
+				# How it goes on this bike (BikeRig.part_fit): the ones that won't fit greyed out
+				# with why, the ones that need fabrication marked.
+				var f := BikeRig.part_fit(parts, slot, str(id))
+				var label := "None" if id == "none" else PartsDB.part_name(str(id))
+				if str(f["tier"]) == BikeRig.TIER_FAB:
+					label += "  (needs fabrication)"
+				elif str(f["tier"]) == BikeRig.TIER_NO:
+					label += "  (won't fit)"
+				ob.add_item(label)
+				var at := ob.item_count - 1
+				ob.set_item_disabled(at, str(f["tier"]) == BikeRig.TIER_NO and str(id) != str(parts.get(slot, "none")))
+				ob.set_item_tooltip(at, str(f["reason"]))
 			ob.select(maxi(0, opts.find(str(parts.get(slot, "none")))))
 			ob.item_selected.connect(func(i): set_part(slot, str(opts[i])), CONNECT_DEFERRED)   # (deferred, as Style)
 			row.add_child(ob)
@@ -213,9 +224,10 @@ func _refresh() -> void:
 	else:
 		lines = ["A new %s  ·  %s  ·  %d hp" % [PartsDB.style_name(style).to_lower(), Sales.model_text(b["parts"]), hp],
 			"Built new in your colours and ready to ride.",
+			BikeShop.fab_text(b["parts"], style),
 			"%s from your own money (you have %s)." % [TvChannels.money_text(cost), TvChannels.money_text(Progress.money())]]
 		_buy.text = "Order it for %s" % TvChannels.money_text(cost)
-	_about.text = "\n".join(lines)
+	_about.text = "\n".join(lines.filter(func(t): return str(t) != ""))
 	var why := Shed.check(Shed.me(), {"a": "copy_order", "src": src, "paid": cost, "quality": q, "built": true})
 	if why == "" and Progress.money() < cost:
 		why = "You have %s: %s short." % [TvChannels.money_text(Progress.money()), TvChannels.money_text(cost - Progress.money())]

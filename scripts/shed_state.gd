@@ -2629,6 +2629,13 @@ func check(peer: int, action: Dictionary) -> String:
 			var access := _engine_access(action, where["slot"])
 			if access != "":
 				return access
+			# The frame, engine and tank round each other (the rig's fit report): one that won't
+			# go in this frame doesn't. (One that needs fabrication does, and the shed makes it.)
+			# (A wheel comes with its own tyre on, which the parts left on the bike don't show.)
+			if engine_id == 0 and bikes.has(bike_id) and str(where["slot"]) in ["frame", "engine", "tank", "fork"]:
+				var tier := BikeRig.part_tier(bike_id, str(where["slot"]), str(items[held]["part"]))
+				if str(tier["tier"]) == BikeRig.TIER_NO:
+					return str(tier["reason"])
 		"take":
 			if held != 0:
 				return "Your hands are full."

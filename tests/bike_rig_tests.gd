@@ -324,3 +324,45 @@ func test_reform() -> void:
 	check(c._reform.is_empty() and d._reform.is_empty() and e._reform.is_empty(), "the same rig, Classic, or another frame doesn't morph")
 	for m in [a, b, c, d, e]:
 		m.queue_free()
+
+
+## The one fit call (BikeRig.part_fit, H5): every stock bike's own parts bolt on, and every
+## optional one comes off; a bike can't lose its tank; a boxer won't go through an MX frame's
+## loops; an inline four in a V-twin's softail needs fabrication, named and priced; a bike that
+## comes built from the configurator has its fabrication on the price and a stock one has none.
+func test_part_fit() -> void:
+	var off := []
+	for style in PartsDB.STYLES:
+		var parts: Dictionary = PartsDB.sanitize_build(Contracts.style_build(style))
+		for slot in PartsDB.SLOTS:
+			var id := str(parts.get(slot, "none"))
+			var f := BikeRig.part_fit(parts, slot, id)
+			if str(f["tier"]) != BikeRig.TIER_BOLTS:
+				off.append("%s %s %s: %s" % [style, slot, id, f["reason"]])
+			if id != "none" and PartsDB.may_be_empty(slot) and not PartsDB.SLOTS.any(func(s): return s != slot and str(parts.get(s, "none")) != "none" \
+					and PartsDB.part_mounts(s, str(parts[s])).has(slot)):
+				var off_f := BikeRig.part_fit(parts, slot, "none")
+				if str(off_f["tier"]) != BikeRig.TIER_BOLTS:
+					off.append("%s: taking off its %s %s" % [style, slot, off_f["reason"]])
+		if not BikeShop.fab_work(parts, style).is_empty():
+			off.append("%s: stock bike owes fabrication" % style)
+	var road: Dictionary = PartsDB.sanitize_build(Contracts.style_build("classic"))
+	var tank := BikeRig.part_fit(road, "tank", "none")
+	var mx: Dictionary = PartsDB.sanitize_build(Contracts.style_build("mx"))
+	mx["frame"] = "mx_twin_loop"
+	var boxer := BikeRig.part_fit(mx, "engine", "boxer_600")
+	var soft: Dictionary = PartsDB.sanitize_build(Contracts.style_build("bobber"))
+	soft["frame"] = "softail_hardtail"
+	var four := BikeRig.part_fit(soft, "engine", "four_1000")
+	var priced: bool = not (four["work"] as Array).is_empty() and (four["work"] as Array).all(func(w): return float(w["hours"]) > 0.0 and int(w["cost"]) > 0)
+	var after := soft.duplicate()
+	after["engine"] = "four_1000"
+	var plan := {"parts": after}
+	var with_fab: Array = BikeCopy.lines(plan, 1, 1.0, true).filter(func(r): return str(r["slot"]) == "fab")
+	var stock_fab: Array = BikeCopy.lines({"parts": soft}, 1, 1.0, true).filter(func(r): return str(r["slot"]) == "fab")
+	var same := BikeRig.part_fit(soft, "engine", "four_1000") == four
+	t.check(off.is_empty() and str(tank["tier"]) == BikeRig.TIER_NO and str(tank["reason"]) != "" and str(boxer["tier"]) == BikeRig.TIER_NO
+		and str(four["tier"]) == BikeRig.TIER_FAB and str(four["reason"]).begins_with("Needs fabrication") and priced
+		and not with_fab.is_empty() and stock_fab.is_empty() and same,
+		"parts bolt on, need fabrication (named and priced) or won't fit, by the rig (tank off: %s; boxer in MX loops: %s; four in a softail: %s %s; fab rows %d) %s"
+		% [tank["reason"], boxer["reason"], four["tier"], four["reason"], with_fab.size(), off.slice(0, 8)])
