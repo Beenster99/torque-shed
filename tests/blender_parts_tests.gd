@@ -803,31 +803,101 @@ func test_kit_parts() -> void:
 	check(out.is_empty() and builds > 30, "every filter, ECU, number board, tank bag, extra tank, toolbox and sat nav (%d) in the new look wears its Blender-made shapes in the code-built one's place; Classic's are the code's %s" % [builds, str(out.slice(0, 8))])
 
 
+## The last parts (the wave after the gearboxes): in the new look every carb and throttle body,
+## set of spark plugs, girder, springer and leading-link fork, engine guard, lever guard and
+## linear steering damper, a drum brake's arm and shoes, the cooling fins and twin radiators, a
+## tidy tail's tray and the oval number boards (the race number still on them) wear their
+## Blender-made shapes in the code-built ones' place; Classic's are the code's.
+func test_last_parts() -> void:
+	var out := []
+	var builds := 0
+	var styles := ["classic", "cafe", "bobber", "chopper", "scrambler", "adventure", "mx", "naked", "sport"]
+	var cases := []
+	for slot in ["fuel", "spark_plugs", "guards", "lever_guards"]:
+		for id in PartsDB.by_kind.get(slot, []):
+			cases.append([slot, str(id), [slot]])
+	for id in PartsDB.by_kind.get("fork", []):
+		if str(PartsDB.get_part(str(id)).get("style", "")) in ["girder", "springer", "leading_link"]:
+			cases.append(["fork", str(id), ["fork"]])
+	for id in ["damper_linear", "damper_linear_adj"]:
+		cases.append(["steering_damper", id, ["steering_damper"]])
+	for id in PartsDB.by_kind.get("disc", []):
+		if str(PartsDB.get_part(str(id)).get("style", "")) == "drum":
+			cases.append(["front_disc", str(id), ["front_caliper", "front_pads"]])
+			cases.append(["rear_disc", str(id), ["rear_caliper", "rear_pads"]])
+	for id in ["air_fins", "twin_radiators"]:
+		cases.append(["cooling", id, ["cooling"]])
+	cases.append(["tail", "sport_tail_tidy", ["tail"]])
+	cases.append(["side_panels", "oval_number", ["side_panels"]])
+	for c in cases:
+		var slot: String = c[0]
+		var id: String = c[1]
+		for style in styles:
+			var parts := Contracts.style_build(style)
+			parts[slot] = id
+			if str(PartsDB.sanitize_build(parts.duplicate()).get(slot, "")) != id:
+				continue
+			var models := {}
+			for k in ["classic", "code", "new"]:
+				var m := BikeModel.new()
+				m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+				BlenderParts.on = k != "code"
+				t.add_child(m)
+				m.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)))
+				models[k] = m
+			BlenderParts.on = true
+			var m: BikeModel = models["new"]
+			builds += 1
+			for s in c[2]:
+				if not (m._slot_meshes.get(s, []) as Array).any(_blender_made):
+					out.append("%s on a %s: no Blender-made %s" % [id, style, s])
+				if (models["classic"] as BikeModel)._slot_meshes.get(s, []).any(_blender_made):
+					out.append("%s: Blender-made %s in Classic" % [id, s])
+				# (The Rig built look fits its own tail to the rig.)
+				if s == "tail" and m._rig_bodywork():
+					continue
+				var a := _tight_bounds(models["code"], s)
+				var b := _tight_bounds(m, s)
+				var d := maxf((a.position - b.position).abs()[(a.position - b.position).abs().max_axis_index()],
+					(a.end - b.end).abs()[(a.end - b.end).abs().max_axis_index()])
+				if d > LOADED_GIVE:
+					out.append("%s %s on a %s %.3f m off" % [id, s, style, d])
+			if slot == "side_panels" and not m._slot_meshes["side_panels"].any(func(mi): return (mi as Node).get_children().any(func(ch): return ch is Label3D)):
+				out.append("oval boards: no race number")
+			for k in models:
+				(models[k] as Node).free()
+			break
+	check(out.is_empty() and builds >= cases.size(), "every carb, throttle body, plug set, sprung fork, engine and lever guard, linear damper, drum brake's arm and shoes, the cooling fins, twin radiators, tidy tray and oval boards (%d of %d) wear their Blender-made shapes in the code's place; Classic's are the code's %s" % [builds, cases.size(), str(out.slice(0, 8))])
+
+
+## The box round what `m` draws in `slot`, from the triangles themselves rather than each
+## piece's own box (a leading-link fork's legs run on a slant in their glb, so their box, turned
+## to the bike's, is much bigger than they are).
+static func _tight_bounds(m: BikeModel, slot: String) -> AABB:
+	var box := AABB()
+	var first := true
+	for mi in m._slot_meshes.get(slot, []):
+		if not (mi is MeshInstance3D) or (mi as MeshInstance3D).mesh == null:
+			continue
+		var xf := m._local_xform(mi)
+		for v in (mi as MeshInstance3D).mesh.get_faces():
+			var p: Vector3 = xf * v
+			if first:
+				box = AABB(p, Vector3.ZERO)
+				first = false
+			else:
+				box = box.expand(p)
+	return box
+
+
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 4).
-const LOADED: Array[String] = ["engine", "gearbox", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
+const LOADED: Array[String] = ["engine", "gearbox", "head", "fuel", "spark_plugs", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
 	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight", "indicators", "dashboard", "mirrors",
 	"final_drive", "chain", "side_stand", "horn", "rear_master", "panniers", "top_box", "fog_lights", "cooling", "steering_damper",
-	"air_filter", "oil_filter", "ecu", "number_boards", "tank_bag", "aux_tank", "toolbox", "satnav"]
+	"air_filter", "oil_filter", "ecu", "number_boards", "tank_bag", "aux_tank", "toolbox", "satnav", "guards", "lever_guards"]
 
 
-## Whether `m`'s part in `slot` (one of LOADED) has Blender-made shapes: all but the girder,
-## springer and leading-link forks, a drum brake's arm and shoes (its caliper and pads), and a
-## tidy tail's tray (it has no mudguard round the wheel) and the oval number boards (the race
-## number's printed on the code's).
-static func _expects_blender(m: BikeModel, slot: String) -> bool:
-	match slot:
-		"fork":
-			return str(m._build.part("fork").get("style", "conventional")) in ["conventional", "usd"]
-		"front_caliper", "rear_caliper", "front_pads", "rear_pads":
-			return str(m._build.part(slot.get_slice("_", 0) + "_disc").get("style", "")) != "drum"
-		"tail":
-			return str(m._build.part("tail").get("style", "classic")) != "tidy" or m._build.part("tail").get("look", {}).has("cowl")
-		"side_panels":
-			return str(m._build.part("side_panels").get("style", "triangle")) != "oval"
-		"cooling":
-			return not str(m._build.part("cooling").get("style", "fins")) in ["fins", "twin"]
-	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
 ## The gear change linkage runs from the selector's shaft all the way to the gear lever over the
@@ -873,7 +943,7 @@ func test_new_look() -> void:
 		var m: BikeModel = models["blender"]
 		for slot in m._slot_meshes:
 			var mine := (m._slot_meshes[slot] as Array).filter(_blender_made)
-			if slot in LOADED and mine.is_empty() and not (models["code"] as BikeModel)._slot_meshes[slot].is_empty() and _expects_blender(m, slot):
+			if slot in LOADED and mine.is_empty() and not (models["code"] as BikeModel)._slot_meshes[slot].is_empty():
 				missing.append("%s %s" % [style, slot])
 			if (models["classic"] as BikeModel)._slot_meshes[slot].any(_blender_made):
 				classic_blender.append("%s %s" % [style, slot])
@@ -985,7 +1055,7 @@ func test_new_look() -> void:
 			gap = maxf(gap, (mi.transform * Vector3(0.0, -float(st["rest"]), 0.0)).distance_to(low))
 			gap = maxf(gap, mi.position.distance_to(st["top"]))
 		var lower: Array = m._slot_meshes["fork"].filter(func(mi): return _blender_made(mi) and (mi as Node).get_parent() == m._front_hub)
-		slides = slides and not struts.is_empty() and (not lower.is_empty() or not _expects_blender(m, "fork"))
+		slides = slides and not struts.is_empty() and not lower.is_empty()
 		m.free()
 	check(slides and gap < 0.002, "a Blender shock stays on both its mounts as the arm swings (%.1f mm off at worst), and the fork's sliders ride on the wheel" % [gap * 1000.0])
 	# A can on the left is the right-hand one mirrored, its triangles still facing out.

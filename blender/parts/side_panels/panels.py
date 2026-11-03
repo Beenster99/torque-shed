@@ -1,10 +1,10 @@
-"""The side panels, one glb for each style BikeModel draws but the oval number boards (which carry
-the race number the game prints on them): "triangle", a classic's pressed-steel side cover, domed
+"""The side panels, one glb for each style BikeModel draws: "oval", a racer's oval number board
+(the game prints the race number on its face), domed, with its rubber mounting grommets; "triangle", a classic's pressed-steel side cover, domed
 and taller at the front, with a chrome badge; "mx", a flat plastic plate; "cowl", a raked panel
 with a chrome trim strip; "chrome", a domed round cover. Each is the right-hand panel, its origin
 where BikeModel puts that side's panel and drawn for a seat 0.2 m above the swingarm pivot
 (BikeModel's h): the game scales it up and down for the bike's own h (and across for the round
-cover) and mirrors it for the left.
+cover and the oval board) and mirrors it for the left.
 
 Tags: the panel `paint` (the game gives it the part's own finish), trim and badge `chrome`."""
 
@@ -94,6 +94,17 @@ def chrome(lod):
     return kit.join([dome("cover", outline, (0.0, 0.0), 0.016, 0.004, d["rings"], "paint", 0.0, (0.01, -0.01, -0.02))], "panel")
 
 
+def oval(lod):
+    d = DETAIL[lod]
+    # BikeModel's board: an oval h tall and 1.35 times that long, 12 mm thick round its panel's spot.
+    outline = rounded(H * 0.5, H * 0.5 * 1.35, 2.0, d["round"] * 2)
+    parts = [dome("board", outline, (0.0, 0.0), 0.004, 0.008, d["rings"], "paint", 0.0, (-0.006, 0.0, 0.0))]
+    if lod < 2:
+        for y, z in ((0.06, -0.1), (-0.06, 0.1)):
+            parts.append(kit.tube("grommet", g(-0.008, y, z), g(-0.002, y, z), 0.007, max(6, d["round"] // 2), "rubber"))
+    return kit.join(parts, "panel")
+
+
 def parts():
     return [{"kind": "side_panels", "path": "side_panels/%s.glb" % name, "build": build, "mounts": {}}
-        for name, build in (("triangle", triangle), ("mx", mx), ("cowl", cowl), ("chrome", chrome))]
+        for name, build in (("oval", oval), ("triangle", triangle), ("mx", mx), ("cowl", cowl), ("chrome", chrome))]

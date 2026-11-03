@@ -23,6 +23,7 @@ python3 blender/contact_sheet.py out.png [head/twin]
 xvfb-run -a godot --path . res://tests/top_end_shots.tscn -- --out=/tmp/shots   # in-game close-ups
 xvfb-run -a godot --path . res://tests/exhaust_shots.tscn -- --out=/tmp/shots    # the exhausts, the same
 xvfb-run -a godot --path . res://tests/gearbox_shots.tscn -- --out=/tmp/shots    # the gearboxes, both sides
+xvfb-run -a godot --path . res://tests/part_shots.tscn -- --slot=fuel --out=/tmp/shots   # any slot's part, close up
 ```
 
 After a rebuild, run `godot --headless --path . --import` and commit the glbs with their `.import` files
