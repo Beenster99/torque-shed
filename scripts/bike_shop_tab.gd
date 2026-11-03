@@ -223,7 +223,7 @@ func _refresh() -> void:
 		_buy.text = "Buy it for %s" % TvChannels.money_text(cost)
 	else:
 		lines = ["A new %s  ·  %s  ·  %d hp" % [PartsDB.style_name(style).to_lower(), Sales.model_text(b["parts"]), hp],
-			"Built new in your colours and ready to ride.",
+			"Built new in your colours and ready to ride. %s" % BikeRig.brief_text(b["parts"]),
 			BikeShop.fab_text(b["parts"], style),
 			"%s from your own money (you have %s)." % [TvChannels.money_text(cost), TvChannels.money_text(Progress.money())]]
 		_buy.text = "Order it for %s" % TvChannels.money_text(cost)

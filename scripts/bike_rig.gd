@@ -116,6 +116,44 @@ static func style_for(parts: Dictionary) -> String:
 	return "classic"
 
 
+## The fields of the seat line (4) a saddle of another style brings with it: its tail.
+const TAIL_KEYS: Array[String] = ["tail_u", "tail_rise_mm", "rail_deg"]
+
+
+## A bike's style brief: the lines it's laid out to (style_for's style), mixed where its parts are
+## of another style. A saddle that doesn't suit the style brings its own style's tail (a bobber
+## with a cafe seat gets the bobber's lines with a cafe tail). From the parts alone, so every
+## machine lays a bike out the same. {"style", "lines": the eight lines, "mixed": {what: style}}.
+static func brief(parts: Dictionary) -> Dictionary:
+	var style := style_for(parts)
+	var l: Dictionary = lines()[style]["lines"]
+	var mixed := {}
+	var saddle := str(parts.get("saddle", "none"))
+	var own: Array = PartsDB.styles_of(saddle) if saddle != "none" and saddle != "" else []
+	if not own.is_empty() and not own.has(style):
+		for st in own:
+			if lines().has(str(st)):
+				l = l.duplicate()
+				var seat: Dictionary = (l["4_seat"] as Dictionary).duplicate()
+				var theirs: Dictionary = lines()[str(st)]["lines"]["4_seat"]
+				for k in TAIL_KEYS:
+					if theirs.has(k):
+						seat[k] = theirs[k]
+				l["4_seat"] = seat
+				mixed["tail"] = str(st)
+				break
+	return {"style": style, "lines": l, "mixed": mixed}
+
+
+## A brief said for the configurator ("Laid out to a bobber's lines, with a cafe racer's tail.").
+static func brief_text(parts: Dictionary) -> String:
+	var b := brief(parts)
+	var out := "Laid out to %s's lines" % PartsDB.style_phrase(str(b["style"]))
+	if b["mixed"].has("tail"):
+		out += ", with %s's tail" % PartsDB.style_phrase(str(b["mixed"]["tail"]))
+	return out + "."
+
+
 ## Engine size relative to a 700 cc, as BikeModel draws it.
 static func engine_scale(displacement: float) -> float:
 	return clampf(pow(displacement / 700.0, 0.3), 0.55, 1.2)
@@ -247,8 +285,9 @@ static func solve(build: BikeBuild) -> Dictionary:
 
 static func _solve(build: BikeBuild) -> Dictionary:
 	var parts := build.parts
-	var style := style_for(parts)
-	var l: Dictionary = lines()[style]["lines"]
+	var br := brief(parts)
+	var style := str(br["style"])
+	var l: Dictionary = br["lines"]
 	var frame := PartsDB.get_part(str(parts.get("frame", "")))
 	var geo: Dictionary = frame.get("geo", {})
 	var family := str(frame.get("style", "cradle"))

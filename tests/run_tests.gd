@@ -1033,6 +1033,7 @@ func _run_all() -> void:
 	await _t(&"_test_bike_rig_reform")
 	await _t(&"_test_bike_rig_part_fit")
 	await _t(&"_test_bike_rig_fabricate")
+	await _t(&"_test_bike_rig_briefs")
 	await _t(&"_test_rig_body_on_rig")
 	await _t(&"_test_rig_body_deterministic")
 	await _t(&"_test_rig_body_fairings")
@@ -24416,6 +24417,10 @@ func _test_bike_rig_part_fit() -> void:
 
 func _test_bike_rig_fabricate() -> void:
 	_bike_rig().test_fabricate()
+
+
+func _test_bike_rig_briefs() -> void:
+	_bike_rig().test_briefs()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)

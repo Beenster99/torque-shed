@@ -410,3 +410,32 @@ func test_fabricate() -> void:
 		and Progress.XP.has("fabricate") and Progress.PAY.has("fabricate"),
 		"a part that needs fabrication goes on, and the bike owes it until it's made (%s; owed %s, £%d; mount: %s; made %d; then: %s / %s; works built owes %s)"
 		% [fit_why, whats, cost, mount_why, made, after, ride_why, Shed.fab_owed(built)])
+
+
+## Style briefs: every stock bike is laid out to its own style's lines, unmixed; a bobber with a
+## cafe seat keeps the bobber's lines but takes the cafe's tail, and says so.
+func test_briefs() -> void:
+	var off := []
+	for style in PartsDB.STYLES:
+		var parts: Dictionary = PartsDB.sanitize_build(Contracts.style_build(style))
+		var b := BikeRig.brief(parts)
+		if not (b["mixed"] as Dictionary).is_empty():
+			off.append("%s mixes %s" % [style, b["mixed"]])
+		elif b["lines"] != BikeRig.lines()[str(b["style"])]["lines"]:
+			off.append("%s lines differ" % style)
+	var bob: Dictionary = PartsDB.sanitize_build(Contracts.style_build("bobber"))
+	var cafe_seat := ""
+	for id in PartsDB.by_kind["saddle"]:
+		if PartsDB.styles_of(str(id)) == ["cafe"]:
+			cafe_seat = str(id)
+			break
+	bob["saddle"] = cafe_seat
+	var mix := BikeRig.brief(bob)
+	var seat: Dictionary = mix["lines"]["4_seat"]
+	var bob_seat: Dictionary = BikeRig.lines()[str(mix["style"])]["lines"]["4_seat"]
+	var cafe_tail: Dictionary = BikeRig.lines()["cafe"]["lines"]["4_seat"]
+	var text := BikeRig.brief_text(bob)
+	t.check(off.is_empty() and cafe_seat != "" and str(mix["mixed"].get("tail", "")) == "cafe"
+		and float(seat["tail_u"]) == float(cafe_tail["tail_u"]) and float(seat["front_u"]) == float(bob_seat["front_u"])
+		and text.contains("cafe racer's tail") and not BikeRig.solve(BikeBuild.new(bob)).is_empty(),
+		"style briefs: stock bikes keep their own lines, a cafe seat on a bobber brings its tail (%s; %s) %s" % [cafe_seat, text, off])
