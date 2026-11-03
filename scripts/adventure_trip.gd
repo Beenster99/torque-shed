@@ -69,6 +69,9 @@ var _polaroid_caption: Label
 var _started_at := 0         # ticks when this player set off, for the title card's time
 ## The map where the crew plans a journey across a real region, made the first time it is opened.
 var journey_map: JourneyMap
+## Watches the crew's plan being worked out, to tell you when the road's ready wherever you are (see RouteReady).
+var route_ready := RouteReady.new()
+var _route_timer := 0.0
 var _hidden: Array = []      # [node, was visible, process mode] of the town put to sleep
 var _hud: Label
 var _crew: Label             # how far ahead or behind the rest of the crew are (see friends)
@@ -1201,12 +1204,31 @@ func _process(delta: float) -> void:
 		_tick_moment(delta)
 	_watch_black(delta)
 	_keep_call_time()
+	_watch_route(delta)
 	if _preparing and not _busy and int(Shed.adventure.get("id", 0)) == trip_id:
 		AdventurePlans.poll()
 		enter()
 	elif _preparing and int(Shed.adventure.get("id", 0)) != trip_id:
 		_preparing = false   # (the ride ended before this machine got to it)
 	_host_refresh()
+
+
+## Looks now and then at the crew's plan on this machine, and puts up a notice when it's been planned (RouteReady).
+## Asking for the plan also starts this machine working it out, so a guest's road is planned as the pins go down even
+## with no planner on a screen.
+func _watch_route(delta: float) -> void:
+	_route_timer -= delta
+	if _route_timer > 0.0:
+		return
+	_route_timer = RouteReady.EVERY
+	if main == null or not main.in_session or Adventure.active():
+		return
+	var plan := AdventureJourney.plan_of(Shed.journey)
+	AdventurePlans.poll()
+	var res := AdventurePlans.result(plan) if not plan.is_empty() else {}
+	var n := route_ready.watch(plan, res, Time.get_ticks_msec())
+	if not n.is_empty() and main.hud:
+		main.hud.route_notice(str(n["title"]), str(n["line"]), bool(n["ok"]))
 
 
 ## The host, back at the shed after a guest couldn't join a ride over the map: its own map fetched afresh (on a worker),
