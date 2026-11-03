@@ -137,3 +137,93 @@ func test_configurator() -> void:
 	tab.queue_free()
 	Progress.profile = saved
 	Shed.stop()
+
+
+## Simon: "add mudguards, panniers, topbox as options on the new bike configurator", "allow for
+## the change of colour for mudguards" and "a faded background, with zoom and stop rotation for
+## bike preview window". The configurator offers the front mudguard, the rear guard or tail,
+## panniers and a top box (none too); the mudguards come in the factory's colour till one is
+## picked, then front and rear in it (a tail cowl keeps its own); the turntable is a studio that
+## fades at its edges, it stops turning and zooms in, and a part changed keeps the view.
+func test_configurator_extras() -> void:
+	Shed.start_new("Tester", 54)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.set_money(1000000)
+	var tab := BikeShopTab.new()
+	t.add_child(tab)
+	await _frames(1)
+	tab._new_style("tourer")
+	tab.show_mode("new")
+	var rows := []
+	for slot in ["front_mudguard", "tail", "panniers", "top_box"]:
+		var ob: OptionButton = tab.find_child("Slot_" + slot, true, false)
+		var opts := BikeShop.options(slot, "tourer", tab.parts)
+		if ob != null and opts.has("none") and opts.size() >= 3:
+			rows.append(slot)
+	check(rows.size() == 4, "the configurator offers mudguards, a rear guard, panniers and a top box, or none (%s)" % [rows])
+	check(BikeShop.slot_label("tail") == "Rear guard, tail" and BikeShop.slot_label("top_box") == "Top box", "named plainly")
+	# Luggage on a cafe racer, and a long rear mudguard.
+	tab._new_style("cafe")
+	tab.show_mode("new")
+	tab.set_part("panniers", "canvas_throwover")
+	tab.set_part("top_box", "wooden_crate")
+	tab.set_part("tail", "classic_mudguard")
+	check(tab.parts["panniers"] == "canvas_throwover" and tab.parts["top_box"] == "wooden_crate" and tab.parts["tail"] == "classic_mudguard",
+		"panniers, a top box and a rear mudguard go on a cafe racer")
+	var guards: ColorPickerButton = tab.find_child("Colour_mudguards", true, false)
+	var fac: Button = tab.find_child("MudguardsFactory", true, false)
+	check(guards != null and fac != null and fac.disabled and not tab.colours.has("mudguards")
+		and guards.color == PartsDB.default_color(str(tab.parts["front_mudguard"])),
+		"the mudguards' colour starts as the factory's (%s), with nothing to put back" % guards.color if guards else "no mudguard colour")
+	var picker := guards.get_picker() if guards else null
+	check(picker != null and not picker.sliders_visible and not picker.color_modes_visible and picker.presets_visible
+		and picker.get_presets().size() == Shed.PAINTS.size(),
+		"its picker is the small one, with the paint shop's colours as its swatches and room for recent colours")
+	var red := Color(0.75, 0.1, 0.08)
+	tab.set_colour("mudguards", red)
+	var b: Dictionary = tab._src()["build"]
+	check(b["colors"].get("front_mudguard", {}).get("color") == red and b["colors"].get("tail", {}).get("color") == red and not fac.disabled,
+		"picked red, both mudguards are red")
+	tab.set_part("tail", "cafe_ducktail")
+	b = tab._src()["build"]
+	check(b["colors"].get("front_mudguard", {}).get("color") == red and not b["colors"].has("tail"), "a ducktail cowl keeps its own colour")
+	var before: Array = Shed.bikes.keys()
+	tab._press_buy()
+	var id := _new_bike(before)
+	var guard := Shed.item_on(id, "front_mudguard") if id != 0 else 0
+	var bags := Shed.item_on(id, "panniers") if id != 0 else 0
+	check(guard != 0 and Shed.items[guard]["color"] == red and bags != 0 and Shed.items[bags]["part"] == "canvas_throwover",
+		"ordered, it comes with a red front mudguard and its panniers on")
+	(tab.find_child("MudguardsFactory", true, false) as Button).pressed.emit()
+	await _frames(1)
+	check(not tab.colours.has("mudguards") and not tab._src()["build"]["colors"].has("front_mudguard"), "As they come puts the factory's colour back")
+	# The turntable.
+	var pv: PartPreview = tab._preview
+	check(pv.studio and pv.material is ShaderMaterial, "the bike sits in a soft studio that fades at its edges")
+	var stop: Button = tab.find_child("StopTurning", true, false)
+	stop.button_pressed = true
+	var turn := pv.pivot.rotation.y
+	await _frames(5)
+	check(not pv.spinning and is_equal_approx(pv.pivot.rotation.y, turn) and stop.text == "Start turning", "Stop turning stops it")
+	var far := pv.camera.position.length()
+	(tab.find_child("ZoomIn", true, false) as Button).pressed.emit()
+	var near := pv.camera.position.length()
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	wheel.pressed = true
+	pv._gui_input(wheel)
+	check(pv.zoom > 1.3 and near < far * 0.85 and pv.camera.position.length() < near, "zoom in, with the button or the mouse wheel (%.2fx)" % pv.zoom)
+	for i in 30:
+		pv.zoom_by(2.0)
+	check(is_equal_approx(pv.zoom, PartPreview.ZOOM_MAX), "but only so far")
+	var z := pv.zoom
+	tab.set_part("top_box", "none")
+	await _frames(1)
+	check(is_equal_approx(pv.zoom, z) and is_equal_approx(pv.pivot.rotation.y, turn), "a part changed keeps the view where it was")
+	(tab.find_child("WholeBike", true, false) as Button).pressed.emit()
+	check(pv.zoom == 1.0 and pv.look == Vector2.ZERO, "See it all goes back to the whole bike")
+	stop.button_pressed = false
+	check(pv.spinning and stop.text == "Stop turning", "and it turns again")
+	tab.queue_free()
+	Progress.profile = saved
+	Shed.stop()
