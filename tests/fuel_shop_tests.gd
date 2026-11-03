@@ -165,6 +165,9 @@ func test_spanner() -> void:
 	# What it can't do without stays on.
 	for slot in ["engine", "frame", "front_wheel", "rear_tyre", "tank", "saddle", "fork", "shock", "handlebars", "exhaust", "gearbox"]:
 		check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": slot}).contains("job for the shed"), "the %s is a job for the shed" % slot)
+	# The Rig built fit (BikeRig.part_tier) has its say: a bike can't do without its tank.
+	check(ToolboxSpares.rig_says(bike, "tank", "none").ends_with("That's a job for the shed.") and ToolboxSpares.rig_says(bike, "mirrors", "none") == "",
+		"the rig's fit call is asked: %s" % ToolboxSpares.rig_says(bike, "tank", "none"))
 	# Panniers bought at the shop, off the straps and fitted.
 	var panniers := ""
 	for id in PartsDB.by_kind["panniers"]:
