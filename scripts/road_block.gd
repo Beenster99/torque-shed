@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 21
+const VERSION := 22
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -1232,7 +1232,7 @@ func _fan(g: Dictionary, surf: String, col: Color, c: Vector3, pts: Array, close
 ## height across from it (RoadNet.surface_y), easing to the outline's own heights (the arms' mouths) at its edge, so the
 ## through road rides on through it as it does either side and a side road comes into it without a kink.
 func _drape(g: Dictionary, surf: String, col: Color, j: Dictionary, c: Vector3, pts: Array, closed := false) -> void:
-	if closed and _folds(c, pts) and _sheet(g, surf, col, j, pts):
+	if closed and _folds(c, pts) and _sheet(g, surf, col, j, pts, c):
 		return
 	var o := anchor()
 	var node := int(j["node"])
@@ -1293,6 +1293,7 @@ static func _crowned(pts: Array, kerb: PackedByteArray, closed: bool) -> Array:
 ## junctions drawn as one with a road's mouths inside them, or two roads leaving side by side).
 static func _folds(c: Vector3, pts: Array) -> bool:
 	var turn := 0.0
+	var total := 0.0
 	for k in pts.size():
 		var a: Vector3 = pts[k]
 		var b: Vector3 = pts[(k + 1) % pts.size()]
@@ -1301,7 +1302,45 @@ static func _folds(c: Vector3, pts: Array) -> bool:
 			return true
 		if d != 0.0:
 			turn = signf(d)
-	return false
+		total += d
+	# (or goes round it more than once)
+	return absf(total) > TAU * 1.5
+
+
+## The ground swept by lines from `c` to every point of outline `poly` (the triangles from `c` to each of its sides, put
+## together): one outline round it that doesn't cross itself, for an outline that does. Empty where there's none.
+static func _swept(c: Vector2, poly: PackedVector2Array) -> PackedVector2Array:
+	var area := PackedVector2Array()
+	var n := poly.size()
+	for k in n:
+		var tri := PackedVector2Array([c, poly[k], poly[(k + 1) % n]])
+		if absf((tri[1] - tri[0]).cross(tri[2] - tri[0])) < 0.0001:
+			continue
+		if Geometry2D.is_polygon_clockwise(tri):
+			tri.reverse()
+		if area.is_empty():
+			area = tri
+			continue
+		var best := PackedVector2Array()
+		var best_a := 0.0
+		for q: PackedVector2Array in Geometry2D.merge_polygons(area, tri):
+			# (the outer outline, not a hole in it: holes run the other way round)
+			if Geometry2D.is_polygon_clockwise(q):
+				continue
+			var a := _area_of(q)
+			if a > best_a:
+				best = q
+				best_a = a
+		if best.size() >= 3:
+			area = best
+	return area
+
+
+static func _area_of(q: PackedVector2Array) -> float:
+	var a := 0.0
+	for k in q.size():
+		a += q[k].cross(q[(k + 1) % q.size()])
+	return absf(a) * 0.5
 
 
 ## A junction's surface as one sheet, for one whose outline `pts` (block space) folds (_folds): over the outline and the
@@ -1310,19 +1349,24 @@ static func _folds(c: Vector3, pts: Array) -> bool:
 ## triangles (Delaunay, those inside kept), each on its through road's height (RoadNet.surface_y) eased onto the
 ## outline's heights as smoothly as can be (each other point's easing the mean of its neighbours', the outline's
 ## fixed: a membrane stretched to its rim), so no two faces lie over one another. False where there's no such sheet.
-func _sheet(g: Dictionary, surf: String, col: Color, j: Dictionary, pts: Array) -> bool:
+func _sheet(g: Dictionary, surf: String, col: Color, j: Dictionary, pts: Array, c: Vector3) -> bool:
 	var o := anchor()
 	var node := int(j["node"])
 	var n := pts.size()
 	var poly := PackedVector2Array()
 	for p: Vector3 in pts:
 		poly.append(Vector2(p.x, p.z))
+	var area := poly
+	# (an outline that crosses itself, the kerbs of two junctions drawn as one cutting across one another where a road
+	# leaves beside another, as at the top of Simon's Stelvio Pass: the ground its rings out from the middle would
+	# cover, as one sheet, instead of two layers of road one over the other, the upper a ramp up out of the lower)
 	if Geometry2D.triangulate_polygon(poly).is_empty():
-		return false
+		area = _swept(Vector2(c.x, c.z), poly)
+		if area.size() < 3:
+			return false
 	# (the roads between its nodes, as wide as they are)
 	var nodes: PackedInt32Array = j["nodes"]
 	var r := net.region
-	var area := poly
 	for m in nodes:
 		for ei in r.adjacent[m]:
 			if r.edge_a[ei] != m or not nodes.has(r.edge_b[ei]) or net.mouth(ei, m) < net.length_of(ei):
