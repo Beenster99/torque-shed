@@ -366,3 +366,47 @@ func test_part_fit() -> void:
 		and not with_fab.is_empty() and stock_fab.is_empty() and same,
 		"parts bolt on, need fabrication (named and priced) or won't fit, by the rig (tank off: %s; boxer in MX loops: %s; four in a softail: %s %s; fab rows %d) %s"
 		% [tank["reason"], boxer["reason"], four["tier"], four["reason"], with_fab.size(), off.slice(0, 8)])
+
+
+## Fabrication as a shed job: a four fitted to a softail goes on, the bike owes the jobs and won't
+## ride; the grinder and welder makes them one by one, from the business's money, for XP; then it
+## rides. A bike delivered built owes nothing.
+func test_fabricate() -> void:
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	var soft: Dictionary = PartsDB.sanitize_build(Contracts.style_build("bobber"))
+	soft["frame"] = "softail_hardtail"
+	var bay := Shed.free_bay(Workshop.bay_count())
+	var bike := Shed._new_bike(soft, bay, "Fab test", 0.0)
+	# Its own engine out, and in its place a four with all its bits on (the stock one's).
+	var engine := Shed._detach(bike, "engine", "held", me)
+	Shed.items[engine]["part"] = "four_1000"
+	var fit_why := Shed.check(me, {"a": "install", "bike": bike, "slot": "engine", "crouched": true})
+	Shed.request({"a": "install", "bike": bike, "slot": "engine", "crouched": true})
+	var owed := Shed.fab_owed(bike)
+	var whats: Array = owed.map(func(j): return str(j["what"]))
+	for slot in PartsDB.SLOTS:
+		if Shed.item_on(bike, slot) != 0 and not Shed.is_bolted(bike, slot):
+			Shed.request({"a": "bolt", "bike": bike, "slot": slot, "crouched": true})
+	var for_engine := Shed.item_on(bike, "engine") == engine
+	var mount_why := Shed.check(me, {"a": "mount", "bike": bike})
+	var cost: int = owed.reduce(func(s, j): return s + int(j["cost"]), 0)
+	var money_was := Shed.garage_money
+	Shed.garage_money = cost
+	var made := 0
+	for i in owed.size() + 1:
+		if Shed.check(me, {"a": "fabricate", "bike": bike}) == "":
+			Shed.request({"a": "fabricate", "bike": bike})
+			made += 1
+	var after := Shed.check(me, {"a": "fabricate", "bike": bike})
+	var done: Array = Shed.bikes[bike].get("fab_done", [])
+	var ride_why := Shed.check(me, {"a": "mount", "bike": bike})
+	Shed.garage_money = money_was
+	var built := Shed.deliver_ready_bike({"parts": PartsDB.sanitize_build(Contracts.style_build("bobber")).merged(
+		{"frame": "softail_hardtail", "engine": "four_1000"}, true), "name": "Works built"}, Shed.ready_bike_place(), 0, "Tester")
+	t.check(fit_why == "" and for_engine and not owed.is_empty() and mount_why.contains("fabrication")
+		and made == owed.size() and Shed.fab_owed(bike).is_empty() and Shed.garage_money == money_was and done == whats
+		and after != "" and not ride_why.contains("fabrication") and Shed.fab_owed(built).is_empty() and not (Shed.bikes[built].get("fab_done", []) as Array).is_empty()
+		and Progress.XP.has("fabricate") and Progress.PAY.has("fabricate"),
+		"a part that needs fabrication goes on, and the bike owes it until it's made (%s; owed %s, £%d; mount: %s; made %d; then: %s / %s; works built owes %s)"
+		% [fit_why, whats, cost, mount_why, made, after, ride_why, Shed.fab_owed(built)])

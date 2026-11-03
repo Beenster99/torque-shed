@@ -584,7 +584,7 @@ static func fab_text(id: String, bike_id: int) -> String:
 	for w in tier["work"]:
 		hours += float(w["hours"])
 		cost += int(w["cost"])
-	return "%s It's a shed job: about %s at the bench and %s of steel and gas." % [str(tier["reason"]),
+	return "%s Fit it and it's a shed job before it'll ride: the grinder and welder at the bike, about %s of work and %s of steel and gas." % [str(tier["reason"]),
 		"%d h" % roundi(hours) if hours >= 1.0 else "an hour", TvChannels.money_text(cost)]
 
 

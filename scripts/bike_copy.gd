@@ -113,8 +113,8 @@ static func lines(plan: Dictionary, peer: int, quality := 1.0, built := false) -
 			price = maxi(1, roundi(price * price_factor(quality)))
 		out.append({"slot": row["slot"], "part": row["part"], "name": row["name"], "price": price})
 	# A bike that comes built comes with the fabrication its parts take beyond its style's stock
-	# one done (BikeRig's fit report), at the shed's price for it.
-	if built:
+	# one done (BikeRig's fit report), at the shed's price for it. (A new one always comes built.)
+	if built or is_new(quality):
 		var parts: Dictionary = plan.get("parts", {})
 		for w in BikeShop.fab_work(parts, str(PartsDB.detect_style(parts).get("style", "classic"))):
 			out.append({"slot": "fab", "part": "", "name": "Fabrication: %s" % str(w["what"]), "price": int(w["cost"])})

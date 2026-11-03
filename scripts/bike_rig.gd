@@ -520,18 +520,33 @@ static func _knee(hip: Vector3, peg: Vector3) -> Vector3:
 	return mid + fwd * rise
 
 
+## An engine layout as it's said ("V-twin", "inline four").
+static func layout_word(layout: String) -> String:
+	return str({"inline": "inline four", "vtwin": "V-twin", "parallel": "parallel twin", "mono": "single"}.get(layout, layout))
+
+
+## A frame family as it's said ("MX", "adventure").
+static func family_word(family: String) -> String:
+	return str({"mx": "MX", "adv": "adventure"}.get(family, family))
+
+
+## A word with "a" or "an" in front.
+static func _a(word: String) -> String:
+	return ("an " if word.left(1).to_lower() in ["a", "e", "i", "o", "u"] or word == "MX" else "a ") + word
+
+
 ## How the engine and frame go together: {tier, work: [what the shed makes], reason}.
 static func _fit(r: Dictionary, engine: Dictionary, family: String, front_clear: float) -> Dictionary:
 	var layout := str(engine.get("layout", "parallel"))
 	var cc := float(engine.get("displacement", 700.0))
 	var fam: Dictionary = FAMILY.get(family, FAMILY["cradle"])
 	if (NO_FIT.get(family, []) as Array).has(layout):
-		return {"tier": TIER_NO, "work": [], "reason": "a %s's cylinders can't pass through a %s frame" % [layout, family]}
+		return {"tier": TIER_NO, "work": [], "reason": "%s's cylinders can't pass through %s frame" % [_a(layout_word(layout)), _a(family_word(family))]}
 	if float(r["front_clear"]) < 0.0:
 		return {"tier": TIER_NO, "work": [], "reason": "the front tyre would hit the engine on full bump"}
 	var work := []
 	if not (fam["layouts"] as Array).has(layout):
-		work.append("engine mounts and cradle made for a %s" % layout)
+		work.append("engine mounts and cradle made for %s" % _a(layout_word(layout)))
 	if cc > float(fam["cc"]) + 0.5:
 		work.append("cradle widened and backbone stretched for %d cc" % roundi(cc))
 	if float(r["front_clear"]) < front_clear:
