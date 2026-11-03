@@ -86,7 +86,7 @@ func _ready() -> void:
 	whole.text = "See it all"
 	whole.pressed.connect(_preview.reset_view)
 	view.add_child(whole)
-	var hint := UITheme.label("Drag to turn, scroll to zoom", 13, Color(1, 1, 1, 0.45))
+	var hint := UITheme.label("Drag to turn, scroll to zoom", 13, Color(1, 1, 1, 0.45))   # hint-ok: the mouse on the turntable itself, not a binding
 	hint.autowrap_mode = TextServer.AUTOWRAP_OFF
 	view.add_child(hint)
 	_about = UITheme.label("", 15)

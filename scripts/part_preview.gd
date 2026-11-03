@@ -44,7 +44,7 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
 	custom_minimum_size = Vector2(0, 180)
-	tooltip_text = "Drag to turn it, scroll to zoom in (right-drag to look about), double-click to see all of it again"
+	tooltip_text = "Drag to turn it, scroll to zoom in (right-drag to look about), double-click to see all of it again"   # hint-ok: the mouse on it, not a binding
 	viewport = SubViewport.new()
 	viewport.own_world_3d = true
 	viewport.transparent_bg = true
