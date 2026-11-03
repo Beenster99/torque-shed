@@ -105,13 +105,19 @@ static func clean_name(n: String) -> String:
 ## Every part on a plan's build, one row each: {slot, part, name, price} with the price `peer`
 ## pays for it at the parts computer, at `quality` (see price_factor). The frame first, as the
 ## build goes.
-static func lines(plan: Dictionary, peer: int, quality := 1.0) -> Array:
+static func lines(plan: Dictionary, peer: int, quality := 1.0, built := false) -> Array:
 	var out := []
 	for row in Shed.plan_rows({"parts": plan.get("parts", {})}, 0):
 		var price := Money.buy_price(str(row["part"]), peer)
 		if not is_new(quality) and not PartsDB.is_fluid(str(row["part"])):
 			price = maxi(1, roundi(price * price_factor(quality)))
 		out.append({"slot": row["slot"], "part": row["part"], "name": row["name"], "price": price})
+	# A bike that comes built comes with the fabrication its parts take beyond its style's stock
+	# one done (BikeRig's fit report), at the shed's price for it. (A new one always comes built.)
+	if built or is_new(quality):
+		var parts: Dictionary = plan.get("parts", {})
+		for w in BikeShop.fab_work(parts, str(PartsDB.detect_style(parts).get("style", "classic"))):
+			out.append({"slot": "fab", "part": "", "name": "Fabrication: %s" % str(w["what"]), "price": int(w["cost"])})
 	return out
 
 
@@ -200,7 +206,7 @@ static func order(src: Dictionary, quality := 1.0, built := false) -> String:
 	var plan := plan_of(src)
 	if plan.is_empty():
 		return "That bike has gone."
-	var cost := total(lines(plan, Shed.me(), quality))
+	var cost := total(lines(plan, Shed.me(), quality, built))
 	var action := {"a": "copy_order", "src": src, "paid": cost, "quality": quality}
 	if built:
 		action["built"] = true
@@ -233,7 +239,7 @@ static func check(peer: int, action: Dictionary) -> String:
 			if quality < 0.0:
 				return "That isn't a quality the parts computer sells."
 			var paid := int(action.get("paid", 0))
-			var cost := total(lines(plan, peer, quality))
+			var cost := total(lines(plan, peer, quality, bool(action.get("built", false))))
 			if cost <= 0:
 				return "There's nothing on it to order."
 			if paid < cost:
@@ -254,7 +260,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"copy_order":
 			var quality := quality_of(action.get("quality", 1.0))
 			var used := used_cond(quality)
-			var rows := lines(plan, peer, quality)
+			var rows := lines(plan, peer, quality, bool(action.get("built", false)))
 			var cost := total(rows)
 			var paid := int(action.get("paid", 0))
 			if paid > cost:

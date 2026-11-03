@@ -452,7 +452,7 @@ func _lay_out(build: BikeBuild) -> float:
 	_g = 1.0
 	if BikeLook.is_new(self) and BikeRig.on and use_rig:
 		# The Rig built look: the engine, seat, tail and pegs where the style's lines put them.
-		rig = BikeRig.solve(build)
+		rig = BikeRig.solve(build, geometry.get("rig", {}) if geometry.get("rig") is Dictionary else {})
 		_frig = rig["frame_rig"]
 		_g = float(_frig["gauge"])
 		_engine_c = rig["crank"]
@@ -8885,6 +8885,11 @@ func highlight(slot: String) -> void:
 ## (the frame, the steering, a hub, a wheel, the swingarm), so this works for any slot, new
 ## ones included. Wheels and needles still spin under their offset rather than wobbling.
 func apply_geometry(geo: Dictionary) -> void:
+	# Geometry mode's range handles (geo's "rig", BikeRig.ADJUST) re-solve the Rig built bike.
+	if not rig.is_empty() and BikeRig.clean_adjust(geo.get("rig", {})) != BikeRig.clean_adjust(geometry.get("rig", {})):
+		geometry = geo
+		redraw_look()
+		return
 	if BikeLookNew.moves_shared(self, geo):
 		geometry = geo
 		redraw_look()

@@ -1272,6 +1272,11 @@ static func missing_lines(missing: Array) -> Array:
 	return lines
 
 
+## The fabrication a bike owes, for its bay screen: one line a job (the grinder and welder makes them).
+static func _fab_lines(bike_id: int) -> Array:
+	return Shed.fab_owed(bike_id).map(func(j): return "Fabricate: %s" % str(j["what"]).left(MISSING_LINE - 11))
+
+
 ## How many characters of a bay screen note fit on a line.
 const MISSING_LINE := 46
 
@@ -1299,6 +1304,8 @@ func _bay_data(bay: int) -> Dictionary:
 		status = "%d PART%s MISSING" % [missing.size(), "" if missing.size() == 1 else "S"]
 	elif not loose.is_empty():
 		status = "%d PART%s LOOSE" % [loose.size(), "" if loose.size() == 1 else "S"]
+	elif not Shed.fab_owed(bike_id).is_empty():
+		status = "NEEDS FABRICATION"
 	var parts := []
 	var has_engine := Shed.item_on(bike_id, "engine") != 0
 	for slot in PartsDB.SLOTS:
@@ -1319,7 +1326,7 @@ func _bay_data(bay: int) -> Dictionary:
 		["Brake R", build.brake_fluid["rear"], 0.0],
 	]
 	var data := {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
-		"notes": missing_lines(missing) + build.notes, "fluids": fluids, "range_km": build.range_km()}
+		"notes": missing_lines(missing) + _fab_lines(bike_id) + build.notes, "fluids": fluids, "range_km": build.range_km()}
 	# A customer's bike: the screen shows the job's checklist, deadline and money instead.
 	var job := Contracts.job_for_bike(bike_id)
 	if not job.is_empty():
