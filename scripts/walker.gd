@@ -302,6 +302,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif Shed.moving(Shed.me()) != 0 and event.is_action_pressed("alt_act"):
 		get_viewport().set_input_as_handled()
 		toggle_snap()
+	elif event.is_action_pressed("ignition") and idling_target() != 0:
+		# Looking at a bike left ticking over: the key switches it off.
+		get_viewport().set_input_as_handled()
+		Shed.request({"a": "engine_off", "bike": idling_target()})
 	elif event.is_action_pressed("tool_next"):
 		_cycle_tool(1)
 	elif event.is_action_pressed("tool_prev"):
@@ -2499,10 +2503,18 @@ func _describe() -> String:
 					lines.append("It could be recycled instead, for more XP.")
 	if kind == "shed_pump" or ShedPump.holder() == Shed.me():
 		lines.append_array(ShedPump.describe(target, Shed.me()))
+	if idling_target() != 0:
+		lines.append("Its engine's running  ·  %s: switch it off" % _keys("ignition"))
 	var looked := looked_at_furniture() if Shed.held_by(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0 else 0
 	if looked != 0 and Shed.scrappable(Shed.furniture[looked]) and _scrap_line(looked) != "":
 		lines.append(_scrap_line(looked))
 	return "\n".join(lines)
+
+
+## The bike the crosshair's on, when it was left with its engine running (Shed.idling); else 0.
+func idling_target() -> int:
+	var id := int(target.get("bike", 0)) if str(target.get("kind", "")) == "part" else 0
+	return id if id != 0 and Shed.idling(id) else 0
 
 
 ## The HUD's line for the scrap key on equipment `id` ("" when it can't go): scrapping it, or

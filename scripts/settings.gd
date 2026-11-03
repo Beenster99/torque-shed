@@ -131,7 +131,7 @@ const ACTIONS := [
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
 	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down (truck: into reverse when stopped)", ["ride"]],
 	["clutch", "Clutch in (hold): rev it in any gear", ["ride"]],
-	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
+	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off (on foot: switch off a bike left running)", ["ride", "foot"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["indicate_left", "Indicate left (again to cancel)", ["ride"]], ["indicate_right", "Indicate right (again to cancel)", ["ride"]],

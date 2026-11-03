@@ -712,5 +712,7 @@
 	"_test_rig_body_fairings": 6000,
 	"_test_road_pockets": 4400,
 	"_test_adv_roads_real_rings": 3000,
-	"_test_ride_smooth_between_ticks": 900
+	"_test_ride_smooth_between_ticks": 900,
+	"_test_idle_shed": 15000,
+	"_test_idle_roadside": 25000
 }
