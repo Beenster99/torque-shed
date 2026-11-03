@@ -150,22 +150,6 @@ func use_studio() -> void:
 	viewport.add_child(shadow)
 
 
-## Fades the picture out softly at its edges, so it sits in the menu without a hard box round it.
-func use_fade() -> void:
-	var sh := Shader.new()
-	sh.code = """shader_type canvas_item;
-uniform float edge = 0.22;
-void fragment() {
-	vec4 c = texture(TEXTURE, UV);
-	vec2 d = min(UV, 1.0 - UV) / edge;
-	float m = smoothstep(0.0, 1.0, clamp(d.x, 0.0, 1.0)) * smoothstep(0.0, 1.0, clamp(d.y, 0.0, 1.0));
-	COLOR = vec4(c.rgb, c.a * m);
-}"""
-	var mat := ShaderMaterial.new()
-	mat.shader = sh
-	material = mat
-
-
 ## Puts a catalogue part on the turntable (or nothing for "", or anything that isn't a part).
 func show_part(part_id: String, cond := {}) -> void:
 	if part_id == "" or PartsDB.get_part(part_id).is_empty():
