@@ -2720,18 +2720,32 @@ func _draw_spark_plugs() -> void:
 	var ceramic := _mat(_col(), 0.0, 0.3)
 	var cap := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.6)
 	var lead := _mat(Color(0.42, 0.05, 0.04), 0.0, 0.55)
+	var blender := _blender_on() and not BlenderParts.part(BlenderParts.ROOT + "spark_plugs/plug.glb").is_empty()
 	var ends := []
 	for i in _cyls.size():
 		var c: Dictionary = _cyls[i]
 		var up: Vector3 = c["up"]
 		var at: Vector3 = c["base"] + up * 0.2 + Vector3(0.0, 0.0, 0.02)
-		_tube(at, at + up * 0.03, 0.011, ceramic)
 		# Plug caps come off the head sideways, the way real ones do, so they stay clear of
 		# the tank and the saddle: out to the right on upright cylinders (alternating on a
 		# twin), straight out along the cylinder on a boxer.
 		var out := up
 		if absf(up.x) < 0.5:
 			out = Vector3(-1.0 if _cyls.size() == 2 and i == 0 else 1.0, 0.0, 0.0)
+		if blender:
+			# New look: the plug and its cap made in Blender, the cap's boot turning out from the
+			# plug (straight out along it on a boxer, whose plugs point out sideways already).
+			var straight := out == up
+			var side := out - up.normalized() * out.dot(up.normalized())
+			if side.length() < 0.01:
+				side = Vector3.FORWARD - up.normalized() * up.normalized().dot(Vector3.FORWARD)
+			side = side.normalized()
+			var b := Basis(side, up, side.cross(up).normalized())
+			_blender_tagged("spark_plugs/plug.glb", Transform3D(b, at), {"paint": ceramic}, {"paint": "SparkPlug"})
+			_blender_tagged("spark_plugs/cap_straight.glb" if straight else "spark_plugs/cap.glb", Transform3D(b, at), {"rubber": cap}, {"rubber": "PlugCap"})
+			ends.append(at + up * 0.075 if straight else at + up * 0.025 + side * 0.05)
+			continue
+		_tube(at, at + up * 0.03, 0.011, ceramic)
 		var elbow: Vector3 = at + up * 0.035
 		var end: Vector3 = elbow + out * 0.05 - up * 0.01
 		_bend([at + up * 0.02, elbow, end], 0.014, cap, self, 4)
@@ -2747,11 +2761,19 @@ func _draw_spark_plugs() -> void:
 	mid /= ends.size()
 	# The coil sits low behind the cylinders, out of sight under the tank rather than up in it.
 	var coil := Vector3(0.0, top - 0.11, mid.z + 0.16)
-	var body := _bike_only(_box(coil, Vector3(0.045, 0.035, 0.075), _mat(Color(0.06, 0.06, 0.07), 0.3, 0.5)))
-	body.name = "Coil"
+	var coil_mat := _mat(Color(0.06, 0.06, 0.07), 0.3, 0.5)
+	var coil_pieces := _blender_tagged("spark_plugs/coil.glb", Transform3D(Basis.IDENTITY, coil), {"black_metal": coil_mat}, {"black_metal": "Coil"}) if blender else []
+	for mi in coil_pieces:
+		_bike_only(mi)
+	if coil_pieces.is_empty():
+		var body := _bike_only(_box(coil, Vector3(0.045, 0.035, 0.075), coil_mat))
+		body.name = "Coil"
 	for i in ends.size():
 		var end: Vector3 = ends[i]
 		var into := coil + Vector3((i - (ends.size() - 1) * 0.5) * 0.012, 0.0, -0.035)
+		if not coil_pieces.is_empty():
+			# (Into the Blender coil's towers, a pair at its front.)
+			into = coil + Vector3(-0.012 if i % 2 == 0 else 0.012, 0.0, -0.05)
 		var sag := end.lerp(into, 0.5) + Vector3(0.0, -0.03, 0.0)
 		var wire := _bike_only(_bend([end, end + Vector3(0.0, 0.012, 0.02), sag, into], 0.0045, lead, self, 6))
 		wire.name = "HTLead"
@@ -2776,21 +2798,47 @@ func _draw_fuel() -> void:
 	var mat := _mat(_col(), 0.85, 0.3)
 	var style := str(p.get("style", "carbs"))
 	var points := _intake_points()
+	var glb := _fuel_glb()
 	if style == "carb" and points.size() > 1:
 		var mid := Vector3.ZERO
 		for pt in points:
 			mid += pt["port"]
 			_tube(pt["port"], pt["port"] + Vector3(0.0, 0.0, 0.05), 0.02, mat)
 		mid /= points.size()
+		# One carb on the manifold where the runners meet.
+		if not _blender_tagged(glb, Transform3D(_basis_along(Vector3(0.0, 0.15, 1.0)), mid + Vector3(0.0, 0.0, 0.03)), {"paint": mat}, {"paint": "Carb"}).is_empty():
+			return
 		_box(mid + Vector3(0.0, 0.0, 0.08), Vector3(0.07, 0.07, 0.07), mat)
 		return
 	for pt in points:
 		var at: Vector3 = pt["port"]
+		if not _blender_tagged(glb, Transform3D(_basis_along(pt["dir"]), at), {"paint": mat},
+				{"paint": "ThrottleBody" if style == "fi" else "Carb"}).is_empty():
+			continue
 		_tube(at, at + pt["dir"] * 0.07, 0.026 if style != "fi" else 0.03, mat)
 		if style == "fi":
 			_box(at + pt["dir"] * 0.04 + Vector3(0.0, 0.04, 0.0), Vector3(0.02, 0.04, 0.02), _mat(Color(0.05, 0.05, 0.05), 0.2, 0.5))
 		else:
 			_box(at + pt["dir"] * 0.05 + Vector3(0.0, -0.01, 0.0), Vector3(0.055, 0.07, 0.06), mat)
+
+
+## The fuel system's Blender-made piece (see blender/parts/fuel/fuel.py), under BlenderParts.ROOT:
+## a round-slide carb, a flat-slide one, or a throttle body (a race one with its shower injector).
+func _fuel_glb() -> String:
+	var id := str(_build.parts.get("fuel", ""))
+	if id == "flat_slide_carbs":
+		return "fuel/carb_flat.glb"
+	if id == "race_injection":
+		return "fuel/throttle_body_race.glb"
+	return "fuel/throttle_body.glb" if str(_part().get("style", "carbs")) == "fi" else "fuel/carb_round.glb"
+
+
+## A basis whose +Z runs along `dir` and whose +Y is as near straight up as that leaves.
+static func _basis_along(dir: Vector3) -> Basis:
+	var z := dir.normalized()
+	var x := Vector3.UP.cross(z)
+	x = Vector3.RIGHT if x.length() < 0.001 else x.normalized()
+	return Basis(x, z.cross(x).normalized(), z)
 
 
 ## How far out to the right (m) the air filter reaches at least, so its element shows past the
@@ -2945,6 +2993,9 @@ func _draw_cooling() -> void:
 	match str(_part().get("style", "fins")):
 		"fins":
 			for c in _cyls:
+				# (New look: the fins and their ribs made in Blender, blender/parts/radiator/air.py.)
+				if not _blender_tagged("radiator/fins.glb", Transform3D(_cyl_basis(c["up"]), c["base"]), {"paint": mat}, {"paint": "CoolingFins"}).is_empty():
+					continue
 				for i in 5:
 					var fin := _box(c["base"] + c["up"] * (-0.07 + i * 0.035), Vector3(0.14, 0.01, 0.15), mat)
 					fin.basis = _cyl_basis(c["up"])
@@ -3000,6 +3051,10 @@ func _draw_cooling() -> void:
 			_bike_only(_mesh_instance(_cylinder(0.025, 0.03), mat, pump)).rotation.x = PI * 0.5
 		"twin":
 			for side in [-1.0, 1.0]:
+				var at := Vector3(0.16 * side, _engine_c.y + 0.24, front_z + 0.08)
+				if not _blender_tagged("radiator/side.glb", Transform3D(Basis(Vector3.UP, 0.35 * side) * Basis.from_scale(Vector3(side, 1.0, 1.0)), at),
+						{"black_metal": _tex(core, "core", 14.0), "paint": mat, "rubber": _mat(Color(0.05, 0.05, 0.055), 0.0, 0.7)}, {"black_metal": "RadiatorCore"}).is_empty():
+					continue
 				var rad := _box(Vector3(0.16 * side, _engine_c.y + 0.24, front_z + 0.08), Vector3(0.05, 0.28, 0.22), core)
 				rad.rotation.y = 0.35 * side
 				_box(Vector3(0.19 * side, _engine_c.y + 0.24, front_z + 0.08), Vector3(0.01, 0.3, 0.24), mat).rotation.y = 0.35 * side
@@ -3331,90 +3386,96 @@ func _draw_fork(build: BikeBuild) -> void:
 	var gold := _mat(Color(0.8, 0.65, 0.2), 1.0, 0.15)
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
 	var fl := build.fork_length
-	var made := false   # the new look's telescopic forks, made in Blender (see _blender_fork)
-	match style:
-		"girder":
-			for side in [-1.0, 1.0]:
-				_tube(Vector3(0.09 * side, 0.02, -0.03), Vector3(0.09 * side, 0.0, -0.03) - _steer_axis * fl, 0.02, main_mat, Vector3(1.0, 1.0, 2.2), _steer_node)
-				_box(Vector3(0.09 * side, 0.0, 0.0) - _steer_axis * (fl * 0.5), Vector3(0.025, 0.04, 0.12), main_mat, _steer_node)
-			var spring := _tube(Vector3(0.0, 0.0, -0.06), Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.18, 0.025, chrome, Vector3.ONE, _steer_node)
-			spring.name = "Spring"
-		"springer":
-			# Rear legs fixed to the yokes, front legs on a rocker at the axle, and the springs
-			# out in the open between them at the top.
-			for side in [-1.0, 1.0]:
-				var x: float = 0.085 * side
-				_tube(Vector3(x, 0.02, 0.02), Vector3(x, 0.0, 0.02) - _steer_axis * (fl * 0.97), 0.013, main_mat, Vector3.ONE, _steer_node)
-				_tube(Vector3(x, 0.0, -0.06) - _steer_axis * 0.22, Vector3(x, 0.0, -0.06) - _steer_axis * (fl * 0.92), 0.012, main_mat, Vector3.ONE, _steer_node)
-				# The rocker carrying the axle.
-				_box(Vector3(x, 0.0, -0.02), Vector3(0.016, 0.03, 0.1), main_mat, _front_hub)
-				for k in 7:
-					var ring := _mesh_instance(_torus(0.018, 0.005), chrome, Vector3(x, 0.0, -0.06) - _steer_axis * (0.04 + k * 0.026), _steer_node)
-					ring.basis = _basis_up(_steer_axis)
-			var spring := _tube(Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.02, Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.22, 0.006, chrome, Vector3.ONE, _steer_node)
-			spring.name = "Spring"
-		"leading_link":
-			# Fixed legs down past the wheel to a pivot behind the axle, a short link forward
-			# to the axle (or, on an Earles fork, a long swinging arm from a pivot behind the
-			# tyre) and a spring and damper unit each side.
-			var earles := bool(lk.get("earles", false))
-			var pivot_off := Vector3(0.0, 0.07, 0.3) if earles else Vector3(0.0, 0.035, 0.1)
-			var at_rest := -_steer_axis * fl
-			for side in [-1.0, 1.0]:
-				var x: float = 0.085 * side
-				var pivot := at_rest + pivot_off + Vector3(x, 0.0, 0.0)
-				var knee := Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55) + Vector3(0.0, 0.0, 0.1 if earles else 0.03)
-				_bend([Vector3(x, 0.02, 0.0), knee, pivot], 0.017, main_mat, _steer_node, 10).name = "Leg"
-				_mesh_instance(_cylinder(0.02, 0.03), main_mat, pivot, _steer_node).rotation.z = PI * 0.5
-				var link := _tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + pivot_off, 0.016, main_mat, Vector3(1.0, 1.0, 1.6), _front_hub)
-				link.name = "Link"
-				var top := knee.lerp(pivot, 0.2) + Vector3(0.0, 0.0, -0.06)
-				_tube(top, at_rest + pivot_off * 0.45 + Vector3(x, 0.03, -0.01), 0.02, chrome, Vector3.ONE, _steer_node).name = "Damper"
-				for k in 6:
-					var ring := _mesh_instance(_torus(0.026, 0.005), chrome, top.lerp(at_rest + pivot_off * 0.45 + Vector3(x, 0.03, -0.01), 0.15 + k * 0.12), _steer_node)
-					ring.basis = _basis_up((top - at_rest).normalized())
-			var spring := _box(at_rest + pivot_off + Vector3(0.0, 0.0, 0.0), Vector3(0.17, 0.025, 0.03), main_mat, _steer_node)
-			spring.name = "Spring"
-		_:
-			# A look can spread the legs ("wide", a wide glide), fatten them ("leg"), change the
-			# sliders' finish ("lowers"), add rubber gaiters, chrome shrouds over the stanchions
-			# or a fork brace.
-			var lx := 0.09 * float(lk.get("wide", 1.0))
-			var lr := float(lk.get("leg", 1.0))
-			var usd := style == "usd"
-			var lowers := _look_finish(str(lk.get("lowers", "")), gold if usd else black)
-			made = _blender_on() and _blender_fork(lowers, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome))
-			for side in ([] if made else [-1.0, 1.0]):
-				var x: float = lx * side
-				_tube(Vector3(x, 0.02, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55), (0.034 if usd else 0.024) * lr, main_mat, Vector3.ONE, _steer_node)
-				_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + _steer_axis * (fl * 0.5), (0.022 if usd else 0.032) * lr, lowers, Vector3.ONE, _front_hub)
-				if lk.get("gaiters", false):
-					var rub := _mat(Color(0.04, 0.04, 0.04), 0.0, 0.9)
-					for k in 6:
-						var ring := _mesh_instance(_torus(0.03 * lr, 0.009), rub, Vector3(x, 0.0, 0.0) + _steer_axis * (fl * 0.5 + 0.02 + k * 0.022), _front_hub)
-						ring.basis = _basis_up(_steer_axis)
-				if lk.get("shrouds", false):
-					var cover := _look_finish(str(lk.get("shroud_finish", "chrome")), chrome)
-					_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * 0.2, 0.038 * lr, cover, Vector3.ONE, _steer_node)
-			if lk.get("brace", false) and not made:
-				_box(Vector3(0.0, 0.0, 0.0) + _steer_axis * (fl * 0.25), Vector3(lx * 2.0, 0.03, 0.05), main_mat, _front_hub)
-			# Axle clamps at the foot of each slider, pinched by two bolts, and the axle nuts.
-			var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
-			for side in ([] if made else [-1.0, 1.0]):
-				var x: float = lx * side
-				var foot := _box(Vector3(x, 0.0, 0.0), Vector3(0.05 * lr, 0.06, 0.075), lowers, _front_hub)
-				foot.basis = _basis_up(_steer_axis)
-				foot.name = "AxleClamp"
-				for k in [-0.014, 0.014]:
-					_mesh_instance(_cylinder(0.006, 0.014, -1.0, 6), bolt, Vector3(x, 0.0, 0.0) + _steer_axis * k + Vector3(0.0, 0.0, 0.042), _front_hub).rotation.x = PI * 0.5
-				var nut := _mesh_instance(_cylinder(0.014, 0.012, -1.0, 6), bolt, Vector3(x + side * (0.025 * lr + 0.006), 0.0, 0.0), _front_hub)
-				nut.rotation.z = PI * 0.5
-			# Headlamp ears: the lamp brackets of a classic fork, down from the top yoke.
-			if not usd and lk.get("ears", lk.get("shrouds", lk.get("gaiters", false))):
+	var made := false   # the new look's forks, made in Blender (see _blender_fork)
+	if style in ["girder", "springer", "leading_link"] and _blender_on():
+		# (Girder, springer and leading-link forks come whole: blender/parts/fork/sprung.py.)
+		made = _blender_fork(_mat(Color(0.7, 0.71, 0.73), 0.9, 0.3), chrome)
+		if made:
+			_name_sprung_fork()
+	if not made:
+		match style:
+			"girder":
 				for side in [-1.0, 1.0]:
-					var ear := _bend([Vector3(lx * side, -0.03, -0.01) - _steer_axis * 0.04, Vector3((lx + 0.01) * side, -0.07, -0.06), Vector3(0.1 * side, -0.08, -0.115)],
-						0.011, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome), _steer_node, 10)
-					ear.name = "HeadlampEar"
+					_tube(Vector3(0.09 * side, 0.02, -0.03), Vector3(0.09 * side, 0.0, -0.03) - _steer_axis * fl, 0.02, main_mat, Vector3(1.0, 1.0, 2.2), _steer_node)
+					_box(Vector3(0.09 * side, 0.0, 0.0) - _steer_axis * (fl * 0.5), Vector3(0.025, 0.04, 0.12), main_mat, _steer_node)
+				var spring := _tube(Vector3(0.0, 0.0, -0.06), Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.18, 0.025, chrome, Vector3.ONE, _steer_node)
+				spring.name = "Spring"
+			"springer":
+				# Rear legs fixed to the yokes, front legs on a rocker at the axle, and the springs
+				# out in the open between them at the top.
+				for side in [-1.0, 1.0]:
+					var x: float = 0.085 * side
+					_tube(Vector3(x, 0.02, 0.02), Vector3(x, 0.0, 0.02) - _steer_axis * (fl * 0.97), 0.013, main_mat, Vector3.ONE, _steer_node)
+					_tube(Vector3(x, 0.0, -0.06) - _steer_axis * 0.22, Vector3(x, 0.0, -0.06) - _steer_axis * (fl * 0.92), 0.012, main_mat, Vector3.ONE, _steer_node)
+					# The rocker carrying the axle.
+					_box(Vector3(x, 0.0, -0.02), Vector3(0.016, 0.03, 0.1), main_mat, _front_hub)
+					for k in 7:
+						var ring := _mesh_instance(_torus(0.018, 0.005), chrome, Vector3(x, 0.0, -0.06) - _steer_axis * (0.04 + k * 0.026), _steer_node)
+						ring.basis = _basis_up(_steer_axis)
+				var spring := _tube(Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.02, Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.22, 0.006, chrome, Vector3.ONE, _steer_node)
+				spring.name = "Spring"
+			"leading_link":
+				# Fixed legs down past the wheel to a pivot behind the axle, a short link forward
+				# to the axle (or, on an Earles fork, a long swinging arm from a pivot behind the
+				# tyre) and a spring and damper unit each side.
+				var earles := bool(lk.get("earles", false))
+				var pivot_off := Vector3(0.0, 0.07, 0.3) if earles else Vector3(0.0, 0.035, 0.1)
+				var at_rest := -_steer_axis * fl
+				for side in [-1.0, 1.0]:
+					var x: float = 0.085 * side
+					var pivot := at_rest + pivot_off + Vector3(x, 0.0, 0.0)
+					var knee := Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55) + Vector3(0.0, 0.0, 0.1 if earles else 0.03)
+					_bend([Vector3(x, 0.02, 0.0), knee, pivot], 0.017, main_mat, _steer_node, 10).name = "Leg"
+					_mesh_instance(_cylinder(0.02, 0.03), main_mat, pivot, _steer_node).rotation.z = PI * 0.5
+					var link := _tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + pivot_off, 0.016, main_mat, Vector3(1.0, 1.0, 1.6), _front_hub)
+					link.name = "Link"
+					var top := knee.lerp(pivot, 0.2) + Vector3(0.0, 0.0, -0.06)
+					_tube(top, at_rest + pivot_off * 0.45 + Vector3(x, 0.03, -0.01), 0.02, chrome, Vector3.ONE, _steer_node).name = "Damper"
+					for k in 6:
+						var ring := _mesh_instance(_torus(0.026, 0.005), chrome, top.lerp(at_rest + pivot_off * 0.45 + Vector3(x, 0.03, -0.01), 0.15 + k * 0.12), _steer_node)
+						ring.basis = _basis_up((top - at_rest).normalized())
+				var spring := _box(at_rest + pivot_off + Vector3(0.0, 0.0, 0.0), Vector3(0.17, 0.025, 0.03), main_mat, _steer_node)
+				spring.name = "Spring"
+			_:
+				# A look can spread the legs ("wide", a wide glide), fatten them ("leg"), change the
+				# sliders' finish ("lowers"), add rubber gaiters, chrome shrouds over the stanchions
+				# or a fork brace.
+				var lx := 0.09 * float(lk.get("wide", 1.0))
+				var lr := float(lk.get("leg", 1.0))
+				var usd := style == "usd"
+				var lowers := _look_finish(str(lk.get("lowers", "")), gold if usd else black)
+				made = _blender_on() and _blender_fork(lowers, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome))
+				for side in ([] if made else [-1.0, 1.0]):
+					var x: float = lx * side
+					_tube(Vector3(x, 0.02, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55), (0.034 if usd else 0.024) * lr, main_mat, Vector3.ONE, _steer_node)
+					_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + _steer_axis * (fl * 0.5), (0.022 if usd else 0.032) * lr, lowers, Vector3.ONE, _front_hub)
+					if lk.get("gaiters", false):
+						var rub := _mat(Color(0.04, 0.04, 0.04), 0.0, 0.9)
+						for k in 6:
+							var ring := _mesh_instance(_torus(0.03 * lr, 0.009), rub, Vector3(x, 0.0, 0.0) + _steer_axis * (fl * 0.5 + 0.02 + k * 0.022), _front_hub)
+							ring.basis = _basis_up(_steer_axis)
+					if lk.get("shrouds", false):
+						var cover := _look_finish(str(lk.get("shroud_finish", "chrome")), chrome)
+						_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * 0.2, 0.038 * lr, cover, Vector3.ONE, _steer_node)
+				if lk.get("brace", false) and not made:
+					_box(Vector3(0.0, 0.0, 0.0) + _steer_axis * (fl * 0.25), Vector3(lx * 2.0, 0.03, 0.05), main_mat, _front_hub)
+				# Axle clamps at the foot of each slider, pinched by two bolts, and the axle nuts.
+				var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
+				for side in ([] if made else [-1.0, 1.0]):
+					var x: float = lx * side
+					var foot := _box(Vector3(x, 0.0, 0.0), Vector3(0.05 * lr, 0.06, 0.075), lowers, _front_hub)
+					foot.basis = _basis_up(_steer_axis)
+					foot.name = "AxleClamp"
+					for k in [-0.014, 0.014]:
+						_mesh_instance(_cylinder(0.006, 0.014, -1.0, 6), bolt, Vector3(x, 0.0, 0.0) + _steer_axis * k + Vector3(0.0, 0.0, 0.042), _front_hub).rotation.x = PI * 0.5
+					var nut := _mesh_instance(_cylinder(0.014, 0.012, -1.0, 6), bolt, Vector3(x + side * (0.025 * lr + 0.006), 0.0, 0.0), _front_hub)
+					nut.rotation.z = PI * 0.5
+				# Headlamp ears: the lamp brackets of a classic fork, down from the top yoke.
+				if not usd and lk.get("ears", lk.get("shrouds", lk.get("gaiters", false))):
+					for side in [-1.0, 1.0]:
+						var ear := _bend([Vector3(lx * side, -0.03, -0.01) - _steer_axis * 0.04, Vector3((lx + 0.01) * side, -0.07, -0.06), Vector3(0.1 * side, -0.08, -0.115)],
+							0.011, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome), _steer_node, 10)
+						ear.name = "HeadlampEar"
 	if not made:
 		var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
 		_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
@@ -3916,11 +3977,40 @@ func _draw_cables(perch: Vector3, thr: Vector3, bl: Basis, br: Basis, cable: Mat
 	var e := _engine_c
 	var clutch_end := e + Vector3(-_block_w * 0.5 - 0.02, 0.07 * _eng_s, 0.15 * _eng_s)
 	_bike_only(_bend([jl, jl + Vector3(-0.01, -0.06, 0.08), clutch_end + Vector3(-0.015, 0.1, -0.08), clutch_end], 0.0042, cable, self, 6))
-	_bike_only(_mesh_instance(_cylinder(0.008, 0.02), steel, clutch_end, self))
+	# The adjuster where it goes into the clutch arm (new look: made in Blender, blender/parts/controls/cables.py).
+	if not _cable_end(clutch_end, Vector3(-0.015, 0.1, -0.08), steel, self):
+		_bike_only(_mesh_instance(_cylinder(0.008, 0.02), steel, clutch_end, self))
 	var intake: Array = _intake_points()
 	if not intake.is_empty():
 		var thr_end: Vector3 = intake[0]["port"] + intake[0]["dir"] * 0.05 + Vector3(0.03, 0.045, 0.0)
 		_bike_only(_bend([jr, jr + Vector3(0.01, -0.04, 0.08), thr_end + Vector3(0.0, 0.06, -0.06), thr_end], 0.0042, cable, self, 6))
+		_cable_end(thr_end, Vector3(0.0, 0.06, -0.06), steel, self)
+
+
+## New look: a cable's Blender-made end (its adjuster, lock nut and ferrule) at `at`, the cable
+## coming in from `from` (relative to `at`), on `parent`; with the bike, not the part on a shelf.
+## False (drawing nothing) in Classic or with no glb.
+func _cable_end(at: Vector3, from: Vector3, steel: Material, parent: Node3D) -> bool:
+	var made := _blender_tagged("controls/cable_end.glb", Transform3D(_basis_up(from.normalized()), at + from.normalized() * 0.006), {"raw_steel": steel, "black_metal": _mat(Color(0.03, 0.03, 0.035), 0.1, 0.55)}, {}, parent)
+	for mi in made:
+		_bike_only(mi)
+	return not made.is_empty()
+
+
+## Names a Blender-made girder, springer or leading-link fork's pieces as the code names its
+## own: the springs and, on a leading-link fork, its links and dampers.
+func _name_sprung_fork() -> void:
+	var chrome: Material = _blender_mats["fork"]["chrome"]
+	var links: Material = _blender_mats["fork"]["black_metal"]
+	var damper: Material = _blender_mats["fork"]["cast_alloy"]
+	for mi in _slot_meshes["fork"]:
+		var m := (mi as MeshInstance3D).material_override
+		if m == chrome:
+			(mi as Node).name = "Spring"
+		elif (mi as Node).get_parent() == _front_hub and m == links:
+			(mi as Node).name = "Link"
+		elif (mi as Node).get_parent() == _steer_node and m == damper:
+			(mi as Node).name = "Damper"
 
 
 ## How far out the fork legs sit, for the parts that clip to them.
@@ -4703,12 +4793,12 @@ func _trunk(at: Vector3, size: Vector3, mat: Material) -> void:
 		_box(at + Vector3(sx, h + 0.003, 0.0), Vector3(0.04, 0.006, size.z * 0.86), strap)
 		for z in [-1.0, 1.0]:
 			_box(at + Vector3(sx, h * 0.72, z * (d + 0.003)), Vector3(0.04, h * 0.56, 0.006), strap)
-		_box(at + Vector3(sx, h * 0.58, d + 0.008), Vector3(0.05, 0.04, 0.006), brass)
+		_hardware("luggage/brass_buckle.glb", at + Vector3(sx, h * 0.58, d + 0.008), Vector3(0.05, 0.04, 0.006), brass)
 	_box(at + Vector3(0.0, 0.66 * h, d + 0.008), Vector3(0.05, 0.06, 0.006), brass)
 	_bend([at + Vector3(-0.06, h, 0.0), at + Vector3(-0.045, h + 0.03, 0.0), at + Vector3(0.045, h + 0.03, 0.0), at + Vector3(0.06, h, 0.0)], 0.009, strap)
 	for x in [-1.0, 1.0]:
 		for z in [-1.0, 1.0]:
-			_box(at + Vector3(x * (w - 0.01), 0.02, z * (d - 0.01)), Vector3(0.035, 0.04, 0.035), brass)
+			_hardware("luggage/brass_corner.glb", at + Vector3(x * (w - 0.01), 0.02, z * (d - 0.01)), Vector3(0.035, 0.04, 0.035), brass)
 
 
 ## A waterproof roll bag lying across the rack: a fabric cylinder with each end rolled down
@@ -4741,26 +4831,43 @@ func _roll_bag(base: Vector3, size: Vector3, mat: Material) -> void:
 			roll.name = "RolledEnd"
 			_mesh_instance(_cylinder(0.02, r * 1.5 + 0.01, -1.0, 12), _mat(_col().darkened(0.3), 0.0, 0.6), c + Vector3(x * (half + 0.08), 0.0, 0.0))
 		for y in [-1.0, 1.0]:
-			_box(c + Vector3(x * (half + 0.075), y * (r * 0.75 + 0.012), 0.0), Vector3(0.034, 0.022, 0.034), clip)
+			_hardware("luggage/buckle.glb", c + Vector3(x * (half + 0.075), y * (r * 0.75 + 0.012), 0.0), Vector3(0.034, 0.022, 0.034), clip)
 		# A strap from the rolled end back over the top to a buckle, holding it down.
 		_box(c + Vector3(x * (half - 0.02), r * 0.98, 0.0), Vector3(0.16, 0.006, 0.025), web)
-		_box(c + Vector3(x * (half - 0.07), r + 0.006, 0.0), Vector3(0.035, 0.012, 0.03), clip)
+		_hardware("luggage/buckle.glb", c + Vector3(x * (half - 0.07), r + 0.006, 0.0), Vector3(0.035, 0.012, 0.03), clip)
 	# Compression straps round the middle, each with a side-release buckle on top.
 	for x in [-1.0, 1.0]:
 		var bx: float = x * half * 0.5
 		var band := _mesh_instance(_cylinder(r + 0.004, 0.028, -1.0, 28), web, c + Vector3(bx, 0.0, 0.0))
 		band.rotation.z = PI * 0.5
 		band.scale = Vector3(1.0, 1.0, (size.z * 0.5 + 0.004) / (r + 0.004))
-		_box(c + Vector3(bx, r + 0.008, 0.0), Vector3(0.034, 0.014, 0.05), clip)
+		_hardware("luggage/buckle.glb", c + Vector3(bx, r + 0.008, 0.0), Vector3(0.034, 0.014, 0.05), clip)
 		# Cargo straps down to the rack rails, front and back, hooked on.
 		for z in [-1.0, 1.0]:
 			var top := c + Vector3(bx, r * 0.55, z * size.z * 0.42)
 			var foot := Vector3(0.1 * signf(bx), base.y - 0.012, c.z + z * (size.z * 0.5 + 0.015))
 			_strip(top, foot, 0.022, 0.004, _mat(Color(0.75, 0.32, 0.08), 0.0, 0.8))
-			_box(foot + Vector3(0.0, 0.008, 0.0), Vector3(0.012, 0.025, 0.02), _mat(Color(0.7, 0.71, 0.73), 0.9, 0.3))
+			_hardware("luggage/strap_hook.glb", foot + Vector3(0.0, 0.008, 0.0), Vector3(0.012, 0.025, 0.02), _mat(Color(0.7, 0.71, 0.73), 0.9, 0.3))
 	_bend([c + Vector3(-0.06, r * 0.98, 0.0), c + Vector3(-0.04, r + 0.03, 0.0), c + Vector3(0.04, r + 0.03, 0.0),
 		c + Vector3(0.06, r * 0.98, 0.0)], 0.008, web)
 	_box(c + Vector3(0.0, 0.0, size.z * 0.5 + 0.002), Vector3(half * 0.6, r * 0.35, 0.004), _mat(Color(0.82, 0.83, 0.85), 0.6, 0.25))
+
+
+## A small piece of strap hardware (a buckle, a brass fitting or a hook) in the box `size` round
+## `at`: in the new look the Blender-made one at `path` (under BlenderParts.ROOT, drawn in a unit
+## box with its face up, see blender/parts/luggage/hardware.py) stretched to that box and turned
+## to face out of its thinnest side; otherwise the code's box.
+func _hardware(path: String, at: Vector3, size: Vector3, mat: Material) -> void:
+	var b := Basis.IDENTITY
+	var s := size
+	if size.x < size.y and size.x < size.z:
+		b = Basis(Vector3.BACK, PI * 0.5)
+		s = Vector3(size.y, size.x, size.z)
+	elif size.z < size.y:
+		b = Basis(Vector3.RIGHT, PI * 0.5)
+		s = Vector3(size.x, size.z, size.y)
+	if _blender_tagged(path, Transform3D(b * Basis.from_scale(s), at), {"plastic": mat, "polished_alloy": mat, "raw_steel": mat}).is_empty():
+		_box(at, size, mat)
 
 
 ## A flat strap or band from `a` to `b`, `width` wide and `thick` thick, lying as flat as it can.
@@ -4801,12 +4908,12 @@ func _roll_pannier(c: Vector3, depth: float, k: float, mat: Material, side: floa
 		var sz: float = c.z + z * half_l * 0.6
 		_box(Vector3(c.x + side * depth * 0.32, roll_at.y + 0.028, sz), Vector3(depth * 0.4, 0.006, 0.024), web)
 		_box(Vector3(outer, y0 + hb * 0.62, sz), Vector3(0.006, hb * 0.62, 0.024), web)
-		_box(Vector3(outer + side * 0.006, y0 + hb * 0.42, sz), Vector3(0.014, 0.04, 0.034), clip)
+		_hardware("luggage/buckle.glb", Vector3(outer + side * 0.006, y0 + hb * 0.42, sz), Vector3(0.014, 0.04, 0.034), clip)
 		# Up to the rack rail and round it.
 		_strip(Vector3(c.x - side * depth * 0.3, y0 + hb * 0.92, sz), rail + Vector3(0.0, 0.0, z * 0.08), 0.022, 0.004, web)
 	_shell([{"c": Vector3(c.x, y0 + hb * 0.25, c.z), "w": depth * 0.5 + 0.004, "up": half_l + 0.004, "down": half_l + 0.004, "n": 2.8},
 		{"c": Vector3(c.x, y0 + hb * 0.25 + 0.026, c.z), "w": depth * 0.5 + 0.004, "up": half_l + 0.004, "down": half_l + 0.004, "n": 2.8}], web)
-	_box(Vector3(outer + side * 0.006, y0 + hb * 0.25 + 0.013, c.z), Vector3(0.014, 0.034, 0.04), clip)
+	_hardware("luggage/buckle.glb", Vector3(outer + side * 0.006, y0 + hb * 0.25 + 0.013, c.z), Vector3(0.014, 0.034, 0.04), clip)
 	_box(Vector3(outer, y0 + hb * 0.72, c.z), Vector3(0.004, hb * 0.16, half_l * 0.5), _mat(Color(0.82, 0.83, 0.85), 0.6, 0.25))
 
 
@@ -4828,7 +4935,7 @@ func _throw_over(c: Vector3, depth: float, k: float, mat: Material, side: float,
 	var leather := _mat(Color(0.25, 0.13, 0.06), 0.0, 0.7)
 	for z in [-1.0, 1.0]:
 		_box(Vector3(outer + side * 0.005, y0 + hb * 0.62, c.z + z * half_l * 0.55), Vector3(0.006, hb * 0.34, 0.022), leather)
-		_box(Vector3(outer + side * 0.009, y0 + hb * 0.5, c.z + z * half_l * 0.55), Vector3(0.006, 0.026, 0.03), _mat(Color(0.8, 0.7, 0.4), 0.9, 0.3))
+		_hardware("luggage/brass_buckle.glb", Vector3(outer + side * 0.009, y0 + hb * 0.5, c.z + z * half_l * 0.55), Vector3(0.006, 0.026, 0.03), _mat(Color(0.8, 0.7, 0.4), 0.9, 0.3))
 	# The yoke: a canvas band from the bag's inside edge up over the rack to the middle.
 	_strip(Vector3(c.x - side * depth * 0.4, y0 + hb, c.z), Vector3(0.0, rail.y + 0.012, c.z), half_l * 1.4, 0.006, flap_mat)
 
@@ -4933,7 +5040,17 @@ func _draw_tail(build: BikeBuild) -> void:
 			tray.rotation.x = -0.15
 			_rear_guard.append(tray)
 			_lift_clear_of_tyre(tray)
-			_box(lamp - Vector3(0.0, 0.0, 0.012), Vector3(0.16, 0.035, 0.02), mat)
+			# New look: the moulded tray and the lamp's bracket made in Blender (blender/parts/tail/tray.py),
+			# where the code's box has been lifted to.
+			if is_instance_valid(tray) and _blender_on():
+				var made := _blender_tagged("tail/tidy_tray.glb", tray.transform, {"paint": mat, "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)}, {"paint": "TailTray"})
+				if not made.is_empty():
+					_rear_guard.erase(tray)
+					_slot_meshes["tail"].erase(tray)
+					tray.free()
+					_rear_guard.append_array(made)
+			if _blender_tagged("tail/lamp_bracket.glb", Transform3D(Basis.IDENTITY, lamp - Vector3(0.0, 0.0, 0.012)), {"paint": mat, "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)}).is_empty():
+				_box(lamp - Vector3(0.0, 0.0, 0.012), Vector3(0.16, 0.035, 0.02), mat)
 			_tube(_tail + Vector3(0.0, -0.06, 0.2), _tail + Vector3(0.0, -0.15, 0.33), 0.01, black)
 			_number_plate(_tail + Vector3(0.0, -0.2, 0.34), Vector2(0.17, 0.11), -0.35, plate)
 		"bobber":
@@ -7031,6 +7148,11 @@ func _draw_guards() -> void:
 				Vector3(out * 0.97, _engine_c.y + 0.06, nose - 0.04)], 0.011, mat)
 		"plate", "skid":
 			var w := 0.24 if style == "plate" else 0.19
+			var length := 0.34 * s + 0.08
+			# New look: the Blender plate (guards/plate or skid.glb), stretched to the engine's length.
+			if not _blender_tagged("guards/%s.glb" % style, Transform3D(Basis(Vector3.RIGHT, -0.05) * Basis.from_scale(Vector3(1.0, 1.0, length / GUARD_PLATE_LEN)),
+					Vector3(0.0, bottom - 0.035, _engine_c.z + 0.02)), {"paint": mat}, {"paint": "BashPlate"}).is_empty():
+				return
 			var tray := _box(Vector3(0.0, bottom - 0.035, _engine_c.z + 0.02), Vector3(w, 0.01 if style == "plate" else 0.014, 0.34 * s + 0.08), mat)
 			tray.rotation.x = -0.05
 			_plank(Vector3(0.0, bottom - 0.03, nose - 0.03), Vector3(0.0, bottom + 0.06, nose - 0.08), w * 0.9, 0.01, mat)
@@ -7040,8 +7162,16 @@ func _draw_guards() -> void:
 		_:
 			for side in [-1.0, 1.0]:
 				for at in [Vector3(out * 0.8 * side, _engine_c.y + 0.1 * s, nose + 0.06), Vector3(0.11 * side, _pivot.y + 0.06, _pivot.z - 0.04)]:
+					# (A Blender bung's along +X: turned round for the left.)
+					if not _blender_tagged("guards/bung.glb", Transform3D(Basis(Vector3.UP, 0.0 if side > 0.0 else PI), at + Vector3(0.012 * side, 0.0, 0.0)),
+							{"plastic": mat}, {"plastic": "CrashBung"}).is_empty():
+						continue
 					var bob := _mesh_instance(_cylinder(0.022, 0.05), mat, at + Vector3(0.012 * side, 0.0, 0.0), self)
 					bob.rotation.z = PI * 0.5
+
+
+## How long a Blender bash plate is drawn (blender/parts/guards/guards.py): the game stretches it.
+const GUARD_PLATE_LEN := 0.42
 
 
 ## Number boards: an MX front plate with side boards under the seat, a single front race plate,
@@ -7130,8 +7260,11 @@ func _draw_steering_damper() -> void:
 			# turns with the bars.
 			var back := _head_bottom + Vector3(0.14, -0.025, 0.25)
 			var front := _head_bottom + Vector3(0.14, -0.02, 0.1)
-			_tube(back, front, 0.016, mat)
-			_mesh_instance(_sphere(0.013), dark, back)
+			# New look: the Blender body (damper/linear.glb, 0.15 m from its back end).
+			if _blender_tagged("damper/linear.glb", Transform3D(_basis_up(front - back) * Basis.from_scale(Vector3(1.0, back.distance_to(front) / 0.15, 1.0)), back),
+					{"paint": mat, "black_metal": dark, "anodised": _mat(_col().lightened(0.2), 0.9, 0.3)}, {"paint": "DamperBody"}).is_empty():
+				_tube(back, front, 0.016, mat)
+				_mesh_instance(_sphere(0.013), dark, back)
 			var to_steer := _steer_node.transform.affine_inverse()
 			var eye_at := to_steer * (_head_bottom + Vector3(0.11, -0.02, -0.03))
 			_tube(to_steer * front, eye_at, 0.006, rod_mat, Vector3.ONE, _steer_node)
@@ -7166,8 +7299,9 @@ func _draw_lever_guards() -> void:
 		# On the bar's own line out past its end (see _bar_end_basis).
 		var end := bar_end(side)
 		var b := _bar_end_basis(side)
-		var boss := _mesh_instance(_cylinder(0.019, 0.016), mat, end + b * Vector3(0.026 * side, 0.0, 0.0), _steer_node)
-		boss.basis = _basis_up(b.x)
+		if _blender_tagged("guards/lever_boss.glb", Transform3D(_basis_up(b.x * side), end + b * Vector3(0.026 * side, 0.0, 0.0)), {"paint": mat}, {"paint": "GuardBoss"}, _steer_node).is_empty():
+			var boss := _mesh_instance(_cylinder(0.019, 0.016), mat, end + b * Vector3(0.026 * side, 0.0, 0.0), _steer_node)
+			boss.basis = _basis_up(b.x)
 		# Out from the boss, forward past the lever's tip and back in across the front of it.
 		var hoop := _bend([end + b * Vector3(0.03 * side, -0.004, -0.012), end + b * Vector3(0.042 * side, -0.01, -0.05),
 			end + b * Vector3(0.024 * side, -0.014, -0.082), end + b * Vector3(-0.045 * side, -0.014, -0.09)], 0.0065, mat, _steer_node, 8)
@@ -7789,22 +7923,39 @@ func _draw_drum(side: String, wheel: Node3D, hub: Node3D, rim_r: float, x: float
 	for cam in cams:
 		var at := Vector3(x + 0.01, float(cam[0]), float(cam[1]) * (1.0 if front else -1.0))
 		var tip := at + Vector3(0.0, 0.07, 0.03 if front else -0.03)
+		tips.append(tip)
+		# (New look: the arm on its cam, made in Blender: blender/parts/caliper/drums.py.)
+		var up := (tip - at).normalized()
+		var arm := _blender_tagged("caliper/drum_arm.glb", Transform3D(Basis(Vector3.RIGHT, up, Vector3.RIGHT.cross(up)) * Basis.from_scale(Vector3.ONE * (tip - at).length() / DRUM_ARM),
+			at), {"paint": arm_mat, "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)}, {"paint": "BrakeArm"}, hub)
+		if not arm.is_empty():
+			continue
 		_mesh_instance(_cylinder(0.012, 0.016), arm_mat, at, hub).rotation.z = PI * 0.5
 		_tube(at, tip, 0.007, arm_mat, Vector3(1.0, 1.0, 1.8), hub).name = "BrakeArm"
-		tips.append(tip)
 	if tips.size() > 1:
 		_tube(tips[0], tips[1], 0.004, arm_mat, Vector3.ONE, hub).name = "LinkRod"
 	if front:
 		var j := _brake_line_joint() + _steer_axis * _build.fork_length
 		_bike_only(_bend([j, j.lerp(tips[0], 0.5) + Vector3(0.02, 0.0, 0.03), tips[0]], 0.0042, _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6), hub, 6)).name = "BrakeCable"
+		_cable_end(tips[0] + (j.lerp(tips[0], 0.5) + Vector3(0.02, 0.0, 0.03) - tips[0]).normalized() * 0.012, j.lerp(tips[0], 0.5) + Vector3(0.02, 0.0, 0.03) - tips[0], _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3), hub)
 	else:
 		# A rod forward to the brake pedal.
 		_bike_only(_tube(tips[0], Vector3(x + 0.02, 0.0, -0.45), 0.004, arm_mat, Vector3.ONE, hub)).name = "BrakeRod"
 	_current_slot = side + "_pads"
 	# The shoes, hidden in the drum but there to swap.
+	var lining := _mat(_col(), 0.3, 0.7)
 	for sx in sides:
 		for k in [-1.0, 1.0]:
-			_box(Vector3((x - 0.022) * sx, r * 0.6 * k, 0.0), Vector3(0.025, 0.02, r * 0.9), _mat(_col(), 0.3, 0.7), hub)
+			var turn := Basis.IDENTITY if k > 0.0 else Basis(Vector3.RIGHT, PI)
+			if _blender_tagged("pads/drum_shoe.glb", Transform3D(turn * Basis.from_scale(Vector3(1.0, r / DRUM_SHOE_R, r / DRUM_SHOE_R)), Vector3((x - 0.022) * sx, 0.0, 0.0)),
+					{"paint": lining, "raw_steel": _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)}, {"paint": "BrakeShoe"}, hub).is_empty():
+				_box(Vector3((x - 0.022) * sx, r * 0.6 * k, 0.0), Vector3(0.025, 0.02, r * 0.9), lining, hub)
+
+
+## A drum's Blender-made brake arm, cam to clevis pin, and the drum its shoes are drawn for
+## (see blender/parts/caliper/drums.py), m: the game scales them to the bike's own.
+const DRUM_ARM := 0.076
+const DRUM_SHOE_R := 0.1
 
 
 ## A sprocket's radius out to its tooth tips, m: the pitch circle of a 5/8" chain (every road and
@@ -10395,14 +10546,20 @@ func _blender_side_panel(style: String, at: Vector3, h: float, side: float, mat:
 	if not _blender_on() or BlenderParts.part(path).is_empty():
 		return false
 	var k := h / 0.2
-	var sc := Vector3(side, k, k if style == "chrome" else 1.0)
-	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(sc), at), {"": mat, "paint": mat})
+	var sc := Vector3(side, k, k if style in ["chrome", "oval"] else 1.0)
+	var pieces := _blender_pieces(path, Transform3D(Basis.from_scale(sc), at), {"": mat, "paint": mat, "rubber": _mat(Color(0.04, 0.04, 0.04), 0.0, 0.9)})
 	if style == "triangle" and not pieces.is_empty():
 		(pieces[0] as Node).name = "SideCover"
+	if style == "oval" and not pieces.is_empty():
+		# The race number on its face, as on the code's board.
+		var board: MeshInstance3D = pieces.filter(func(mi): return (mi as MeshInstance3D).material_override == mat)[0]
+		board.name = "NumberBoard"
+		_number_on(board, Vector3(side, 0.0, 0.0), h * 0.55)
 	return true
 
 
-## New look: a telescopic fork's Blender-made pieces along the steering axis: the stanchions,
+## New look: a fork's Blender-made pieces along the steering axis (a leading-link fork's links
+## level on the hub). A telescopic fork's: the stanchions,
 ## yokes and shrouds (`shrouds` their finish) from the head on the steering, the sliders, axle
 ## clamps, gaiters and brace (`lowers` their finish) from the axle on the front hub, so they slide
 ## together as the fork works. False when the fork has no glbs.
@@ -10418,7 +10575,8 @@ func _blender_fork(lowers: Material, shrouds: Material) -> bool:
 	var k := _build.fork_length / maxf(float(_part().get("length", _build.fork_length)), 0.01)
 	var along := Basis(Vector3.RIGHT, _steer_axis, Vector3.RIGHT.cross(_steer_axis)) * Basis.from_scale(Vector3(1.0, k, 1.0))
 	_blender_pieces(upper, Transform3D(along, Vector3.ZERO), {}, _steer_node)
-	_blender_pieces(lower, Transform3D(along, Vector3.ZERO), {}, _front_hub)
+	# (A leading-link fork's links are drawn level on the hub, as the code lays them out.)
+	_blender_pieces(lower, Transform3D(Basis.IDENTITY if str(_part().get("style", "")) == "leading_link" else along, Vector3.ZERO), {}, _front_hub)
 	return true
 
 

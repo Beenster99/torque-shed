@@ -19,8 +19,11 @@ import kit  # noqa: E402
 
 
 def families():
-    """Every family script, as {name: path}."""
-    return {os.path.basename(p)[:-3]: p for p in sorted(glob.glob(os.path.join(HERE, "parts", "*", "*.py")))}
+    """Every family script, as {name: path}. Two scripts may not share a name (one would hide the other)."""
+    paths = sorted(glob.glob(os.path.join(HERE, "parts", "*", "*.py")))
+    out = {os.path.basename(p)[:-3]: p for p in paths}
+    assert len(out) == len(paths), "two family scripts share a name: %s" % sorted(os.path.basename(p) for p in paths)
+    return out
 
 
 def load(path):

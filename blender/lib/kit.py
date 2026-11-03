@@ -73,6 +73,8 @@ BUDGETS = {
     # (An air or oil filter or airbox, the ECU, a number board, a piece of the adventure kit.)
     # (A gearbox's case, its clutch side, the gear change shaft or the kickstart.)
     "gearbox": [6000, 1500, 250],
+    # (A carburettor or throttle body; a spark plug, its cap or the coil.)
+    "fuel": [2500, 600, 200], "guards": [3000, 800, 100], "spark_plugs": [800, 300, 70],
     "filter": [3000, 800, 60], "ecu": [1500, 400, 40], "number_board": [1500, 400, 40], "kit": [4000, 1000, 100],
 }
 SMALL_BUDGET = [1500, 400, 0]
