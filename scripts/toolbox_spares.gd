@@ -13,8 +13,10 @@ extends RefCounted
 ##
 ## Out on an adventure, with the bike stood at the roadside and its toolbox open (see Roadside),
 ## the crew can take the wrench from the box's tool roll and work on the bike as they do in the
-## shed: unbolt, take off and refit the parts a toolbox's spares are for (ROADSIDE slots), put
-## the old part in the box, and fit a spare from it. Everything goes through Shed.request, so
+## shed: unbolt, take off and refit the parts a toolbox's spares are for, and the bolt-on parts
+## a bike rides without (BOLT_ON_SLOTS: mudguards, panels, luggage, lights...), put the old part
+## in the box or strap it on the bike (see FuelShop), and fit a spare or a part bought at a fuel
+## station's shop. Everything goes through Shed.request, so
 ## the host decides it and every mate sees it and can lend a hand.
 ##
 ## Shared state, in Shed (so the crew see it and it's saved):
@@ -26,6 +28,14 @@ extends RefCounted
 const SPARE_KINDS: Array[String] = ["spark_plugs", "pads", "oil_filter", "air_filter", "master", "caliper", "final_drive",
 	"chain", "mirrors", "indicators", "horn", "headlight", "dashboard", "ecu", "fog_lights", "steering_damper", "satnav",
 	"side_stand"]
+## The bolt-on parts a bike rides without that the toolbox's spanners take off and fit at the
+## roadside as well (Simon, 3 Nov: "we may want to remove mudguards or other non essential
+## items"): mudguards, the tail unit, fairing and panels, luggage, lights, guards and the like.
+## Never the engine, gearbox, frame, wheels, tyres, suspension, bars, tank, the rider's seat or
+## the chain's drive; and only where the Rig built fit says it simply bolts on (see rig_says).
+const BOLT_ON_SLOTS: Array[String] = ["front_mudguard", "tail", "fairing", "side_panels", "number_boards", "panniers",
+	"top_box", "tank_bag", "guards", "lever_guards", "centre_stand", "headlight", "fog_lights", "indicators", "mirrors",
+	"horn", "satnav", "steering_damper"]
 ## Nothing heavier than this (kg) goes in a toolbox, whatever it is.
 const SPARE_MAX_KG := 2.5
 ## The jobs a bike stood at the roadside can have done with the toolbox's tools.
@@ -96,9 +106,38 @@ static func lines(box: int, pick := -1) -> Array:
 	return out
 
 
-## The bike slots that can be worked on at the roadside: the ones the spares are for.
+## The bike slots that can be worked on at the roadside: the ones the spares are for, and the
+## bolt-on parts a bike rides without (BOLT_ON_SLOTS).
 static func roadside_slot(slot: String) -> bool:
-	return SPARE_KINDS.has(str(PartsDB.SLOT_KIND.get(slot, "")))
+	return SPARE_KINDS.has(str(PartsDB.SLOT_KIND.get(slot, ""))) or BOLT_ON_SLOTS.has(slot)
+
+
+## Whether the Rig built fit call is there (BikeRig.part_tier, see
+## /mnt/project-files/torque-shed/bike-look/fit-tiers-interface.md): looked up once, so the
+## roadside works the same before it's in the game.
+static var _rig_tier := -1
+
+
+static func _has_rig_tier() -> bool:
+	if _rig_tier < 0:
+		_rig_tier = 0
+		for m in (BikeRig as Script).get_script_method_list():
+			if str(m.get("name", "")) == "part_tier":
+				_rig_tier = 1
+	return _rig_tier == 1
+
+
+## Why the Rig built fit says `part` (or "none": taking it off) can't go into `slot` on `bike`
+## at the roadside, or "" when it simply bolts on. Fabrication, or a change the bike can't take,
+## is a job for the shed.
+static func rig_says(bike: int, slot: String, part: String) -> String:
+	if not _has_rig_tier():
+		return ""
+	var f = (BikeRig as Script).call("part_tier", bike, slot, part)
+	if not (f is Dictionary) or str(f.get("tier", "bolts on")) == "bolts on":
+		return ""
+	var reason := str(f.get("reason", "")).strip_edges()
+	return (reason + " " if reason != "" else "") + "That's a job for the shed."
 
 
 # ---------------------------------------------------------------------------- the roadside's jobs
@@ -140,7 +179,12 @@ static func roadside_check(peer: int, action: Dictionary) -> String:
 			return str(where["error"])
 		slot = str(where["slot"])
 	if not roadside_slot(slot):
-		return "The %s is a job for the shed: out here it's the small stuff, what a toolbox's spares are for." % PartsDB.slot_name(slot).to_lower()
+		return "The %s is a job for the shed: out here it's bolt-on parts the bike rides without, and what a toolbox's spares are for." \
+			% PartsDB.slot_name(slot).to_lower()
+	if a in ["unbolt", "remove"] and PartsDB.may_be_empty(slot):
+		return rig_says(bike, slot, "none")   # (a part it can't do without, the pads say, comes off only to swap it: the fit's asked of the new one)
+	if a == "install":
+		return rig_says(bike, slot, str(Shed.items[Shed.held_by(peer)]["part"]))
 	return ""
 
 

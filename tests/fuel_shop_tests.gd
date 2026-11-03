@@ -129,6 +129,74 @@ func test_rules() -> void:
 	Shed.stop()
 
 
+## The roadside spanner (see ToolboxSpares.BOLT_ON_SLOTS): with the toolbox open the front
+## mudguard comes off and the bike's lighter, it's strapped on to take home, panniers bought at
+## the shop go on and bolt up, and the parts a bike can't do without stay a job for the shed.
+func test_spanner() -> void:
+	Shed.start_new("Tester", 82)
+	var me := Shed.me()
+	var bike: int = t._bike_named("Old Faithful")
+	Shed.garage_money = 100000
+	var box := Shed._new_item("alloy_toolbox", 0.0, 0.0, 0.0)
+	Shed._move(box, "bike", bike)
+	Shed.bikes[bike]["slots"]["toolbox"] = box
+	Shed.bikes[bike]["bolted"]["toolbox"] = true
+	Shed.items[box]["contents"] = ["tools", "oil"]
+	var guard := Shed.item_on(bike, "front_mudguard")
+	check(guard != 0, "Old Faithful has a front mudguard")
+	_at_roadside(bike)
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_mudguard"}).contains("Open the toolbox"), "the toolbox has to be open")
+	Shed.request({"a": "roadside_open", "bike": bike, "open": true})
+	var mass0: float = Shed.build_of(bike).total_mass
+	# The front mudguard off at the roadside.
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_mudguard"}) == "", "the spanners undo the front mudguard")
+	Shed.request({"a": "unbolt", "bike": bike, "slot": "front_mudguard"})
+	Shed.request({"a": "remove", "bike": bike, "slot": "front_mudguard"})
+	check(Shed.item_on(bike, "front_mudguard") == 0 and Shed.held_by(me) == guard, "the front mudguard off, in your hands")
+	var lighter: float = Shed.build_of(bike).total_mass
+	check(lighter < mass0 - 0.1, "the bike's lighter without it (%.2f kg off)" % (mass0 - lighter))
+	check(Shed.is_complete(bike) and Shed.missing_slots(bike).is_empty(), "and still complete: it rides without one")
+	Shed.request({"a": "cargo_strap", "bike": bike})
+	check(Shed.held_by(me) == 0 and FuelShop.cargo_of(bike).size() == 1, "strapped on to take home")
+	check(Shed.check(me, {"a": "mount", "bike": bike}) == "", "and it can be ridden off")
+	# Other bolt-on parts it rides without: the tail unit and the headlight come off too.
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "tail"}) == "", "the tail unit can come off")
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "headlight"}) == "", "and the headlight")
+	# What it can't do without stays on.
+	for slot in ["engine", "frame", "front_wheel", "rear_tyre", "tank", "saddle", "fork", "shock", "handlebars", "exhaust", "gearbox"]:
+		check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": slot}).contains("job for the shed"), "the %s is a job for the shed" % slot)
+	# The Rig built fit (BikeRig.part_tier) has its say: a bike can't do without its tank.
+	check(ToolboxSpares.rig_says(bike, "tank", "none").ends_with("That's a job for the shed.") and ToolboxSpares.rig_says(bike, "mirrors", "none") == "",
+		"the rig's fit call is asked: %s" % ToolboxSpares.rig_says(bike, "tank", "none"))
+	# Panniers bought at the shop, off the straps and fitted.
+	var panniers := ""
+	for id in PartsDB.by_kind["panniers"]:
+		if FuelShop.carry_reason(bike, str(id)) == "":
+			panniers = str(id)
+			break
+	Shed.request({"a": "shop_buy", "part": panniers, "bike": bike})
+	Shed.request({"a": "cargo_take", "bike": bike, "index": 1, "part": panniers})
+	check(Shed.held_by(me) != 0, "the panniers off the straps")
+	var why := Shed.check(me, {"a": "install", "bike": bike, "slot": "panniers"})
+	check(why == "", "they fit at the roadside (%s)" % why)
+	Shed.request({"a": "install", "bike": bike, "slot": "panniers"})
+	Shed.request({"a": "bolt", "bike": bike, "slot": "panniers"})
+	check(PartsDB.kind_of(str(Shed.items.get(Shed.item_on(bike, "panniers"), {}).get("part", ""))) == "panniers" and Shed.is_bolted(bike, "panniers"),
+		"fitted and bolted up")
+	check(Shed.check(me, {"a": "mount", "bike": bike}) == "", "ready to ride")
+	# Home: the mudguard's in the delivery area, nothing lost.
+	var loose := func() -> int:
+		var n := 0
+		for id in Shed.items:
+			if str(Shed.items[id]["kind"]) == "front_mudguard" and str(Shed.items[id]["at"]) in ["floor", "spot"]:
+				n += 1
+		return n
+	var before: int = loose.call()
+	Shed.request({"a": "adventure_end"})
+	check(int(loose.call()) == before + 1 and FuelShop.cargo_of(bike).is_empty(), "home: the front mudguard's in the delivery area")
+	Shed.stop()
+
+
 ## In the game: ride to a fuel station, get off, walk to the counter, the shop opens as the
 ## parts computer in its shop mode, buy mirrors (strapped on) and an engine (sent home), take the
 ## mirrors off the straps at the bike and strap them back on, the bike drawn with its load.

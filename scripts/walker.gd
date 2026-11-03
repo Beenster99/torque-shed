@@ -2146,7 +2146,7 @@ func roadside_lines(bike: int, slot: String) -> Array:
 			lines.append("Spare parts (%s: pick one):" % _keys("rotate_left", "rotate_right"))
 			lines.append_array(ToolboxSpares.lines(box, spare_pick if slot == "toolbox" else -1).map(func(l): return "  " + str(l)))
 		if Roadside.spot_of(bike).get("open", false) and ToolboxSpares.roadside_slot(slot):
-			lines.append("With the toolbox open: the wrench unbolts and bolts it up, hands take it off and fit a spare")
+			lines.append("With the toolbox open: the wrench unbolts and bolts it up, hands take it off and fit a spare or a part off the straps")
 	var cargo := FuelShop.cargo_of(bike)
 	if not cargo.is_empty():
 		lines.append("Strapped on (%s, comes home with it)%s:" % [Units.mass(FuelShop.cargo_kg(bike), 0),
