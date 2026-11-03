@@ -98,7 +98,7 @@ static func src_of(title: String, parts: Dictionary, paint: Color, colours := {}
 ## What `src` costs this player at `quality`.
 static func price(src: Dictionary, quality: float) -> int:
 	var plan := BikeCopy.plan_of(src)
-	return BikeCopy.total(BikeCopy.lines(plan, Shed.me(), quality)) if not plan.is_empty() else 0
+	return BikeCopy.total(BikeCopy.lines(plan, Shed.me(), quality, true)) if not plan.is_empty() else 0
 
 
 ## Buys second-hand bike `listing` (one of for_sale's). Why not, or "".
@@ -110,3 +110,24 @@ static func buy_used(listing: Dictionary) -> String:
 ## Orders a new bike configured as `parts` in these colours. Why not, or "".
 static func buy_new(title: String, parts: Dictionary, paint: Color, colours: Dictionary) -> String:
 	return BikeCopy.order(src_of(title, parts, paint, colours), 1.0)
+
+
+## The fabrication a configured bike takes beyond its style's stock one (BikeRig's fit report),
+## said for the configurator, or "" when it all bolts together. The works makes it as it builds the
+## bike, and it's on the price (BikeCopy.lines).
+static func fab_text(parts: Dictionary, style: String) -> String:
+	var work := fab_work(parts, style)
+	if work.is_empty():
+		return ""
+	return "Needs fabrication, done by the works: %s (%s)." % [", ".join(work.map(func(w): return str(w["what"]))),
+		TvChannels.money_text(work.reduce(func(t, w): return t + int(w["cost"]), 0))]
+
+
+## The fabrication a bike of `parts` takes that a stock `style` bike doesn't: [{what, hours, cost}].
+static func fab_work(parts: Dictionary, style: String) -> Array:
+	var stock: Array = BikeRig.fit(BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build(style))))["work"]
+	var out := []
+	for what in BikeRig.fit(BikeBuild.new(parts))["work"]:
+		if not stock.has(what):
+			out.append(BikeRig.fab_job(str(what)))
+	return out

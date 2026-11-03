@@ -88,6 +88,7 @@ var spray_finish := 0       # index into spray_loads(): the paint finishes, then
 var crouched := false
 var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
 var spare_pick := 0         # which of a toolbox's spare parts the second button takes out (the turn keys pick; see ToolboxSpares)
+var cargo_pick := 0         # which of the things strapped on a bike at the roadside the second button takes off (see FuelShop)
 ## A one-press action shown with the work prompts, as "F: fill the spray gun's cup" (or ""): what a
 ## tap of the interact key does right now that isn't a hold of either work button.
 var tap_prompt := ""
@@ -279,6 +280,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Empty-handed at a toolbox: the turn keys pick which spare part comes out of it.
 			get_viewport().set_input_as_handled()
 			pick_spare(-1 if event.is_action_pressed("rotate_left") else 1)
+		elif target.get("roadside", false) and FuelShop.cargo_of(int(target.get("bike", 0))).size() > 1:
+			# Empty-handed at a bike at the roadside: the turn keys pick what comes off its straps.
+			get_viewport().set_input_as_handled()
+			cargo_pick = posmod(cargo_pick + (-1 if event.is_action_pressed("rotate_left") else 1), FuelShop.cargo_of(int(target["bike"])).size())
+			_plan_key = ""
 	elif event.is_action_pressed("rotate_free"):
 		get_viewport().set_input_as_handled()
 		toggle_free_rotate()
@@ -1722,7 +1728,13 @@ func _make_plan() -> Dictionary:
 					p = {"action": {"a": "clean_many", "items": near}, "time": 1.0 + minf(2.5 * dirt, 5.0),
 						"verb": "scrub it clean" if near.size() == 1 else "scrub %d parts clean" % near.size()}
 		"repair":
-			if item_id != 0:
+			var fab_bike := int(target.get("bike", 0)) if kind == "part" else 0
+			if fab_bike != 0 and not Shed.fab_owed(fab_bike).is_empty():
+				# A bike that owes fabrication (a part fitted that needed it): make the next job.
+				var job: Dictionary = Shed.fab_owed(fab_bike)[0]
+				p = {"action": {"a": "fabricate", "bike": fab_bike}, "time": Shed.fab_time(job),
+					"verb": "make the %s (%s of steel and gas)" % [str(job["what"]), TvChannels.money_text(int(job["cost"]))]}
+			elif item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				var batch: Array = Shed.repair_batch(str(it["ref"])) if it["at"] == "spot" else []
 				if batch.size() > 1:
@@ -2027,6 +2039,10 @@ func _roadside_plan(held: int) -> Dictionary:
 		fit["a"] = "install"
 		var fp := {"action": fit, "time": 1.2, "verb": "fit the " + Shed.item_title(held)}
 		fp["blocked"] = Shed.check(Shed.me(), fit)
+		# The second button straps it on the bike to take home (see FuelShop).
+		var strap := {"a": "cargo_strap", "bike": int(target["bike"])}
+		alt_plan = {"action": strap, "time": 1.0, "verb": "strap the %s on the bike" % Shed.item_title(held).to_lower(),
+			"blocked": Shed.check(Shed.me(), strap)}
 		return fp
 	var me := Shed.me()
 	var bike := int(target["bike"])
@@ -2055,6 +2071,13 @@ func _roadside_plan(held: int) -> Dictionary:
 		if open and box != 0 and not spares.is_empty():
 			spare_pick = clampi(spare_pick, 0, spares.size() - 1)
 			alt_plan = _spare_take_plan(box, spare_pick)
+	var cargo := FuelShop.cargo_of(bike)
+	if alt_plan.is_empty() and not cargo.is_empty() and (slot != "toolbox" or tool != "hands"):
+		# Empty-handed: the second button takes what the turn keys pick off the bike's straps.
+		cargo_pick = clampi(cargo_pick, 0, cargo.size() - 1)
+		var take := {"a": "cargo_take", "bike": bike, "index": cargo_pick, "part": str(cargo[cargo_pick].get("part", ""))}
+		alt_plan = {"action": take, "time": 1.0, "verb": "take the %s off the straps%s" % [FuelShop.cargo_name(cargo[cargo_pick]).to_lower(),
+			" (%s: pick another)" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""], "blocked": Shed.check(me, take)}
 	if p.is_empty() and Roadside.at_slot(bike, slot).is_empty() and ToolboxSpares.roadside_slot(slot) and Shed.item_on(bike, slot) != 0:
 		# Nothing wrong here the toolbox's kit fixes: the wrench from its tool roll and your hands
 		# work on the part as in the shed (with the toolbox open; see ToolboxSpares).
@@ -2124,6 +2147,11 @@ func roadside_lines(bike: int, slot: String) -> Array:
 			lines.append_array(ToolboxSpares.lines(box, spare_pick if slot == "toolbox" else -1).map(func(l): return "  " + str(l)))
 		if Roadside.spot_of(bike).get("open", false) and ToolboxSpares.roadside_slot(slot):
 			lines.append("With the toolbox open: the wrench unbolts and bolts it up, hands take it off and fit a spare")
+	var cargo := FuelShop.cargo_of(bike)
+	if not cargo.is_empty():
+		lines.append("Strapped on (%s, comes home with it)%s:" % [Units.mass(FuelShop.cargo_kg(bike), 0),
+			"; %s: pick one" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""])
+		lines.append_array(FuelShop.lines(bike, cargo_pick).map(func(l): return "  " + str(l)))
 	var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": bike})
 	lines.append("{interact}: ride it" if ride_on == "" else ride_on)
 	lines.append("Hold {interact}: wheel it along on foot")
@@ -3679,7 +3707,7 @@ func _activity_text() -> String:
 		"take": "Picking up a part",
 		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk", "sales_pc": "At the sales PC",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
-		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
+		"repair_many": "Restoring parts on", "fabricate": "Fabricating on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
 		"toolbox_pack": "Packing a toolbox"}
 	var verb: String = verbs.get(a["a"], "Working on")

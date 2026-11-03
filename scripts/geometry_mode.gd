@@ -6,6 +6,11 @@ extends Control
 ## W / E / R switch handles, Ctrl snaps (1 cm, 5 degrees, 5%), Z undoes, Backspace resets the
 ## part. Right-drag orbits, middle-drag pans and the wheel zooms.
 ##
+## In the Rig built look it opens on the rig's range handles (BikeRig.ADJUST): the tank's mounts,
+## the pegs along their plate and the seat hoop's height and angle, each within what a builder
+## could move, with the rig re-solving the bike round them. Moving any part any way with the
+## gizmo is behind the "Expert: free move" toggle (always on in the Classic look, which has no rig).
+##
 ## Edits belong to this one bike (Shed.bikes[id].geo, see GeoGizmo) and are a draft until saved:
 ## "Save to this bike" sends them to the host, "Save + blueprint" also keeps the bike as a named
 ## blueprint to build again. Leaving with unsaved changes asks to save or discard them.
@@ -50,6 +55,15 @@ var _list_panel: PanelContainer
 var _list: VBoxContainer
 var part_buttons := {}
 var _list_sig := ""
+## Free move (the gizmo and the parts list) in the Rig built look, for this session.
+static var expert := false
+var _expert_box: CheckBox
+var _free_box: VBoxContainer
+var _rig_box: VBoxContainer
+var rig_sliders := {}
+var _rig_vals := {}
+var _rig_dirty := false
+var _rig_at := 0
 
 
 func _ready() -> void:
@@ -71,25 +85,59 @@ func _ready() -> void:
 	col.add_child(UITheme.title("GEOMETRY MODE", 24))
 	_title = UITheme.label("", 17, Color.WHITE)
 	col.add_child(_title)
-	col.add_child(UITheme.label("Click a part of the bike (or pick it in the list on the left) to select it, then drag the handles. {geo_move} move, {geo_rotate} rotate, {geo_scale} scale "
+	col.add_child(UITheme.label("Slide the rig handles and the bike re-forms round them. With Expert on, click a part of the bike (or pick it in the list on the left) to select it, then drag the handles. {geo_move} move, {geo_rotate} rotate, {geo_scale} scale "
 		+ "(the middle box sizes it all over). Hold {geo_snap} to snap, {geo_undo} undo, {geo_reset} resets the part. "
 		+ "Right-drag to orbit, middle-drag to pan, wheel to zoom. Only this bike changes.", 14, Color(1, 1, 1, 0.6)))
 	_part_label = UITheme.label("No part selected", 17, UITheme.ACCENT)
-	col.add_child(_part_label)
+	# The rig's range handles (the Rig built look only).
+	_rig_box = VBoxContainer.new()
+	_rig_box.add_theme_constant_override("separation", 2)
+	col.add_child(_rig_box)
+	_rig_box.add_child(UITheme.label("RIG HANDLES: the bike re-forms round them", 14, UITheme.ACCENT))
+	for k in BikeRig.ADJUST:
+		var info: Dictionary = BikeRig.ADJUST[k]
+		var row := HBoxContainer.new()
+		var l := UITheme.label(str(info["name"]), 14, Color(1, 1, 1, 0.7))
+		l.custom_minimum_size.x = 190.0
+		row.add_child(l)
+		var sl := HSlider.new()
+		sl.name = "Rig_" + k
+		sl.min_value = float(info["min"])
+		sl.max_value = float(info["max"])
+		sl.step = float(info["step"])
+		sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sl.focus_mode = Control.FOCUS_NONE
+		sl.drag_started.connect(func(): _undo.append(draft.duplicate(true)))
+		sl.value_changed.connect(func(v): if not _rig_vals.is_empty(): _slide(k, v))
+		row.add_child(sl)
+		var val := UITheme.label("", 14, Color(0.85, 0.95, 1.0))
+		val.custom_minimum_size.x = 64.0
+		row.add_child(val)
+		rig_sliders[k] = sl
+		_rig_vals[k] = val
+		_rig_box.add_child(row)
+	_expert_box = CheckBox.new()
+	_expert_box.text = "Expert: free move (any part, any way)"
+	_expert_box.focus_mode = Control.FOCUS_NONE
+	_expert_box.toggled.connect(set_expert)
+	col.add_child(_expert_box)
+	_free_box = VBoxContainer.new()
+	_free_box.add_theme_constant_override("separation", 8)
+	col.add_child(_free_box)
 	var modes := HBoxContainer.new()
 	for m in 3:
 		var b := _button("%s ({%s})" % [GeoGizmo.MODE_NAMES[m], ["geo_move", "geo_rotate", "geo_scale"][m]], set_mode.bind(m))
 		b.toggle_mode = true
 		modes.add_child(b)
 		_mode_btns.append(b)
-	col.add_child(modes)
+	_free_box.add_child(modes)
 	_snap_box = CheckBox.new()
 	Controls.bind_text(_snap_box, "Always snap (or hold {geo_snap})")
 	_snap_box.focus_mode = Control.FOCUS_NONE
 	_snap_box.toggled.connect(func(v): snap_always = v)
-	col.add_child(_snap_box)
+	_free_box.add_child(_snap_box)
 	_readout = UITheme.label("", 15, Color(0.85, 0.95, 1.0))
-	col.add_child(_readout)
+	_free_box.add_child(_readout)
 	var edits := HBoxContainer.new()
 	edits.add_child(_button("Undo ({geo_undo})", undo))
 	edits.add_child(_button("Reset part", reset_part))
@@ -203,9 +251,84 @@ func open(id: int, ws: Workshop, back: Camera3D) -> bool:
 	_title.text = str(Shed.bikes[id]["name"])
 	set_mode(GeoGizmo.Mode.MOVE)
 	_sync_model()
+	# A bike already fitted by hand opens with free move on, so its moves show.
+	if saved.keys().any(func(k): return k != "rig"):
+		expert = true
+	_show_free()
+	_rig_to_sliders()
 	_list_sig = ""
 	_refresh_list()
 	return true
+
+
+# ---------------------------------------------------------------------------- the rig's range handles
+
+## Whether this bike is laid out by the rig (the Rig built look), so has range handles.
+func has_rig() -> bool:
+	return _model != null and is_instance_valid(_model) and not _model.rig.is_empty()
+
+
+## Free move on or off (in the Classic look it's always on).
+func set_expert(on: bool) -> void:
+	expert = on
+	if not free_move():
+		select("")
+	_show_free()
+
+
+## Whether the gizmo and the parts list are out.
+func free_move() -> bool:
+	return expert or not has_rig()
+
+
+func _show_free() -> void:
+	var free := free_move()
+	_free_box.visible = free
+	_list_panel.visible = free
+	_rig_box.visible = has_rig()
+	_expert_box.visible = has_rig()
+	_expert_box.set_pressed_no_signal(expert)
+	_part_label.visible = free
+
+
+## One range handle (BikeRig.ADJUST's `key`) set to `value`; the bike re-forms round it.
+func set_adjust(key: String, value: float) -> void:
+	_undo.append(draft.duplicate(true))
+	_slide(key, value)
+	_rig_dirty = false
+	_refit()
+	_rig_to_sliders()
+
+
+func _slide(key: String, value: float) -> void:
+	var adj: Dictionary = (draft.get("rig", {}) as Dictionary).duplicate()
+	adj[key] = value
+	adj = BikeRig.clean_adjust(adj)
+	if adj.is_empty():
+		draft.erase("rig")
+	else:
+		draft["rig"] = adj
+	_rig_dirty = true
+	_rig_labels()
+
+
+## The sliders and their numbers as the draft has them.
+func _rig_to_sliders() -> void:
+	var adj: Dictionary = draft.get("rig", {})
+	var vals := _rig_vals
+	_rig_vals = {}   # (so the sliders moving here don't count as changes)
+	for k in rig_sliders:
+		(rig_sliders[k] as HSlider).set_value_no_signal(float(adj.get(k, 0.0)))
+	_rig_vals = vals
+	_rig_labels()
+
+
+func _rig_labels() -> void:
+	var adj: Dictionary = draft.get("rig", {})
+	for k in _rig_vals:
+		var v := float(adj.get(k, 0.0))
+		var unit := str(BikeRig.ADJUST[k]["unit"])
+		(_rig_vals[k] as Label).text = ("%+.1f%s" if unit == "°" else "%+.0f %s") % [v, unit]
 
 
 ## Leaves, asking first if there are changes not saved.
@@ -259,6 +382,8 @@ func set_mode(m: int) -> void:
 
 
 func select(slot: String) -> void:
+	if not free_move():
+		slot = ""
 	selected = slot
 	_drag = {}
 	if _model and is_instance_valid(_model):
@@ -336,6 +461,7 @@ func undo() -> void:
 	draft = _undo.pop_back()
 	_drag = {}
 	_refit()
+	_rig_to_sliders()
 
 
 func reset_part() -> void:
@@ -349,6 +475,7 @@ func reset_all() -> void:
 	_undo.append(draft.duplicate(true))
 	draft = {}
 	_refit()
+	_rig_to_sliders()
 
 
 ## Sends the draft to the host for this bike.
@@ -396,9 +523,15 @@ func _process(_delta: float) -> void:
 		close()
 		return
 	_sync_model()
+	# A range handle moved: the rig re-solves the bike, a few times a second at most while it slides.
+	_rig_at -= 1
+	if _rig_dirty and _rig_at <= 0:
+		_rig_dirty = false
+		_rig_at = 8
+		_refit()
 	_refresh_list()
 	_update_camera()
-	var show_gizmo := selected != "" and _model != null and _model.is_fitted(selected)
+	var show_gizmo := free_move() and selected != "" and _model != null and _model.is_fitted(selected)
 	gizmo.visible = show_gizmo
 	if show_gizmo:
 		var mx := _model.global_transform
@@ -429,7 +562,8 @@ func _update_camera() -> void:
 func _update_readout() -> void:
 	if selected == "":
 		_part_label.text = "No part selected: click one"
-		_readout.text = "%d part%s moved on this bike%s" % [draft.size(), "" if draft.size() == 1 else "s", "  (not saved)" if is_dirty() else ""]
+		var moved := draft.keys().filter(func(k): return k != "rig").size()
+		_readout.text = "%d part%s moved on this bike%s" % [moved, "" if moved == 1 else "s", "  (not saved)" if is_dirty() else ""]
 		return
 	var item := Shed.item_on(bike_id, selected)
 	_part_label.text = "%s: %s" % [PartsDB.slot_name(selected), PartsDB.part_name(str(Shed.items[item]["part"])) if item != 0 else "(empty)"]
@@ -500,6 +634,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _press(mouse: Vector2) -> void:
+	if not free_move():
+		return
 	if gizmo.visible:
 		var h := gizmo.pick(camera, mouse)
 		if h >= 0:

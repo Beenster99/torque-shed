@@ -400,6 +400,7 @@ func _compute() -> void:
 	bike_mass = float(frame.get("fixed_mass", FIXED_MASS)) + fuel_litres * FUEL_DENSITY + oil_litres * OIL_DENSITY
 	for slot in parts:
 		bike_mass += _part_mass(slot)
+	bike_mass += float(condition.get("cargo", {}).get("kg", 0.0))   # strapped on it (see FuelShop)
 	total_mass = bike_mass + RIDER_MASS
 
 	wheelbase = frame["wheelbase"]

@@ -37,6 +37,15 @@ const PAINT_KINDS := ["paint:bases", "paint:tints"]
 var upgrades_panel: UpgradesPanel
 ## The project bike order, with its condition slider (opened by the order button).
 var bike_card: ProjectOrderCard
+## Open as a fuel station's shop out on an adventure (see FuelShop, FuelShopView): {name (the
+## station's), bike (the one on the forecourt to strap what's bought on, 0 for none)}; empty as
+## the shed's parts computer. Only the Bike aisle, and Buy sends a "shop_buy".
+var shop := {}
+var _head_title: Label
+var _subtitle: Label
+var _shed_only: Array[Control] = []   # the header's shed things, hidden in a shop
+const SUBTITLE := "Pick a kind of part, then a model. Sort and filter the list below. Orders arrive in boxes outside the roller door."
+const SHOP_SUBTITLE := "Every part for a bike, at the parts computer's prices, paid from the business's account. Boxed and strapped on your bike on the forecourt; too big to carry and it's sent to the shed."
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell": "Sell"}
@@ -137,7 +146,8 @@ func _ready() -> void:
 	root.add_theme_constant_override("separation", 8)
 	panel.add_child(root)
 	var head := HBoxContainer.new()
-	head.add_child(UITheme.title("PARTS COMPUTER", 24))
+	_head_title = UITheme.title("PARTS COMPUTER", 24)
+	head.add_child(_head_title)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
@@ -174,7 +184,10 @@ func _ready() -> void:
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
-	root.add_child(UITheme.label("Pick a kind of part, then a model. Sort and filter the list below. Orders arrive in boxes outside the roller door.", 13, Color(1, 1, 1, 0.6)))
+	_shed_only = [_bike_style_pick, _bike_btn, bp_btn, up_btn]
+	_subtitle = UITheme.label(SUBTITLE, 13, Color(1, 1, 1, 0.6))
+	_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(_subtitle)
 
 	var aisles := HBoxContainer.new()
 	aisles.add_theme_constant_override("separation", 8)
@@ -305,6 +318,8 @@ func _ready() -> void:
 		if not visible:
 			return
 		_refresh_bank()
+		if not shop.is_empty() and _part != "" and section_of(_kind) == "bike":
+			_shop_button(_part)   # (strapped on till the bike's loaded up, then sent to the shed)
 		if _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
 			_show_kind(_kind)
 		elif _kind.begins_with("paint:") and str(PaintBay.stock()) != _paint_shown:
@@ -434,6 +449,8 @@ func _refresh_list() -> void:
 	for c in _variants.get_children():
 		c.queue_free()
 	var found := search(q)
+	if not shop.is_empty():
+		found = found.filter(func(h): return section_of(str(h["kind"])) == "bike")   # a fuel station sells bike parts
 	_variants.add_child(UITheme.label("%d FOUND" % found.size(), 12, UITheme.ACCENT))
 	for hit in found.slice(0, 80):
 		var k := str(hit["kind"])
@@ -557,7 +574,35 @@ static func fit_problem(id: String, bike_id: int) -> String:
 			if on.call(str(m)) == "none":
 				return "It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower()
 		break
+	# The engine, frame and tank round each other (the rig's fit report, BikeRig.part_tier): one
+	# that won't go in this frame. (One that needs fabrication goes on, and the shed makes it.)
+	var tier := fit_tier(id, bike_id)
+	if str(tier["tier"]) == BikeRig.TIER_NO:
+		return str(tier["reason"])
 	return ""
+
+
+## How a part goes on a bike as it is now (BikeRig.part_tier, in its kind's first slot).
+static func fit_tier(id: String, bike_id: int) -> Dictionary:
+	var slots := PartsDB.slots_for_kind(PartsDB.kind_of(id))
+	if slots.is_empty() or not Shed.bikes.has(bike_id):
+		return {"tier": BikeRig.TIER_BOLTS, "reason": "", "work": []}
+	return BikeRig.part_tier(bike_id, str(slots[0]), id)
+
+
+## The fabrication a part takes on a bike, priced, for its page: "Needs fabrication: raised tank
+## mounts (2 h at the bench, £110 of steel and gas)." ("" when it bolts on).
+static func fab_text(id: String, bike_id: int) -> String:
+	var tier := fit_tier(id, bike_id)
+	if str(tier["tier"]) != BikeRig.TIER_FAB:
+		return ""
+	var hours := 0.0
+	var cost := 0
+	for w in tier["work"]:
+		hours += float(w["hours"])
+		cost += int(w["cost"])
+	return "%s Fit it and it's a shed job before it'll ride: the grinder and welder at the bike, about %s of work and %s of steel and gas." % [str(tier["reason"]),
+		"%d h" % roundi(hours) if hours >= 1.0 else "an hour", TvChannels.money_text(cost)]
 
 
 ## Everything in the shop whose name, kind or description matches every word typed.
@@ -612,6 +657,10 @@ func open() -> void:
 	if bike_card:
 		bike_card.close()
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.delivery_place(Vector3(0.25, 0.15, 0.25)).is_empty() else "yes")
+	if not shop.is_empty():
+		var bike := int(shop.get("bike", 0))
+		_status.text = "Strapped on %s when bought (%s on it now)." % [str(Shed.bikes[bike]["name"]), Units.mass(FuelShop.cargo_kg(bike), 0)] \
+			if Shed.bikes.has(bike) else "No bike on the forecourt: what's bought is sent to the shed."
 	_fill_bike_pick()
 	if not Shed.bikes.has(fits_bike):
 		fits_bike = 0
@@ -646,7 +695,50 @@ func _focus_part() -> void:
 
 func close_computer() -> void:
 	visible = false
+	if not shop.is_empty():
+		_set_shop({})
 	closed.emit()
+
+
+## Opens as the shop at fuel station `station`, what's bought strapped on `bike` (0: sent to the
+## shed): only the Bike aisle (see FuelShop).
+func open_shop(station: String, bike: int) -> void:
+	_set_shop({"name": station, "bike": bike})
+	open()
+
+
+## Turns the shop mode on (`s` as `shop`) or off ({}): the header, the aisles and the words.
+func _set_shop(s: Dictionary) -> void:
+	shop = s
+	var on := not shop.is_empty()
+	if _head_title == null:
+		return
+	_head_title.text = str(shop.get("name", "Fuel station")).to_upper() + " SHOP" if on else "PARTS COMPUTER"
+	_subtitle.text = SHOP_SUBTITLE if on else SUBTITLE
+	for c in _shed_only:
+		c.visible = not on
+	for sec in _section_btns:
+		(_section_btns[sec] as Control).visible = not on or sec == "bike"
+	if on and _section != "bike":
+		_show_section("bike")
+
+
+## The Buy button for `part` in a shop: its price and where it goes. Returns the bike it's
+## strapped on (0: sent to the shed).
+func _shop_button(part: String) -> int:
+	var on := shop_bike_for(part)
+	_order.text = "Buy it: %s, %s" % [TvChannels.money_text(Money.buy_price(part, Shed.me())),
+		"strapped on %s" % str(Shed.bikes[on]["name"]) if on != 0 else "sent to the shed"]
+	return on
+
+
+## Where the shop puts `part` when it's bought: the bike on the forecourt it's strapped on, or 0
+## to send it to the shed (no bike there, or too much to carry).
+func shop_bike_for(part: String) -> int:
+	var bike := int(shop.get("bike", 0))
+	if not Shed.bikes.has(bike) or FuelShop.carry_reason(bike, part) != "":
+		return 0
+	return bike
 
 
 func _show_kind(k: String) -> void:
@@ -942,6 +1034,10 @@ func _fill_part(id: String) -> void:
 	_order.text = "Order it: %s" % TvChannels.money_text(cost)
 	_desc.text += "\n\n%s from the business's account%s." % [TvChannels.money_text(cost),
 		" (Haggler discount)" if cost < Money.part_price(id) else ""]
+	if not shop.is_empty():
+		var on := _shop_button(id)
+		if on == 0 and Shed.bikes.has(int(shop.get("bike", 0))):
+			_desc.text += " " + FuelShop.carry_reason(int(shop["bike"]), id) + " The shop sends it on to the shed."
 	if _kind == "chain_lube":
 		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold {work} to lube it." \
 			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
@@ -960,7 +1056,8 @@ func _fill_part(id: String) -> void:
 		_spec.text += "\n" + need
 	if fits_bike != 0 and Shed.bikes.has(fits_bike):
 		var why := fit_problem(id, fits_bike)
-		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), "goes on it as it is" if why == "" else why]
+		var fab := fab_text(id, fits_bike) if why == "" else ""
+		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), why if why != "" else (fab if fab != "" else "goes on it as it is")]
 		var slots := PartsDB.slots_for_kind(_kind)
 		if not PartsDB.styles_of(id).is_empty() and not slots.is_empty():
 			var now := Contracts.current_parts(fits_bike)
@@ -996,6 +1093,14 @@ static func needed_text(k: String) -> String:
 ## Orders what's picked: the part (in the colours picked for it), the equipment, the paint, or
 ## sells it in the Sell aisle.
 func order() -> void:
+	if not shop.is_empty():
+		if section_of(_kind) != "bike" or _part == "":
+			return
+		var buy := {"a": "shop_buy", "part": _part, "bike": shop_bike_for(_part)}
+		if not look.is_empty() and PartColours.pickable(_part):
+			buy["look"] = look.duplicate()
+		Shed.request(buy)
+		return
 	if _kind.begins_with("sell:"):
 		sell(_part)
 	elif _kind.begins_with("paint:"):
@@ -1204,7 +1309,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventJoypadButton and event.is_action_pressed("ui_cancel"):
 		back()
 	elif event is InputEventJoypadButton and (event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev")):
-		# LB / RB: the aisle to the left or right.
+		# LB / RB: the aisle to the left or right (a fuel station's shop has only the one).
+		if not shop.is_empty():
+			get_viewport().set_input_as_handled()
+			return
 		var keys := SECTIONS.keys()
 		var step := 1 if event.is_action_pressed("tool_next") else -1
 		_show_section(keys[posmod(keys.find(_section) + step, keys.size())])

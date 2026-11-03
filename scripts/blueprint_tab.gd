@@ -95,7 +95,9 @@ func _blueprint_row(id: int, empty_bays: Array) -> Control:
 	for slot in bp.get("parts", {}):
 		if str(bp["parts"][slot]) != "none":
 			parts += 1
-	var info := UITheme.label("%d parts, %d fitted by hand" % [parts, (bp.get("geo", {}) as Dictionary).size()], 14, Color(1, 1, 1, 0.6))
+	var geo: Dictionary = bp.get("geo", {}) if bp.get("geo") is Dictionary else {}
+	var info := UITheme.label("%d parts, %d fitted by hand%s" % [parts, geo.keys().filter(func(k): return k != "rig").size(),
+		", rig handles set" if geo.has("rig") else ""], 14, Color(1, 1, 1, 0.6))
 	info.custom_minimum_size.x = 150.0
 	row.add_child(info)
 	var pick := OptionButton.new()

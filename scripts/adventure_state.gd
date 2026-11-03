@@ -267,6 +267,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			(Shed.adventure["left"] as Array).append(peer)
 			if Shed.bikes.has(bike):
 				var b: Dictionary = Shed.bikes[bike]
+				FuelShop.unload(bike)   # what's strapped on it goes in the delivery area
 				b.erase("push")
 				b.erase("tow")
 				if b.has("roadside") and int(b.get("rider", 0)) == 0:

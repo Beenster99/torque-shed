@@ -259,6 +259,10 @@ static func sanitize(geo) -> Dictionary:
 	var out := {}
 	if not (geo is Dictionary):
 		return out
+	# The rig's range handles (BikeRig.ADJUST), kept with the parts' own fit.
+	var adj := BikeRig.clean_adjust(geo.get("rig", {}))
+	if not adj.is_empty():
+		out["rig"] = adj
 	for slot in geo:
 		if not (slot is String) or not PartsDB.SLOTS.has(slot) or not (geo[slot] is Dictionary):
 			continue

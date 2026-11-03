@@ -734,6 +734,32 @@ func is_complete(bike_id: int) -> bool:
 	return bikes.has(bike_id) and missing_slots(bike_id).is_empty() and loose_slots(bike_id).is_empty()
 
 
+## The fabrication a bike still owes, the next job first: [{what, hours, cost}] (BikeRig.fab_job).
+## A part fitted in the shed that needed fabrication (BikeRig.part_fit) leaves its jobs owed until
+## someone makes them with the grinder and welder ("fabricate"); it won't ride till then. A job
+## whose part has come off again isn't owed any more.
+func fab_owed(bike_id: int) -> Array:
+	if not bikes.has(bike_id) or (bikes[bike_id].get("fab_owed", []) as Array).is_empty():
+		return []
+	var now: Array = BikeRig.fit(build_of(bike_id))["work"]
+	var out := []
+	for what in bikes[bike_id]["fab_owed"]:
+		if now.has(what):
+			out.append(BikeRig.fab_job(str(what)))
+	return out
+
+
+## How long making a fabrication job takes at the bike with a stock grinder and welder, in
+## seconds (skills and the tool's upgrades shorten it: Progress.time_mult).
+static func fab_time(job: Dictionary) -> float:
+	return 4.0 + float(job.get("hours", 3.0))
+
+
+## What a bike's owed fabrication reads as ("engine mounts made for a V-twin, raised tank mounts").
+func fab_owed_text(bike_id: int) -> String:
+	return ", ".join(fab_owed(bike_id).map(func(j): return str(j["what"])))
+
+
 func condition_of(item: Dictionary) -> Dictionary:
 	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
@@ -813,6 +839,8 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 	if float(bike.get("tune_reach", 0.0)) > 0.0:
 		# Tuned by someone with Fine Tuning: the map, ignition and limiter go further.
 		tune["reach"] = float(bike["tune_reach"])
+	if not FuelShop.cargo_of(bike_id).is_empty():
+		cond["cargo"] = {"kg": FuelShop.cargo_kg(bike_id)}   # what's strapped on it weighs too (see FuelShop)
 	var b := BikeBuild.new(parts, cond, tune)
 	b.ride_mode = mode_of(bike_id)
 	return b
@@ -2508,6 +2536,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return Roadside.check(peer, action)
 	if a.begins_with("spare_"):
 		return ToolboxSpares.check(peer, action)
+	if a.begins_with("shop_") or a.begins_with("cargo_"):
+		return FuelShop.check(peer, action)   # a fuel station's shop, and what's strapped on a bike (see FuelShop)
 	var roadside_job := ToolboxSpares.roadside_check(peer, action)
 	if roadside_job != "":
 		return roadside_job   # working on a bike at the roadside with its toolbox (see ToolboxSpares)
@@ -2629,6 +2659,26 @@ func check(peer: int, action: Dictionary) -> String:
 			var access := _engine_access(action, where["slot"])
 			if access != "":
 				return access
+			# The frame, engine and tank round each other (the rig's fit report): one that won't
+			# go in this frame doesn't. (One that needs fabrication does, and the shed makes it.)
+			# (A wheel comes with its own tyre on, which the parts left on the bike don't show.)
+			if engine_id == 0 and bikes.has(bike_id) and str(where["slot"]) in ["frame", "engine", "tank", "fork"]:
+				var tier := BikeRig.part_tier(bike_id, str(where["slot"]), str(items[held]["part"]))
+				if str(tier["tier"]) == BikeRig.TIER_NO:
+					return str(tier["reason"])
+		"fabricate":
+			if not bikes.has(bike_id):
+				return "That bike has gone."
+			if int(bikes[bike_id]["rider"]) != 0:
+				return "Someone is riding that bike."
+			if held != 0:
+				return "Put the part down first."
+			var owed := fab_owed(bike_id)
+			if owed.is_empty():
+				return "It doesn't need any fabrication."
+			if garage_money < int(owed[0]["cost"]):
+				return "The steel and gas for the %s come to %s, and the business has %s." % [str(owed[0]["what"]),
+					TvChannels.money_text(int(owed[0]["cost"])), TvChannels.money_text(garage_money)]
 		"take":
 			if held != 0:
 				return "Your hands are full."
@@ -3037,7 +3087,9 @@ func check(peer: int, action: Dictionary) -> String:
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
-				return "Put the part down first."
+				# At an adventure's roadside there's nowhere to put it down: strap it on (see FuelShop).
+				return "Strap the %s on the bike first (look at the bike, {alt_act})." % item_title(held).to_lower() \
+					if Roadside.parked(bike_id) else "Put the part down first."
 			if moving(peer) != 0:
 				return "Let go of what you're pushing first."
 			var missing := missing_slots(bike_id)
@@ -3046,6 +3098,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var loose := loose_slots(bike_id)
 			if not loose.is_empty():
 				return "Not bolted up: %s." % _slot_list(loose)
+			if not fab_owed(bike_id).is_empty():
+				return "It needs fabrication first: %s. Take the grinder and welder to it." % fab_owed_text(bike_id)
 		"dismount":
 			if not bikes.has(bike_id) or bikes[bike_id]["rider"] != peer:
 				return "You're not riding that bike."
@@ -3405,6 +3459,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("spare_"):
 		_spare_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("shop_") or str(action.get("a", "")).begins_with("cargo_"):
+		_shop_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -3570,6 +3627,18 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var item_id := held_by(peer)
 			var s: String = install_slot(action, item_id)["slot"]
 			var host := host_of(bike_id, s, engine_id)
+			# A part that needs fabrication goes on, and the bike owes the jobs (see fab_owed).
+			var fab := ""
+			if engine_id == 0 and bikes.has(bike_id) and s in ["frame", "engine", "tank", "fork"]:
+				var tier := BikeRig.part_tier(bike_id, s, str(items[item_id]["part"]))
+				if str(tier["tier"]) == BikeRig.TIER_FAB:
+					var owed: Array = (bikes[bike_id].get("fab_owed", []) as Array).duplicate()
+					for w in tier["work"]:
+						if not owed.has(str(w["what"])):
+							owed.append(str(w["what"]))
+					bikes[bike_id]["fab_owed"] = owed
+					fab = " It needs fabrication before it'll ride: %s. Take the grinder and welder to it." % \
+						", ".join(tier["work"].map(func(w): return str(w["what"])))
 			host["slots"][s] = item_id
 			host["bolted"][s] = false
 			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
@@ -3583,11 +3652,27 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_bump(c, "fitted")
 			_xp(peer, "fit", 1.0, "item:%d" % item_id)
 			text = "Fitted the %s as the %s. Bolt it up with the wrench." % [PartsDB.part_name(items[item_id]["part"]),
-				PartsDB.slot_name(s).to_lower()]
+				PartsDB.slot_name(s).to_lower()] + fab
 			if engine_id == 0 and _blueprint_done(bike_id):
 				text += " That's every part on its blueprint: the hologram is gone."
 			elif engine_id != 0 and _bike_of(engine_id) != 0 and _blueprint_done(_bike_of(engine_id)):
 				text += " That's every part on its blueprint: the hologram is gone."
+		"fabricate":
+			var job: Dictionary = fab_owed(bike_id)[0]
+			var what := str(job["what"])
+			charge_garage(int(job["cost"]), "Fabrication: %s" % what)
+			var owed: Array = (bikes[bike_id].get("fab_owed", []) as Array).duplicate()
+			owed.erase(what)
+			bikes[bike_id]["fab_owed"] = owed
+			var done: Array = (bikes[bike_id].get("fab_done", []) as Array).duplicate()
+			if not done.has(what):
+				done.append(what)
+			bikes[bike_id]["fab_done"] = done
+			_bump(c, "fabricated")
+			_xp(peer, "fabricate", clampf(float(job["hours"]) / 4.0, 0.5, 2.0), "bike:%d:%s" % [bike_id, what])
+			var left := fab_owed_text(bike_id)
+			text = "Made the %s (%s of steel and gas). %s" % [what, TvChannels.money_text(int(job["cost"])),
+				"Still to make: %s." % left if left != "" else "That's the fabrication done."]
 		"take":
 			var item_id := int(action["item"]) if action.has("item") else item_at_spot(str(action["spot"]))
 			_move(item_id, "held", peer)
@@ -4673,6 +4758,18 @@ func _roadside_apply(peer: int, action: Dictionary) -> void:
 	changed.emit()
 
 
+## Buying at a fuel station's shop, and strapping things on a bike or taking them off (see
+## FuelShop), out on an adventure.
+func _shop_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	_tell(peer, FuelShop.apply(peer, action), true)
+	_mark_dirty()
+	changed.emit()
+
+
 ## Packing a spare part in a toolbox, or taking one out (see ToolboxSpares), in the shed or at
 ## an adventure's roadside.
 func _spare_apply(peer: int, action: Dictionary) -> void:
@@ -5133,6 +5230,8 @@ func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: Stri
 	bike["bought"] = paid
 	bike["ordered_by"] = by
 	bike["name"] = owned_name(by, plan.get("parts", {}) if plan.get("parts") is Dictionary else {}, "", id)
+	# The works made whatever fabrication it takes as they built it (it was on the price).
+	bike["fab_done"] = (BikeRig.fit(build_of(id))["work"] as Array).duplicate()
 	_ready_to_ride(id)
 	Contracts.refresh_delivered(id)
 	return id

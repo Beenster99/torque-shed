@@ -76,6 +76,9 @@ const XP := {
 	"chain_lube": {"xp": 6, "label": "Chain lube"},
 	# Repairing and spraying: higher again.
 	"repair": {"xp": 10, "label": "Restoring"},
+	# Fabrication (see Shed.fab_owed): making engine mounts, a wider cradle or tank mounts for a
+	# part that needed them. A proper job: more for a longer one.
+	"fabricate": {"xp": 30, "label": "Fabrication"},
 	"sandblast": {"xp": 10, "label": "Sandblasting"},
 	"paint": {"xp": 12, "label": "Spraying"},
 	"prime": {"xp": 6, "label": "Primer coat"},
@@ -149,7 +152,7 @@ const PAY := {
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "polish_panel": 4, "ceramic_panel": 5, "chain_lube": 3,
-	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
+	"repair": 6, "fabricate": 15, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
 	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
 	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
@@ -836,7 +839,7 @@ func time_mult(peer: int, tool: String, action: Dictionary) -> float:
 		m *= 1.0 - 0.1 * skill_rank(peer, "torque_feel")
 	if a in ["clean", "clean_many"]:
 		m *= 1.0 - 0.12 * skill_rank(peer, "elbow_grease")
-	if a in ["repair", "repair_many"]:
+	if a in ["repair", "repair_many", "fabricate"]:
 		m *= 1.0 - 0.12 * skill_rank(peer, "hot_welder")
 	if int(action.get("engine", 0)) != 0:
 		m *= 1.0 - 0.15 * skill_rank(peer, "engine_whisperer")
