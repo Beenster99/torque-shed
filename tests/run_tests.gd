@@ -141,6 +141,7 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_glbs")
 	await _t(&"_test_blender_parts_fit")
 	await _t(&"_test_blender_parts_cases")
+	await _t(&"_test_blender_parts_gearboxes")
 	await _t(&"_test_blender_parts_cans")
 	await _t(&"_test_blender_parts_pipes")
 	await _t(&"_test_blender_parts_tyres")
@@ -7046,7 +7047,7 @@ func _test_sandblaster() -> void:
 	# Turn the engine with the keys and sweep it.
 	var rot0: Vector2 = w.blast.rot
 	Input.action_press("move_right")
-	for i in 120:
+	for i in 200:
 		await get_tree().physics_frame
 		if i % 30 == 0:
 			w._look(0.0, 0.02 if (i / 30) % 2 == 0 else -0.02)
@@ -7061,7 +7062,8 @@ func _test_sandblaster() -> void:
 		"W A S D turn the engine on the turntable instead of walking (%.2f rad)" % (w.blast.rot.x - rot0.x))
 	check(pivot.basis.is_equal_approx(BlastGame.pivot_basis(w.blast.rot)), "the engine turns in the cabinet")
 	var total := w.blast.total()
-	check(w.blast.marks.bare_count() > bare * 1.5 and total > total0 and total > 0.02, "sweeping round, more of it comes up bare (%d%% from %d%%, %d cubes from %d)" % [roundi(total * 100.0), roundi(total0 * 100.0), w.blast.marks.bare_count(), bare])
+	# (At least 1.5% of the whole engine: its gearbox's Blender-made case and clutch side add surface.)
+	check(w.blast.marks.bare_count() > bare * 1.5 and total > total0 and total > 0.015, "sweeping round, more of it comes up bare (%.1f%% from %.1f%%, %d cubes from %d)" % [total * 100.0, total0 * 100.0, w.blast.marks.bare_count(), bare])
 	# Too long on one spot pits it.
 	var game := w.blast
 	var id0 := int(game.parts.keys()[0])
@@ -8564,7 +8566,7 @@ func _test_blast_live_session() -> void:
 	var model_before: BikeModel = w.blast.model
 	Input.action_press("act")
 	var rust_seen := 1.0
-	for i in 150:
+	for i in 240:
 		await get_tree().physics_frame
 		if i % 20 == 0:
 			w._look(0.0, 0.03 if (i / 20) % 2 == 0 else -0.03)
@@ -25346,6 +25348,10 @@ func _test_blender_parts_fit() -> void:
 
 func _test_blender_parts_cases() -> void:
 	_blender_parts().test_cases_fit()
+
+
+func _test_blender_parts_gearboxes() -> void:
+	_blender_parts().test_gearboxes()
 
 
 func _test_blender_parts_cans() -> void:

@@ -3009,14 +3009,19 @@ func _draw_gearbox() -> void:
 	_current_slot = "gearbox"
 	var case_mat := _mat(_col(), 0.75, 0.45)
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
-	_box(_engine_c + Vector3(0.0, -0.06, 0.22), Vector3(_block_w * 0.8, 0.18, 0.16), case_mat)
-	var clutch := _mesh_instance(_cylinder(0.1, 0.04), case_mat, _engine_c + Vector3(_block_w * 0.5 + 0.02, -0.02, 0.1))
+	var case_at := _engine_c + Vector3(0.0, -0.06, 0.22)
+	var clutch_at := _engine_c + Vector3(_block_w * 0.5 + 0.02, -0.02, 0.1)
+	var kick := _build.layout in ["single", "2stroke", "twin"]
+	if _blender_gearbox(case_mat, chrome, kick):
+		return
+	_box(case_at, Vector3(_block_w * 0.8, 0.18, 0.16), case_mat)
+	var clutch := _mesh_instance(_cylinder(0.1, 0.04), case_mat, clutch_at)
 	clutch.rotation.z = PI * 0.5
 	_tube(_engine_c + Vector3(-_block_w * 0.5 - 0.06, -0.09, 0.2), _engine_c + Vector3(-_block_w * 0.5 - 0.14, -0.13, 0.12), 0.008, chrome)
 	# The clutch cover's bolt ring and the oil filler cap.
 	_bolt_ring(clutch.position + Vector3(0.021, 0.0, 0.0), Vector3.RIGHT, 0.085, 8, _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3))
 	_mesh_instance(_cylinder(0.016, 0.018, -1.0, 8), _mat(Color(0.05, 0.05, 0.05), 0.2, 0.5), clutch.position + Vector3(0.0, 0.095, 0.03))
-	if _build.layout in ["single", "2stroke", "twin"]:
+	if kick:
 		# A kickstart lever folded up behind the right footpeg.
 		var shaft := _engine_c + Vector3(_block_w * 0.5 + 0.035, -0.04, 0.2)
 		_mesh_instance(_cylinder(0.012, 0.03), chrome, shaft).rotation.z = PI * 0.5
@@ -3025,6 +3030,61 @@ func _draw_gearbox() -> void:
 		arm.name = "Kickstart"
 		var foot := _mesh_instance(_cylinder(0.011, 0.05), _tex(_mat(Color(0.05, 0.05, 0.05), 0.0, 0.85), "knurl", 50.0), pedal + Vector3(0.025, 0.0, 0.0))
 		foot.rotation.z = PI * 0.5
+
+
+## The gearboxes whose cases are a separate box bolted behind the engine (the rest are cast as
+## one with the crankcase, so their cases take the engine's finish).
+const SEPARATE_GEARBOXES: Array[String] = ["four_vintage", "six_cruiser_od"]
+## The width a Blender gearbox case is drawn at (see blender/parts/gearbox/gearboxes.py): the
+## game stretches it across to the engine's (_block_w * 0.8).
+const GEARBOX_CASE_W := 0.16
+## Which way the gear change shaft's arm points in its glb, and how far its rod end is from the shaft.
+const GEARBOX_ARM := Vector3(0.0, -0.06, -0.08)
+const GEARBOX_ARM_REACH := 0.032
+
+
+## New look: the gearbox in its Blender-made pieces (gearbox/<id>/case.glb and clutch.glb, the gear
+## change shaft and the kickstart, see blender/parts/gearbox/gearboxes.py) where _draw_gearbox puts
+## its own. Returns false (drawing nothing) when the look is Classic or there's no glb.
+func _blender_gearbox(case_mat: Material, chrome: Material, kick: bool) -> bool:
+	if not _blender_on():
+		return false
+	var id := str(_build.parts.get("gearbox", ""))
+	var root := "gearbox/%s/" % id
+	if BlenderParts.part(BlenderParts.ROOT + root + "case.glb").is_empty():
+		return false
+	# A unit gearbox is cast with the crankcase, in its finish; a separate one is the gearbox's own.
+	var cast := case_mat
+	if not SEPARATE_GEARBOXES.has(id) and _blender_mats.has("engine"):
+		cast = _blender_mats["engine"].get("cast_alloy", case_mat)
+	var steel := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
+	var black := _mat(Color(0.05, 0.05, 0.05), 0.4, 0.5)
+	_blender_tagged(root + "case.glb", Transform3D(Basis.from_scale(Vector3(_block_w * 0.8 / GEARBOX_CASE_W, 1.0, 1.0)), _engine_c + Vector3(0.0, -0.06, 0.22)),
+		{"cast_alloy": cast, "raw_steel": steel, "black_metal": black}, {"cast_alloy": "GearboxCase"})
+	_blender_tagged(root + "clutch.glb", Transform3D(Basis.IDENTITY, _engine_c + Vector3(_block_w * 0.5, -0.02, 0.1)),
+		{"paint": case_mat, "cast_alloy": case_mat, "raw_steel": steel, "chrome": chrome}, {"paint": "ClutchCover", "chrome": "ClutchCover"})
+	# The gear change shaft out of the left of the case, its arm turned to point at the gear
+	# lever's short arm, just over the left footrest's pivot, and the linkage rod between them.
+	var shaft := _engine_c + Vector3(-_block_w * 0.5 - 0.06, -0.09, 0.2)
+	var lever := Vector3(-absf(_peg.x) + 0.015, _peg.y + 0.04, _peg.z + 0.015)
+	var arm := GEARBOX_ARM.normalized()
+	var to := lever - shaft
+	var turn := Basis(Vector3.RIGHT, atan2(arm.y, arm.z) - atan2(to.y, to.z))
+	_blender_tagged("gearbox/selector.glb", Transform3D(turn, shaft),
+		{"cast_alloy": case_mat, "raw_steel": steel, "chrome": chrome}, {"cast_alloy": "GearSelector"})
+	var start := shaft + turn * arm * GEARBOX_ARM_REACH
+	if start.distance_to(lever) > 0.02:
+		_tube(start, lever, 0.0055, chrome).name = "GearLinkage"
+		_mesh_instance(_sphere(0.008), chrome, lever).name = "GearLinkage"
+		if bool(_part().get("quickshifter", false)):
+			# The quickshifter's sensor in the rod, near the shaft's end of it.
+			var along := (lever - start).normalized()
+			_blender_tagged("gearbox/quickshifter.glb", Transform3D(_basis_up(along), start + along * minf(0.06, start.distance_to(lever) * 0.4)),
+				{"raw_steel": steel, "black_metal": black}, {"black_metal": "Quickshifter"})
+	if kick:
+		_blender_tagged("gearbox/kickstart.glb", Transform3D(Basis.IDENTITY, _engine_c + Vector3(_block_w * 0.5 + 0.035, -0.04, 0.2)),
+			{"chrome": chrome, "raw_steel": steel}, {"chrome": "Kickstart"})
+	return true
 
 
 ## The exhaust: a header from each cylinder bent round the frame along a route, then the can.
