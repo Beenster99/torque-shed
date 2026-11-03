@@ -2,10 +2,15 @@ class_name DirtLayer
 extends Node
 ## The dirt on a bike (or a loose part) drawn on it: an extra pass on every mesh of each dirty
 ## part that lays the part's regional dirt (Dirt) over its finish, so you can see by eye where
-## it's clean and where it isn't. How it looks depends on where it is: clumps and splatter of mud
-## low down and wherever a tyre throws it, a dull film of dust up top, and dead flies with their
-## smears on the forward faces up front. Each region's level (blended smoothly between regions)
-## sets how much of it there is: light dirt is a few specks and a haze, heavy dirt covers it.
+## it's clean and where it isn't. How it looks depends on where it is: clots and splatter of mud
+## low down and wherever a tyre throws it, drawn out the way it flew, standing up off the part,
+## dark and wet where it's thick and dried pale at the edges; a soft film of dust up top, thickest
+## on what faces up and streaked where rain ran down it; and dead flies on the forward faces up
+## front, each a dark body in a smear of guts thrown out along the airflow, some with their wings,
+## among lots of little midges. Each region's level (blended smoothly between regions) sets how
+## much of it there is: light dirt is a few specks and a haze, heavy dirt covers it. Fine detail
+## fades into its average further off, so it never shimmers, and rain (BikeShader.set_wet) wets
+## the mud and dust dark and glossy.
 ##
 ## While someone pressure washes it (WashJob, on their own screen) the layer also carries a wash
 ## mask: little cubes round the bike, each holding how much has been washed off the surfaces in it
@@ -35,6 +40,9 @@ uniform vec3 mask_origin;
 uniform vec3 mask_size = vec3(1.0);
 uniform float has_mask = 0.0;
 uniform float wet = 0.0;
+// How wet the weather has made the bikes (BikeShader.set_wet): mud and dust go dark and glossy.
+uniform float rain = 0.0;
+uniform vec4 srgb_probe : source_color = vec4(0.5, 0.5, 0.5, 1.0);
 uniform float scan = 0.0;
 uniform float scan_t = 0.0;
 uniform float clean_level = 0.04;
@@ -104,6 +112,53 @@ void vertex() {
 	mnorm = mat3(m) * NORMAL;
 }
 
+// A smoother noise in a few octaves, for shapes that don't look like a grid.
+float fbm(vec3 p) {
+	return vnoise(p) * 0.5 + vnoise(p * 2.07 + vec3(3.1, 1.7, 5.3)) * 0.3 + vnoise(p * 4.13 + vec3(7.7, 2.9, 0.4)) * 0.2;
+}
+
+// The normal (view space) tilted by a height field `h` (metres) worked out per pixel, so the
+// muck stands up off the part and catches the light.
+vec3 bump(vec3 n, vec3 pos, float h) {
+	vec3 dpdx = dFdx(pos);
+	vec3 dpdy = dFdy(pos);
+	vec3 r1 = cross(dpdy, n);
+	vec3 r2 = cross(n, dpdx);
+	float det = dot(dpdx, r1);
+	vec3 g = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+	vec3 o = abs(det) * n - g;
+	float len = length(o);
+	return len > 1e-12 ? o / len : n;
+}
+
+// A dead fly in a cell of `q` (cells on a forward face, across and up): [how much of it, body,
+// smear, wing] for the one in this cell, if there is one (`chance`), smeared along `dir`.
+vec4 splat(vec2 q, float chance, vec2 dir, float seed) {
+	vec2 ci = floor(q);
+	vec3 h = vec3(hash3(vec3(ci, seed)), hash3(vec3(ci, seed + 1.3)), hash3(vec3(ci, seed + 2.9)));
+	if (h.x > chance) {
+		return vec4(0.0);
+	}
+	vec2 l = fract(q) - 0.5 - (h.yz - 0.5) * 0.4;
+	float a = (h.y - 0.5) * 1.2;
+	vec2 d = normalize(dir + vec2(cos(a), sin(a)) * 0.35);
+	vec2 u = vec2(dot(l, d), dot(l, vec2(-d.y, d.x)));   // along the smear, across it
+	float size = 0.6 + 0.6 * h.z;
+	u /= size;
+	float body = 1.0 - smoothstep(0.045, 0.075, length(u * vec2(0.8, 1.25)));
+	// The splat: guts thrown out along the airflow in a tapering streak, ragged at the edges,
+	// with a few droplets beyond it.
+	float rag = vnoise(vec3(u * 40.0, seed + h.x * 9.0));
+	float tail = smoothstep(-0.05, 0.02, u.x) * (1.0 - smoothstep(0.15, 0.38 + 0.1 * rag, u.x));
+	float width = mix(0.12, 0.03, clamp(u.x / 0.38, 0.0, 1.0)) * (0.7 + 0.6 * rag);
+	float smear = max(tail * (1.0 - smoothstep(width * 0.6, width, abs(u.y))), 1.0 - smoothstep(0.07, 0.11 + 0.03 * rag, length(u)));
+	vec2 dp = u - vec2(0.3 + 0.12 * h.y, (h.z - 0.5) * 0.12);
+	smear = max(smear, 1.0 - smoothstep(0.012, 0.022, length(dp)));
+	// Some keep their wings: two pale glassy flecks either side.
+	float wing = step(0.55, h.z) * (1.0 - smoothstep(0.02, 0.035, length((vec2(u.x + 0.01, abs(u.y) - 0.065)) * vec2(0.6, 1.0))));
+	return vec4(1.0, body, smear * 0.85, wing);
+}
+
 void fragment() {
 	vec3 n = facing_of(mnorm);
 	vec3 cam = (to_model * INV_VIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -133,44 +188,92 @@ void fragment() {
 	float dustw = max(0.0, 1.0 - mudw - flyw);
 	float alpha = 0.0;
 	vec3 col = vec3(0.0);
+	float rough = 0.0;
+	float height = 0.0;
+	// How big a pixel is here, in metres: fine detail fades into its average before it shimmers.
+	float px = length(fwidth(mpos));
+	float soak = clamp(rain, 0.0, 1.0);
 	if (mudw > 0.0) {
-		// Mud: clumps that join up as it gets thicker, splatter round them, a dirty haze between.
-		float big = vnoise(mpos * 14.0) * 0.6 + vnoise(mpos * 37.0) * 0.4;
-		float clump = smoothstep(big - 0.06, big + 0.06, s * 1.15 - 0.08);
-		float speck = step(1.0 - s * 0.45, hash3(floor(mpos * 160.0)));
-		float mud_a = max(max(clump * 0.95, speck * 0.85), smoothstep(0.03, 1.0, s) * 0.45);
-		vec3 mud_c = mix(vec3(0.16, 0.11, 0.065), vec3(0.42, 0.33, 0.21), vnoise(mpos * 22.0 + vec3(3.1)));
+		// Mud: thrown off the tyres in clots drawn out along the bike (the way it flew), joining
+		// into a crust as it builds up, with splatter round the clots and a dirty film between.
+		// Thick mud stays dark and wet; thin mud and the clots' edges dry out pale and dusty.
+		vec3 mp = mpos * vec3(1.0, 1.0, 0.42);
+		float shape = fbm(mp * 13.0) * 0.75 + vnoise(mp * 46.0) * 0.25;
+		float thr = 1.0 - s * 1.1;
+		float clot = smoothstep(thr - 0.03, thr + 0.03, shape);
+		float thick = smoothstep(thr, thr + 0.22, shape);
+		vec3 sp = mpos * vec3(110.0, 110.0, 55.0);
+		vec3 si = floor(sp);
+		float near = smoothstep(thr - 0.3, thr - 0.02, shape);
+		float drop = step(1.0 - s * (0.12 + 0.5 * near), hash3(si + vec3(5.0)));
+		float dr = length(fract(sp) - 0.5 - (vec3(hash3(si), hash3(si + vec3(2.1)), hash3(si + vec3(4.7))) - 0.5) * 0.5);
+		float speck = drop * (1.0 - smoothstep(0.16, 0.26, dr)) * (1.0 - smoothstep(0.003, 0.012, px));
+		speck = max(speck, drop * 0.25 * smoothstep(0.003, 0.012, px));
+		float film = smoothstep(0.03, 1.0, s) * (0.25 + 0.2 * vnoise(mpos * 8.0));
+		float mud_a = max(max(clot * 0.97, speck * 0.9), film);
+		float grit = vnoise(mpos * 260.0);
+		float dry = clamp((1.0 - thick) * 0.7 + (1.0 - clot) * 0.5 - speck * 0.6 - soak * 0.8, 0.0, 1.0);
+		vec3 wet_c = mix(vec3(0.16, 0.115, 0.075), vec3(0.26, 0.19, 0.12), vnoise(mpos * 5.0));
+		vec3 dry_c = mix(vec3(0.5, 0.43, 0.34), vec3(0.6, 0.53, 0.42), grit);
+		vec3 mud_c = mix(wet_c, dry_c, dry) * (0.88 + 0.24 * vnoise(mpos * 60.0));
+		// Clay or peat, a little warmer or greyer from place to place.
+		mud_c *= mix(vec3(1.06, 0.98, 0.9), vec3(0.95, 0.98, 1.04), vnoise(mpos * 2.0 + vec3(9.0)));
 		alpha += mud_a * mudw;
 		col += mud_c * mud_a * mudw;
+		rough += mix(0.32, 0.95, dry) * mud_a * mudw;
+		height += (thick * (0.9 + 0.5 * grit) + clot * 0.5 + speck * 0.6) * mudw;
 	}
 	if (dustw > 0.0) {
-		// Dust: a light dulling of the finish (a faint, slightly grainy grey film, a little thicker
-		// in patches), only building to a real coat where it's heavy.
+		// Dust: a soft pale film dulling the finish, thicker on what faces up and in patches,
+		// a fine grain to it close up, and on the sides streaked where rain has run down it.
 		float grain = vnoise(mpos * 95.0);
-		float patchy = vnoise(mpos * 9.0);
-		float dust_a = smoothstep(0.03, 1.0, s) * (0.3 + 0.15 * grain + 0.2 * patchy);
-		vec3 dust_c = mix(vec3(0.47, 0.46, 0.43), vec3(0.56, 0.54, 0.5), grain);
+		float patchy = fbm(mpos * 7.0);
+		float lie = mix(0.6, 1.3, clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
+		float runs = smoothstep(0.55, 0.85, vnoise(mpos * vec3(70.0, 3.0, 70.0))) * (1.0 - abs(n.y));
+		float dust_a = smoothstep(0.03, 1.0, s) * (0.28 + 0.14 * grain + 0.3 * patchy) * lie * (1.0 - 0.6 * runs);
+		dust_a = clamp(dust_a, 0.0, 0.92);
+		vec3 dust_c = mix(vec3(0.62, 0.6, 0.56), vec3(0.72, 0.69, 0.63), grain) * mix(1.0, 0.82, soak);
 		alpha += dust_a * dustw;
 		col += dust_c * dust_a * dustw;
+		rough += mix(1.0, 0.6, soak) * dust_a * dustw;
+		height += (grain - 0.5) * 0.15 * dust_a * dustw;
 	}
 	if (flyw > 0.0) {
-		// Flies: dark squashed bugs, each in a yellowish smear, on a greasy haze.
-		vec3 fp = mpos * 70.0;
-		vec3 fi = floor(fp);
-		float bug = step(1.0 - s * 0.5, hash3(fi));
-		vec3 off = vec3(hash3(fi + vec3(1.7)), hash3(fi + vec3(4.3)), hash3(fi + vec3(7.9))) - 0.5;
-		float r = length(fract(fp) - 0.5 - off * 0.4);
-		float body = bug * (1.0 - smoothstep(0.12, 0.22, r));
-		float smear = bug * (1.0 - smoothstep(0.18, 0.5, r * (0.8 + 0.4 * vnoise(mpos * 300.0))));
-		float fly_a = max(max(body, smear * 0.6), s * 0.3);
-		vec3 fly_c = mix(mix(vec3(0.44, 0.42, 0.36), vec3(0.62, 0.56, 0.26), smear), vec3(0.05, 0.04, 0.03), body);
+		// Flies: splats where they hit, a dark body in a smear of yellow-green and amber thrown
+		// out along the airflow over the part, a few with their wings still on, and lots of
+		// little midges; all on a faint greasy film that catches the light.
+		vec2 q = mpos.xy;
+		vec2 flow = n.xy;
+		flow = dot(flow, flow) > 0.02 ? normalize(flow) : vec2(0.0, 1.0);
+		vec4 big = splat(q * 26.0, s * 0.45, flow, 1.0);
+		vec4 small = splat(q * 105.0 + vec2(0.37, 0.71), s * 0.65, flow, 7.0);
+		float fine = smoothstep(0.008, 0.025, px);    // too small to make out from here
+		float gut_t = hash3(vec3(floor(q * 26.0), 3.0));
+		vec3 gut = mix(mix(vec3(0.66, 0.62, 0.3), vec3(0.62, 0.46, 0.2), gut_t), vec3(0.5, 0.16, 0.1), step(0.85, gut_t));
+		float body = max(big.y, small.y * 0.9);
+		float smear = max(big.z, small.z * 0.7);
+		float wing = big.w;
+		float haze = s * 0.16;
+		float fly_a = max(max(body, smear * 0.8), max(wing * 0.5, haze));
+		fly_a = mix(fly_a, max(s * 0.22, haze), fine);
+		vec3 fly_c = mix(vec3(0.6, 0.57, 0.46), gut, smear);
+		fly_c = mix(fly_c, vec3(0.85, 0.87, 0.9), wing * (1.0 - body));
+		fly_c = mix(fly_c, vec3(0.1, 0.08, 0.06), body);
+		fly_c = mix(fly_c, vec3(0.55, 0.5, 0.38), fine);
 		alpha += fly_a * flyw;
 		col += fly_c * fly_a * flyw;
+		rough += mix(0.35, 0.55, body) * fly_a * flyw;
+		height += (body * 1.4 + smear * 0.35) * (1.0 - fine) * flyw;
 	}
 	col /= max(alpha, 0.001);
+	// (Picked as sRGB colours: converted to linear the way the renderer converts a material's own.)
+	col = clamp(col, 0.0, 1.0);
+	if (srgb_probe.r < 0.4) {
+		col = mix(pow((col + vec3(0.055)) * (1.0 / 1.055), vec3(2.4)), col * (1.0 / 12.92), lessThan(col, vec3(0.04045)));
+	}
+	rough /= max(alpha, 0.001);
 	alpha *= smoothstep(0.004, 0.03, s);
-	float rough = 0.95;
-	float spec = 0.25;
+	float spec = 0.3;
 	// Just washed: glossy and dark with water, drying off.
 	float sheen = wet * smoothstep(0.15, 0.7, washed) * (1.0 - alpha);
 	col = mix(col, vec3(0.02, 0.025, 0.03), sheen);
@@ -195,6 +298,7 @@ void fragment() {
 	METALLIC = 0.0;
 	SPECULAR = clamp(spec, 0.0, 1.0);
 	EMISSION = emit;
+	NORMAL = bump(NORMAL, VERTEX, height * 0.003 * (1.0 - sheen));
 }
 """
 
@@ -242,6 +346,7 @@ const FAR := 30.0
 const NEAR := 26.0
 var _far := false
 var _far_check := 0.0
+var _rain := -1.0     # the weather's wetness last told to the passes
 
 
 static func shader() -> Shader:
@@ -331,6 +436,7 @@ func _add_slot(slot: String) -> void:
 	m.set_shader_parameter("box_origin", box.position)
 	m.set_shader_parameter("box_size", Vector3(maxf(box.size.x, 1e-3), maxf(box.size.y, 1e-3), maxf(box.size.z, 1e-3)))
 	m.set_shader_parameter("clean_level", Dirt.CLEAN)
+	m.set_shader_parameter("rain", maxf(_rain, 0.0))
 	_bind_mask(m)
 	_mats[slot] = m
 	# Meshes of the part that share a material share its copy too (one material each, not one
@@ -629,6 +735,9 @@ func _process(delta: float) -> void:
 func _process_body(delta: float) -> void:
 	_check_far(delta)
 	_update_transform()
+	if absf(BikeShader._wet - _rain) > 0.01:
+		_rain = BikeShader._wet
+		_param("rain", _rain)
 	var want := 1.0 if _scan_on else 0.0
 	if _scan != want or _scan_on:
 		_scan = move_toward(_scan, want, delta * 3.0)

@@ -182,7 +182,13 @@ func setup(engine_model: BikeModel, slots: Array, over_level: float) -> void:
 			var own := g.material_override
 			if own is BaseMaterial3D:
 				var mine := (own as BaseMaterial3D).duplicate() as BaseMaterial3D
-				mine.next_pass = m
+				# Over anything already drawn on it (the new look's rust, see RustLook), each pass
+				# copied so the part's own stays as it was.
+				var tail: Material = mine
+				while tail.next_pass != null and tail.next_pass != m:
+					tail.next_pass = tail.next_pass.duplicate()
+					tail = tail.next_pass
+				tail.next_pass = m
 				_restore.append([g, own])
 				g.material_override = mine
 	_update_transform()
