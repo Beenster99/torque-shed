@@ -33,8 +33,9 @@ var _mapped_port := 0
 
 ## The shape of the messages: one more each time one changes, so games that can't understand each other are told at
 ## the lobby (it's part of AdventureCrew.builds). 2: snapshots carry their sender's clock (see clock). 3: the fuel
-## station shops' and bikes' straps' requests (see FuelShop).
-const PROTOCOL := 3
+## station shops' and bikes' straps' requests (see FuelShop). 4: getting off with the engine running and the
+## "engine_off" request (see IdlingEngine).
+const PROTOCOL := 4
 const PORT := 24680
 const MAX_PLAYERS := 8
 

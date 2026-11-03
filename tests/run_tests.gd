@@ -715,6 +715,7 @@ func _run_all() -> void:
 	await _t(&"_test_bike_shop_for_sale")
 	await _t(&"_test_bike_shop_buy_used")
 	await _t(&"_test_bike_shop_configurator")
+	await _t(&"_test_bike_shop_configurator_extras")
 	await _t(&"_test_parts_refresh_catalogue")
 	await _t(&"_test_parts_refresh_migrate")
 	await _t(&"_test_parts_refresh_drawn")
@@ -14454,7 +14455,10 @@ func _test_detail_pass() -> void:
 	rusty.build_from(BikeBuild.new({}), Color.RED, {}, cond)
 	made.append(rusty)
 	var case_mat: StandardMaterial3D = (rusty.find_children("Crankcase", "", true, false)[0] as MeshInstance3D).material_override
-	check(case_mat.detail_enabled and case_mat.normal_texture == null, "a rusty case shows its rust rather than its finish")
+	if BikeLook.is_new(rusty):
+		check(RustLook.level_in(case_mat.next_pass) == 6, "a rusty case has its rust drawn over its finish")
+	else:
+		check(case_mat.detail_enabled and case_mat.normal_texture == null, "a rusty case shows its rust rather than its finish")
 	for m in made:
 		m.free()
 
@@ -23500,6 +23504,18 @@ func _test_coop_host_map() -> void:
 	_coop().test_host_map()
 
 
+func _route_ready() -> RefCounted:
+	return load("res://tests/route_ready_tests.gd").new(self)
+
+
+func _test_route_ready_rules() -> void:
+	_route_ready().test_rules()
+
+
+func _test_route_ready_in_game() -> void:
+	await _route_ready().test_in_game()
+
+
 func _planner() -> RefCounted:
 	return load("res://tests/route_planner_tests.gd").new(self)
 
@@ -23954,6 +23970,20 @@ func _test_adv_fix_menu_hold() -> void:
 	await _adv_fix().test_menu_hold()
 
 
+# ---------------------------------------------------------------------------- engine left running, pushing (tests/idle_push_tests.gd)
+
+func _idle_push() -> RefCounted:
+	return load("res://tests/idle_push_tests.gd").new(self)
+
+
+func _test_idle_shed() -> void:
+	await _idle_push().test_shed()
+
+
+func _test_idle_roadside() -> void:
+	await _idle_push().test_roadside()
+
+
 # ---------------------------------------------------------------------------- lights and graphics (tests/lights_tests.gd)
 
 func _lights() -> RefCounted:
@@ -24096,6 +24126,10 @@ func _test_bike_shop_buy_used() -> void:
 
 func _test_bike_shop_configurator() -> void:
 	await _bike_shop().test_configurator()
+
+
+func _test_bike_shop_configurator_extras() -> void:
+	await _bike_shop().test_configurator_extras()
 
 
 func _parts_refresh() -> RefCounted:
@@ -24408,6 +24442,10 @@ func _test_bike_look_finishes() -> void:
 
 func _test_bike_look_wear() -> void:
 	_bike_look().test_wear_and_wet()
+
+
+func _test_bike_look_rust() -> void:
+	_bike_look().test_rust()
 
 
 ## Not in the suite: records the Classic bikes again (see bike_look_tests.gd).

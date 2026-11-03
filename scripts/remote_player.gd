@@ -310,12 +310,17 @@ func _process_body(delta: float) -> void:
 	AdventureNeedsView.pose_figure(_body_look, _head, _head_look, _hand, self, peer, delta)
 	if bike:
 		# Pushing their bike along on foot (see Roadside): they walk beside it, not sat on it.
+		var was_pushed := bike.pushed
 		bike.pushed = bool(Shed.bikes.get(riding_bike, {}).get("push", false))
 		_figure.visible = bike.pushed
-		if bike.pushed:
-			var b := bike.global_transform
-			var fwd := -b.basis.z
-			_figure.global_transform = Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z)), b * Vector3(-0.75, -bike._build.rear_radius, 0.1))
+		if bike.pushed and bike.model:
+			# Beside it on its left, hands on the bars, walking it along (see BikePusher).
+			_figure.global_transform = BikePusher.stand_xf(bike.model, bike._build.rear_radius)
+			_walk(_figure.global_position, delta)
+			BikePusher.hold_bars(_body_look, bike.model)
+		elif was_pushed:
+			BikePusher.let_go(_body_look)
+			_walk_from = Vector3.INF
 	_phones.visible = Shed.wearing_headphones(peer)
 	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:
 		_dress()

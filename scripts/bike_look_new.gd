@@ -259,7 +259,8 @@ static func _look_of(mat: Material, lamps: Dictionary, kits: Dictionary) -> Dict
 	for meta in m.get_meta_list():
 		if meta != &"paint_surface":
 			return {}
-	if m.next_pass != null or m.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or m.emission_enabled \
+	var rust_pass := RustLook.level_in(m.next_pass) if m.next_pass != null and m.next_pass.next_pass == null else 0
+	if (m.next_pass != null and rust_pass == 0) or m.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or m.emission_enabled \
 			or m.cull_mode != BaseMaterial3D.CULL_BACK or m.shading_mode != BaseMaterial3D.SHADING_MODE_PER_PIXEL \
 			or m.blend_mode != BaseMaterial3D.BLEND_MODE_MIX or m.depth_draw_mode != BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY \
 			or m.diffuse_mode != BaseMaterial3D.DIFFUSE_BURLEY or m.specular_mode != BaseMaterial3D.SPECULAR_SCHLICK_GGX \
@@ -286,7 +287,7 @@ static func _look_of(mat: Material, lamps: Dictionary, kits: Dictionary) -> Dict
 		return {}
 	if m.normal_enabled and m.normal_texture == null:
 		return {}
-	var rust := 0.0
+	var rust := float(rust_pass)
 	if m.detail_enabled:
 		if m.detail_normal != null or m.detail_uv_layer != BaseMaterial3D.DETAIL_UV_1 or kit != "":
 			return {}

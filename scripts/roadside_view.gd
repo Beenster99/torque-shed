@@ -59,12 +59,14 @@ func sync() -> void:
 			str(r.get("out", [])), str(Shed.bikes[id].get("paint", "")), FuelShop.cargo_of(int(id)).size(),
 			ToolboxSpares.spares_of(Roadside.toolbox_of(int(id))).size()]
 		if _views.has(id) and _views[id]["sig"] == sig:
+			_sync_idling(int(id))
 			continue
 		if _views.has(id):
 			(_views[id]["node"] as Node).free()
 		var node := _make_view(int(id), r)
 		add_child(node)
 		_views[id] = {"node": node, "sig": sig}
+		_sync_idling(int(id))
 	_place()
 
 
@@ -73,6 +75,22 @@ func _process(_delta: float) -> void:
 	_place()
 	_update_straps()
 	Perf.add("roadside_view", pt)
+
+
+## A bike got off with its engine running ticks over at the roadside (see IdlingEngine).
+func _sync_idling(id: int) -> void:
+	var model := model_of(id)
+	var on := Shed.idling(id)
+	if on != (IdlingEngine.of(model) != null):
+		IdlingEngine.keep(model, Shed.build_of(id) if on else null, on, Shed.beam_of(id))
+
+
+## The model of bike `id` parked at the roadside, or null.
+func model_of(id: int) -> BikeModel:
+	if not _views.has(id):
+		return null
+	var view := _views[id]["node"] as Node3D
+	return view.get_child(0).get_child(0) as BikeModel
 
 
 ## Every parked bike where its record says, in the local frame as it is now.

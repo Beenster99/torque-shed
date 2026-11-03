@@ -732,9 +732,11 @@ func _start_riding(bike_id: int) -> void:
 			var ghost := "A ghost for %d s: nothing can knock you off" % int(BikeGhost.TIME)
 			var said := str(hud.get("_flash_raw")) if float(hud.get("_message_timer")) > 0.0 else ""
 			hud.flash((said + " " + ghost) if said.begins_with("Back on the road") else ghost, 2.5))
-	# You get on with the engine off and the box in neutral, as a parked bike is, and start it yourself.
-	bike.engine_on = false
-	bike.rpm = 0.0
+	# You get on with the engine off and the box in neutral, as a parked bike is, and start it
+	# yourself; unless it was left running (Shed.idling), when it's still ticking over.
+	var left_running := bool(data.get("idling", false)) and not bool(data.get("push", false))
+	bike.engine_on = left_running
+	bike.rpm = bike.build.idle_rpm if left_running else 0.0
 	bike.gear = Bike.NEUTRAL
 	bike.engine_changed.connect(func(running, reason):
 		if running:
@@ -799,7 +801,8 @@ func _get_off() -> void:
 		step = trip.step_off_spot(ground, heading)   # onto ground you can stand on, across a mountainside
 	walker.place(Transform3D(Basis(Vector3.UP, heading), step))
 	_send_ride_stats()
-	var off := {"a": "dismount", "bike": riding_id, "xf": Transform3D(Basis(Vector3.UP, heading), ground)}
+	var off := {"a": "dismount", "bike": riding_id, "xf": Transform3D(Basis(Vector3.UP, heading), ground),
+		"running": bike.engine_on or bike.is_starting()}   # left running, it ticks over where it's left (IdlingEngine)
 	if trip.on_trip():
 		# Out on an adventure it stays where it's left, for everyone (see Roadside, RoadsideView).
 		off["roadside"] = Roadside.spot_for(trip.world, Transform3D(Basis(Vector3.UP, heading), ground))
@@ -1247,8 +1250,7 @@ func _roadside_step(delta: float) -> void:
 	var pt := Perf.t0()
 	_roadside_sounds(delta)
 	_tow_step(delta)
-	if bike.pushing and bike.model:
-		bike.model.set_rider_visible(false)   # walking beside it
+	_pusher_step(delta)
 	var hint := ""
 	if int(Shed.bikes[riding_id].get("tow", 0)) != 0:
 		hint = "On the tow strap to the next stop   ·   {tow}: let it go"
@@ -1258,6 +1260,24 @@ func _roadside_step(delta: float) -> void:
 		hint = "{interact}: get off and fix it at the roadside   ·   {tow}: ask a mate for a tow"
 	hud.ride_hint = hint
 	Perf.add("roadside", pt)
+
+
+## Wheeling the bike along on foot: you walk beside it, in your own gear (see BikePusher), not
+## sat on it.
+func _pusher_step(delta: float) -> void:
+	var pusher := bike.get_node_or_null("Pusher") as BikePusher
+	if not bike.pushing or bike.model == null:
+		if pusher:
+			pusher.free()
+			bike.model.set_rider_visible(not bike.is_crashed)
+		return
+	bike.model.set_rider_visible(false)
+	if pusher == null:
+		pusher = BikePusher.make(RiderGear.worn_of(Shed.me()), _paint())
+		bike.add_child(pusher)
+	else:
+		pusher.dress(RiderGear.worn_of(Shed.me()), _paint())
+	pusher.follow(bike.model, bike.build.rear_radius, bike.speed, delta)
 
 
 ## Whether the ridden bike's being pushed, and the rider told of a fault it set off with: what

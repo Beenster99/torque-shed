@@ -270,6 +270,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				FuelShop.unload(bike)   # what's strapped on it goes in the delivery area
 				b.erase("push")
 				b.erase("tow")
+				b.erase("idling")
 				if b.has("roadside") and int(b.get("rider", 0)) == 0:
 					b.erase("roadside")
 					b["xf"] = Roadside.home_spot(bike)

@@ -307,3 +307,81 @@ func test_wear_and_wet() -> void:
 	BikeShader.set_wet(0.0)
 	check(is_equal_approx(wet, 1.0) and is_zero_approx(float(BikeShader.material().get_shader_parameter("wet"))),
 		"the rain wets the bikes, and they dry again")
+
+
+## Rust in the new look (RustLook): drawn over a rusty part in its own pass in the shed, each
+## surface told how it rusts (steel, chrome, aluminium), none on the seat and tyres; merged into
+## the one bike shader on the road; and kept under the sandblaster's bare metal.
+func test_rust() -> void:
+	var cond := {}
+	for s in PartsDB.SLOTS:
+		cond[s] = {"rust": 0.6}
+	var build := BikeBuild.new(PartsDB.sanitize_build(Contracts.style_build("classic")))
+	var m := BikeModel.new()
+	m.look = BikeLook.NEW
+	t.add_child(m)
+	m.build_from(build, Color(0.7, 0.12, 0.1), {}, cond)
+	var finishes := {}
+	var bad := []
+	for slot in m._slot_meshes:
+		for mi in m._slot_meshes[slot]:
+			var b := (mi as GeometryInstance3D).material_override as BaseMaterial3D
+			if b == null:
+				continue
+			var level := RustLook.level_in(b.next_pass)
+			if level > 0:
+				finishes[int(b.next_pass.get_shader_parameter("finish"))] = true
+				if level != 6 or RustLook.NO_RUST.has(str(slot)):
+					bad.append(slot)
+	check(bad.is_empty() and finishes.has(BikeLookNew.Finish.PLAIN) and finishes.has(BikeLookNew.Finish.CHROME)
+		and finishes.has(BikeLookNew.Finish.ALLOY) and not finishes.has(BikeLookNew.Finish.RUBBER),
+		"a rusty bike in the shed has its rust drawn over each part, steel, chrome and alloy each their own way, the seat and tyres none %s %s" % [finishes.keys(), bad])
+	var shader_ok := RustLook.shader().get_rid().is_valid() and RustLook.PASS_CODE.contains("sane(")
+	check(shader_ok, "the rust pass never lets a NaN through")
+	m.free()
+	var road := BikeModel.new()
+	road.look = BikeLook.NEW
+	road.baked = true
+	t.add_child(road)
+	road.build_from(build, Color(0.7, 0.12, 0.1), {}, cond)
+	var rusty_verts := false
+	var passes := 0   # rust on a lens or glass
+	for mi in road.find_children("*", "MeshInstance3D", true, false):
+		var g := mi as MeshInstance3D
+		if g.material_override is BaseMaterial3D and RustLook.level_in(g.material_override.next_pass) > 0:
+			if (g.material_override as BaseMaterial3D).emission_enabled or g.name.contains("Glass"):
+				passes += 1
+		if g.material_override != BikeShader.material() or g.mesh == null:
+			continue
+		var c2 = g.mesh.surface_get_arrays(0)[Mesh.ARRAY_CUSTOM2]
+		if c2 is PackedFloat32Array:
+			for i in range(0, (c2 as PackedFloat32Array).size(), 4):
+				if is_equal_approx(c2[i + 2], 6.0):
+					rusty_verts = true
+					break
+	check(rusty_verts and passes == 0, "ridden past, the rust goes into the one bike shader with the rest, and never onto a lens or glass (%d)" % passes)
+	road.free()
+	# The sandblaster's pass goes over the rust, not in place of it.
+	var eng := BikeModel.new()
+	eng.look = BikeLook.NEW
+	t.add_child(eng)
+	eng.build_from(build, Color(0.7, 0.12, 0.1), {}, {"engine": {"rust": 0.6, "blast_full": true}})
+	var kept := false
+	for mi in eng._slot_meshes.get("engine", []):
+		var b := (mi as GeometryInstance3D).material_override as BaseMaterial3D
+		if b != null and RustLook.level_in(b.next_pass) > 0 and b.next_pass.next_pass is ShaderMaterial \
+				and (b.next_pass.next_pass as ShaderMaterial).shader == BlastMarks.shader():
+			kept = true
+	check(kept, "blasted bare metal is drawn over the rust, which stays where it was missed")
+	eng.free()
+	# The weather wets the muck too.
+	var dirty := BikeModel.new()
+	dirty.look = BikeLook.NEW
+	t.add_child(dirty)
+	dirty.build_from(build, Color(0.7, 0.12, 0.1), {}, {"front_tyre": {"dirt": 0.6}})
+	BikeShader.set_wet(1.0)
+	dirty.dirt_layer._process(0.1)
+	var rain := float(dirty.dirt_layer.material_for("front_tyre").get_shader_parameter("rain"))
+	BikeShader.set_wet(0.0)
+	check(is_equal_approx(rain, 1.0), "rain wets the mud on a bike as well as its paint")
+	dirty.free()
