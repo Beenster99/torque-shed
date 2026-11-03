@@ -23758,6 +23758,10 @@ func _test_fuel_shop_session() -> void:
 	await _fuel_shop().test_session()
 
 
+func _test_roadside_spanner() -> void:
+	_fuel_shop().test_spanner()
+
+
 # ---------------------------------------------------------------------------- the paper map (tests/adventure_routes_tests.gd)
 
 func _adv_routes() -> RefCounted:
