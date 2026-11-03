@@ -29,6 +29,12 @@ var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
 const BANNER_LIFE := 4.0
+## The route's-ready notice (route_notice): its headline, its line, whether it's good news, and how long it has left (s).
+var _route_title := ""
+var _route_line := ""
+var _route_ok := true
+var _route_time := 0.0
+const ROUTE_LIFE := 9.0
 ## The house marker shows between these distances (m) from your house.
 const HOME_MARKER_NEAR := 40.0
 const HOME_MARKER_FAR := 3000.0
@@ -124,6 +130,7 @@ func _process_body(delta: float) -> void:
 		p["age"] = float(p["age"]) + delta
 	popups = popups.filter(func(p): return float(p["age"]) < POPUP_LIFE)
 	_banner_time = maxf(0.0, _banner_time - delta)
+	_route_time = maxf(0.0, _route_time - delta)
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
 		_flash_raw = ""
@@ -203,6 +210,36 @@ func _draw() -> void:
 		_draw_level()
 		_draw_badges()
 		_draw_home_marker()
+	_draw_route_notice()
+
+
+## Puts up the route's-ready notice (see RouteReady): a banner across the screen with a chime, seen on foot, on a bike
+## or at the wheel of the truck. Any {action} in `line` shows that action's key.
+func route_notice(title: String, line: String, ok := true) -> void:
+	_route_title = title
+	_route_line = line
+	_route_ok = ok
+	_route_time = ROUTE_LIFE
+	Sfx.play_ui("ting" if ok else "beep", -2.0)
+	queue_redraw()
+
+
+## Whether the route's-ready notice is up, and what it says (the tests).
+func route_showing() -> String:
+	return _route_title if _route_time > 0.0 else ""
+
+
+func _draw_route_notice() -> void:
+	if _route_time <= 0.0:
+		return
+	var font := get_theme_default_font()
+	var a := clampf(_route_time / 0.8, 0.0, 1.0) * clampf((ROUTE_LIFE - _route_time) / 0.25, 0.0, 1.0)
+	var col := Color(UITheme.ACCENT, a) if _route_ok else Color(1, 0.55, 0.45, a)
+	var y := size.y * 0.2
+	draw_rect(Rect2(0, y - 46, size.x, 80), Color(0, 0, 0, 0.5 * a))
+	draw_rect(Rect2(0, y - 46, size.x, 3), col)
+	draw_string(font, Vector2(0, y), _route_title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 36, col)
+	draw_string(font, Vector2(0, y + 24), Controls.hint(_route_line), HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.9 * a))
 
 
 ## Where your house is (see Collection), top middle: how far, and an arrow pointing the way from
