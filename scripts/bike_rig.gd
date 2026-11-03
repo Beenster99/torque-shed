@@ -19,6 +19,9 @@ const LINES_PATH := "res://data/bike_lines.json"
 const TIER_BOLTS := "bolts on"
 const TIER_FAB := "fabricate"
 const TIER_NO := "won't fit"
+## The slots whose parts the rig's fit report reads (see part_fit): the engine and frame, the tank
+## over them, and the fork and front wheel that the engine has to clear.
+const RIG_SLOTS: Array[String] = ["frame", "engine", "tank", "fork", "front_wheel", "front_tyre"]
 ## The backbone's radius, which the tank's tunnel straddles (m).
 const SPINE_R := 0.03
 ## How far the barrels and head stand above the base of the barrel as drawn at full size (see
@@ -111,6 +114,44 @@ static func style_for(parts: Dictionary) -> String:
 		if lines().has(str(st)):
 			return str(st)
 	return "classic"
+
+
+## The fields of the seat line (4) a saddle of another style brings with it: its tail.
+const TAIL_KEYS: Array[String] = ["tail_u", "tail_rise_mm", "rail_deg"]
+
+
+## A bike's style brief: the lines it's laid out to (style_for's style), mixed where its parts are
+## of another style. A saddle that doesn't suit the style brings its own style's tail (a bobber
+## with a cafe seat gets the bobber's lines with a cafe tail). From the parts alone, so every
+## machine lays a bike out the same. {"style", "lines": the eight lines, "mixed": {what: style}}.
+static func brief(parts: Dictionary) -> Dictionary:
+	var style := style_for(parts)
+	var l: Dictionary = lines()[style]["lines"]
+	var mixed := {}
+	var saddle := str(parts.get("saddle", "none"))
+	var own: Array = PartsDB.styles_of(saddle) if saddle != "none" and saddle != "" else []
+	if not own.is_empty() and not own.has(style):
+		for st in own:
+			if lines().has(str(st)):
+				l = l.duplicate()
+				var seat: Dictionary = (l["4_seat"] as Dictionary).duplicate()
+				var theirs: Dictionary = lines()[str(st)]["lines"]["4_seat"]
+				for k in TAIL_KEYS:
+					if theirs.has(k):
+						seat[k] = theirs[k]
+				l["4_seat"] = seat
+				mixed["tail"] = str(st)
+				break
+	return {"style": style, "lines": l, "mixed": mixed}
+
+
+## A brief said for the configurator ("Laid out to a bobber's lines, with a cafe racer's tail.").
+static func brief_text(parts: Dictionary) -> String:
+	var b := brief(parts)
+	var out := "Laid out to %s's lines" % PartsDB.style_phrase(str(b["style"]))
+	if b["mixed"].has("tail"):
+		out += ", with %s's tail" % PartsDB.style_phrase(str(b["mixed"]["tail"]))
+	return out + "."
 
 
 ## Engine size relative to a 700 cc, as BikeModel draws it.
@@ -229,23 +270,60 @@ static func frame_rig(frame: Dictionary) -> Dictionary:
 	return r
 
 
+## Geometry mode's range handles (H5): what a builder could move on a solved bike, and how far.
+## The rig solves round them, so the rest of the bike follows. A bike keeps its own in its fit
+## (Shed.bikes[id].geo["rig"], see GeoGizmo.sanitize), so blueprints carry them too. Looks only:
+## the physics never see them.
+##   tank_up   the tank's mounts raised (mm)
+##   pegs      the pegs moved back along their plate (mm, forward is less than 0)
+##   hoop_up   the seat hoop raised at the tail (mm)
+##   hoop_deg  the seat hoop tipped up at the tail (degrees)
+const ADJUST := {
+	"tank_up": {"name": "Tank mounts up", "min": 0.0, "max": 30.0, "unit": "mm", "step": 1.0},
+	"pegs": {"name": "Pegs back along the plate", "min": -40.0, "max": 40.0, "unit": "mm", "step": 1.0},
+	"hoop_up": {"name": "Seat hoop height", "min": -20.0, "max": 40.0, "unit": "mm", "step": 1.0},
+	"hoop_deg": {"name": "Seat hoop angle", "min": -6.0, "max": 8.0, "unit": "°", "step": 0.5},
+}
+
+
+## A set of range handles as the rig takes them: known keys only, numbers within their ranges,
+## and none left at 0.
+static func clean_adjust(adj) -> Dictionary:
+	var out := {}
+	if not (adj is Dictionary):
+		return out
+	for k in ADJUST:
+		var v = adj.get(k)
+		if (v is float or v is int) and is_finite(float(v)) and absf(float(v)) > 0.0001:
+			out[k] = clampf(float(v), float(ADJUST[k]["min"]), float(ADJUST[k]["max"]))
+	return out
+
+
 ## The bike laid out in the Rig built look: datums in the model's space (see the lines agreement
-## for each key). Worked out once per set of parts and kept.
-static func solve(build: BikeBuild) -> Dictionary:
+## for each key), with geometry mode's range handles `adjust` (ADJUST). Worked out once per set of
+## parts and handles and kept.
+static func solve(build: BikeBuild, adjust := {}) -> Dictionary:
+	var adj := clean_adjust(adjust)
 	var key := JSON.stringify(build.parts) + "|%.4f|%.4f|%.4f|%.4f|%.4f|%s" % [build.wheelbase, build.rake_deg, build.fork_length, build.seat_height, build.rear_radius, RigBodywork.on]
+	if not adj.is_empty():
+		var ks := adj.keys()
+		ks.sort()
+		for k in ks:
+			key += "|%s=%.3f" % [k, float(adj[k])]
 	if _cache.has(key):
 		return _cache[key]
-	var r := _solve(build)
+	var r := _solve(build, adj)
 	if _cache.size() > 256:
 		_cache.clear()
 	_cache[key] = r
 	return r
 
 
-static func _solve(build: BikeBuild) -> Dictionary:
+static func _solve(build: BikeBuild, adj := {}) -> Dictionary:
 	var parts := build.parts
-	var style := style_for(parts)
-	var l: Dictionary = lines()[style]["lines"]
+	var br := brief(parts)
+	var style := str(br["style"])
+	var l: Dictionary = br["lines"]
 	var frame := PartsDB.get_part(str(parts.get("frame", "")))
 	var geo: Dictionary = frame.get("geo", {})
 	var family := str(frame.get("style", "cradle"))
@@ -415,6 +493,10 @@ static func _solve(build: BikeBuild) -> Dictionary:
 		a.y = maxf(b.y + max_rise, floor_a)
 		if a.y - b.y > max_rise:
 			b.y = a.y - max_rise
+	# Geometry mode's tank mounts, raised (ADJUST).
+	var tank_up := float(adj.get("tank_up", 0.0)) / 1000.0
+	a.y += tank_up
+	b.y += tank_up
 	var top := -INF
 	for i in 15:
 		var u := i / 14.0
@@ -437,6 +519,8 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	hip.z = maxf(hip.z, seat_front_z + 0.14)
 	var tail_z: float = at_u.call(float(t4["tail_u"]))
 	var tail := Vector3(0.0, seat_y - 0.02 + maxf(0.0, (tail_z - hip.z) * tan(rail)), tail_z)
+	# Geometry mode's seat hoop, raised and tipped at the tail (ADJUST); the tyre still wins below.
+	tail.y += float(adj.get("hoop_up", 0.0)) / 1000.0 + (tail_z - hip.z) * tan(deg_to_rad(float(adj.get("hoop_deg", 0.0))))
 	# The seat's back end clears the rear tyre with the shock fully home (a long-travel MX or
 	# supermoto tyre comes up a long way), with room for the fender between: the line from the
 	# seat's nose to the tail kicks up as far as that takes.
@@ -462,6 +546,8 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	peg.y = maxf(peg.y, ground + clear_min + 0.02)
 	# Forward controls reach no further than just ahead of the downtubes, which carry them.
 	peg.z = maxf(peg.z, crank.z - 0.17 * s - 0.2)
+	# Geometry mode's pegs, moved along their plate (ADJUST).
+	peg.z += float(adj.get("pegs", 0.0)) / 1000.0
 	var grip := Vector3(0.31, seat_y + float(t5["grip_mm"][1]) / 1000.0, hip.z - float(t5["grip_mm"][0]) / 1000.0)
 	var knee := _knee(hip + Vector3(0.0, 0.1, 0.0), peg)
 
@@ -517,18 +603,33 @@ static func _knee(hip: Vector3, peg: Vector3) -> Vector3:
 	return mid + fwd * rise
 
 
+## An engine layout as it's said ("V-twin", "inline four").
+static func layout_word(layout: String) -> String:
+	return str({"inline": "inline four", "vtwin": "V-twin", "parallel": "parallel twin", "mono": "single"}.get(layout, layout))
+
+
+## A frame family as it's said ("MX", "adventure").
+static func family_word(family: String) -> String:
+	return str({"mx": "MX", "adv": "adventure"}.get(family, family))
+
+
+## A word with "a" or "an" in front.
+static func _a(word: String) -> String:
+	return ("an " if word.left(1).to_lower() in ["a", "e", "i", "o", "u"] or word == "MX" else "a ") + word
+
+
 ## How the engine and frame go together: {tier, work: [what the shed makes], reason}.
 static func _fit(r: Dictionary, engine: Dictionary, family: String, front_clear: float) -> Dictionary:
 	var layout := str(engine.get("layout", "parallel"))
 	var cc := float(engine.get("displacement", 700.0))
 	var fam: Dictionary = FAMILY.get(family, FAMILY["cradle"])
 	if (NO_FIT.get(family, []) as Array).has(layout):
-		return {"tier": TIER_NO, "work": [], "reason": "a %s's cylinders can't pass through a %s frame" % [layout, family]}
+		return {"tier": TIER_NO, "work": [], "reason": "%s's cylinders can't pass through %s frame" % [_a(layout_word(layout)), _a(family_word(family))]}
 	if float(r["front_clear"]) < 0.0:
 		return {"tier": TIER_NO, "work": [], "reason": "the front tyre would hit the engine on full bump"}
 	var work := []
 	if not (fam["layouts"] as Array).has(layout):
-		work.append("engine mounts and cradle made for a %s" % layout)
+		work.append("engine mounts and cradle made for %s" % _a(layout_word(layout)))
 	if cc > float(fam["cc"]) + 0.5:
 		work.append("cradle widened and backbone stretched for %d cc" % roundi(cc))
 	if float(r["front_clear"]) < front_clear:
@@ -544,3 +645,93 @@ static func _fit(r: Dictionary, engine: Dictionary, family: String, front_clear:
 ## The fit report for a set of parts (see _fit).
 static func fit(build: BikeBuild) -> Dictionary:
 	return solve(build)["fit"]
+
+
+## What each job the fit report names takes the shed to make (FAB_WORK, matched on the start of
+## its words): hours at the bench for someone new to it, and the steel, welding gas and paint (£).
+const FAB_WORK := [
+	["engine mounts and cradle made for", 6.0, 380],
+	["cradle widened and backbone stretched", 8.0, 520],
+	["downtubes reshaped", 4.0, 240],
+	["raised tank mounts", 2.0, 110],
+]
+## For anything else the rig names.
+const FAB_OTHER := [3.0, 180]
+
+
+## The hours and cost of one job of fabrication the fit report named: {what, hours, cost}.
+static func fab_job(what: String) -> Dictionary:
+	for w in FAB_WORK:
+		if what.begins_with(str(w[0])):
+			return {"what": what, "hours": float(w[1]), "cost": int(w[2])}
+	return {"what": what, "hours": float(FAB_OTHER[0]), "cost": int(FAB_OTHER[1])}
+
+
+## How part `id` goes on a bike built of `parts` (slot -> part id) in place of what its `slot`
+## has now ("none" to take it off), the one call for anything that fits or takes off parts (the
+## configurator, the parts computer, the shed, the roadside spanner):
+##   {"tier": TIER_BOLTS, TIER_FAB or TIER_NO,
+##    "reason": why, in a sentence for the screen ("" when it bolts on),
+##    "work": [{what, hours, cost}], the fabrication it takes (TIER_FAB only)}
+## Fabrication the bike already needs, or the shed has already done (`done`, the jobs' "what"),
+## isn't put down to this part. Worked out from the parts alone, the same on every machine and
+## in either look.
+static func part_fit(parts: Dictionary, slot: String, id: String, done: Array = []) -> Dictionary:
+	var ok := {"tier": TIER_BOLTS, "reason": "", "work": []}
+	var no := func(why: String) -> Dictionary: return {"tier": TIER_NO, "reason": why, "work": []}
+	if not PartsDB.SLOT_KIND.has(slot):
+		return no.call("A bike has no %s." % slot)
+	var on := func(s: String) -> String: return str(parts.get(s, "none"))
+	var name := PartsDB.slot_name(slot).to_lower()
+	if id == "none" or id == "":
+		if on.call(slot) == "none":
+			return ok
+		if not PartsDB.may_be_empty(slot):
+			return no.call("A bike can't do without its %s." % name)
+		for s in PartsDB.SLOTS:
+			if s != slot and on.call(s) != "none" and PartsDB.part_mounts(s, on.call(s)).has(slot):
+				return no.call("The %s is mounted on it: take that off first." % PartsDB.slot_name(s).to_lower())
+		return ok
+	if PartsDB.get_part(id).is_empty() or PartsDB.kind_of(id) != str(PartsDB.SLOT_KIND[slot]):
+		return no.call("That isn't a %s." % name)
+	# A tyre has to go on its wheel, and a wheel take its tyre.
+	var wheel_of := {"front_tyre": "front_wheel", "rear_tyre": "rear_wheel"}
+	var tyre_of := {"front_wheel": "front_tyre", "rear_wheel": "rear_tyre"}
+	if wheel_of.has(slot) and on.call(wheel_of[slot]) != "none" and PartsDB.tyre_fit(id, on.call(wheel_of[slot])) != 0:
+		return no.call(PartsDB.tyre_fit_reason(id, on.call(wheel_of[slot])))
+	if tyre_of.has(slot) and on.call(tyre_of[slot]) != "none" and PartsDB.tyre_fit(on.call(tyre_of[slot]), id) != 0:
+		return no.call(PartsDB.tyre_fit_reason(on.call(tyre_of[slot]), id))
+	# The extras it hangs off (a fairing's headlight, fairing mirrors' fairing).
+	for m in PartsDB.part_mounts(slot, id):
+		if PartsDB.may_be_empty(str(m)) and on.call(str(m)) == "none":
+			return no.call("It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower())
+	# The engine, frame and the rest round them: the rig's fit report, with and without it.
+	if not slot in RIG_SLOTS or PartsDB.get_part(on.call("frame")).is_empty() or PartsDB.get_part(on.call("engine")).is_empty():
+		return ok
+	var after := parts.duplicate()
+	after[slot] = id
+	var now: Dictionary = fit(BikeBuild.new(parts))
+	var then: Dictionary = fit(BikeBuild.new(after))
+	if str(then["tier"]) == TIER_NO:
+		return no.call(str(then["reason"]).substr(0, 1).to_upper() + str(then["reason"]).substr(1) + ".")
+	var work := []
+	for what in then["work"]:
+		if not (now["work"] as Array).has(what) and not done.has(what):
+			work.append(fab_job(str(what)))
+	if work.is_empty():
+		return ok
+	var words := ", ".join(work.map(func(w): return str(w["what"])))
+	return {"tier": TIER_FAB, "reason": "Needs fabrication: %s." % words, "work": work}
+
+
+## part_fit for one of the shed's bikes as it stands (Shed.build_of), counting the fabrication
+## already done on it (its "fab_done").
+static func part_tier(bike_id: int, slot: String, part: String) -> Dictionary:
+	if not Shed.bikes.has(bike_id):
+		return {"tier": TIER_NO, "reason": "That bike has gone.", "work": []}
+	return part_fit(Shed.build_of(bike_id).parts, slot, part, Shed.bikes[bike_id].get("fab_done", []))
+
+
+## Whether `id` goes in `slot` on a bike built of `parts` with nothing made for it (part_fit).
+static func bolts_on(parts: Dictionary, slot: String, id: String, done: Array = []) -> bool:
+	return str(part_fit(parts, slot, id, done)["tier"]) == TIER_BOLTS

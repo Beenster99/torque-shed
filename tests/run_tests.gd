@@ -1031,6 +1031,10 @@ func _run_all() -> void:
 	await _t(&"_test_bike_rig_frame_numbers")
 	await _t(&"_test_bike_rig_fittings")
 	await _t(&"_test_bike_rig_reform")
+	await _t(&"_test_bike_rig_part_fit")
+	await _t(&"_test_bike_rig_fabricate")
+	await _t(&"_test_bike_rig_briefs")
+	await _t(&"_test_bike_rig_adjust")
 	await _t(&"_test_rig_body_on_rig")
 	await _t(&"_test_rig_body_deterministic")
 	await _t(&"_test_rig_body_fairings")
@@ -7347,6 +7351,22 @@ func _test_geometry_session() -> void:
 	var geo: GeometryMode = main.geometry
 	check(geo.active and geo.camera.current and w.process_mode == Node.PROCESS_MODE_DISABLED and not main.hud.visible,
 		"F2 opens geometry mode: its own camera, and the walker stands still")
+	# The Rig built look opens on the rig's range handles: the tank's mounts up 20 mm re-forms the
+	# bike (its tank higher), as a draft kept in the fit under "rig"; undo puts it back.
+	check(not geo.has_rig() or (not geo.free_move() and not geo._list_panel.visible and geo._rig_box.visible),
+		"in the Rig built look it opens on the range handles, free move behind the expert toggle")
+	if geo.has_rig():
+		var nose0: Vector3 = ws.bike_model(a).rig["tank_nose"]
+		geo.set_adjust("tank_up", 20.0)
+		await get_tree().process_frame
+		var nose1: Vector3 = ws.bike_model(a).rig["tank_nose"]
+		geo.select("tank")
+		check(absf(nose1.y - nose0.y - 0.02) < 0.002 and float(geo.draft["rig"]["tank_up"]) == 20.0 and geo.is_dirty() and geo.selected == "",
+			"a range handle re-solves the bike round it (tank nose up %.1f mm), and parts can't be grabbed without expert" % ((nose1.y - nose0.y) * 1000.0))
+		geo.undo()
+		await get_tree().process_frame
+		check(not geo.draft.has("rig") and not geo.is_dirty(), "undo takes the handle back")
+	geo.set_expert(true)
 	geo.select("tank")
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -16742,6 +16762,7 @@ func _test_geometry_list() -> void:
 	main.open_geometry()
 	var geo: GeometryMode = main.geometry
 	await get_tree().process_frame
+	geo.set_expert(true)
 	var slots := geo.pickable_slots()
 	check(geo._list_panel.visible and slots.has("tank") and slots.has("frame") and slots.has("front_wheel"), "geometry mode lists the bike's parts")
 	check(geo.part_buttons.size() == slots.size(), "a row for each part on it (%d)" % slots.size())
@@ -24420,6 +24441,22 @@ func _test_bike_rig_fittings() -> void:
 
 func _test_bike_rig_reform() -> void:
 	_bike_rig().test_reform()
+
+
+func _test_bike_rig_part_fit() -> void:
+	_bike_rig().test_part_fit()
+
+
+func _test_bike_rig_fabricate() -> void:
+	_bike_rig().test_fabricate()
+
+
+func _test_bike_rig_briefs() -> void:
+	_bike_rig().test_briefs()
+
+
+func _test_bike_rig_adjust() -> void:
+	_bike_rig().test_adjust()
 
 
 # ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)

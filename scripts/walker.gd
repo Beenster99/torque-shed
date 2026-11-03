@@ -1728,7 +1728,13 @@ func _make_plan() -> Dictionary:
 					p = {"action": {"a": "clean_many", "items": near}, "time": 1.0 + minf(2.5 * dirt, 5.0),
 						"verb": "scrub it clean" if near.size() == 1 else "scrub %d parts clean" % near.size()}
 		"repair":
-			if item_id != 0:
+			var fab_bike := int(target.get("bike", 0)) if kind == "part" else 0
+			if fab_bike != 0 and not Shed.fab_owed(fab_bike).is_empty():
+				# A bike that owes fabrication (a part fitted that needed it): make the next job.
+				var job: Dictionary = Shed.fab_owed(fab_bike)[0]
+				p = {"action": {"a": "fabricate", "bike": fab_bike}, "time": Shed.fab_time(job),
+					"verb": "make the %s (%s of steel and gas)" % [str(job["what"]), TvChannels.money_text(int(job["cost"]))]}
+			elif item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				var batch: Array = Shed.repair_batch(str(it["ref"])) if it["at"] == "spot" else []
 				if batch.size() > 1:
@@ -3701,7 +3707,7 @@ func _activity_text() -> String:
 		"take": "Picking up a part",
 		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk", "sales_pc": "At the sales PC",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
-		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
+		"repair_many": "Restoring parts on", "fabricate": "Fabricating on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
 		"toolbox_pack": "Packing a toolbox"}
 	var verb: String = verbs.get(a["a"], "Working on")
