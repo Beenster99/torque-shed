@@ -14452,7 +14452,10 @@ func _test_detail_pass() -> void:
 	rusty.build_from(BikeBuild.new({}), Color.RED, {}, cond)
 	made.append(rusty)
 	var case_mat: StandardMaterial3D = (rusty.find_children("Crankcase", "", true, false)[0] as MeshInstance3D).material_override
-	check(case_mat.detail_enabled and case_mat.normal_texture == null, "a rusty case shows its rust rather than its finish")
+	if BikeLook.is_new(rusty):
+		check(RustLook.level_in(case_mat.next_pass) == 6, "a rusty case has its rust drawn over its finish")
+	else:
+		check(case_mat.detail_enabled and case_mat.normal_texture == null, "a rusty case shows its rust rather than its finish")
 	for m in made:
 		m.free()
 
@@ -24436,6 +24439,10 @@ func _test_bike_look_finishes() -> void:
 
 func _test_bike_look_wear() -> void:
 	_bike_look().test_wear_and_wet()
+
+
+func _test_bike_look_rust() -> void:
+	_bike_look().test_rust()
 
 
 ## Not in the suite: records the Classic bikes again (see bike_look_tests.gd).

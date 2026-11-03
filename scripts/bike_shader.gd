@@ -9,8 +9,8 @@ class_name BikeShader
 ##
 ## Per vertex: CUSTOM0 = albedo (sRGB) and metallic; CUSTOM1 = roughness, clear coat, clear
 ## coat roughness and the surface texture's depth; CUSTOM2 = the surface texture (a layer of
-## the kit arrays, or -1), its repeats per metre, and the rust: its level 1..10 for rust mixed
-## in, minus 5 for patina multiplied in, 0 for none; CUSTOM3 = the finish (BikeLookNew.Finish)
+## the kit arrays, or -1), its repeats per metre, and the rust: its level 1..10 for rust (drawn
+## as RustLook has it), minus 5 for patina multiplied in, 0 for none; CUSTOM3 = the finish (BikeLookNew.Finish)
 ## and how hot an exhaust header runs there, 0..1, how worn the part is, 0..1, and the brake dust
 ## on it, 0..1.
 ##
@@ -33,7 +33,6 @@ uniform sampler2DArray kit_normal : hint_normal, filter_linear_mipmap, repeat_en
 uniform sampler2DArray kit_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2DArray kit_rough : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform sampler2D rust_noise : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform sampler2D rust_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D patina_albedo : source_color, filter_linear_mipmap, repeat_enable;
 // Converted to linear the way this renderer converts a material's own albedo colour, or not:
 // the vertices' sRGB colours follow suit (see to_linear).
@@ -124,6 +123,8 @@ float rust_mask(float edge) {
 	m += ramp(texture(rust_noise, tri_pos.zy * vec2(-1.0, 1.0)).r, lo, hi) * tri_w.x;
 	return m;
 }
+
+//RUST_GLSL
 
 void vertex() {
 	c0 = CUSTOM0;
@@ -234,19 +235,24 @@ void fragment() {
 		albedo = mix(albedo, heat_tint(t) * max(max(albedo.r, albedo.g), albedo.b), k * 0.85);
 		rough = mix(rough, rough + 0.12, k);
 	}
-	if (c2.z != 0.0) {
-		// Rust creeping in as patches (BikeModel._rust_mask's ramp over the same noise), or
-		// faded patina multiplied over the paint.
-		float level = abs(c2.z);
-		float edge = 1.0 - level / 10.0 * 0.85;
+	if (c2.z > 0.0) {
+		// Rust (RustLook): raised, pitted patches, blistered paint round them and run-off below.
+		float r_rough;
+		float r_h;
+		// (Dark metal is steel, not aluminium: see RustLook.finish_for.)
+		int rf = (f == 4 || f == 5) && dot(c0.rgb, vec3(0.2126, 0.7152, 0.0722)) < 0.6 ? 0 : f;
+		vec4 r = rust_surface(c2.z, rf, obj_pos, tri_w, r_rough, r_h);
+		albedo = mix(albedo, to_linear(r.rgb), r.a);
+		rough = mix(rough, r_rough, r.a);
+		metal = mix(metal, 0.0, r.a);
+		coat *= 1.0 - r.a;
+		NORMAL = rust_bump(NORMAL, VERTEX, r_h * 0.0008);
+	} else if (c2.z < 0.0) {
+		// Faded patina multiplied over the paint, in patches (BikeModel._rust_mask's ramp).
+		float edge = 1.0 - abs(c2.z) / 10.0 * 0.85;
 		float mask = rust_mask(edge);
-		if (c2.z > 0.0) {
-			vec4 d = tri2(rust_albedo);
-			albedo = mix(albedo, mix(albedo, d.rgb, d.a), mask);
-		} else {
-			vec4 d = tri2(patina_albedo);
-			albedo = mix(albedo, mix(albedo, albedo * d.rgb, d.a), mask);
-		}
+		vec4 d = tri2(patina_albedo);
+		albedo = mix(albedo, mix(albedo, albedo * d.rgb, d.a), mask);
 	}
 	if (wet > 0.01) {
 		// Rain: everything glossier, porous rubber, leather and fabric darker, most on the tops
@@ -276,7 +282,7 @@ static func material() -> ShaderMaterial:
 	if _material != null:
 		return _material
 	var shader := Shader.new()
-	shader.code = SHADER
+	shader.code = SHADER.replace("//RUST_GLSL", RustLook.GLSL)
 	_material = ShaderMaterial.new()
 	_material.shader = shader
 	var normals: Array[Image] = []
@@ -296,7 +302,6 @@ static func material() -> ShaderMaterial:
 		arr.create_from_images(pair[1])
 		_material.set_shader_parameter(pair[0], arr)
 	_material.set_shader_parameter("rust_noise", rust_noise())
-	_material.set_shader_parameter("rust_albedo", BikeModel._rust_texture())
 	_material.set_shader_parameter("patina_albedo", BikeModel._patina_texture())
 	_material.set_shader_parameter("min_roughness", BikeModel.MIN_ROUGHNESS)
 	_material.set_shader_parameter("min_clearcoat_roughness", BikeModel.MIN_CLEARCOAT_ROUGHNESS)

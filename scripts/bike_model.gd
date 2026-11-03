@@ -401,6 +401,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
 	set_lights(false, false)
+	if BikeLook.is_new(self):
+		_settle_rust()
 	# The new look folds the bike into far fewer meshes, all drawn by the one bike shader (see BikeLook).
 	baked_away = (BikeLookNew.bake(self) if BikeLook.is_new(self) else _bake_static()) if baked else 0
 	_floor_shine()
@@ -535,6 +537,55 @@ func ensure_dirt_layer() -> DirtLayer:
 		add_child(dirt_layer)
 		dirt_layer.setup(self, {})
 	return dirt_layer
+
+
+## The new look's rust passes (see RustLook) told what each surface they're on is, now it's
+## finished: steel and paint rust, chrome pits, aluminium blooms white, and rubber, leather and
+## carbon lose theirs, as do lenses and glass.
+func _settle_rust() -> void:
+	var kits := BikeLookNew._kit_textures()
+	var seen := {}
+	var lamps := {}
+	for l in _lamps:
+		lamps[l["mat"]] = true
+	var stack: Array[Node] = [self]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		var g := n as GeometryInstance3D
+		if g == null:
+			continue
+		var glass := g.has_meta("mirror_glass")
+		var mats: Array = [g.material_override]
+		var mi := g as MeshInstance3D
+		if mi != null and mi.mesh != null:
+			for si in mi.mesh.get_surface_count():
+				mats.append(mi.get_surface_override_material(si))
+				mats.append(mi.mesh.surface_get_material(si))
+		for mat in mats:
+			var b := mat as BaseMaterial3D
+			if b == null or seen.has(b) or RustLook.level_in(b.next_pass) == 0:
+				continue
+			if glass:
+				b.next_pass = b.next_pass.next_pass   # (a mirror's own copy: see BikeMirrors)
+				continue
+			seen[b] = true
+			if b.emission_enabled or b.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or lamps.has(b):
+				b.next_pass = b.next_pass.next_pass   # lenses, glass and lit faces don't rust
+				continue
+			var kit := ""
+			for t in [b.normal_texture if b.normal_enabled else null, b.albedo_texture, b.roughness_texture]:
+				if t != null and kits.has(t):
+					kit = str(kits[t][0])
+			var finish := RustLook.finish_for(b.albedo_color, BikeLookNew.finish_of(b.albedo_color, b.metallic,
+				b.roughness, b.clearcoat if b.clearcoat_enabled else 0.0, kit))
+			var level := RustLook.level_in(b.next_pass)
+			var rest: Material = b.next_pass.next_pass
+			var over := RustLook.pass_for(level, finish)
+			if over != null and rest != null:
+				over = over.duplicate() as ShaderMaterial
+				over.next_pass = rest
+			b.next_pass = over if over != null else rest
 
 
 ## Keeps every surface of the bike at least MIN_ROUGHNESS rough (and its clear coat
@@ -7245,6 +7296,7 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	# reads black in a low warm sun. A little less specular than the default keeps the sunset's
 	# glow off the sidewalls.
 	rubber.detail_enabled = false
+	rubber.next_pass = null
 	rubber.albedo_color = _col()
 	rubber.roughness = 0.88
 	rubber.metallic = 0.0
@@ -9832,7 +9884,18 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 		roughness = m.roughness
 	# Road dirt isn't tinted in: it's drawn over the part where it really is (see DirtLayer).
 	var rust := float(cond.get("rust", 0.0))
-	if rust > 0.05:
+	if rust > 0.05 and BikeLook.is_new(self):
+		# The new look: rust drawn over the part in its own pass (RustLook), patch by patch, so
+		# the rest of the surface keeps its finish. Rubber, leather and plastic parts don't rust.
+		if not RustLook.NO_RUST.has(_current_slot):
+			# (As plain steel for now: the surface is finished off after this, so which way it rusts
+			# is settled once the bike's drawn, see _settle_rust.)
+			var over := RustLook.pass_for(RustLook.level_of(rust), BikeLookNew.Finish.PLAIN)
+			if m.next_pass != null:
+				over = over.duplicate() as ShaderMaterial
+				over.next_pass = m.next_pass
+			m.next_pass = over
+	elif rust > 0.05:
 		# Rust creeps in as patches: a blotchy mask that grows with the rust level.
 		m.detail_enabled = true
 		m.detail_mask = _rust_mask(rust)
