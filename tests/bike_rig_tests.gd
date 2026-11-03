@@ -439,3 +439,29 @@ func test_briefs() -> void:
 		and float(seat["tail_u"]) == float(cafe_tail["tail_u"]) and float(seat["front_u"]) == float(bob_seat["front_u"])
 		and text.contains("cafe racer's tail") and not BikeRig.solve(BikeBuild.new(bob)).is_empty(),
 		"style briefs: stock bikes keep their own lines, a cafe seat on a bobber brings its tail (%s; %s) %s" % [cafe_seat, text, off])
+
+
+## Geometry mode's range handles: kept in a bike's fit under "rig", in range, and the rig solves
+## round them (the tank's mounts up, the pegs back, the seat hoop up); a blueprint carries them,
+## and an old fit or blueprint without any is laid out as before.
+func test_adjust() -> void:
+	var geo := GeoGizmo.sanitize({"rig": {"tank_up": 99.0, "pegs": -12.0, "hoop_up": 0.0, "junk": 5.0, "hoop_deg": NAN},
+		"tank": {"p": Vector3(0.0, 0.01, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	var adj: Dictionary = geo.get("rig", {})
+	var parts: Dictionary = PartsDB.sanitize_build(Contracts.style_build("cafe"))
+	var b := BikeBuild.new(parts)
+	var r0 := BikeRig.solve(b)
+	var r1 := BikeRig.solve(b, {"tank_up": 20.0, "pegs": 30.0, "hoop_up": 25.0})
+	var up := ((r1["tank_nose"] as Vector3).y - (r0["tank_nose"] as Vector3).y) * 1000.0
+	var back := ((r1["peg"] as Vector3).z - (r0["peg"] as Vector3).z) * 1000.0
+	var tail := ((r1["tail"] as Vector3).y - (r0["tail"] as Vector3).y) * 1000.0
+	var same := BikeRig.solve(b, {}) == r0 and BikeRig.solve(b, {"tank_up": 0.0}) == r0
+	Shed.start_new("Tester", 61)
+	var plan := {"parts": parts, "colors": {}, "paint": Shed.PAINTS[0], "geo": geo}
+	var bp := Shed.store_blueprint("Handles", plan)
+	var kept: Dictionary = GeoGizmo.sanitize(Shed.blueprints[bp]["geo"]).get("rig", {})
+	var old := GeoGizmo.sanitize({"tank": {"p": Vector3(0.0, 0.01, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	t.check(adj == {"tank_up": 30.0, "pegs": -12.0} and geo.has("tank") and absf(up - 20.0) < 0.5 and absf(back - 30.0) < 0.5
+		and tail >= 24.5 and same and kept == adj and not old.has("rig"),
+		"range handles: kept in range (%s), the rig solves round them (tank +%.1f mm, pegs back %.1f mm, tail +%.1f mm), blueprints carry them (%s)"
+		% [adj, up, back, tail, kept])

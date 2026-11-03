@@ -270,20 +270,56 @@ static func frame_rig(frame: Dictionary) -> Dictionary:
 	return r
 
 
+## Geometry mode's range handles (H5): what a builder could move on a solved bike, and how far.
+## The rig solves round them, so the rest of the bike follows. A bike keeps its own in its fit
+## (Shed.bikes[id].geo["rig"], see GeoGizmo.sanitize), so blueprints carry them too. Looks only:
+## the physics never see them.
+##   tank_up   the tank's mounts raised (mm)
+##   pegs      the pegs moved back along their plate (mm, forward is less than 0)
+##   hoop_up   the seat hoop raised at the tail (mm)
+##   hoop_deg  the seat hoop tipped up at the tail (degrees)
+const ADJUST := {
+	"tank_up": {"name": "Tank mounts up", "min": 0.0, "max": 30.0, "unit": "mm", "step": 1.0},
+	"pegs": {"name": "Pegs back along the plate", "min": -40.0, "max": 40.0, "unit": "mm", "step": 1.0},
+	"hoop_up": {"name": "Seat hoop height", "min": -20.0, "max": 40.0, "unit": "mm", "step": 1.0},
+	"hoop_deg": {"name": "Seat hoop angle", "min": -6.0, "max": 8.0, "unit": "°", "step": 0.5},
+}
+
+
+## A set of range handles as the rig takes them: known keys only, numbers within their ranges,
+## and none left at 0.
+static func clean_adjust(adj) -> Dictionary:
+	var out := {}
+	if not (adj is Dictionary):
+		return out
+	for k in ADJUST:
+		var v = adj.get(k)
+		if (v is float or v is int) and is_finite(float(v)) and absf(float(v)) > 0.0001:
+			out[k] = clampf(float(v), float(ADJUST[k]["min"]), float(ADJUST[k]["max"]))
+	return out
+
+
 ## The bike laid out in the Rig built look: datums in the model's space (see the lines agreement
-## for each key). Worked out once per set of parts and kept.
-static func solve(build: BikeBuild) -> Dictionary:
+## for each key), with geometry mode's range handles `adjust` (ADJUST). Worked out once per set of
+## parts and handles and kept.
+static func solve(build: BikeBuild, adjust := {}) -> Dictionary:
+	var adj := clean_adjust(adjust)
 	var key := JSON.stringify(build.parts) + "|%.4f|%.4f|%.4f|%.4f|%.4f|%s" % [build.wheelbase, build.rake_deg, build.fork_length, build.seat_height, build.rear_radius, RigBodywork.on]
+	if not adj.is_empty():
+		var ks := adj.keys()
+		ks.sort()
+		for k in ks:
+			key += "|%s=%.3f" % [k, float(adj[k])]
 	if _cache.has(key):
 		return _cache[key]
-	var r := _solve(build)
+	var r := _solve(build, adj)
 	if _cache.size() > 256:
 		_cache.clear()
 	_cache[key] = r
 	return r
 
 
-static func _solve(build: BikeBuild) -> Dictionary:
+static func _solve(build: BikeBuild, adj := {}) -> Dictionary:
 	var parts := build.parts
 	var br := brief(parts)
 	var style := str(br["style"])
@@ -457,6 +493,10 @@ static func _solve(build: BikeBuild) -> Dictionary:
 		a.y = maxf(b.y + max_rise, floor_a)
 		if a.y - b.y > max_rise:
 			b.y = a.y - max_rise
+	# Geometry mode's tank mounts, raised (ADJUST).
+	var tank_up := float(adj.get("tank_up", 0.0)) / 1000.0
+	a.y += tank_up
+	b.y += tank_up
 	var top := -INF
 	for i in 15:
 		var u := i / 14.0
@@ -479,6 +519,8 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	hip.z = maxf(hip.z, seat_front_z + 0.14)
 	var tail_z: float = at_u.call(float(t4["tail_u"]))
 	var tail := Vector3(0.0, seat_y - 0.02 + maxf(0.0, (tail_z - hip.z) * tan(rail)), tail_z)
+	# Geometry mode's seat hoop, raised and tipped at the tail (ADJUST); the tyre still wins below.
+	tail.y += float(adj.get("hoop_up", 0.0)) / 1000.0 + (tail_z - hip.z) * tan(deg_to_rad(float(adj.get("hoop_deg", 0.0))))
 	# The seat's back end clears the rear tyre with the shock fully home (a long-travel MX or
 	# supermoto tyre comes up a long way), with room for the fender between: the line from the
 	# seat's nose to the tail kicks up as far as that takes.
@@ -504,6 +546,8 @@ static func _solve(build: BikeBuild) -> Dictionary:
 	peg.y = maxf(peg.y, ground + clear_min + 0.02)
 	# Forward controls reach no further than just ahead of the downtubes, which carry them.
 	peg.z = maxf(peg.z, crank.z - 0.17 * s - 0.2)
+	# Geometry mode's pegs, moved along their plate (ADJUST).
+	peg.z += float(adj.get("pegs", 0.0)) / 1000.0
 	var grip := Vector3(0.31, seat_y + float(t5["grip_mm"][1]) / 1000.0, hip.z - float(t5["grip_mm"][0]) / 1000.0)
 	var knee := _knee(hip + Vector3(0.0, 0.1, 0.0), peg)
 
