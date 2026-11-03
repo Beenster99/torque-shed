@@ -324,3 +324,144 @@ func test_reform() -> void:
 	check(c._reform.is_empty() and d._reform.is_empty() and e._reform.is_empty(), "the same rig, Classic, or another frame doesn't morph")
 	for m in [a, b, c, d, e]:
 		m.queue_free()
+
+
+## The one fit call (BikeRig.part_fit, H5): every stock bike's own parts bolt on, and every
+## optional one comes off; a bike can't lose its tank; a boxer won't go through an MX frame's
+## loops; an inline four in a V-twin's softail needs fabrication, named and priced; a bike that
+## comes built from the configurator has its fabrication on the price and a stock one has none.
+func test_part_fit() -> void:
+	var off := []
+	for style in PartsDB.STYLES:
+		var parts: Dictionary = PartsDB.sanitize_build(Contracts.style_build(style))
+		for slot in PartsDB.SLOTS:
+			var id := str(parts.get(slot, "none"))
+			var f := BikeRig.part_fit(parts, slot, id)
+			if str(f["tier"]) != BikeRig.TIER_BOLTS:
+				off.append("%s %s %s: %s" % [style, slot, id, f["reason"]])
+			if id != "none" and PartsDB.may_be_empty(slot) and not PartsDB.SLOTS.any(func(s): return s != slot and str(parts.get(s, "none")) != "none" \
+					and PartsDB.part_mounts(s, str(parts[s])).has(slot)):
+				var off_f := BikeRig.part_fit(parts, slot, "none")
+				if str(off_f["tier"]) != BikeRig.TIER_BOLTS:
+					off.append("%s: taking off its %s %s" % [style, slot, off_f["reason"]])
+		if not BikeShop.fab_work(parts, style).is_empty():
+			off.append("%s: stock bike owes fabrication" % style)
+	var road: Dictionary = PartsDB.sanitize_build(Contracts.style_build("classic"))
+	var tank := BikeRig.part_fit(road, "tank", "none")
+	var mx: Dictionary = PartsDB.sanitize_build(Contracts.style_build("mx"))
+	mx["frame"] = "mx_twin_loop"
+	var boxer := BikeRig.part_fit(mx, "engine", "boxer_600")
+	var soft: Dictionary = PartsDB.sanitize_build(Contracts.style_build("bobber"))
+	soft["frame"] = "softail_hardtail"
+	var four := BikeRig.part_fit(soft, "engine", "four_1000")
+	var priced: bool = not (four["work"] as Array).is_empty() and (four["work"] as Array).all(func(w): return float(w["hours"]) > 0.0 and int(w["cost"]) > 0)
+	var after := soft.duplicate()
+	after["engine"] = "four_1000"
+	var plan := {"parts": after}
+	var with_fab: Array = BikeCopy.lines(plan, 1, 1.0, true).filter(func(r): return str(r["slot"]) == "fab")
+	var stock_fab: Array = BikeCopy.lines({"parts": soft}, 1, 1.0, true).filter(func(r): return str(r["slot"]) == "fab")
+	var same := BikeRig.part_fit(soft, "engine", "four_1000") == four
+	t.check(off.is_empty() and str(tank["tier"]) == BikeRig.TIER_NO and str(tank["reason"]) != "" and str(boxer["tier"]) == BikeRig.TIER_NO
+		and str(four["tier"]) == BikeRig.TIER_FAB and str(four["reason"]).begins_with("Needs fabrication") and priced
+		and not with_fab.is_empty() and stock_fab.is_empty() and same,
+		"parts bolt on, need fabrication (named and priced) or won't fit, by the rig (tank off: %s; boxer in MX loops: %s; four in a softail: %s %s; fab rows %d) %s"
+		% [tank["reason"], boxer["reason"], four["tier"], four["reason"], with_fab.size(), off.slice(0, 8)])
+
+
+## Fabrication as a shed job: a four fitted to a softail goes on, the bike owes the jobs and won't
+## ride; the grinder and welder makes them one by one, from the business's money, for XP; then it
+## rides. A bike delivered built owes nothing.
+func test_fabricate() -> void:
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	var soft: Dictionary = PartsDB.sanitize_build(Contracts.style_build("bobber"))
+	soft["frame"] = "softail_hardtail"
+	var bay := Shed.free_bay(Workshop.bay_count())
+	var bike := Shed._new_bike(soft, bay, "Fab test", 0.0)
+	# Its own engine out, and in its place a four with all its bits on (the stock one's).
+	var engine := Shed._detach(bike, "engine", "held", me)
+	Shed.items[engine]["part"] = "four_1000"
+	var fit_why := Shed.check(me, {"a": "install", "bike": bike, "slot": "engine", "crouched": true})
+	Shed.request({"a": "install", "bike": bike, "slot": "engine", "crouched": true})
+	var owed := Shed.fab_owed(bike)
+	var whats: Array = owed.map(func(j): return str(j["what"]))
+	for slot in PartsDB.SLOTS:
+		if Shed.item_on(bike, slot) != 0 and not Shed.is_bolted(bike, slot):
+			Shed.request({"a": "bolt", "bike": bike, "slot": slot, "crouched": true})
+	var for_engine := Shed.item_on(bike, "engine") == engine
+	var mount_why := Shed.check(me, {"a": "mount", "bike": bike})
+	var cost: int = owed.reduce(func(s, j): return s + int(j["cost"]), 0)
+	var money_was := Shed.garage_money
+	Shed.garage_money = cost
+	var made := 0
+	for i in owed.size() + 1:
+		if Shed.check(me, {"a": "fabricate", "bike": bike}) == "":
+			Shed.request({"a": "fabricate", "bike": bike})
+			made += 1
+	var after := Shed.check(me, {"a": "fabricate", "bike": bike})
+	var done: Array = Shed.bikes[bike].get("fab_done", [])
+	var ride_why := Shed.check(me, {"a": "mount", "bike": bike})
+	Shed.garage_money = money_was
+	var built := Shed.deliver_ready_bike({"parts": PartsDB.sanitize_build(Contracts.style_build("bobber")).merged(
+		{"frame": "softail_hardtail", "engine": "four_1000"}, true), "name": "Works built"}, Shed.ready_bike_place(), 0, "Tester")
+	t.check(fit_why == "" and for_engine and not owed.is_empty() and mount_why.contains("fabrication")
+		and made == owed.size() and Shed.fab_owed(bike).is_empty() and Shed.garage_money == money_was and done == whats
+		and after != "" and not ride_why.contains("fabrication") and Shed.fab_owed(built).is_empty() and not (Shed.bikes[built].get("fab_done", []) as Array).is_empty()
+		and Progress.XP.has("fabricate") and Progress.PAY.has("fabricate"),
+		"a part that needs fabrication goes on, and the bike owes it until it's made (%s; owed %s, £%d; mount: %s; made %d; then: %s / %s; works built owes %s)"
+		% [fit_why, whats, cost, mount_why, made, after, ride_why, Shed.fab_owed(built)])
+
+
+## Style briefs: every stock bike is laid out to its own style's lines, unmixed; a bobber with a
+## cafe seat keeps the bobber's lines but takes the cafe's tail, and says so.
+func test_briefs() -> void:
+	var off := []
+	for style in PartsDB.STYLES:
+		var parts: Dictionary = PartsDB.sanitize_build(Contracts.style_build(style))
+		var b := BikeRig.brief(parts)
+		if not (b["mixed"] as Dictionary).is_empty():
+			off.append("%s mixes %s" % [style, b["mixed"]])
+		elif b["lines"] != BikeRig.lines()[str(b["style"])]["lines"]:
+			off.append("%s lines differ" % style)
+	var bob: Dictionary = PartsDB.sanitize_build(Contracts.style_build("bobber"))
+	var cafe_seat := ""
+	for id in PartsDB.by_kind["saddle"]:
+		if PartsDB.styles_of(str(id)) == ["cafe"]:
+			cafe_seat = str(id)
+			break
+	bob["saddle"] = cafe_seat
+	var mix := BikeRig.brief(bob)
+	var seat: Dictionary = mix["lines"]["4_seat"]
+	var bob_seat: Dictionary = BikeRig.lines()[str(mix["style"])]["lines"]["4_seat"]
+	var cafe_tail: Dictionary = BikeRig.lines()["cafe"]["lines"]["4_seat"]
+	var text := BikeRig.brief_text(bob)
+	t.check(off.is_empty() and cafe_seat != "" and str(mix["mixed"].get("tail", "")) == "cafe"
+		and float(seat["tail_u"]) == float(cafe_tail["tail_u"]) and float(seat["front_u"]) == float(bob_seat["front_u"])
+		and text.contains("cafe racer's tail") and not BikeRig.solve(BikeBuild.new(bob)).is_empty(),
+		"style briefs: stock bikes keep their own lines, a cafe seat on a bobber brings its tail (%s; %s) %s" % [cafe_seat, text, off])
+
+
+## Geometry mode's range handles: kept in a bike's fit under "rig", in range, and the rig solves
+## round them (the tank's mounts up, the pegs back, the seat hoop up); a blueprint carries them,
+## and an old fit or blueprint without any is laid out as before.
+func test_adjust() -> void:
+	var geo := GeoGizmo.sanitize({"rig": {"tank_up": 99.0, "pegs": -12.0, "hoop_up": 0.0, "junk": 5.0, "hoop_deg": NAN},
+		"tank": {"p": Vector3(0.0, 0.01, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	var adj: Dictionary = geo.get("rig", {})
+	var parts: Dictionary = PartsDB.sanitize_build(Contracts.style_build("cafe"))
+	var b := BikeBuild.new(parts)
+	var r0 := BikeRig.solve(b)
+	var r1 := BikeRig.solve(b, {"tank_up": 20.0, "pegs": 30.0, "hoop_up": 25.0})
+	var up := ((r1["tank_nose"] as Vector3).y - (r0["tank_nose"] as Vector3).y) * 1000.0
+	var back := ((r1["peg"] as Vector3).z - (r0["peg"] as Vector3).z) * 1000.0
+	var tail := ((r1["tail"] as Vector3).y - (r0["tail"] as Vector3).y) * 1000.0
+	var same := BikeRig.solve(b, {}) == r0 and BikeRig.solve(b, {"tank_up": 0.0}) == r0
+	Shed.start_new("Tester", 61)
+	var plan := {"parts": parts, "colors": {}, "paint": Shed.PAINTS[0], "geo": geo}
+	var bp := Shed.store_blueprint("Handles", plan)
+	var kept: Dictionary = GeoGizmo.sanitize(Shed.blueprints[bp]["geo"]).get("rig", {})
+	var old := GeoGizmo.sanitize({"tank": {"p": Vector3(0.0, 0.01, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	t.check(adj == {"tank_up": 30.0, "pegs": -12.0} and geo.has("tank") and absf(up - 20.0) < 0.5 and absf(back - 30.0) < 0.5
+		and tail >= 24.5 and same and kept == adj and not old.has("rig"),
+		"range handles: kept in range (%s), the rig solves round them (tank +%.1f mm, pegs back %.1f mm, tail +%.1f mm), blueprints carry them (%s)"
+		% [adj, up, back, tail, kept])
