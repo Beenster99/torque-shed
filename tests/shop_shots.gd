@@ -48,7 +48,6 @@ func _ready() -> void:
 		# (and click the headings open, in case they aren't folding containers)
 		for c in picker.find_children("*", "Button", true, false) + _all(picker):
 			if c is Button and str((c as Button).text) in ["Swatches", "Recent Colors"] and not (c as Button).button_pressed:
-				(c as Button).toggle_mode = (c as Button).toggle_mode
 				(c as Button).pressed.emit()
 				if (c as Button).toggle_mode:
 					(c as Button).button_pressed = true
@@ -77,8 +76,6 @@ func _ready() -> void:
 				if (c as Button).toggle_mode:
 					(c as Button).button_pressed = true
 		await _frames(10)
-		var pp := cp.get_popup()
-		print("DBG pop ", pp.position, pp.size, " min ", cp.get_picker().get_combined_minimum_size(), " contents ", pp.get_contents_minimum_size(), " max ", pp.max_size, " wrap ", pp.wrap_controls)
 		await _shot("03b_mudguard_popup_open")
 		cp.get_popup().hide()
 	await _frames(5)
