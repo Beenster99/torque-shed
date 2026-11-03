@@ -749,6 +749,7 @@ func _run_all() -> void:
 	await _t(&"_test_realism_launches")
 	await _t(&"_test_realism_stops")
 	await _t(&"_test_realism_corners")
+	await _t(&"_test_realism_hills")
 	print("Riding controls (v0.18.0): the new pad layout, the tow on T, the clutch, nod and wave, look back, LB + RB to start")
 	await _t(&"_test_controls_layout")
 	await _t(&"_test_controls_clutch")
@@ -1202,6 +1203,50 @@ func ride(build: Dictionary, seconds: float, drive: Callable, surf := "tarmac") 
 			if OS.get_cmdline_user_args().has("--fine"):
 				print("      load=%.0f/%.0f mu=%.2f/%.2f gx=%.2f/%.2f" % [bike.wheels[0]["load"], bike.wheels[1]["load"],
 					bike.wheels[0]["mu"], bike.wheels[1]["mu"], bike.wheels[0]["gx"], bike.wheels[1]["gx"]])
+	return result
+
+
+## Like ride(), but on tarmac tilted up a `grade` (rise over run) ahead of the bike, which starts on
+## it at `start_v` m/s (the wheels rolling to match).
+func ride_slope(build: Dictionary, seconds: float, grade: float, start_v: float, drive: Callable) -> Dictionary:
+	var root := Node3D.new()
+	add_child(root)
+	var ground := TestGround.new(4000.0)
+	var tilt := Basis(Vector3.RIGHT, atan(grade))
+	ground.transform = Transform3D(tilt, Vector3.ZERO)
+	root.add_child(ground)
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new(build))
+	root.add_child(bike)
+	bike.place(Vector3.ZERO, 0.0)
+	var t := Transform3D(tilt, tilt * (Vector3.UP * (bike.build.rear_radius + 0.05)))
+	bike.global_transform = t
+	PhysicsServer3D.body_set_state(bike.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+	bike.reset_physics_interpolation()
+	bike.linear_velocity = tilt * Vector3.FORWARD * start_v
+	for w in bike.wheels:
+		w["omega"] = start_v / bike.build.rear_radius
+	if start_v > 0.0:
+		bike.gear = bike.gear_for_speed()
+		bike.rpm = start_v / bike.build.rear_radius * bike.build.overall_ratio(bike.gear) * 60.0 / TAU
+	bike.auto_shift = true
+	bike.assist = 0.5
+	var result := {"root": root, "bike": bike, "max_speed": 0.0, "crashed": false, "weather": Weather.current, "air": BikeHeat.fixed_air}
+	Weather.current = null
+	if is_nan(BikeHeat.fixed_air):
+		BikeHeat.fixed_air = 15.0
+	var steps := int(seconds * Engine.physics_ticks_per_second)
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	for i in steps:
+		drive.call(bike, i * dt)
+		await get_tree().physics_frame
+		result["max_speed"] = maxf(result["max_speed"], bike.speed)
+		if bike.is_crashed:
+			result["crashed"] = true
+		if verbose and i % 60 == 0:
+			print("    t=%.2f v=%.1f gear=%d rpm=%.0f clutch=%.2f thr=%.2f trac=%.2f slip=%.2f/%.2f kappa=%.2f pitch=%.1f" % [
+				i * dt, bike.speed, bike.gear, bike.rpm, bike.clutch, bike._throttle_eff, bike._traction,
+				bike.wheels[0]["slip"], bike.wheels[1]["slip"], bike.wheels[1]["kappa"], rad_to_deg(bike.pitch_angle)])
 	return result
 
 
@@ -24112,6 +24157,10 @@ func _test_realism_stops() -> void:
 
 func _test_realism_corners() -> void:
 	await _realism().test_corners()
+
+
+func _test_realism_hills() -> void:
+	await _realism().test_hills()
 
 
 # ---------------------------------------------------------------------------- riding controls (tests/controls_tests.gd)

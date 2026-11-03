@@ -227,6 +227,12 @@ var _dry_mu := -1.0        # the tyres' grip on dry tarmac, worked out the first
 var _flick_share := 1.0    # how much of the bike's flick the rider is using just now (see _update_flick)
 var lean_rate := 0.0
 var pitch_angle := 0.0     # radians, positive = nose up
+## The slope of the road under the bike along its heading (radians, + uphill), and the
+## bike's pitch measured from it: what the ECU's anti-wheelie goes by, so a steep hill isn't taken
+## for a wheelie. (The rider's own feel for a wheelie still goes by the horizon: over a whoop's crest
+## that brings a nose-high bike down before it lands.)
+var road_pitch := 0.0
+var pitch_over_road := 0.0
 var is_crashed := false
 var surface := "tarmac"
 var wheels: Array = []     # [front, rear] Dictionaries
@@ -468,6 +474,8 @@ func place(pos: Vector3, heading: float) -> void:
 	_steer_slow = 0.0
 	_prev_w = Vector3.ZERO
 	_prev_v = Vector3.INF
+	road_pitch = 0.0
+	pitch_over_road = 0.0
 	_trim = 0.0
 	_direct_hold = 0.0
 	_lean_i = 0.0
@@ -805,6 +813,13 @@ func _measure_attitude() -> void:
 	lean_angle = atan2(up.dot(right_flat), up.dot(Vector3.UP))
 	lean_rate = angular_velocity.dot(fwd_flat)
 	pitch_angle = asin(clampf(fwd.y, -1.0, 1.0))
+	# The road's slope: the line between the two tyres' contact patches while both are down. It
+	# holds while one wheel is up, so a wheelie is measured from the road it started on, not from
+	# the far face of a whoop under the back tyre (which made a level bike look like it was looping).
+	if wheels[0]["contact"] and wheels[1]["contact"] and wheels[0].has("contact_pos") and wheels[1].has("contact_pos"):
+		var d: Vector3 = wheels[0]["contact_pos"] - wheels[1]["contact_pos"]
+		road_pitch = atan2(d.y, maxf(d.dot(fwd_flat), 0.1))
+	pitch_over_road = pitch_angle - road_pitch
 
 
 ## How the suspension has pitched the bike and so changed its steering geometry: the fork diving
@@ -1295,11 +1310,12 @@ func _update_engine(delta: float) -> void:
 		var rising := angular_velocity.dot(global_transform.basis.x)
 		var hands := _steadiness()
 		tc_target = minf(tc_target, clampf(1.0 - (over * 8.0 + rising * 1.2) * hands, 0.0, 1.0))
-	if build.aid_on("anti_wheelie") and pitch_angle > deg_to_rad(2.0):
+	if build.aid_on("anti_wheelie") and pitch_over_road > deg_to_rad(2.0):
 		# The ECU's anti-wheelie trims the power to keep the front wheel skimming the road
-		# (a gentle level lets it come up further).
+		# (a gentle level lets it come up further). It goes by the bike's pitch against the road,
+		# not the horizon: climbing a steep hill isn't a wheelie, and used to choke the power.
 		var cap := deg_to_rad(lerpf(20.0, 4.0, minf(build.aid_strength("anti_wheelie"), 1.0)))
-		tc_target = minf(tc_target, clampf(1.0 - (pitch_angle - cap) * 12.0, 0.05, 1.0))
+		tc_target = minf(tc_target, clampf(1.0 - (pitch_over_road - cap) * 12.0, 0.05, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
 	var torque := build.engine_torque(rpm) * _throttle_eff * _traction * build.mode_power()
 	if heat:
@@ -1464,7 +1480,7 @@ func _update_feet(delta: float) -> void:
 	if paddling:
 		_stopped_brake = 0.0
 	var lit := engine_on and gear != NEUTRAL and clutch < 0.5 and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
-		and pitch_angle < deg_to_rad(8.0)
+		and pitch_over_road < deg_to_rad(8.0)
 	var spin_v: float = wheels[1]["omega"] * build.rear_radius - speed
 	var target := clampf(spin_v / 12.0, 0.0, 1.0) * throttle if lit else 0.0
 	burnout = move_toward(burnout, target, delta * 3.0)
