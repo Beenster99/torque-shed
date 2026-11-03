@@ -902,6 +902,9 @@ func _run_all() -> void:
 	await _t(&"_test_road_cell")
 	await _t(&"_test_road_meshes")
 	await _t(&"_test_road_bridges")
+	await _t(&"_test_road_join_caps")
+	await _t(&"_test_road_crossed_junction")
+	await _t(&"_test_road_pockets")
 	await _t(&"_test_road_ride")
 	print("Ride Anywhere v2, phase D: the scenery pipeline (features, the kit library, the scenery streamer)")
 	await _t(&"_test_scenery_features")
@@ -23200,6 +23203,10 @@ func _test_road_blocks() -> void:
 
 func _test_road_join_caps() -> void:
 	_roads().test_join_caps()
+
+
+func _test_road_crossed_junction() -> void:
+	_roads().test_crossed_junction()
 
 
 func _test_road_pockets() -> void:

@@ -479,6 +479,60 @@ func test_join_caps() -> void:
 	check(proud < 0.02, "on a 1 in 10 hill the join's disc is nowhere above the road (%.3f m at most, at %s)" % [proud, str(at)])
 
 
+## Two junctions close together drawn as one, with a track leaving side by side with the main road (the top of the
+## Stelvio Pass, Simon v0.45.1: "we still have some of those road ramps"): the junction's outline crosses itself, and
+## its surface was laid in rings out from its middle over itself, a second layer of road standing up to 0.7 m out of
+## the first. Its surface is one sheet: nowhere two layers of road at different heights.
+func test_crossed_junction() -> void:
+	var hill := func(x: float, z: float) -> float: return 2700.0 + x * 0.04 + z * 0.03
+	# (the main road west to east through node 0, a track 10 m north to node 1, and from there one east beside the
+	# main road and one north)
+	var nodes := [[1000, 1000], [1000, 1010.4], [700, 1080], [1300, 940], [1094, 1005.5], [997.3, 1021.1]]
+	var edges := [[2, 0, "secondary", 0, [932.2, 1017.8, 918.6, 1014.5]], [0, 3, "secondary", 0, [1012.1, 996.5]],
+		[0, 1, "track"], [1, 4, "track", 0, [1039, 1021, 1044.7, 1021, 1063.7, 1012.1, 1080.7, 1010.1]], [1, 5, "track"]]
+	var net := RoadNet.new(graph(nodes, edges), hill)
+	var j := net.junction_of(0)
+	check(not j.is_empty() and (j["nodes"] as PackedInt32Array).size() == 2, "the two junctions are drawn as one (%s)" % str(j.get("nodes")))
+	var b := RoadBlock.build(net, RoadBlock.key_of(1000.0, 1005.0))
+	var faces := PackedVector3Array()
+	for surf: String in b.arrays["deck"]:
+		var g: Dictionary = b.arrays["deck"][surf]
+		for i: int in g["i"]:
+			faces.append((g["v"] as PackedVector3Array)[i] + b.anchor())
+	var worst := 0.0
+	var at := Vector2.ZERO
+	var looked := 0
+	for dz in range(-30, 41):
+		for dx in range(-30, 41):
+			var p := Vector2(1000.0 + dx * 0.5, 1005.0 + dz * 0.5)
+			var ys := _deck_ys(faces, p)
+			if ys.is_empty():
+				continue
+			looked += 1
+			var spread: float = ys.max() - ys.min()
+			if spread > worst:
+				worst = spread
+				at = p
+	check(looked > 500 and worst < 0.08, "one sheet of road over the junction: layers at most %.3f m apart (at %s, %d points)" % [worst, str(at), looked])
+
+
+## The heights of every face of `faces` over `p`.
+static func _deck_ys(faces: PackedVector3Array, p: Vector2) -> Array:
+	var out := []
+	for k in faces.size() / 3:
+		var a := faces[k * 3]
+		var b := faces[k * 3 + 1]
+		var c := faces[k * 3 + 2]
+		if not Geometry2D.point_is_inside_triangle(p, Vector2(a.x, a.z), Vector2(b.x, b.z), Vector2(c.x, c.z)):
+			continue
+		var hit = Geometry3D.ray_intersects_triangle(Vector3(p.x, 1e5, p.y), Vector3.DOWN, a, b, c)
+		if hit == null:
+			hit = Geometry3D.ray_intersects_triangle(Vector3(p.x, 1e5, p.y), Vector3.DOWN, a, c, b)
+		if hit != null:
+			out.append((hit as Vector3).y)
+	return out
+
+
 ## A little loop of road closing round a pocket of land (a roundabout the map draws square, a triangle of roads at a
 ## fork) has a floor over it flush with its roads: no pit sunk under them all round for a bike to drop into (Simon,
 ## v0.42.2: "bikes can get trapped in gaps around roundabouts"). Nor is a town's block of streets one, nor a
