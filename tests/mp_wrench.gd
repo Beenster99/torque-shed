@@ -133,6 +133,12 @@ func _client_breakdown(trip: AdventureTrip) -> Array:
 	Shed.request({"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true})
 	var fixed := await _until(func(): return Roadside.find(bike, "chain_slack").is_empty(), 10.0)
 	print("MP wrench note client: slack %s, parked %s, opened %s, fixed %s" % [snapped, parked, opened, fixed])
+	# Bought at a fuel station's shop (see FuelShop): the host decides, and it comes back strapped on.
+	var mirrors := str(PartsDB.by_kind["mirrors"][0])
+	Shed.request({"a": "shop_buy", "part": mirrors, "bike": bike})
+	var bought := await _until(func(): return FuelShop.cargo_of(bike).size() == 1, 10.0)
+	print("MP wrench note client: bought mirrors through the host, strapped on %s" % bought)
+	fixed = fixed and bought
 	# The host gets off and swaps the front pads for a spare from the toolbox: each step seen here.
 	var box := Roadside.toolbox_of(bike)
 	var first := Shed.item_on(bike, "front_pads")

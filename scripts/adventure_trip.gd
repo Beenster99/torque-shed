@@ -77,6 +77,8 @@ var _hud_timer := 0.0
 var _put_back_at := 0        # ticks: when the last "back on the road" happened
 ## Hunger, thirst and tiredness: the meters, their effects, and sitting, eating and sleeping.
 var needs: AdventureNeedsView
+## The fuel stations' shops (see FuelShop).
+var shop: FuelShopView
 var _map: AdventureMap       # the paper map, made the first time it's opened
 var _nav_cache: Satnav.AdventureNav   # for the wrong-way warning on the HUD (see wrong_way; NetNav on the network)
 ## The trip computer for the whole ride, from setting off (see Satnav.computer).
@@ -164,6 +166,9 @@ func _ready() -> void:
 	needs = AdventureNeedsView.new()
 	needs.trip = self
 	add_child(needs)
+	shop = FuelShopView.new()
+	shop.trip = self
+	add_child(shop)
 	_make_card(layer)
 	photos = AdventurePhotos.new()
 	photos.trip = self

@@ -435,8 +435,9 @@ static func _fix(peer: int, bike_id: int, kind: String) -> String:
 # ---------------------------------------------------------------------------- the end of a trip
 
 ## The adventure's over (or a save is loading): bikes left at the roadside come home to a bay,
-## and nobody's pushing or towing any more.
+## nobody's pushing or towing any more, and what's strapped on them is put in the delivery area.
 static func bring_home() -> void:
+	FuelShop.unload_all()   # what's strapped on the bikes goes in the delivery area
 	for id in Shed.bikes:
 		var bike: Dictionary = Shed.bikes[id]
 		bike.erase("push")

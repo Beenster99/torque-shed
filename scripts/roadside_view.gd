@@ -3,7 +3,8 @@ extends Node3D
 ## The bikes left at the side of the road on an adventure, for everyone: each up on its stand
 ## where its rider got off (kept in the route's frame, see Roadside, so the floating origin
 ## never moves it), with click targets on its parts for the walker; with its toolbox open the
-## kit is laid out on a cloth beside it, and the parts worked on show out there too. And the tow straps between bikes on a tow.
+## kit is laid out on a cloth beside it, and the parts worked on show out there too; what's strapped on it (see FuelShop)
+## sits over its seat. And the tow straps between bikes on a tow.
 ## A child of the AdventureWorld, so it goes when the adventure does.
 
 var world: AdventureWorld
@@ -14,6 +15,7 @@ var _cloth_mat: StandardMaterial3D
 var _kit_mat: StandardMaterial3D
 var _box_mat: StandardMaterial3D
 var _chain_mat: StandardMaterial3D
+var _cardboard: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -24,6 +26,7 @@ func _ready() -> void:
 	_kit_mat = _mat(Color(0.75, 0.12, 0.1), 0.1, 0.6)
 	_box_mat = _mat(Color(0.18, 0.18, 0.2), 0.4, 0.5)
 	_chain_mat = _mat(Color(0.45, 0.45, 0.47), 0.9, 0.35)
+	_cardboard = _mat(Color(0.62, 0.47, 0.3), 0.0, 0.9)
 	_strap_mesh = BoxMesh.new()
 	_strap_mesh.size = Vector3(0.05, 0.012, 1.0)
 	_strap_mesh.material = _mat(Color(0.95, 0.55, 0.05), 0.0, 0.8)
@@ -52,8 +55,9 @@ func sync() -> void:
 		if not Roadside.parked(int(id)):
 			continue
 		var r := Roadside.spot_of(int(id))
-		var sig := "%s|%s|%s|%s|%s|%d" % [str(Shed.fitted_map(int(id))), str(Shed.bikes[id].get("stand", "")), str(r.get("open", false)),
-			str(r.get("out", [])), str(Shed.bikes[id].get("paint", "")), ToolboxSpares.spares_of(Roadside.toolbox_of(int(id))).size()]
+		var sig := "%s|%s|%s|%s|%s|%d|%d" % [str(Shed.fitted_map(int(id))), str(Shed.bikes[id].get("stand", "")), str(r.get("open", false)),
+			str(r.get("out", [])), str(Shed.bikes[id].get("paint", "")), FuelShop.cargo_of(int(id)).size(),
+			ToolboxSpares.spares_of(Roadside.toolbox_of(int(id))).size()]
 		if _views.has(id) and _views[id]["sig"] == sig:
 			continue
 		if _views.has(id):
@@ -104,10 +108,32 @@ func _make_view(id: int, r: Dictionary) -> Node3D:
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
 	model.build_pickers({"bike": id})
 	model.show_dirt(Dirt.of_bike(id))
+	_strapped(lean, id, build)
 	var out: Array = r.get("out", [])
 	if r.get("open", false) or not out.is_empty():
 		_lay_out(view, id, r)
 	return view
+
+
+## What's strapped on the bike (see FuelShop): a stack of boxes and bundles over the back of its
+## seat, held down by a strap.
+func _strapped(lean: Node3D, id: int, build: BikeBuild) -> void:
+	var cargo := FuelShop.cargo_of(id)
+	if cargo.is_empty():
+		return
+	var y := build.seat_height + 0.02   # (from the ground: the seat's top)
+	for i in cargo.size():
+		var kg := FuelShop.part_kg(str(cargo[i].get("part", "")))
+		var w := clampf(0.18 + kg * 0.012, 0.18, 0.42)
+		var h := clampf(0.08 + kg * 0.006, 0.08, 0.22)
+		var b := _box(Vector3(w, h, w * 0.8), _cardboard if cargo[i].get("boxed", false) else _box_mat)
+		b.name = "Cargo%d" % i
+		b.position = Vector3(0.0, y + h * 0.5, 0.45)
+		lean.add_child(b)
+		y += h
+	var strap := _box(Vector3(0.03, 0.005, 0.5), _strap_mesh.material)
+	strap.position = Vector3(0.0, y + 0.003, 0.45)
+	lean.add_child(strap)
 
 
 ## The cloth on the ground on the bike's right (away from the side stand) and what's on it.

@@ -839,6 +839,8 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 	if float(bike.get("tune_reach", 0.0)) > 0.0:
 		# Tuned by someone with Fine Tuning: the map, ignition and limiter go further.
 		tune["reach"] = float(bike["tune_reach"])
+	if not FuelShop.cargo_of(bike_id).is_empty():
+		cond["cargo"] = {"kg": FuelShop.cargo_kg(bike_id)}   # what's strapped on it weighs too (see FuelShop)
 	var b := BikeBuild.new(parts, cond, tune)
 	b.ride_mode = mode_of(bike_id)
 	return b
@@ -2534,6 +2536,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return Roadside.check(peer, action)
 	if a.begins_with("spare_"):
 		return ToolboxSpares.check(peer, action)
+	if a.begins_with("shop_") or a.begins_with("cargo_"):
+		return FuelShop.check(peer, action)   # a fuel station's shop, and what's strapped on a bike (see FuelShop)
 	var roadside_job := ToolboxSpares.roadside_check(peer, action)
 	if roadside_job != "":
 		return roadside_job   # working on a bike at the roadside with its toolbox (see ToolboxSpares)
@@ -3083,7 +3087,9 @@ func check(peer: int, action: Dictionary) -> String:
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
-				return "Put the part down first."
+				# At an adventure's roadside there's nowhere to put it down: strap it on (see FuelShop).
+				return "Strap the %s on the bike first (look at the bike, {alt_act})." % item_title(held).to_lower() \
+					if Roadside.parked(bike_id) else "Put the part down first."
 			if moving(peer) != 0:
 				return "Let go of what you're pushing first."
 			var missing := missing_slots(bike_id)
@@ -3452,6 +3458,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("spare_"):
 		_spare_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("shop_") or str(action.get("a", "")).begins_with("cargo_"):
+		_shop_apply(peer, action)
 		return
 	var why := check(peer, action)
 	if why != "":
@@ -4745,6 +4754,18 @@ func _roadside_apply(peer: int, action: Dictionary) -> void:
 			_tell(int(p), said.substr(1), true)
 	elif said != "":
 		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## Buying at a fuel station's shop, and strapping things on a bike or taking them off (see
+## FuelShop), out on an adventure.
+func _shop_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	_tell(peer, FuelShop.apply(peer, action), true)
 	_mark_dirty()
 	changed.emit()
 

@@ -32,8 +32,9 @@ var _upnp_thread: Thread
 var _mapped_port := 0
 
 ## The shape of the messages: one more each time one changes, so games that can't understand each other are told at
-## the lobby (it's part of AdventureCrew.builds). 2: snapshots carry their sender's clock (see clock).
-const PROTOCOL := 2
+## the lobby (it's part of AdventureCrew.builds). 2: snapshots carry their sender's clock (see clock). 3: the fuel
+## station shops' and bikes' straps' requests (see FuelShop).
+const PROTOCOL := 3
 const PORT := 24680
 const MAX_PLAYERS := 8
 
