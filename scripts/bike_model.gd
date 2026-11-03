@@ -8683,6 +8683,15 @@ func _mark_loose_stands() -> void:
 			(mi as Node).set_meta(&"loose_stand", true)
 
 
+## Where the middle of a handlebar grip is now, in the world: the left one (`side` -1) or the
+## right (1), turned with the bars. For hands that hold them from off the bike (BikePusher).
+func grip_point(side: float) -> Vector3:
+	var grip := _grip_l if side < 0.0 else _grip_r
+	if _steer_node and _steer_node.is_inside_tree():
+		return _steer_node.global_transform * grip
+	return global_transform * (_head + grip) if is_inside_tree() else _head + grip
+
+
 func set_rider_visible(v: bool) -> void:
 	if _rider:
 		_rider.visible = v

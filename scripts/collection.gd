@@ -237,7 +237,7 @@ static func ensure_home(player_name: String) -> int:
 ## A shed bike packed up for its owner's house: the bike and every part on it, as they are now.
 static func pack(bike_id: int) -> Dictionary:
 	var bike: Dictionary = (Shed.bikes[bike_id] as Dictionary).duplicate(true)
-	for key in ["rider", "pusher", "push", "tow", "roadside", "bay", "xf", "stand", "blueprint", "owner", "cid"]:
+	for key in ["rider", "pusher", "push", "tow", "idling", "roadside", "bay", "xf", "stand", "blueprint", "owner", "cid"]:
 		bike.erase(key)
 	var its := {}
 	for slot in PartsDB.SLOTS:

@@ -304,6 +304,7 @@ func sync_state() -> void:
 			_shine_sigs[id] = ""
 		_sync_dirt(id)
 		_sync_shine(id)
+		_sync_idling(id)
 		# Moving a bike only moves its view; the one you're wheeling follows you directly.
 		if bike.get("pusher", 0) != Shed.me() or bike.get("pusher", 0) == 0:
 			bike_views[id].transform = bike["xf"]
@@ -915,6 +916,14 @@ static func _coat_sig(it: Dictionary) -> String:
 
 ## The engine's own slots, to look up quickly.
 static var _engine_slot_set := {}
+
+
+## A parked bike got off with its engine running ticks over (see IdlingEngine), till it's switched off.
+func _sync_idling(id: int) -> void:
+	var model := bike_model(id)
+	var on := Shed.idling(id)
+	if on != (IdlingEngine.of(model) != null):
+		IdlingEngine.keep(model, Shed.build_of(id) if on else null, on, Shed.beam_of(id))
 
 
 func _bike_signature(id: int) -> String:

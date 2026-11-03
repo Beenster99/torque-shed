@@ -23963,6 +23963,20 @@ func _test_adv_fix_menu_hold() -> void:
 	await _adv_fix().test_menu_hold()
 
 
+# ---------------------------------------------------------------------------- engine left running, pushing (tests/idle_push_tests.gd)
+
+func _idle_push() -> RefCounted:
+	return load("res://tests/idle_push_tests.gd").new(self)
+
+
+func _test_idle_shed() -> void:
+	await _idle_push().test_shed()
+
+
+func _test_idle_roadside() -> void:
+	await _idle_push().test_roadside()
+
+
 # ---------------------------------------------------------------------------- lights and graphics (tests/lights_tests.gd)
 
 func _lights() -> RefCounted:
