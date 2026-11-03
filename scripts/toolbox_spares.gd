@@ -181,8 +181,8 @@ static func roadside_check(peer: int, action: Dictionary) -> String:
 	if not roadside_slot(slot):
 		return "The %s is a job for the shed: out here it's bolt-on parts the bike rides without, and what a toolbox's spares are for." \
 			% PartsDB.slot_name(slot).to_lower()
-	if a in ["unbolt", "remove"]:
-		return rig_says(bike, slot, "none")
+	if a in ["unbolt", "remove"] and PartsDB.may_be_empty(slot):
+		return rig_says(bike, slot, "none")   # (a part it can't do without, the pads say, comes off only to swap it: the fit's asked of the new one)
 	if a == "install":
 		return rig_says(bike, slot, str(Shed.items[Shed.held_by(peer)]["part"]))
 	return ""
