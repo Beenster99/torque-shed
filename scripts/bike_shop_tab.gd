@@ -2,7 +2,7 @@ class_name BikeShopTab
 extends VBoxContainer
 ## The Esc menu's Bike shop tab (the Profile panel): buy a whole bike with your own money, second
 ## hand from today's list or new from the configurator (see BikeShop). The bike turns on a
-## turntable beside the list or the choices, in a soft studio light that fades into the menu,
+## turntable beside the list or the choices, in the same photo studio as the parts computer's,
 ## with buttons to stop it turning and zoom in, its price and a button to buy it.
 
 var mode := "used"
@@ -61,7 +61,6 @@ func _ready() -> void:
 	cols.add_child(right)
 	_preview = PartPreview.new()
 	_preview.use_studio()
-	_preview.use_fade()
 	_preview.custom_minimum_size = Vector2(420, 320)
 	_preview.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(_preview)

@@ -143,8 +143,8 @@ func test_configurator() -> void:
 ## the change of colour for mudguards" and "a faded background, with zoom and stop rotation for
 ## bike preview window". The configurator offers the front mudguard, the rear guard or tail,
 ## panniers and a top box (none too); the mudguards come in the factory's colour till one is
-## picked, then front and rear in it (a tail cowl keeps its own); the turntable is a studio that
-## fades at its edges, it stops turning and zooms in, and a part changed keeps the view.
+## picked, then front and rear in it (a tail cowl keeps its own); the turntable is the parts
+## computer's photo studio, it stops turning and zooms in, and a part changed keeps the view.
 func test_configurator_extras() -> void:
 	Shed.start_new("Tester", 54)
 	var saved: Dictionary = Progress.profile.duplicate(true)
@@ -199,7 +199,7 @@ func test_configurator_extras() -> void:
 	check(not tab.colours.has("mudguards") and not tab._src()["build"]["colors"].has("front_mudguard"), "As they come puts the factory's colour back")
 	# The turntable.
 	var pv: PartPreview = tab._preview
-	check(pv.studio and pv.material is ShaderMaterial, "the bike sits in a soft studio that fades at its edges")
+	check(pv.studio and pv.material == null, "the bike sits in the photo studio, as in the parts computer, its edges square")
 	var stop: Button = tab.find_child("StopTurning", true, false)
 	stop.button_pressed = true
 	var turn := pv.pivot.rotation.y
