@@ -713,6 +713,7 @@ func _run_all() -> void:
 	await _t(&"_test_bike_shop_for_sale")
 	await _t(&"_test_bike_shop_buy_used")
 	await _t(&"_test_bike_shop_configurator")
+	await _t(&"_test_bike_shop_configurator_extras")
 	await _t(&"_test_parts_refresh_catalogue")
 	await _t(&"_test_parts_refresh_migrate")
 	await _t(&"_test_parts_refresh_drawn")
@@ -23966,6 +23967,20 @@ func _test_adv_fix_menu_hold() -> void:
 	await _adv_fix().test_menu_hold()
 
 
+# ---------------------------------------------------------------------------- engine left running, pushing (tests/idle_push_tests.gd)
+
+func _idle_push() -> RefCounted:
+	return load("res://tests/idle_push_tests.gd").new(self)
+
+
+func _test_idle_shed() -> void:
+	await _idle_push().test_shed()
+
+
+func _test_idle_roadside() -> void:
+	await _idle_push().test_roadside()
+
+
 # ---------------------------------------------------------------------------- lights and graphics (tests/lights_tests.gd)
 
 func _lights() -> RefCounted:
@@ -24108,6 +24123,10 @@ func _test_bike_shop_buy_used() -> void:
 
 func _test_bike_shop_configurator() -> void:
 	await _bike_shop().test_configurator()
+
+
+func _test_bike_shop_configurator_extras() -> void:
+	await _bike_shop().test_configurator_extras()
 
 
 func _parts_refresh() -> RefCounted:

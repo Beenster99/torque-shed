@@ -2545,6 +2545,12 @@ func check(peer: int, action: Dictionary) -> String:
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
+	if a == "engine_off":
+		if not bikes.has(bike_id):
+			return "That bike has gone."
+		if not idling(bike_id):
+			return "Its engine isn't running."
+		return ""
 	if a in ["unbolt", "bolt", "remove"] and engine_id == 0 and PartsDB.LOW_SLOTS.has(slot) \
 			and not action.get("crouched", false):
 		return "Crouch down to reach it ({crouch})."
@@ -3437,6 +3443,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("home_"):
 		_home_apply(peer, action)
 		return
+	_engine_off_for(peer, action)
 	if str(action.get("a", "")).begins_with("paint_"):
 		Money.note_use(action)
 		_paint_bay_apply(peer, action)
@@ -4017,9 +4024,16 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["stand"] = ""
 			bikes[bike_id].erase("push")
 			c["riding"] = bike_id
+		"engine_off":
+			bikes[bike_id].erase("idling")
+			text = "You switch %s's engine off" % bikes[bike_id]["name"]
 		"dismount":
 			bikes[bike_id]["rider"] = 0
 			bikes[bike_id]["xf"] = action.get("xf", bikes[bike_id]["xf"])
+			if action.get("running", false):
+				bikes[bike_id]["idling"] = true   # got off with it running: it ticks over where it's left
+			else:
+				bikes[bike_id].erase("idling")
 			bikes[bike_id].erase("push")
 			bikes[bike_id].erase("tow")
 			for other in bikes:
@@ -4235,6 +4249,27 @@ func _apply(peer: int, action: Dictionary) -> void:
 
 ## A rider's ride stats (see Main._send_ride_stats): the wear and muck on their bike, and their
 ## distance and speeds. Out on an adventure only the tyres wear (see adventure_ride).
+## Whether bike `id` was got off with its engine running and is ticking over where it was left
+## (bikes[id]["idling"], set by "dismount"; see IdlingEngine). Only while nobody's riding it.
+func idling(id: int) -> bool:
+	return bikes.has(id) and bool(bikes[id].get("idling", false)) and int(bikes[id].get("rider", 0)) == 0
+
+
+## What can be done with a bike left running without switching it off: getting on it (the ride
+## picks the engine up running), getting off, and its headlight switch.
+const IDLE_KEEPS: Array[String] = ["mount", "dismount", "beam"]
+
+
+## Anything else anyone does with a bike that's ticking over switches its engine off first: wheeling
+## it about, putting it on a stand, a spanner on it, pushing it at the roadside, the key ("engine_off").
+func _engine_off_for(peer: int, action: Dictionary) -> void:
+	var id := int(action.get("bike", 0))
+	if not idling(id) or IDLE_KEEPS.has(str(action.get("a", ""))) or str(action.get("a", "")) == "engine_off":
+		return
+	if check(peer, action) == "":
+		bikes[id].erase("idling")
+
+
 func _ride_apply(peer: int, action: Dictionary) -> void:
 	var c: Dictionary = crew.get(peer, {})
 	var bike := int(c.get("riding", 0))
