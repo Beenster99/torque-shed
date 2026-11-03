@@ -141,6 +141,7 @@ func _run_all() -> void:
 	await _t(&"_test_blender_parts_glbs")
 	await _t(&"_test_blender_parts_fit")
 	await _t(&"_test_blender_parts_cases")
+	await _t(&"_test_blender_parts_gearboxes")
 	await _t(&"_test_blender_parts_cans")
 	await _t(&"_test_blender_parts_pipes")
 	await _t(&"_test_blender_parts_tyres")
@@ -25308,6 +25309,10 @@ func _test_blender_parts_fit() -> void:
 
 func _test_blender_parts_cases() -> void:
 	_blender_parts().test_cases_fit()
+
+
+func _test_blender_parts_gearboxes() -> void:
+	_blender_parts().test_gearboxes()
 
 
 func _test_blender_parts_cans() -> void:

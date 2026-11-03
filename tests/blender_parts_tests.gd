@@ -804,7 +804,7 @@ func test_kit_parts() -> void:
 
 
 ## The slots the loader draws in their Blender-made shapes (waves 1 to 4).
-const LOADED: Array[String] = ["engine", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
+const LOADED: Array[String] = ["engine", "gearbox", "head", "exhaust", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "shock", "fork", "tank", "saddle",
 	"front_mudguard", "tail", "side_panels", "fairing", "frame", "handlebars", "front_master", "rearsets", "headlight", "indicators", "dashboard", "mirrors",
 	"final_drive", "chain", "side_stand", "horn", "rear_master", "panniers", "top_box", "fog_lights", "cooling", "steering_damper",
@@ -830,6 +830,10 @@ static func _expects_blender(m: BikeModel, slot: String) -> bool:
 	return true
 ## How far (m) a Blender-made part's box may be from the code-built one's, any side.
 const LOADED_GIVE := 0.035
+## The gear change linkage runs from the selector's shaft all the way to the gear lever over the
+## left footrest, where the code drew a short stub: the gearbox's boxes are compared in
+## test_gearboxes (its case and clutch side alone) rather than here.
+const LINKED := ["gearbox"]
 ## The parts the Rig built look fits to the bike's rig rather than where the code drew them.
 const RIG_FITTED := ["tank", "saddle", "tail", "air_filter"]
 ## And under a frame-mounted fairing's panel set: the set, its mirrors on its own mounts and the
@@ -843,7 +847,7 @@ const TANK_GIVE := 0.06
 ## many more than with the code-built shapes alone (the parts agreement's budgets per part,
 ## added up for the parts loaded so far).
 const LOADED_TRIS := 150000
-const LOADED_MORE := 60000
+const LOADED_MORE := 66000
 
 
 ## The loader: a bike in the new look wears its Blender-made engine, top end, exhaust, wheels,
@@ -879,6 +883,8 @@ func test_new_look() -> void:
 				if mine.any(func(mi): return (mi as Node).get_parent() != spin):
 					off.append("%s %s off its wheel" % [style, slot])
 		for slot in LOADED:
+			if slot in LINKED:
+				continue
 			# (The Rig built look fits its own tank, seat and tail to the rig, and the air filter
 			# tucks under that tank: rig_body_tests checks them on their lines instead.)
 			if slot in RIG_FITTED and m._rig_bodywork() or slot in SET_FITTED and m._rig_bodywork() and m.fairing_set() != "":
@@ -956,7 +962,9 @@ func test_new_look() -> void:
 			for i in range(1, (c3 as PackedFloat32Array).size(), 4):
 				hot = hot or (c3 as PackedFloat32Array)[i] > 0.1
 	var s: Dictionary = BikeLook.stats(bake)
-	check(hot and left == 0 and s["draws"] - s["rider_draws"] <= 40 and s["tris_lod1"] <= 26000 and s["tris_lod2"] <= 22000,
+	# (The gearboxes' cases, clutch covers and gear change came in as real shapes in place of a box
+	# and a disc, and a baked bike's levels of detail are simplified from them: 29,000 at 30 m.)
+	check(hot and left == 0 and s["draws"] - s["rider_draws"] <= 40 and s["tris_lod1"] <= 29000 and s["tris_lod2"] <= 22000,
 		"baked, the Blender-made pieces merge with the rest (%d left, %d draws, %d and %d triangles 30 and 120 m off) and the headers colour with heat"
 		% [left, s["draws"] - s["rider_draws"], s["tris_lod1"], s["tris_lod2"]])
 	bake.free()
@@ -989,6 +997,105 @@ func test_new_look() -> void:
 	var b: Vector3 = right * (BlenderParts.surfaces(path)[0][0] as Mesh).get_aabb().get_center()
 	check((at[1] as Transform3D).basis.determinant() > 0.0 and absf(a.x + b.x) < 0.002 and absf(a.z - b.z) < 0.002,
 		"a can on the left is the right one mirrored, drawn the right way out")
+
+
+## Every gearbox in the catalogue, on a bike in the new look, wears its Blender-made case and
+## clutch side (blender/parts/gearbox/gearboxes.py) where the code drew its own: the case tucked
+## behind the crankcase and no wider than it, the clutch cover on the right of the cases and
+## clear of the frame's rails, the gear change shaft's arm pointing at the gear lever with the
+## linkage rod between them (the quickshifter's sensor in it on a race box), and the kickstart
+## only on the engines that have one. Classic keeps the code's own gearbox.
+func test_gearboxes() -> void:
+	var out := []
+	var seen := {}
+	var styles := {"four_vintage": "classic", "five_wide": "classic", "six_wide_enduro": "adventure",
+		"five_close_mx": "mx", "six_close": "naked", "six_cruiser_od": "cruiser", "six_race_quickshift": "race"}
+	for gid in PartsDB.parts.keys().filter(func(id): return PartsDB.kind_of(id) == "gearbox"):
+		var style: String = styles.get(gid, "naked")
+		var parts := Contracts.style_build(style)
+		parts["gearbox"] = gid
+		parts.erase("fairing")
+		var built := BikeBuild.new(PartsDB.sanitize_build(parts))
+		var models := {}
+		for k in ["classic", "code", "blender"]:
+			var m := BikeModel.new()
+			m.look = BikeLook.CLASSIC if k == "classic" else BikeLook.NEW
+			BlenderParts.on = k != "code"
+			t.add_child(m)
+			m.build_from(built)
+			models[k] = m
+		BlenderParts.on = true
+		var m: BikeModel = models["blender"]
+		var mine: Array = (m._slot_meshes["gearbox"] as Array).filter(_blender_made)
+		var names := (m._slot_meshes["gearbox"] as Array).map(func(mi): return (mi as Node).name)
+		seen[gid] = mine.size()
+		if mine.is_empty():
+			out.append("%s: nothing Blender-made" % gid)
+			for k in models:
+				(models[k] as Node).free()
+			continue
+		if (models["classic"] as BikeModel)._slot_meshes["gearbox"].any(_blender_made):
+			out.append("%s: Classic has Blender pieces" % gid)
+		# In the code-built one's place, and no wider than the crankcase it's cast behind.
+		var a: AABB = _box_of(models["code"] as BikeModel)
+		var b := _box_of(m)
+		var lo := (a.position - b.position).abs()
+		var hi := (a.end - b.end).abs()
+		# (The far left is the gear change's, which reaches further on each: see LINKED.)
+		lo.x = 0.0
+		var d := maxf(lo[lo.max_axis_index()], hi[hi.max_axis_index()])
+		if d > LOADED_GIVE:
+			out.append("%s: %.3f m from the code's box (code %s, blender %s)" % [gid, d, a, b])
+		var case_box := AABB()
+		var first := true
+		for mi in mine:
+			if not (mi as Node).name.begins_with("GearboxCase"):
+				continue
+			var box: AABB = m._local_xform(mi) * (mi as VisualInstance3D).get_aabb()
+			case_box = box if first else case_box.merge(box)
+			first = false
+		if first:
+			out.append("%s: no case" % gid)
+		elif maxf(absf(case_box.position.x), absf(case_box.end.x)) > m._block_w * 0.5 + 0.005:
+			out.append("%s: the case is %.3f m wide, the crankcase %.3f" % [gid, case_box.size.x, m._block_w])
+		elif case_box.position.z < m._engine_c.z - 0.01:
+			out.append("%s: the case runs forward into the crankcase" % gid)
+		if not names.has("ClutchCover"):
+			out.append("%s: no clutch cover" % gid)
+		if names.has("Kickstart") != bool(m._build.layout in ["single", "2stroke", "twin"]):
+			out.append("%s: kickstart on a %s" % [gid, m._build.layout])
+		if names.has("Quickshifter") != bool(m._build.part("gearbox").get("quickshifter", false)):
+			out.append("%s: the quickshifter's sensor is wrong" % gid)
+		# The linkage: the selector's arm turned so the rod reaches the gear lever over the left peg.
+		var rod: Array = (m._slot_meshes["gearbox"] as Array).filter(func(mi): return (mi as Node).name == "GearLinkage")
+		if rod.is_empty():
+			out.append("%s: no linkage rod" % gid)
+		else:
+			var lever := Vector3(-absf(m._peg.x) + 0.015, m._peg.y + 0.04, m._peg.z + 0.015)
+			var near := INF
+			for mi in rod:
+				var box: AABB = m._local_xform(mi) * (mi as VisualInstance3D).get_aabb()
+				near = minf(near, box.grow(0.001).get_center().distance_to(lever) - box.size.length() * 0.5)
+			if near > 0.02:
+				out.append("%s: the linkage stops %.3f m short of the gear lever" % [gid, near])
+		for k in models:
+			(models[k] as Node).free()
+	check(out.is_empty() and seen.size() >= 7, "every gearbox (%s) wears its Blender-made case, clutch side, gear linkage and kickstart where the code drew its own %s" % [seen, out])
+
+
+## The box round `m`'s gearbox pieces, leaving out the gear change and the kickstart (the code's
+## own pieces carry no names, so only its kickstart's arm drops out there).
+static func _box_of(m: BikeModel) -> AABB:
+	var box := AABB()
+	var first := true
+	for mi in m._slot_meshes["gearbox"]:
+		var nm := (mi as Node).name
+		if nm.begins_with("GearLinkage") or nm.begins_with("GearSelector") or nm.begins_with("Quickshifter") or nm.begins_with("Kickstart"):
+			continue
+		var b: AABB = m._local_xform(mi) * (mi as VisualInstance3D).get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	return box
 
 
 ## The boxes BikeModel's _engine_corners lists (eight corners each), as [middle, half x, half y, half z].

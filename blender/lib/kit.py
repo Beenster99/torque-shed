@@ -71,6 +71,8 @@ BUDGETS = {
     # (A pannier or top box, a fog lamp, a radiator, a steering damper.)
     "luggage": [6000, 1500, 150], "fog": [1500, 400, 60], "radiator": [4000, 1000, 100], "damper": [1500, 400, 40],
     # (An air or oil filter or airbox, the ECU, a number board, a piece of the adventure kit.)
+    # (A gearbox's case, its clutch side, the gear change shaft or the kickstart.)
+    "gearbox": [6000, 1500, 250],
     "filter": [3000, 800, 60], "ecu": [1500, 400, 40], "number_board": [1500, 400, 40], "kit": [4000, 1000, 100],
 }
 SMALL_BUDGET = [1500, 400, 0]
