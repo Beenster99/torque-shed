@@ -23744,6 +23744,20 @@ func _test_toolbox_spares_session() -> void:
 	await _toolbox_spares().test_session()
 
 
+# ---------------------------------------------------------------------------- fuel station shops (tests/fuel_shop_tests.gd)
+
+func _fuel_shop() -> RefCounted:
+	return load("res://tests/fuel_shop_tests.gd").new(self)
+
+
+func _test_fuel_shop_rules() -> void:
+	_fuel_shop().test_rules()
+
+
+func _test_fuel_shop_session() -> void:
+	await _fuel_shop().test_session()
+
+
 # ---------------------------------------------------------------------------- the paper map (tests/adventure_routes_tests.gd)
 
 func _adv_routes() -> RefCounted:
