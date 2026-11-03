@@ -713,6 +713,7 @@ func _run_all() -> void:
 	await _t(&"_test_bike_shop_for_sale")
 	await _t(&"_test_bike_shop_buy_used")
 	await _t(&"_test_bike_shop_configurator")
+	await _t(&"_test_bike_shop_configurator_extras")
 	await _t(&"_test_parts_refresh_catalogue")
 	await _t(&"_test_parts_refresh_migrate")
 	await _t(&"_test_parts_refresh_drawn")
@@ -24093,6 +24094,10 @@ func _test_bike_shop_buy_used() -> void:
 
 func _test_bike_shop_configurator() -> void:
 	await _bike_shop().test_configurator()
+
+
+func _test_bike_shop_configurator_extras() -> void:
+	await _bike_shop().test_configurator_extras()
 
 
 func _parts_refresh() -> RefCounted:

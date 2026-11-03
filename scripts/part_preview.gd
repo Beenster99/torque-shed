@@ -2,7 +2,8 @@ class_name PartPreview
 extends SubViewportContainer
 ## A small turntable for the parts computer: the part picked in the list, drawn in 3D in a
 ## little world of its own and turning slowly so you can see it all round. Drag it with the
-## mouse to turn it yourself. Shows a catalogue part (BikeModel.part_display) or a loose item
+## mouse to turn it yourself, scroll to zoom in (and drag with the right button to look about
+## once zoomed in); `spinning` off stops it turning on its own. Shows a catalogue part (BikeModel.part_display) or a loose item
 ## from the shed (BikeModel.item_display, for the Sell aisle).
 
 const SPIN := 0.6           # radians a second it turns on its own
@@ -10,6 +11,9 @@ const DRAG_TURN := 0.01     # radians per pixel dragged
 const FOV := 32.0
 const LIFT := 0.32          # how far the camera looks down: up this much for each metre back
 const FILL := 0.82          # how much of the picture the part fills, at most, in the studio
+const ZOOM_MAX := 3.5       # how far in it zooms: the camera this many times closer
+const ZOOM_STEP := 1.15     # each click of the mouse wheel
+const PAN_TURN := 0.002     # metres per pixel dragged with the right button, at no zoom
 
 var viewport: SubViewport
 var camera: Camera3D
@@ -25,6 +29,14 @@ var _fill: DirectionalLight3D
 var _dragging := false
 var _size := Vector3.ONE      # the size of what's on the turntable
 var _hold := 0.0            # after a drag it waits a moment before turning on its own again
+## Whether it turns on its own (the Bike shop's Stop turning button switches it off).
+var spinning := true
+## How far in it's zoomed (1: all of it in the picture, up to ZOOM_MAX), and where it's looking
+## once zoomed in (an offset across the picture from the middle of what's on show).
+var zoom := 1.0
+var look := Vector2.ZERO
+var _panning := false
+var _base := Vector3.ZERO     # where the camera sits at no zoom, looking at the middle
 
 
 func _init() -> void:
@@ -32,7 +44,7 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
 	custom_minimum_size = Vector2(0, 180)
-	tooltip_text = "Drag to turn it"
+	tooltip_text = "Drag to turn it, scroll to zoom in (right-drag to look about), double-click to see all of it again"
 	viewport = SubViewport.new()
 	viewport.own_world_3d = true
 	viewport.transparent_bg = true
@@ -138,6 +150,22 @@ func use_studio() -> void:
 	viewport.add_child(shadow)
 
 
+## Fades the picture out softly at its edges, so it sits in the menu without a hard box round it.
+func use_fade() -> void:
+	var sh := Shader.new()
+	sh.code = """shader_type canvas_item;
+uniform float edge = 0.22;
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	vec2 d = min(UV, 1.0 - UV) / edge;
+	float m = smoothstep(0.0, 1.0, clamp(d.x, 0.0, 1.0)) * smoothstep(0.0, 1.0, clamp(d.y, 0.0, 1.0));
+	COLOR = vec4(c.rgb, c.a * m);
+}"""
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	material = mat
+
+
 ## Puts a catalogue part on the turntable (or nothing for "", or anything that isn't a part).
 func show_part(part_id: String, cond := {}) -> void:
 	if part_id == "" or PartsDB.get_part(part_id).is_empty():
@@ -194,6 +222,9 @@ func clear() -> void:
 func _put(node: Node3D, key: String) -> void:
 	for c in pivot.get_children():
 		c.queue_free()
+	# Another bike in place of a bike (a part changed in the configurator) keeps the view as it
+	# was: the same turn and zoom. Anything else starts afresh.
+	var keep := showing.begins_with("bike:") and key.begins_with("bike:")
 	showing = key
 	visible = true
 	var size: Vector3 = node.get_meta("size", Vector3.ONE * 0.4)
@@ -201,7 +232,10 @@ func _put(node: Node3D, key: String) -> void:
 	# that the whole of it fits whichever way it's turned.
 	node.position = Vector3(0.0, -size.y * 0.5, 0.0)
 	pivot.add_child(node)
-	pivot.rotation = Vector3(0.0, -0.6, 0.0)
+	if not keep:
+		pivot.rotation = Vector3(0.0, -0.6, 0.0)
+		zoom = 1.0
+		look = Vector2.ZERO
 	if shadow:
 		# On the floor under it, as wide as it is whichever way it's turned.
 		var across := maxf(0.08, Vector2(size.x, size.z).length() * 1.25)
@@ -217,8 +251,8 @@ func _put(node: Node3D, key: String) -> void:
 	var half := deg_to_rad(FOV * 0.5)
 	var fit := maxf(radius / tan(half), radius / (tan(half) * aspect))
 	var dist := fit * 0.95
-	camera.position = Vector3(0.0, dist * 0.32, dist)
-	camera.look_at(Vector3.ZERO, Vector3.UP)
+	_base = Vector3(0.0, dist * 0.32, dist)
+	_place_camera()
 
 
 ## In the studio, the camera as close as it can be with the part filling FILL of the picture
@@ -239,8 +273,41 @@ func _frame() -> void:
 			var p := b * Vector3(_size.x * ((i & 1) - 0.5), _size.y * (((i >> 1) & 1) - 0.5), _size.z * (((i >> 2) & 1) - 0.5))
 			var reach := maxf(absf(p.dot(right)) / (tan_half * aspect * FILL), absf(p.dot(up)) / (tan_half * FILL))
 			need = maxf(need, p.dot(k) + reach)
-	camera.position = k * need
-	camera.look_at(Vector3.ZERO, Vector3.UP)
+	_base = k * need
+	_place_camera()
+
+
+## The camera at `zoom` and `look` from where it sits at no zoom (_base).
+func _place_camera() -> void:
+	if _base.is_zero_approx():
+		return   # (nothing framed yet)
+	var cam := Transform3D(Basis(), _base).looking_at(Vector3.ZERO, Vector3.UP)
+	var aim := cam.basis.x * look.x + cam.basis.y * look.y
+	camera.position = _base / zoom + aim
+	camera.look_at(aim, Vector3.UP)
+
+
+## Zooms in (`by` over 1) or out, about the middle of the picture.
+func zoom_by(by: float) -> void:
+	zoom = clampf(zoom * by, 1.0, ZOOM_MAX)
+	if zoom <= 1.001:
+		look = Vector2.ZERO
+	_clamp_look()
+	_place_camera()
+
+
+## Back to all of it in the picture, at the turn it started at.
+func reset_view() -> void:
+	zoom = 1.0
+	look = Vector2.ZERO
+	pivot.rotation = Vector3(0.0, -0.6, 0.0)
+	_place_camera()
+
+
+## Keeps the look about within what's on show, the more so the less it's zoomed in.
+func _clamp_look() -> void:
+	var reach := Vector2(maxf(_size.x, _size.z), _size.y) * 0.5 * (1.0 - 1.0 / zoom)
+	look = look.clamp(-reach, reach)
 
 
 func _notification(what: int) -> void:
@@ -252,14 +319,30 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree() or showing == "":
 		return
 	_hold = maxf(0.0, _hold - delta)
-	if not _dragging and _hold <= 0.0:
+	if spinning and not _dragging and _hold <= 0.0:
 		pivot.rotation.y += SPIN * delta
 
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+	var mb := event as InputEventMouseButton
+	if mb and mb.pressed and mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		zoom_by(ZOOM_STEP if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / ZOOM_STEP)
+		accept_event()
+	elif mb and mb.button_index == MOUSE_BUTTON_LEFT and mb.double_click:
+		reset_view()
+		accept_event()
+	elif mb and mb.button_index == MOUSE_BUTTON_LEFT:
 		_dragging = event.pressed
 		_hold = 1.5
+		accept_event()
+	elif mb and mb.button_index == MOUSE_BUTTON_RIGHT:
+		_panning = mb.pressed
+		accept_event()
+	elif event is InputEventMouseMotion and _panning:
+		var rel := (event as InputEventMouseMotion).relative
+		look += Vector2(-rel.x, rel.y) * PAN_TURN * _base.length() / zoom
+		_clamp_look()
+		_place_camera()
 		accept_event()
 	elif event is InputEventMouseMotion and _dragging:
 		pivot.rotation.y += (event as InputEventMouseMotion).relative.x * DRAG_TURN
