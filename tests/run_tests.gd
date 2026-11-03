@@ -23500,6 +23500,18 @@ func _test_coop_host_map() -> void:
 	_coop().test_host_map()
 
 
+func _route_ready() -> RefCounted:
+	return load("res://tests/route_ready_tests.gd").new(self)
+
+
+func _test_route_ready_rules() -> void:
+	_route_ready().test_rules()
+
+
+func _test_route_ready_in_game() -> void:
+	await _route_ready().test_in_game()
+
+
 func _planner() -> RefCounted:
 	return load("res://tests/route_planner_tests.gd").new(self)
 
