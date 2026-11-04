@@ -408,6 +408,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_current_slot = ""
 	# Where the tank is, for its badge (stamped once the bike is baked, see BikeBadge).
 	var tank_box := slot_bounds("tank") if _tank_shown() else AABB()
+	var badge: Dictionary = BikeBadge.clean(condition.get("tank", {}).get("badge", {}) if condition.get("tank") is Dictionary else {})
+	var tank_faces := tank_faces() if _tank_shown() and not badge.is_empty() else PackedVector3Array()
 	if with_rider:
 		_build_rider()
 		Graphics.avatar_meshes(_rider)
@@ -431,7 +433,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	for n in _badge:
 		if is_instance_valid(n):
 			n.free()
-	_badge = BikeBadge.stamp(self, tank_box, condition.get("tank", {}).get("badge", {}) if condition.get("tank") is Dictionary else {})
+	_badge = BikeBadge.stamp(self, tank_box, badge, tank_faces)
 	BikeReform.finish(_reform)
 	_reform = BikeReform.start(self, reform_from) if BikeLook.is_new(self) else []
 	reform_from = {}
@@ -9272,6 +9274,28 @@ func make_ghost(mat: Material) -> void:
 				(sh as Node3D).visible = false
 	if _dash_label:
 		_dash_label.visible = false
+
+
+## The tank's shown surface as triangles in this model's space (three points each), for the
+## badge's decals to be cut from (see BikeBadge.stamp).
+func tank_faces() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for mi in _slot_meshes.get("tank", []):
+		if _stock_pieces.has(mi) or not (mi is MeshInstance3D) or not is_instance_valid(mi) or not (mi as Node3D).visible:
+			continue
+		var m := (mi as MeshInstance3D).mesh
+		if m == null:
+			continue
+		var xf := _local_xform(mi)
+		for p in m.get_faces():
+			out.append(xf * p)
+	for shape in _slot_shapes.get("tank", []):
+		if shape[2]:
+			continue
+		var xf: Transform3D = Transform3D.IDENTITY if shape[0] == self else _local_xform(shape[0])
+		for p in (shape[1] as Mesh).get_faces():
+			out.append(xf * p)
+	return out
 
 
 ## Local-space bounding box of a part's meshes.

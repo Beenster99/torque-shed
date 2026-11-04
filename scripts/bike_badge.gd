@@ -36,6 +36,10 @@ const LOGOS := {"wings": "Wings", "star": "Star", "shield": "Shield", "bolt": "L
 	"diamond": "Diamond", "piston": "Piston", "flame": "Flame", "crown": "Crown", "spanners": "Crossed spanners"}
 ## How big the logo's picture is, in pixels (it's drawn at twice that and shrunk, for smooth edges).
 const SIZE := 256
+## How tall the brand name's letters are drawn, in pixels, and the clear border round them (a
+## share of their height).
+const TEXT_PX := 96
+const BORDER := 0.15
 const SIZE_MIN := 0.4
 const SIZE_MAX := 2.5
 const MOVE_MAX := 0.5
@@ -109,29 +113,147 @@ static func texture(id: String) -> Texture2D:
 		return _textures[id]
 	var big := SIZE * 2
 	var img := Image.create(big, big, false, Image.FORMAT_RGBA8)
-	# Each shape filled a row at a time: the spans between its edges' crossings of the row.
 	for sh in _shapes(id):
-		var pts: PackedVector2Array = sh[1]
-		var fill := Color.WHITE if sh[0] else Color(1, 1, 1, 0)
-		for y in big:
-			var py := (y + 0.5) / big * 2.0 - 1.0
-			var xs: Array[float] = []
-			for i in pts.size():
-				var a := pts[i]
-				var b := pts[(i + 1) % pts.size()]
-				if (a.y <= py) != (b.y <= py):
-					xs.append(a.x + (py - a.y) / (b.y - a.y) * (b.x - a.x))
-			xs.sort()
-			for k in range(0, xs.size() - 1, 2):
-				var x0 := clampi(roundi((xs[k] + 1.0) * 0.5 * big), 0, big)
-				var x1 := clampi(roundi((xs[k + 1] + 1.0) * 0.5 * big), 0, big)
-				if x1 > x0:
-					img.fill_rect(Rect2i(x0, y, x1 - x0, 1), fill)
+		var px := PackedVector2Array()
+		for p in sh[1]:
+			px.append((p + Vector2.ONE) * 0.5 * big)
+		_fill(img, [px], Color.WHITE if sh[0] else Color(1, 1, 1, 0))
 	img.resize(SIZE, SIZE, Image.INTERPOLATE_BILINEAR)
 	img.generate_mipmaps()
 	var tex := ImageTexture.create_from_image(img)
 	_textures[id] = tex
 	return tex
+
+
+## Fills the inside of `polys` (in pixels, y down) on `img` with `fill`, a row at a time: the
+## spans between the crossings of the row by all of their edges, so a hole (an inner loop, like
+## the middle of an O) stays out.
+static func _fill(img: Image, polys: Array, fill: Color) -> void:
+	var lo := INF
+	var hi := -INF
+	for pts in polys:
+		for p in pts:
+			lo = minf(lo, p.y)
+			hi = maxf(hi, p.y)
+	if lo > hi:
+		return
+	for y in range(maxi(0, floori(lo)), mini(img.get_height(), ceili(hi) + 1)):
+		var py := y + 0.5
+		var xs: Array[float] = []
+		for pts in polys:
+			var n: int = pts.size()
+			for i in n:
+				var a: Vector2 = pts[i]
+				var b: Vector2 = pts[(i + 1) % n]
+				if (a.y <= py) != (b.y <= py):
+					xs.append(a.x + (py - a.y) / (b.y - a.y) * (b.x - a.x))
+		xs.sort()
+		for k in range(0, xs.size() - 1, 2):
+			var x0 := clampi(roundi(xs[k]), 0, img.get_width())
+			var x1 := clampi(roundi(xs[k + 1]), 0, img.get_width())
+			if x1 > x0:
+				img.fill_rect(Rect2i(x0, y, x1 - x0, 1), fill)
+
+
+## The brand name `text` in lettering `font_id`, white on clear, to be tinted (cached): drawn
+## from the font's own outlines, so it needs nothing on screen. Its height is TEXT_PX plus a clear
+## border all round (BORDER of it), so its edge shows nothing where it's stretched over the tank.
+static func text_texture(text: String, font_id: String) -> Texture2D:
+	var key := font_id + "|" + text
+	if _textures.has(key):
+		return _textures[key]
+	var f := font(font_id)
+	var ts := TextServerManager.get_primary_interface()
+	var size := TEXT_PX * 2   # drawn at twice the size and shrunk, for smooth edges
+	var shaped := ts.create_shaped_text()
+	ts.shaped_text_add_string(shaped, text, f.get_rids(), size)
+	var glyphs := ts.shaped_text_get_glyphs(shaped)
+	var ascent := ts.shaped_text_get_ascent(shaped)
+	var descent := ts.shaped_text_get_descent(shaped)
+	var wide := ts.shaped_text_get_width(shaped)
+	var pad := ceili((ascent + descent) * BORDER)
+	var img := Image.create(maxi(4, ceili(wide) + pad * 2), maxi(4, ceili(ascent + descent) + pad * 2), false, Image.FORMAT_RGBA8)
+	var polys := []
+	var pen := 0.0
+	for g in glyphs:
+		var at := Vector2(pad + pen, pad + ascent) + (g.get("offset", Vector2.ZERO) as Vector2)
+		var rid: RID = g.get("font_rid", RID())
+		if rid.is_valid() and int(g.get("index", 0)) != 0:
+			var c: Dictionary = ts.font_get_glyph_contours(rid, int(g.get("font_size", size)), int(g["index"]))
+			if not c.is_empty():
+				polys.append_array(_outlines(c, at))
+		pen += float(g.get("advance", 0.0)) * int(g.get("repeat", 1))
+	ts.free_rid(shaped)
+	_fill(img, polys, Color.WHITE)
+	img.resize(maxi(2, img.get_width() / 2), maxi(2, img.get_height() / 2), Image.INTERPOLATE_BILINEAR)
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_textures[key] = tex
+	return tex
+
+
+## A glyph's outlines (TextServer.font_get_glyph_contours) as closed polygons in pixels, its
+## origin at `at`: curves flattened to short straight runs.
+static func _outlines(c: Dictionary, at: Vector2) -> Array:
+	var pts: PackedVector3Array = c.get("points", PackedVector3Array())
+	var ends: PackedInt32Array = c.get("contours", PackedInt32Array())
+	var out := []
+	var first := 0
+	for e in ends:
+		var ring := []
+		for i in range(first, e + 1):
+			ring.append(pts[i])
+		first = e + 1
+		if ring.size() < 2:
+			continue
+		# Start on a point on the curve (or between two that aren't).
+		var k := -1
+		for i in ring.size():
+			if int(ring[i].z) == TextServer.CONTOUR_CURVE_TAG_ON:
+				k = i
+				break
+		var seq := []
+		if k < 0:
+			var m: Vector3 = (ring[0] + ring[1]) * 0.5
+			m.z = TextServer.CONTOUR_CURVE_TAG_ON
+			seq = [m] + ring + [m]
+		else:
+			seq = ring.slice(k) + ring.slice(0, k) + [ring[k]]
+		var poly := PackedVector2Array()
+		var prev := Vector2(seq[0].x, seq[0].y)
+		poly.append(prev + at)
+		var j := 1
+		while j < seq.size():
+			var p: Vector3 = seq[j]
+			var tag := int(p.z)
+			if tag == TextServer.CONTOUR_CURVE_TAG_ON:
+				prev = Vector2(p.x, p.y)
+				poly.append(prev + at)
+				j += 1
+			elif tag == TextServer.CONTOUR_CURVE_TAG_OFF_CUBIC and j + 2 < seq.size():
+				var c1 := Vector2(p.x, p.y)
+				var c2 := Vector2(seq[j + 1].x, seq[j + 1].y)
+				var to := Vector2(seq[j + 2].x, seq[j + 2].y)
+				for s in range(1, 9):
+					var t := s / 8.0
+					var u := 1.0 - t
+					poly.append(prev * u * u * u + c1 * 3.0 * u * u * t + c2 * 3.0 * u * t * t + to * t * t * t + at)
+				prev = to
+				j += 3
+			else:
+				var ctrl := Vector2(p.x, p.y)
+				var nxt: Vector3 = seq[j + 1] if j + 1 < seq.size() else seq[0]
+				var to := Vector2(nxt.x, nxt.y)
+				var on_next := int(nxt.z) == TextServer.CONTOUR_CURVE_TAG_ON
+				if not on_next:
+					to = (ctrl + to) * 0.5
+				for s in range(1, 7):
+					var t := s / 6.0
+					poly.append(prev.lerp(ctrl, t).lerp(ctrl.lerp(to, t), t) + at)
+				prev = to
+				j += 2 if on_next else 1
+		out.append(poly)
+	return out
 
 
 ## Logo `id` as polygons in a -1..1 square (y down): [[on, points], ...], drawn in order, a later
@@ -218,13 +340,16 @@ static func _rect(x0: float, y0: float, x1: float, y1: float) -> PackedVector2Ar
 	return PackedVector2Array([Vector2(x0, y0), Vector2(x1, y0), Vector2(x1, y1), Vector2(x0, y1)])
 
 
-## Stamps `badge` on both sides of a tank whose box (in the model's space) is `box`, under
-## `parent`: the logo forward, the brand behind it, each just proud of the tank's side.
-## Returns the stamps it made.
-static func stamp(parent: Node3D, box: AABB, badge: Dictionary) -> Array:
+## Stamps badge `badge` on both sides of the tank as decals: for the logo and the brand name, a
+## thin skin cut from the tank's own surface (`faces`: its triangles in `parent`'s space, three
+## points each, from before the bike is baked; `box` their bounds) and lifted a hair off it, the
+## picture mapped across it, so it follows every curve of the tank. Returns the nodes added (none
+## without a badge or a tank). Each is named BadgeLogoR/L or BadgeBrandR/L, and carries its
+## picture's place on the tank as meta "rect" (Rect2 in z and y) and the brand's text as "text".
+static func stamp(parent: Node3D, box: AABB, badge: Dictionary, faces := PackedVector3Array()) -> Array:
 	var b := clean(badge)
 	var out := []
-	if b.is_empty() or box.size.x <= 0.01 or box.size.z <= 0.05:
+	if b.is_empty() or box.size.x <= 0.01 or box.size.z <= 0.05 or faces.size() < 3:
 		return out
 	var h := box.size.y
 	var length := box.size.z
@@ -236,48 +361,125 @@ static func stamp(parent: Node3D, box: AABB, badge: Dictionary) -> Array:
 	# in the middle, then each sized and moved as asked.
 	var mid := box.get_center().z
 	var logo_z := mid - (length * 0.2 if has_brand else 0.0)
-	var logo_at := Vector3(0.0, y + float(b.get("logo_y", 0.0)) * h, logo_z + float(b.get("logo_x", 0.0)) * length)
-	var brand_dy := float(b.get("brand_y", 0.0)) * h
-	var brand_dz := float(b.get("brand_x", 0.0)) * length
-	var brand_room := length * (0.5 if has_logo else 0.8)
+	var pics := []   # [name, texture, colour, rect in (z, y)]
+	if has_logo:
+		var ls := logo_size * float(b.get("logo_size", 1.0))
+		var at := Vector2(logo_z + float(b.get("logo_x", 0.0)) * length, y + float(b.get("logo_y", 0.0)) * h)
+		pics.append(["BadgeLogo", texture(str(b["logo"])), b["logo_color"], Rect2(at - Vector2(ls, ls) * 0.5, Vector2(ls, ls)), ""])
+	if has_brand:
+		var text := brand_text(b)
+		var tex := text_texture(text, str(b.get("brand_font", "plain")))
+		var aspect := float(tex.get_width()) / maxf(1.0, float(tex.get_height()))
+		# The letters a fifth of the tank's height, smaller still if that's too long to fit.
+		var tall := h * 0.2 * (1.0 + BORDER * 2.0)
+		var room := length * (0.5 if has_logo else 0.8) * (1.0 + BORDER * 2.0 / aspect)
+		if tall * aspect > room:
+			tall = room / aspect
+		tall *= float(b.get("brand_size", 1.0))
+		var wide := tall * aspect
+		# Its middle just behind where the logo comes (towards the seat: larger z), or the tank's
+		# middle; sizing or moving the logo leaves it be.
+		var bz := logo_z + logo_size * 0.5 + wide * 0.5 if has_logo else mid
+		var at := Vector2(bz + float(b.get("brand_x", 0.0)) * length, y + float(b.get("brand_y", 0.0)) * h)
+		pics.append(["BadgeBrand", tex, b["brand_color"], Rect2(at - Vector2(wide, tall) * 0.5, Vector2(wide, tall)), text])
 	for side in [1.0, -1.0]:
-		var x: float = (box.end.x + 0.004) if side > 0.0 else (box.position.x - 0.004)
-		# Facing out of that side (a sprite and a label face +z, so turned a quarter about y).
-		var basis := Basis(Vector3.UP, side * PI / 2.0)
-		if has_logo:
-			var s := Sprite3D.new()
-			s.name = "BadgeLogoR" if side > 0.0 else "BadgeLogoL"
-			s.texture = texture(str(b["logo"]))
-			s.modulate = b["logo_color"]
-			s.pixel_size = logo_size * float(b.get("logo_size", 1.0)) / float(SIZE)
-			s.double_sided = false
-			s.shaded = true
-			s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-			s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-			s.transform = Transform3D(basis, Vector3(x, logo_at.y, logo_at.z))
-			parent.add_child(s)
-			out.append(s)
-		if has_brand:
-			var l := Label3D.new()
-			l.name = "BadgeBrandR" if side > 0.0 else "BadgeBrandL"
-			l.text = brand_text(b)
-			l.font = font(str(b.get("brand_font", "plain")))
-			l.modulate = b["brand_color"]
-			l.outline_size = 0
-			l.font_size = 64
-			l.double_sided = false
-			l.shaded = true
-			l.alpha_cut = Label3D.ALPHA_CUT_DISCARD
-			# The letters a fifth of the tank's height, smaller still if that's too long to fit.
-			var px := h * 0.2 / 64.0
-			var wide: float = l.font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x
-			if wide * px > brand_room:
-				px = brand_room / maxf(wide, 1.0)
-			# Its middle just behind where the logo comes (towards the seat: larger z), or the
-			# tank's middle; sizing or moving the logo leaves it be.
-			var bz := logo_z + logo_size * 0.5 + 0.012 + wide * px * 0.5 if has_logo else mid
-			l.pixel_size = px * float(b.get("brand_size", 1.0))
-			l.transform = Transform3D(basis, Vector3(x, y + brand_dy, bz + brand_dz))
-			parent.add_child(l)
-			out.append(l)
+		for pic in pics:
+			var mesh := _decal_mesh(faces, side, box.get_center().x, pic[3])
+			if mesh == null:
+				continue
+			var mi := MeshInstance3D.new()
+			mi.name = str(pic[0]) + ("R" if side > 0.0 else "L")
+			mi.mesh = mesh
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var m := StandardMaterial3D.new()
+			m.albedo_texture = pic[1]
+			m.albedo_color = pic[2]
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.texture_repeat = false
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+			m.roughness = 0.3
+			m.render_priority = 1
+			mi.material_override = m
+			mi.set_meta("rect", pic[3])
+			if pic[4] != "":
+				mi.set_meta("text", pic[4])
+			parent.add_child(mi)
+			out.append(mi)
 	return out
+
+
+## How far a decal sits off the tank's paint.
+const LIFT := 0.0015
+
+
+## The skin for one decal on side `side` (+1 the right, the larger x): every triangle of `faces`
+## on that side of `mid_x`, facing out that way, that reaches into `rect` (in z and y) and is the
+## outermost there (not the tank's tunnel or inner wall behind it), lifted LIFT off along its
+## smoothed normal, with the picture laid flat across `rect` as seen from that side. Null if no
+## surface reaches it.
+static func _decal_mesh(faces: PackedVector3Array, side: float, mid_x: float, rect: Rect2) -> ArrayMesh:
+	var picked := []   # [a, b, c, outward normal]
+	const CELLS := 16
+	var depth := PackedFloat32Array()
+	depth.resize(CELLS * CELLS)
+	depth.fill(-INF)
+	var cell := rect.size / CELLS
+	for f in range(0, faces.size() - 2, 3):
+		var a := faces[f]
+		var b := faces[f + 1]
+		var c := faces[f + 2]
+		var n := (b - a).cross(c - a)
+		if n.length_squared() < 1e-14:
+			continue
+		n = n.normalized()
+		if absf(n.x) < 0.2 or ((a.x + b.x + c.x) / 3.0 - mid_x) * side <= 0.0:
+			continue
+		var lo := Vector2(minf(a.z, minf(b.z, c.z)), minf(a.y, minf(b.y, c.y)))
+		var hi := Vector2(maxf(a.z, maxf(b.z, c.z)), maxf(a.y, maxf(b.y, c.y)))
+		if hi.x < rect.position.x or lo.x > rect.end.x or hi.y < rect.position.y or lo.y > rect.end.y:
+			continue
+		var out_n := n * (signf(n.x) * side)
+		picked.append([a, b, c, out_n])
+		# How far out the surface comes over each cell it spans, to keep only the outer skin.
+		var far := maxf(a.x * side, maxf(b.x * side, c.x * side))
+		var i0 := clampi(floori((lo.x - rect.position.x) / cell.x), 0, CELLS - 1)
+		var i1 := clampi(floori((hi.x - rect.position.x) / cell.x), 0, CELLS - 1)
+		var j0 := clampi(floori((lo.y - rect.position.y) / cell.y), 0, CELLS - 1)
+		var j1 := clampi(floori((hi.y - rect.position.y) / cell.y), 0, CELLS - 1)
+		for i in range(i0, i1 + 1):
+			for j in range(j0, j1 + 1):
+				depth[j * CELLS + i] = maxf(depth[j * CELLS + i], far)
+	if picked.is_empty():
+		return null
+	var keep := []
+	var normals := {}   # a point (rounded) -> its summed normal, for smooth shading
+	for t in picked:
+		var mid_t: Vector3 = (t[0] + t[1] + t[2]) / 3.0
+		var i := clampi(floori((mid_t.z - rect.position.x) / cell.x), 0, CELLS - 1)
+		var j := clampi(floori((mid_t.y - rect.position.y) / cell.y), 0, CELLS - 1)
+		var near := maxf(t[0].x * side, maxf(t[1].x * side, t[2].x * side))
+		if near < depth[j * CELLS + i] - 0.02:
+			continue   # something further out covers it
+		keep.append(t)
+		for k in 3:
+			var key: Vector3i = Vector3i((t[k] as Vector3) * 2000.0)
+			normals[key] = normals.get(key, Vector3.ZERO) + t[3]
+	if keep.is_empty():
+		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for t in keep:
+		# Wound so its front faces out of the tank, whichever way the tank's own triangles go.
+		var order := [0, 1, 2] if ((t[1] - t[0]).cross(t[2] - t[0]) as Vector3).dot(t[3]) < 0.0 else [0, 2, 1]
+		for k in order:
+			var p: Vector3 = t[k]
+			var n: Vector3 = normals[Vector3i(p * 2000.0)].normalized()
+			# The picture as seen from this side: left to right is towards the nose on the right
+			# side (the smaller z) and towards the seat on the left.
+			var u := (p.z - rect.position.x) / rect.size.x
+			if side > 0.0:
+				u = 1.0 - u
+			st.set_normal(n)
+			st.set_uv(Vector2(u, (rect.end.y - p.y) / rect.size.y))
+			st.add_vertex(p + n * LIFT)
+	return st.commit()
