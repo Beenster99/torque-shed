@@ -159,3 +159,32 @@ func test_splash() -> void:
 	await t.get_tree().create_timer(SplashVideo.FADE + 0.3).timeout
 	check(ended[0], "splash: a key press skips the film")
 	check(not is_instance_valid(s), "splash: the skipped film is gone")
+
+
+## The Bike shop takes the whole screen in the Esc menu (Simon, v0.48.0 at 4K: "mine is all
+## cramped up"), and the panel goes back to its usual size beside the menu for any other tab.
+func test_bike_shop_wide() -> void:
+	Shed.start_new("Tester", 5)
+	var menu := MainMenu.new()
+	t.add_child(menu)
+	await _frames(2)
+	menu.show_pause()
+	menu.open_tab(menu.bike_shop)
+	await _frames(4)
+	var screen := t.get_viewport().get_visible_rect()
+	var r := menu._profile_tabs.get_global_rect()
+	check(not menu._menu_panel.visible and r.size.x > screen.size.x * 0.85 and r.size.y > screen.size.y * 0.7
+		and screen.grow(1.0).encloses(r),
+		"the Bike shop fills the screen, the menu's column out of the way (%s of %s)" % [r.size, screen.size])
+	var preview := menu.bike_shop._preview.get_global_rect()
+	check(preview.size.x > screen.size.x * 0.45, "and its preview has half the screen (%d px wide)" % preview.size.x)
+	menu._profile_tabs.current_tab = 0
+	await _frames(4)
+	check(menu._menu_panel.visible and menu._profile_tabs.custom_minimum_size == MainMenu.PANEL_SIZE,
+		"any other tab, the panel is back beside the menu at its usual size")
+	menu.open_tab(menu.bike_shop)
+	await _frames(2)
+	menu._show_panel(null)
+	await _frames(2)
+	check(menu._menu_panel.visible, "and closing the panel brings the menu back")
+	menu.queue_free()

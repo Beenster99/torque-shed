@@ -57,6 +57,10 @@ func _ready() -> void:
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(400, 480)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# On a wide panel (the menu gives the Bike shop the whole screen) the list takes about two
+	# fifths and the preview the rest.
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_stretch_ratio = 0.7
 	cols.add_child(scroll)
 	_left = VBoxContainer.new()
 	_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -94,6 +94,7 @@ var _saves_button: Button
 ## The Load screen, in place of the tabs while it's open.
 var saves: SaveBrowser
 var _row: HBoxContainer
+var _menu_panel: PanelContainer   # the menu's own column (title, Continue, Settings...), left of the panels
 var _resume: Button
 var _settings_button: Button
 var _title_settings: Button
@@ -119,6 +120,7 @@ func _ready() -> void:
 	row.add_theme_constant_override("separation", 24)
 	add_child(row)
 	var panel := PanelContainer.new()
+	_menu_panel = panel
 	panel.custom_minimum_size = Vector2(420, 0)
 	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(panel)
@@ -441,7 +443,7 @@ func _build_badges() -> void:
 func _panel_tabs(panel_name: String) -> TabContainer:
 	var tabs := TabContainer.new()
 	tabs.name = panel_name
-	tabs.custom_minimum_size = Vector2(760, 600)
+	tabs.custom_minimum_size = PANEL_SIZE
 	tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	tabs.visible = false
 	_row.add_child(tabs)
@@ -476,6 +478,31 @@ func _show_panel(panel: TabContainer) -> void:
 		p.visible = p == panel
 	if panel and saves:
 		saves.visible = false
+
+
+## The size every panel beside the menu comes at.
+const PANEL_SIZE := Vector2(760, 600)
+## Room kept free under a panel stretched to the screen: the tool bar along the bottom.
+const PANEL_FOOT := 100.0
+
+
+## While the Bike shop is showing, its panel takes the whole screen (the menu's column hidden) so
+## the configurator's list and its preview have room; any other tab, the panel is its usual size
+## beside the menu again. Run each frame the menu shows, so it follows the window's size too.
+func fit_bike_shop() -> void:
+	if _profile_tabs == null or bike_shop == null:
+		return
+	var wide := _profile_tabs.visible and _profile_tabs.get_current_tab_control() == bike_shop
+	var want := PANEL_SIZE
+	if wide:
+		var vp := get_viewport_rect().size
+		want = Vector2(maxf(PANEL_SIZE.x, vp.x - _row.position.x * 2.0), maxf(PANEL_SIZE.y, vp.y - _row.position.y - PANEL_FOOT))
+	if _menu_panel.visible == wide:
+		_menu_panel.visible = not wide
+	if _profile_tabs.custom_minimum_size != want:
+		_profile_tabs.custom_minimum_size = want
+		_profile_tabs.size = want
+		_row.size = Vector2.ZERO   # let the row shrink back round a smaller panel
 
 
 ## Opens `panel`, or closes it if it's the one open.
@@ -671,6 +698,8 @@ func _process(_delta: float) -> void:
 
 
 func _process_body(_delta: float) -> void:
+	if visible:
+		fit_bike_shop()
 	if visible and _pad.is_visible_in_tree():
 		_pad.text = Controls.diagnostics()
 	if visible and _gameplay.is_visible_in_tree():
