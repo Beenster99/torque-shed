@@ -57,6 +57,12 @@ func _ready() -> void:
 	tab._preview._place_camera()
 	await _frames(10)
 	await _shot("03_badge_close")
+	tab._preview.pivot.rotation.y = PI / 2.0 - 0.25
+	tab._preview.look = Vector2(0.12, 0.18)
+	tab._preview._clamp_look()
+	tab._preview._place_camera()
+	await _frames(10)
+	await _shot("03b_badge_close_other_side")
 	tab._preview.reset_view()
 	tab._preview.pivot.rotation.y = -PI / 2.0 + 0.25
 	# The colour panel, with swatches and recent colours, from the lowest colour on the list.

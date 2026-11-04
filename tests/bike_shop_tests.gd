@@ -204,19 +204,26 @@ func test_configurator_extras() -> void:
 	await _frames(2)
 	var pv: PartPreview = tab._preview
 	var model: BikeModel = pv.pivot.find_children("*", "BikeModel", true, false)[0] if not pv.pivot.find_children("*", "BikeModel", true, false).is_empty() else null
-	var logos := model.find_children("BadgeLogo*", "Sprite3D", false, false) if model else []
-	var brands := model.find_children("BadgeBrand*", "Label3D", false, false) if model else []
+	var logos := model.find_children("BadgeLogo*", "MeshInstance3D", false, false) if model else []
+	var brands := model.find_children("BadgeBrand*", "MeshInstance3D", false, false) if model else []
 	var box := model.slot_bounds("tank") if model else AABB()
-	var sides := logos.filter(func(n): return (n as Node3D).position.x > box.end.x - 0.001).size() + logos.filter(func(n): return (n as Node3D).position.x < box.position.x + 0.001).size()
-	check(logos.size() == 2 and brands.size() == 2 and sides == 2 and (brands[0] as Label3D).text == "BENNETT MOTOR WO",
-		"the logo and the brand are stamped on both sides of the tank (%d logos, %d brands, %d sides)" % [logos.size(), brands.size(), sides])
+	var sides := logos.filter(func(n): return (n as MeshInstance3D).get_aabb().get_center().x > box.get_center().x).size() * 10 \
+		+ logos.filter(func(n): return (n as MeshInstance3D).get_aabb().get_center().x < box.get_center().x).size()
+	check(logos.size() == 2 and brands.size() == 2 and sides == 11 and str(brands[0].get_meta("text", "")) == "BENNETT MOTOR WO",
+		"the logo and the brand are on both sides of the tank (%d logos, %d brands, sides %d)" % [logos.size(), brands.size(), sides])
+	# Decals: skins cut from the tank's own surface, so they keep to its shape and stand off it by
+	# no more than a hair (a flat badge would stand clear of a curved tank).
+	var hugs := true
+	for d in logos + brands:
+		var db := (d as MeshInstance3D).get_aabb()
+		hugs = hugs and db.position.x >= box.position.x - 0.003 and db.end.x <= box.end.x + 0.003 and db.size.x > 0.004
+	check(hugs, "the badge is a decal wrapped on the tank's curves, not a flat card sticking out")
 	check(pv.backdrop != null and pv.backdrop.visible and pv.backdrop.texture == BikeBadge.texture("wings"), "and the logo stands behind the bike in the preview")
 	# Sized and moved with the sliders under each: bigger and higher logo, the brand further back.
-	var logo_r: Sprite3D = model.find_child("BadgeLogoR", false, false) if model else null
-	var brand_r: Label3D = model.find_child("BadgeBrandR", false, false) if model else null
-	var was_px := logo_r.pixel_size if logo_r else 0.0
-	var was_y := logo_r.position.y if logo_r else 0.0
-	var was_z := brand_r.position.z if brand_r else 0.0
+	var logo_r: MeshInstance3D = model.find_child("BadgeLogoR", false, false) if model else null
+	var brand_r: MeshInstance3D = model.find_child("BadgeBrandR", false, false) if model else null
+	var was: Rect2 = logo_r.get_meta("rect") if logo_r else Rect2()
+	var was_z: float = (brand_r.get_meta("rect") as Rect2).get_center().x if brand_r else 0.0
 	(tab.find_child("Slider_logo_size", true, false) as HSlider).value = 1.6
 	(tab.find_child("Slider_logo_y", true, false) as HSlider).value = 0.2
 	(tab.find_child("Slider_brand_x", true, false) as HSlider).value = 0.15
@@ -224,8 +231,9 @@ func test_configurator_extras() -> void:
 	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
 	logo_r = model.find_child("BadgeLogoR", false, false)
 	brand_r = model.find_child("BadgeBrandR", false, false)
-	check(logo_r != null and is_equal_approx(logo_r.pixel_size, was_px * 1.6) and logo_r.position.y > was_y + 0.001
-		and brand_r != null and brand_r.position.z > was_z + 0.001,
+	var now: Rect2 = logo_r.get_meta("rect") if logo_r else Rect2()
+	check(logo_r != null and is_equal_approx(now.size.x, was.size.x * 1.6) and now.get_center().y > was.get_center().y + 0.001
+		and brand_r != null and (brand_r.get_meta("rect") as Rect2).get_center().x > was_z + 0.001,
 		"the logo can be made bigger and moved up, the brand moved back along the tank")
 	tab.reset_place("brand")
 	check(not tab.badge.has("brand_x") and is_equal_approx((tab.find_child("Slider_brand_x", true, false) as HSlider).value, 0.0)
@@ -237,15 +245,16 @@ func test_configurator_extras() -> void:
 	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
 	brand_r = model.find_child("BadgeBrandR", false, false)
 	check(tab._src()["build"]["colors"]["tank"]["badge"].get("brand_font") == "lobster" and brand_r != null
-		and brand_r.font == BikeBadge.font("lobster") and brand_r.text == "Bennett Motor Wo",
-		"the brand can be lettered in a script, as typed (%s)" % (brand_r.text if brand_r else "none"))
+		and (brand_r.material_override as StandardMaterial3D).albedo_texture == BikeBadge.text_texture("Bennett Motor Wo", "lobster")
+		and brand_r.get_meta("text", "") == "Bennett Motor Wo",
+		"the brand can be lettered in a script, as typed (%s)" % (brand_r.get_meta("text", "") if brand_r else "none"))
 	check(pv.backdrop_brand != null and pv.backdrop_brand.visible and pv.backdrop_brand.text == "Bennett Motor Wo"
 		and pv.backdrop_brand.font == BikeBadge.font("lobster"), "and it stands behind the bike under the logo")
 	(tab.find_child("Font_bebas", true, false) as Button).pressed.emit()
 	await _frames(2)
 	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
 	brand_r = model.find_child("BadgeBrandR", false, false)
-	check(brand_r != null and brand_r.text == "BENNETT MOTOR WO", "a font set in capitals puts it in capitals")
+	check(brand_r != null and brand_r.get_meta("text", "") == "BENNETT MOTOR WO", "a font set in capitals puts it in capitals")
 	var all_load := true
 	for f in BikeBadge.FONTS:
 		all_load = all_load and BikeBadge.font(str(f)) != null and (str(f) == "plain" or BikeBadge.font(str(f)) != ThemeDB.fallback_font)
