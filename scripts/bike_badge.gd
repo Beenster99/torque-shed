@@ -10,9 +10,27 @@ extends RefCounted
 ## "brand" free text up to BRAND_MAX letters ("" for none). Each can also be sized and moved:
 ## "logo_size"/"brand_size" times its usual size (SIZE_MIN..SIZE_MAX), and "logo_x"/"brand_x" along
 ## the tank (towards the seat) and "logo_y"/"brand_y" up it, as a share of the tank's length and
-## height (-MOVE_MAX..MOVE_MAX). Left out, each is as it comes: size 1, not moved.
+## height (-MOVE_MAX..MOVE_MAX). Left out, each is as it comes: size 1, not moved. "brand_font"
+## is one of FONTS (left out for the plain one).
 
 const BRAND_MAX := 16
+## The brand name's lettering, in picker order: id -> [name, file in FONT_DIR ("" for the game's
+## own), in capitals whatever's typed]. All free fonts (SIL Open Font License, see FONT_DIR/licences).
+const FONTS := {
+	"plain": ["Plain", "", true],
+	"bebas": ["Bebas Neue", "BebasNeue-Regular.ttf", true],
+	"racing": ["Racing Sans", "RacingSansOne-Regular.ttf", true],
+	"russo": ["Russo One", "RussoOne-Regular.ttf", true],
+	"audiowide": ["Audiowide", "Audiowide-Regular.ttf", true],
+	"blackops": ["Black Ops", "BlackOpsOne-Regular.ttf", true],
+	"graduate": ["Graduate", "Graduate-Regular.ttf", true],
+	"righteous": ["Righteous", "Righteous-Regular.ttf", false],
+	"playfair": ["Playfair", "PlayfairDisplay.ttf", false],
+	"lobster": ["Lobster", "Lobster-Regular.ttf", false],
+	"pacifico": ["Pacifico", "Pacifico-Regular.ttf", false],
+	"kaushan": ["Kaushan Script", "KaushanScript-Regular.ttf", false],
+}
+const FONT_DIR := "res://assets/fonts/badge/"
 ## The logos to pick from, in picker order, and what each is called.
 const LOGOS := {"wings": "Wings", "star": "Star", "shield": "Shield", "bolt": "Lightning bolt", "roundel": "Roundel",
 	"diamond": "Diamond", "piston": "Piston", "flame": "Flame", "crown": "Crown", "spanners": "Crossed spanners"}
@@ -23,6 +41,34 @@ const SIZE_MAX := 2.5
 const MOVE_MAX := 0.5
 
 static var _textures := {}
+static var _fonts := {}
+
+
+## Lettering `id`'s font (cached; the game's own for "plain" or one it doesn't know).
+static func font(id: String) -> Font:
+	if not FONTS.has(id) or str(FONTS[id][1]) == "":
+		return ThemeDB.fallback_font
+	if not _fonts.has(id):
+		var f: Font = load(FONT_DIR + str(FONTS[id][1]))
+		if id == "playfair" and f:
+			# A font of every weight in one: this one at its boldest.
+			var v := FontVariation.new()
+			v.base_font = f
+			v.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 800}
+			f = v
+		_fonts[id] = f if f else ThemeDB.fallback_font
+	return _fonts[id]
+
+
+## Whether lettering `id` is in capitals whatever's typed.
+static func caps(id: String) -> bool:
+	return bool(FONTS.get(id, FONTS["plain"])[2])
+
+
+## How a badge shows its brand name: as typed, or in capitals for a font that's set in them.
+static func brand_text(b: Dictionary) -> String:
+	var t := str(b.get("brand", ""))
+	return t.to_upper() if caps(str(b.get("brand_font", "plain"))) else t
 
 
 ## `badge` made safe to keep: a known logo or none, the brand trimmed to BRAND_MAX, colours that
@@ -39,6 +85,9 @@ static func clean(badge) -> Dictionary:
 	if brand != "":
 		out["brand"] = brand
 		out["brand_color"] = badge["brand_color"] if badge.get("brand_color") is Color else Color(0.92, 0.92, 0.9)
+		var f := str(badge.get("brand_font", ""))
+		if FONTS.has(f) and f != "plain":
+			out["brand_font"] = f
 	for what in ["logo", "brand"]:
 		if not out.has(what):
 			continue
@@ -211,18 +260,17 @@ static func stamp(parent: Node3D, box: AABB, badge: Dictionary) -> Array:
 		if has_brand:
 			var l := Label3D.new()
 			l.name = "BadgeBrandR" if side > 0.0 else "BadgeBrandL"
-			l.text = str(b["brand"])
+			l.text = brand_text(b)
+			l.font = font(str(b.get("brand_font", "plain")))
 			l.modulate = b["brand_color"]
 			l.outline_size = 0
 			l.font_size = 64
 			l.double_sided = false
 			l.shaded = true
 			l.alpha_cut = Label3D.ALPHA_CUT_DISCARD
-			l.uppercase = true
 			# The letters a fifth of the tank's height, smaller still if that's too long to fit.
 			var px := h * 0.2 / 64.0
-			var font: Font = l.font if l.font else ThemeDB.fallback_font
-			var wide: float = font.get_string_size(l.text.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x
+			var wide: float = l.font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x
 			if wide * px > brand_room:
 				px = brand_room / maxf(wide, 1.0)
 			# Its middle just behind where the logo comes (towards the seat: larger z), or the

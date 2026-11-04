@@ -39,6 +39,7 @@ func _ready() -> void:
 	tab.badge["brand_size"] = 0.8
 	tab.badge["brand_x"] = 0.05
 	tab.badge["brand_y"] = -0.15
+	tab.badge["brand_font"] = "lobster"
 	tab.show_mode("new")
 	tab.set_part("panniers", "canvas_throwover")
 	tab.set_part("tail", "classic_mudguard")

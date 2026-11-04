@@ -208,7 +208,7 @@ func test_configurator_extras() -> void:
 	var brands := model.find_children("BadgeBrand*", "Label3D", false, false) if model else []
 	var box := model.slot_bounds("tank") if model else AABB()
 	var sides := logos.filter(func(n): return (n as Node3D).position.x > box.end.x - 0.001).size() + logos.filter(func(n): return (n as Node3D).position.x < box.position.x + 0.001).size()
-	check(logos.size() == 2 and brands.size() == 2 and sides == 2 and (brands[0] as Label3D).text == "Bennett Motor Wo",
+	check(logos.size() == 2 and brands.size() == 2 and sides == 2 and (brands[0] as Label3D).text == "BENNETT MOTOR WO",
 		"the logo and the brand are stamped on both sides of the tank (%d logos, %d brands, %d sides)" % [logos.size(), brands.size(), sides])
 	check(pv.backdrop != null and pv.backdrop.visible and pv.backdrop.texture == BikeBadge.texture("wings"), "and the logo stands behind the bike in the preview")
 	# Sized and moved with the sliders under each: bigger and higher logo, the brand further back.
@@ -231,6 +231,25 @@ func test_configurator_extras() -> void:
 	check(not tab.badge.has("brand_x") and is_equal_approx((tab.find_child("Slider_brand_x", true, false) as HSlider).value, 0.0)
 		and is_equal_approx(float(tab._src()["build"]["colors"]["tank"]["badge"].get("logo_size", 0.0)), 1.6),
 		"Reset puts the brand back as it comes, and the logo's size rides on the order")
+	# Lettering: picked from the buttons, set in it on the tank, and the brand on the backdrop too.
+	(tab.find_child("Font_lobster", true, false) as Button).pressed.emit()
+	await _frames(2)
+	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
+	brand_r = model.find_child("BadgeBrandR", false, false)
+	check(tab._src()["build"]["colors"]["tank"]["badge"].get("brand_font") == "lobster" and brand_r != null
+		and brand_r.font == BikeBadge.font("lobster") and brand_r.text == "Bennett Motor Wo",
+		"the brand can be lettered in a script, as typed (%s)" % (brand_r.text if brand_r else "none"))
+	check(pv.backdrop_brand != null and pv.backdrop_brand.visible and pv.backdrop_brand.text == "Bennett Motor Wo"
+		and pv.backdrop_brand.font == BikeBadge.font("lobster"), "and it stands behind the bike under the logo")
+	(tab.find_child("Font_bebas", true, false) as Button).pressed.emit()
+	await _frames(2)
+	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
+	brand_r = model.find_child("BadgeBrandR", false, false)
+	check(brand_r != null and brand_r.text == "BENNETT MOTOR WO", "a font set in capitals puts it in capitals")
+	var all_load := true
+	for f in BikeBadge.FONTS:
+		all_load = all_load and BikeBadge.font(str(f)) != null and (str(f) == "plain" or BikeBadge.font(str(f)) != ThemeDB.fallback_font)
+	check(all_load and BikeBadge.clean({"brand": "x", "brand_font": "comic"}).get("brand_font") == null, "every lettering loads, and one it doesn't know is plain")
 	check(BikeBadge.clean({"logo": "star", "logo_size": 9.0, "logo_x": -3, "brand_y": 0.3}) == {"logo": "star", "logo_color": Color(0.92, 0.92, 0.9), "logo_size": BikeBadge.SIZE_MAX, "logo_x": -BikeBadge.MOVE_MAX},
 		"sizes and moves are kept within bounds, and only for what's on the badge")
 	var before: Array = Shed.bikes.keys()

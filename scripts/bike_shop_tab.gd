@@ -275,7 +275,53 @@ func _badge_rows() -> void:
 	bcell.add_child(bc)
 	brow.add_child(bcell)
 	_left.add_child(brow)
+	_font_rows()
 	_place_row("brand")
+
+
+## The brand name's lettering: a button for each, its name written in it.
+func _font_rows() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var lab := _row_label("   lettering")
+	lab.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(lab)
+	var grid := GridContainer.new()
+	grid.name = "Fonts"
+	grid.columns = 3
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 2)
+	grid.add_theme_constant_override("v_separation", 2)
+	var group := ButtonGroup.new()
+	var now := str(badge.get("brand_font", "plain"))
+	for id in BikeBadge.FONTS:
+		var b := Button.new()
+		b.name = "Font_" + str(id)
+		b.text = str(BikeBadge.FONTS[id][0])
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = str(id) == now
+		b.focus_mode = Control.FOCUS_NONE
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.clip_text = true
+		b.add_theme_font_override("font", BikeBadge.font(str(id)))
+		b.add_theme_font_size_override("font_size", 15)
+		b.pressed.connect(func(): set_brand_font(str(id)))
+		grid.add_child(b)
+	row.add_child(grid)
+	var pad := Control.new()
+	pad.custom_minimum_size.x = 84.0
+	row.add_child(pad)
+	_left.add_child(row)
+
+
+## Letters the brand name in font `id` (see BikeBadge.FONTS).
+func set_brand_font(id: String) -> void:
+	if id == "plain" or not BikeBadge.FONTS.has(id):
+		badge.erase("brand_font")
+	else:
+		badge["brand_font"] = id
+	_refresh()
 
 
 ## Under the logo's or brand's row (`what`): sliders for its size, how far along the tank it

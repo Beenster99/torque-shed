@@ -44,6 +44,8 @@ const PAD_TURN := 2.2         # radians a second at full stick
 const PAD_ZOOM := 1.6         # zoom's growth a second at a full trigger
 ## The logo behind the bike in the Bike shop (its badge, see BikeBadge), large and faint.
 var backdrop: Sprite3D
+## The brand name under it.
+var backdrop_brand: Label3D
 var _base := Vector3.ZERO     # where the camera sits at no zoom, looking at the middle
 
 
@@ -203,14 +205,11 @@ func show_bike(key: String, parts: Dictionary, paint: Color, cond := {}) -> void
 		shadow.position.y = -0.552
 
 
-## The badge's logo on the backdrop behind the bike, large and faint in its colour (none without
-## a logo). It stands still while the bike turns.
+## The badge on the backdrop behind the bike, large and faint in its colours: the logo, and the
+## brand name under it in its lettering (nothing without either). It stands still while the bike
+## turns.
 func _show_backdrop(badge: Dictionary) -> void:
 	var b := BikeBadge.clean(badge)
-	if not b.has("logo"):
-		if backdrop:
-			backdrop.visible = false
-		return
 	if backdrop == null:
 		backdrop = Sprite3D.new()
 		backdrop.name = "Backdrop"
@@ -219,14 +218,36 @@ func _show_backdrop(badge: Dictionary) -> void:
 		backdrop.no_depth_test = false
 		backdrop.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		viewport.add_child(backdrop)
-	backdrop.texture = BikeBadge.texture(str(b["logo"]))
-	var c: Color = b["logo_color"]
-	c.a = 0.22
-	backdrop.modulate = c
-	backdrop.pixel_size = 2.4 / float(BikeBadge.SIZE)
-	# Well behind the bike from where the camera looks, a little above the turntable.
-	backdrop.position = Vector3(0.0, 0.25, -2.6)
-	backdrop.visible = true
+		backdrop_brand = Label3D.new()
+		backdrop_brand.name = "BackdropBrand"
+		backdrop_brand.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		backdrop_brand.shaded = false
+		backdrop_brand.outline_size = 0
+		backdrop_brand.font_size = 96
+		viewport.add_child(backdrop_brand)
+	backdrop.visible = b.has("logo")
+	if b.has("logo"):
+		backdrop.texture = BikeBadge.texture(str(b["logo"]))
+		var c: Color = b["logo_color"]
+		c.a = 0.22
+		backdrop.modulate = c
+		# Well behind the bike from where the camera looks, a little above the turntable (smaller
+		# and higher with the brand under it).
+		var both := b.has("brand")
+		backdrop.pixel_size = (1.9 if both else 2.4) / float(BikeBadge.SIZE)
+		backdrop.position = Vector3(0.0, 0.62 if both else 0.25, -2.6)
+	backdrop_brand.visible = b.has("brand")
+	if b.has("brand"):
+		backdrop_brand.text = BikeBadge.brand_text(b)
+		backdrop_brand.font = BikeBadge.font(str(b.get("brand_font", "plain")))
+		var bc: Color = b["brand_color"]
+		bc.a = 0.3
+		backdrop_brand.modulate = bc
+		# Letters about 0.4 high, narrower if a long name would run wider than the bike.
+		var wide := backdrop_brand.font.get_string_size(backdrop_brand.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 96).x
+		backdrop_brand.pixel_size = minf(0.4 / 96.0, 3.0 / maxf(wide, 1.0))
+		# Just under the logo, above the bike; or where the logo would be without one.
+		backdrop_brand.position = Vector3(0.0, 0.0 if b.has("logo") else 0.25, -2.6)
 
 
 func clear() -> void:
