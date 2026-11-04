@@ -763,8 +763,9 @@ func fab_owed_text(bike_id: int) -> String:
 func condition_of(item: Dictionary) -> Dictionary:
 	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
-	# The second colour it was ordered in (piping, a stripe...) and its headers (see PartColours).
-	for key in ["color2", "trim"]:
+	# The second colour it was ordered in (piping, a stripe...), its headers and a tank's badge
+	# (see PartColours).
+	for key in ["color2", "trim", "badge"]:
 		if item.has(key):
 			cond[key] = item[key]
 	# Where the dirt is on it, region by region (see Dirt).
@@ -6203,7 +6204,7 @@ func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", 
 	items[item_id]["paid"] = paid
 	items[item_id]["finish"] = finish
 	var extra := PartColours.clean(look)
-	for key in ["color2", "trim"]:
+	for key in ["color2", "trim", "badge"]:
 		if extra.has(key):
 			items[item_id][key] = extra[key]
 	# Used parts come as they are, not boxed.

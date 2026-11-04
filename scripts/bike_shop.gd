@@ -8,9 +8,10 @@ extends RefCounted
 ##                listed (BikeCopy.order with built, see BikeCopy.used_age). The list changes
 ##                every day.
 ##   New          a configurator: pick a style, then its parts slot by slot from the ones that
-##                suit it (or anything that fits), its extras (mudguards, panniers, a top box),
-##                and the colours of its paint, frame, wheels and mudguards. It comes new, built
-##                in those colours (BikeCopy.order at quality 1).
+##                suit it (or anything that fits), its extras (mudguards, panniers, a top box,
+##                a sat nav, a toolbox), each part's colour, and a badge of its own: a logo and a
+##                brand name stamped on the tank (BikeBadge). It comes new, built in those colours
+##                (BikeCopy.order at quality 1).
 ## Either way the host checks and prices it, and the bike is named after who bought it ("Simon's
 ## cafe racer").
 
@@ -18,16 +19,16 @@ extends RefCounted
 const FOR_SALE := 16
 ## The slots the configurator offers a choice in (the rest follow from them, see sanitize_build).
 const CONFIG_SLOTS: Array[String] = ["frame", "engine", "tank", "fairing", "saddle", "exhaust", "front_wheel",
-	"rear_wheel", "fork", "headlight", "handlebars", "dashboard", "front_mudguard", "tail", "panniers", "top_box"]
+	"rear_wheel", "fork", "headlight", "handlebars", "dashboard", "front_mudguard", "tail", "panniers", "top_box", "satnav", "toolbox"]
 ## The slots a second-hand bike's last owner might have changed (not its luggage: a race bike
 ## with panniers on it would be a strange thing to find for sale).
 const SWAP_SLOTS: Array[String] = ["frame", "engine", "tank", "fairing", "saddle", "exhaust", "front_wheel",
 	"rear_wheel", "fork", "headlight", "handlebars", "dashboard"]
 ## What the configurator calls a slot where the parts list's name for it isn't clear enough.
 const SLOT_LABELS := {"tail": "Rear guard, tail"}
-## The colours a new bike can be ordered in: its paint (tank and fairing), the frame, the wheels and
-## the mudguards (front and rear; a tail cowl is bodywork, so it keeps its own colour).
-const COLOUR_PARTS := {"paint": "Paint (tank and fairing)", "frame": "Frame", "wheels": "Wheels", "mudguards": "Mudguards"}
+## Groups of parts a colour can be given to at once (besides any one slot by its own name): the
+## wheels, and the mudguards (front and rear; a tail cowl is bodywork, so it keeps its own colour).
+const COLOUR_GROUPS := {"wheels": "Wheels", "mudguards": "Mudguards"}
 const SELLERS := ["Dave from Settle", "A retired postman", "Mags at the bike club", "A lad in Leeds", "Two-stroke Tony",
 	"A vicar, oddly", "The farm down the lane", "A dealer's trade-in", "Someone's uncle", "A courier, moving abroad",
 	"The cafe's owner", "A young couple, baby on the way"]
@@ -102,11 +103,10 @@ static func is_rear_guard(id: String) -> bool:
 	return PartsDB.kind_of(id) == "tail" and (n.contains("guard") or n.contains("fender"))
 
 
-## The slots on a bike of `parts` that colour key `key` (one of COLOUR_PARTS) paints.
+## The slots on a bike of `parts` that colour key `key` paints: a slot by its name (when there's
+## a part in it), or a group (COLOUR_GROUPS).
 static func colour_slots(key: String, parts: Dictionary) -> Array:
 	match key:
-		"frame":
-			return ["frame"]
 		"wheels":
 			return ["front_wheel", "rear_wheel"]
 		"mudguards":
@@ -116,28 +116,37 @@ static func colour_slots(key: String, parts: Dictionary) -> Array:
 			if is_rear_guard(str(parts.get("tail", "none"))):
 				out.append("tail")
 			return out
-	return []
+	return [key] if PartsDB.SLOT_KIND.has(key) and str(parts.get(key, "none")) != "none" else []
 
 
-## The colour the mudguards of a bike of `parts` come in from the factory (the front one's, or the
-## rear one's when it has none at the front), for the configurator's picker before one is picked.
-static func factory_mudguards(parts: Dictionary) -> Color:
-	for slot in colour_slots("mudguards", parts):
-		return PartsDB.default_color(str(parts[slot]))
-	return Color(0.1, 0.1, 0.11)
+## The colour slot `slot` of a bike of `parts` painted `paint` comes in from the factory: the
+## paint on the tank and fairing, the catalogue's colour on the rest.
+static func factory_colour(slot: String, parts: Dictionary, paint: Color) -> Color:
+	if slot in BikeCopy.PAINTED:
+		return paint
+	return PartsDB.default_color(str(parts.get(slot, "none")))
 
 
 ## A second-hand bike or a configured new one as BikeCopy takes it: {"build": ...}. `colours`
-## ({paint, frame, wheels, mudguards} -> Color) colours the new one's parts; one left out stays
-## as the factory makes it.
-static func src_of(title: String, parts: Dictionary, paint: Color, colours := {}) -> Dictionary:
+## (a slot or a group of COLOUR_GROUPS -> Color) colours the new one's parts, a tank's colour
+## being its paint too; one left out stays as the factory makes it. `badge` (BikeBadge) is
+## stamped on its tank.
+static func src_of(title: String, parts: Dictionary, paint: Color, colours := {}, badge := {}) -> Dictionary:
+	if colours.get("tank") is Color:
+		paint = colours["tank"]
 	var colors := {}
-	for key in ["frame", "wheels", "mudguards"]:
-		if colours.get(key) is Color:
-			for slot in colour_slots(key, parts):
+	for key in colours:
+		if colours[key] is Color:
+			for slot in colour_slots(str(key), parts):
 				colors[slot] = {"color": colours[key], "finish": ""}
 	var src := BikeCopy.build_src(title, parts, paint, {}, true)
-	(src["build"] as Dictionary)["colors"].merge(colors, true)
+	var c: Dictionary = (src["build"] as Dictionary)["colors"]
+	c.merge(colors, true)
+	var b := BikeBadge.clean(badge)
+	if not b.is_empty() and str(parts.get("tank", "none")) != "none":
+		if not (c.get("tank") is Dictionary):
+			c["tank"] = {"color": paint, "finish": ""}
+		c["tank"]["badge"] = b
 	return src
 
 
@@ -153,9 +162,9 @@ static func buy_used(listing: Dictionary) -> String:
 	return BikeCopy.order(src, float(listing["quality"]), true)
 
 
-## Orders a new bike configured as `parts` in these colours. Why not, or "".
-static func buy_new(title: String, parts: Dictionary, paint: Color, colours: Dictionary) -> String:
-	return BikeCopy.order(src_of(title, parts, paint, colours), 1.0)
+## Orders a new bike configured as `parts` in these colours, with `badge` on its tank. Why not, or "".
+static func buy_new(title: String, parts: Dictionary, paint: Color, colours: Dictionary, badge := {}) -> String:
+	return BikeCopy.order(src_of(title, parts, paint, colours, badge), 1.0)
 
 
 ## The fabrication a configured bike takes beyond its style's stock one (BikeRig's fit report),

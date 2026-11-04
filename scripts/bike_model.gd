@@ -259,6 +259,18 @@ var _fairing_glass: Material = null
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
 ## maps slot -> {rust, dirt, wear, color} and defaults to the build's own condition.
+## The tank's badge stamped on it (BikeBadge.stamp), replaced on each build.
+var _badge: Array = []
+
+
+## Whether the tank is there to be seen (fitted, and drawn).
+func _tank_shown() -> bool:
+	for mi in _slot_meshes.get("tank", []):
+		if is_instance_valid(mi) and (mi as Node3D).visible:
+			return true
+	return false
+
+
 func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condition = null, with_rider := true) -> void:
 	_build = build
 	_with_rider = with_rider
@@ -394,6 +406,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		_service_caps(true)
 	_apply_visibility()
 	_current_slot = ""
+	# Where the tank is, for its badge (stamped once the bike is baked, see BikeBadge).
+	var tank_box := slot_bounds("tank") if _tank_shown() else AABB()
 	if with_rider:
 		_build_rider()
 		Graphics.avatar_meshes(_rider)
@@ -414,6 +428,10 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_show_dirt()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
+	for n in _badge:
+		if is_instance_valid(n):
+			n.free()
+	_badge = BikeBadge.stamp(self, tank_box, condition.get("tank", {}).get("badge", {}) if condition.get("tank") is Dictionary else {})
 	BikeReform.finish(_reform)
 	_reform = BikeReform.start(self, reform_from) if BikeLook.is_new(self) else []
 	reform_from = {}

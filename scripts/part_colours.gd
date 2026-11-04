@@ -120,6 +120,10 @@ static func clean(look) -> Dictionary:
 		out["color2"] = look["color2"]
 	if HEADERS.has(str(look.get("trim", ""))):
 		out["trim"] = str(look["trim"])
+	# A tank's badge: its logo and brand name (see BikeBadge).
+	var badge := BikeBadge.clean(look.get("badge"))
+	if not badge.is_empty():
+		out["badge"] = badge
 	return out
 
 
@@ -131,7 +135,7 @@ static func apply(item: Dictionary, look, all := false) -> void:
 		item["color"] = l["color"]
 	if l.has("finish"):
 		item["finish"] = l["finish"]
-	for key in ["color2", "trim"]:
+	for key in ["color2", "trim", "badge"]:
 		if l.has(key):
 			item[key] = l[key]
 		elif all:
@@ -141,7 +145,7 @@ static func apply(item: Dictionary, look, all := false) -> void:
 ## An item's look, as a plan or a blueprint keeps it.
 static func look_of(item: Dictionary) -> Dictionary:
 	var out := {"color": item.get("color", Color.WHITE), "finish": str(item.get("finish", ""))}
-	for key in ["color2", "trim"]:
+	for key in ["color2", "trim", "badge"]:
 		if item.has(key):
 			out[key] = item[key]
 	return out

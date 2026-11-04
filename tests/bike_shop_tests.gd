@@ -139,12 +139,11 @@ func test_configurator() -> void:
 	Shed.stop()
 
 
-## Simon: "add mudguards, panniers, topbox as options on the new bike configurator", "allow for
-## the change of colour for mudguards" and "a faded background, with zoom and stop rotation for
-## bike preview window". The configurator offers the front mudguard, the rear guard or tail,
-## panniers and a top box (none too); the mudguards come in the factory's colour till one is
-## picked, then front and rear in it (a tail cowl keeps its own); the turntable is the parts
-## computer's photo studio, it stops turning and zooms in, and a part changed keeps the view.
+## Simon: "add mudguards, panniers, topbox as options on the new bike configurator", "add satnav,
+## toolbox as options", "allow as many parts as possible to have a choice of colours (add the
+## colour picker next to the option)", a logo and a brand name "stamped on the tank and background
+## of preview (colour picker too)", and the view worked with the mouse (right-click stops and
+## starts it turning) instead of buttons. The colour panel shows its swatches and recent colours.
 func test_configurator_extras() -> void:
 	Shed.start_new("Tester", 54)
 	var saved: Dictionary = Progress.profile.duplicate(true)
@@ -155,75 +154,155 @@ func test_configurator_extras() -> void:
 	tab._new_style("tourer")
 	tab.show_mode("new")
 	var rows := []
-	for slot in ["front_mudguard", "tail", "panniers", "top_box"]:
+	for slot in ["front_mudguard", "tail", "panniers", "top_box", "satnav", "toolbox"]:
 		var ob: OptionButton = tab.find_child("Slot_" + slot, true, false)
 		var opts := BikeShop.options(slot, "tourer", tab.parts)
 		if ob != null and opts.has("none") and opts.size() >= 3:
 			rows.append(slot)
-	check(rows.size() == 4, "the configurator offers mudguards, a rear guard, panniers and a top box, or none (%s)" % [rows])
-	check(BikeShop.slot_label("tail") == "Rear guard, tail" and BikeShop.slot_label("top_box") == "Top box", "named plainly")
-	# Luggage on a cafe racer, and a long rear mudguard.
+	check(rows.size() == 6, "the configurator offers mudguards, a rear guard, panniers, a top box, a sat nav and a toolbox, or none (%s)" % [rows])
+	# A colour beside every part that's there.
+	var missing := []
+	for slot in BikeShop.CONFIG_SLOTS:
+		var there := str(tab.parts.get(slot, "none")) != "none"
+		if there != (tab.find_child("Colour_" + slot, true, false) != null):
+			missing.append(slot)
+	check(missing.is_empty(), "a colour beside each part on the bike, none beside an empty slot %s" % [missing])
+	check(tab.find_children("StopTurning", "", true, false).is_empty() and tab.find_children("ZoomIn", "", true, false).is_empty(),
+		"no view buttons: the tips under the turntable say how (%s)" % tab._view_hint.text)
+	# Luggage, a sat nav and red mudguards on a cafe racer.
 	tab._new_style("cafe")
 	tab.show_mode("new")
 	tab.set_part("panniers", "canvas_throwover")
 	tab.set_part("top_box", "wooden_crate")
+	tab.set_part("satnav", "phone_nav_mount")
 	tab.set_part("tail", "classic_mudguard")
-	check(tab.parts["panniers"] == "canvas_throwover" and tab.parts["top_box"] == "wooden_crate" and tab.parts["tail"] == "classic_mudguard",
-		"panniers, a top box and a rear mudguard go on a cafe racer")
-	var guards: ColorPickerButton = tab.find_child("Colour_mudguards", true, false)
-	var fac: Button = tab.find_child("MudguardsFactory", true, false)
-	check(guards != null and fac != null and fac.disabled and not tab.colours.has("mudguards")
-		and guards.color == PartsDB.default_color(str(tab.parts["front_mudguard"])),
-		"the mudguards' colour starts as the factory's (%s), with nothing to put back" % guards.color if guards else "no mudguard colour")
-	var picker := guards.get_picker() if guards else null
-	check(picker != null and not picker.sliders_visible and not picker.color_modes_visible and picker.presets_visible
-		and picker.get_presets().size() == Shed.PAINTS.size(),
-		"its picker is the small one, with the paint shop's colours as its swatches and room for recent colours")
+	check(tab.parts["panniers"] == "canvas_throwover" and tab.parts["satnav"] == "phone_nav_mount" and tab.parts["tail"] == "classic_mudguard",
+		"panniers, a top box, a sat nav and a rear mudguard go on a cafe racer")
+	var guard: ColourChoice = tab.find_child("Colour_front_mudguard", true, false)
+	check(guard != null and guard.color == PartsDB.default_color(str(tab.parts["front_mudguard"]))
+		and not (tab.find_child("Reset_front_mudguard", true, false) as Button).visible,
+		"a part's colour starts as it comes, with nothing to reset")
 	var red := Color(0.75, 0.1, 0.08)
-	tab.set_colour("mudguards", red)
+	var blue := Color(0.1, 0.2, 0.55)
+	var green := Color(0.1, 0.45, 0.2)
+	guard.color_changed.emit(red)
+	tab.set_colour("tail", red)
+	tab.set_colour("tank", blue)
+	tab.set_colour("saddle", green)
+	check((tab.find_child("Reset_front_mudguard", true, false) as Button).visible, "changed, it can be reset")
+	tab.set_logo("wings")
+	tab.badge["logo_color"] = Color(0.9, 0.75, 0.2)
+	(tab.find_child("Brand", true, false) as LineEdit).text_changed.emit("Bennett Motor Works Ltd")
 	var b: Dictionary = tab._src()["build"]
-	check(b["colors"].get("front_mudguard", {}).get("color") == red and b["colors"].get("tail", {}).get("color") == red and not fac.disabled,
-		"picked red, both mudguards are red")
-	tab.set_part("tail", "cafe_ducktail")
-	b = tab._src()["build"]
-	check(b["colors"].get("front_mudguard", {}).get("color") == red and not b["colors"].has("tail"), "a ducktail cowl keeps its own colour")
+	var tank: Dictionary = b["colors"].get("tank", {})
+	check(b["colors"].get("front_mudguard", {}).get("color") == red and b["colors"].get("tail", {}).get("color") == red
+		and b["colors"].get("saddle", {}).get("color") == green and tank.get("color") == blue and b["paint"] == blue,
+		"picked colours go on the order: red mudguards, a green seat, a blue tank")
+	check(tank.get("badge", {}).get("logo") == "wings" and str(tank.get("badge", {}).get("brand", "")) == "Bennett Motor Wo",
+		"the badge rides on the tank, its brand cut to %d letters (%s)" % [BikeBadge.BRAND_MAX, tank.get("badge", {})])
+	# Drawn: on both sides of the tank, and the logo behind the bike in the preview.
+	await _frames(2)
+	var pv: PartPreview = tab._preview
+	var model: BikeModel = pv.pivot.find_children("*", "BikeModel", true, false)[0] if not pv.pivot.find_children("*", "BikeModel", true, false).is_empty() else null
+	var logos := model.find_children("BadgeLogo*", "Sprite3D", false, false) if model else []
+	var brands := model.find_children("BadgeBrand*", "Label3D", false, false) if model else []
+	var box := model.slot_bounds("tank") if model else AABB()
+	var sides := logos.filter(func(n): return (n as Node3D).position.x > box.end.x - 0.001).size() + logos.filter(func(n): return (n as Node3D).position.x < box.position.x + 0.001).size()
+	check(logos.size() == 2 and brands.size() == 2 and sides == 2 and (brands[0] as Label3D).text == "BENNETT MOTOR WO",
+		"the logo and the brand are stamped on both sides of the tank (%d logos, %d brands, %d sides)" % [logos.size(), brands.size(), sides])
+	check(pv.backdrop != null and pv.backdrop.visible and pv.backdrop.texture == BikeBadge.texture("wings"), "and the logo stands behind the bike in the preview")
+	# Sized and moved with the sliders under each: bigger and higher logo, the brand further back.
+	var logo_r: Sprite3D = model.find_child("BadgeLogoR", false, false) if model else null
+	var brand_r: Label3D = model.find_child("BadgeBrandR", false, false) if model else null
+	var was_px := logo_r.pixel_size if logo_r else 0.0
+	var was_y := logo_r.position.y if logo_r else 0.0
+	var was_z := brand_r.position.z if brand_r else 0.0
+	(tab.find_child("Slider_logo_size", true, false) as HSlider).value = 1.6
+	(tab.find_child("Slider_logo_y", true, false) as HSlider).value = 0.2
+	(tab.find_child("Slider_brand_x", true, false) as HSlider).value = 0.15
+	await _frames(2)
+	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
+	logo_r = model.find_child("BadgeLogoR", false, false)
+	brand_r = model.find_child("BadgeBrandR", false, false)
+	check(logo_r != null and is_equal_approx(logo_r.pixel_size, was_px * 1.6) and logo_r.position.y > was_y + 0.001
+		and brand_r != null and brand_r.position.z > was_z + 0.001,
+		"the logo can be made bigger and moved up, the brand moved back along the tank")
+	tab.reset_place("brand")
+	check(not tab.badge.has("brand_x") and is_equal_approx((tab.find_child("Slider_brand_x", true, false) as HSlider).value, 0.0)
+		and is_equal_approx(float(tab._src()["build"]["colors"]["tank"]["badge"].get("logo_size", 0.0)), 1.6),
+		"Reset puts the brand back as it comes, and the logo's size rides on the order")
+	# Lettering: picked from the buttons, set in it on the tank, and the brand on the backdrop too.
+	(tab.find_child("Font_lobster", true, false) as Button).pressed.emit()
+	await _frames(2)
+	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
+	brand_r = model.find_child("BadgeBrandR", false, false)
+	check(tab._src()["build"]["colors"]["tank"]["badge"].get("brand_font") == "lobster" and brand_r != null
+		and brand_r.font == BikeBadge.font("lobster") and brand_r.text == "Bennett Motor Wo",
+		"the brand can be lettered in a script, as typed (%s)" % (brand_r.text if brand_r else "none"))
+	check(pv.backdrop_brand != null and pv.backdrop_brand.visible and pv.backdrop_brand.text == "Bennett Motor Wo"
+		and pv.backdrop_brand.font == BikeBadge.font("lobster"), "and it stands behind the bike under the logo")
+	(tab.find_child("Font_bebas", true, false) as Button).pressed.emit()
+	await _frames(2)
+	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
+	brand_r = model.find_child("BadgeBrandR", false, false)
+	check(brand_r != null and brand_r.text == "BENNETT MOTOR WO", "a font set in capitals puts it in capitals")
+	var all_load := true
+	for f in BikeBadge.FONTS:
+		all_load = all_load and BikeBadge.font(str(f)) != null and (str(f) == "plain" or BikeBadge.font(str(f)) != ThemeDB.fallback_font)
+	check(all_load and BikeBadge.clean({"brand": "x", "brand_font": "comic"}).get("brand_font") == null, "every lettering loads, and one it doesn't know is plain")
+	check(BikeBadge.clean({"logo": "star", "logo_size": 9.0, "logo_x": -3, "brand_y": 0.3}) == {"logo": "star", "logo_color": Color(0.92, 0.92, 0.9), "logo_size": BikeBadge.SIZE_MAX, "logo_x": -BikeBadge.MOVE_MAX},
+		"sizes and moves are kept within bounds, and only for what's on the badge")
 	var before: Array = Shed.bikes.keys()
 	tab._press_buy()
 	var id := _new_bike(before)
-	var guard := Shed.item_on(id, "front_mudguard") if id != 0 else 0
-	var bags := Shed.item_on(id, "panniers") if id != 0 else 0
-	check(guard != 0 and Shed.items[guard]["color"] == red and bags != 0 and Shed.items[bags]["part"] == "canvas_throwover",
-		"ordered, it comes with a red front mudguard and its panniers on")
-	(tab.find_child("MudguardsFactory", true, false) as Button).pressed.emit()
+	var tank_item := Shed.item_on(id, "tank") if id != 0 else 0
+	var g := Shed.item_on(id, "front_mudguard") if id != 0 else 0
+	check(tank_item != 0 and Shed.items[tank_item].get("badge", {}).get("logo") == "wings" and Shed.items[tank_item]["color"] == blue
+		and g != 0 and Shed.items[g]["color"] == red and Shed.item_on(id, "satnav") != 0,
+		"ordered, it comes with its badge on its blue tank, red mudguards and the sat nav fitted")
+	var cond := Shed.condition_of(Shed.items[tank_item]) if tank_item != 0 else {}
+	check(cond.get("badge", {}).get("brand") == "Bennett Motor Wo", "and the tank's condition carries the badge to wherever it's drawn")
+	(tab.find_child("Reset_front_mudguard", true, false) as Button).pressed.emit()
 	await _frames(1)
-	check(not tab.colours.has("mudguards") and not tab._src()["build"]["colors"].has("front_mudguard"), "As they come puts the factory's colour back")
-	# The turntable.
-	var pv: PartPreview = tab._preview
-	check(pv.studio and pv.material == null, "the bike sits in the photo studio, as in the parts computer, its edges square")
-	var stop: Button = tab.find_child("StopTurning", true, false)
-	stop.button_pressed = true
+	check(not tab.colours.has("front_mudguard") and not tab._src()["build"]["colors"].has("front_mudguard"), "Reset puts the factory's colour back")
+	# The colour panel: the square, the paint shop's swatches and the colours picked lately.
+	ColourChoice.remember(Color(0.3, 0.6, 0.9))
+	var cp: ColourChoice = tab.find_child("Colour_saddle", true, false)
+	cp.open()
+	await _frames(2)
+	var panel: PopupPanel = cp.find_child("ColourPanel", true, false)
+	var sw: GridContainer = panel.find_child("Swatches", true, false) if panel else null
+	var rec: HBoxContainer = panel.find_child("Recent", true, false) if panel else null
+	var room := Rect2(tab.get_viewport().get_visible_rect())
+	check(panel != null and panel.visible and sw.get_child_count() == Shed.PAINTS.size() and rec.get_child_count() >= 1
+		and room.encloses(Rect2(Vector2(panel.position), Vector2(panel.size))),
+		"the colour panel shows every swatch and the recent colours, all on the screen")
+	(sw.get_child(0) as Button).pressed.emit()
+	panel.hide()
+	check(tab.colours.get("saddle") == Shed.PAINTS[0] and ColourChoice.recent[0] == Shed.PAINTS[0], "a swatch picks its colour, and it goes in the recent ones")
+	# The turntable: right-click stops and starts it, the wheel zooms, a part changed keeps the view.
+	var right := InputEventMouseButton.new()
+	right.button_index = MOUSE_BUTTON_RIGHT
+	right.pressed = true
+	pv._gui_input(right)
+	var up := right.duplicate()
+	up.pressed = false
+	pv._gui_input(up)
 	var turn := pv.pivot.rotation.y
 	await _frames(5)
-	check(not pv.spinning and is_equal_approx(pv.pivot.rotation.y, turn) and stop.text == "Start turning", "Stop turning stops it")
-	var far := pv.camera.position.length()
-	(tab.find_child("ZoomIn", true, false) as Button).pressed.emit()
-	var near := pv.camera.position.length()
+	check(not pv.spinning and is_equal_approx(pv.pivot.rotation.y, turn), "a right-click stops it turning")
 	var wheel := InputEventMouseButton.new()
 	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
 	wheel.pressed = true
 	pv._gui_input(wheel)
-	check(pv.zoom > 1.3 and near < far * 0.85 and pv.camera.position.length() < near, "zoom in, with the button or the mouse wheel (%.2fx)" % pv.zoom)
-	for i in 30:
-		pv.zoom_by(2.0)
-	check(is_equal_approx(pv.zoom, PartPreview.ZOOM_MAX), "but only so far")
+	pv._gui_input(wheel)
 	var z := pv.zoom
 	tab.set_part("top_box", "none")
 	await _frames(1)
-	check(is_equal_approx(pv.zoom, z) and is_equal_approx(pv.pivot.rotation.y, turn), "a part changed keeps the view where it was")
-	(tab.find_child("WholeBike", true, false) as Button).pressed.emit()
-	check(pv.zoom == 1.0 and pv.look == Vector2.ZERO, "See it all goes back to the whole bike")
-	stop.button_pressed = false
-	check(pv.spinning and stop.text == "Stop turning", "and it turns again")
+	check(z > 1.2 and is_equal_approx(pv.zoom, z) and is_equal_approx(pv.pivot.rotation.y, turn), "the wheel zooms in, and a part changed keeps the view")
+	pv._gui_input(right)
+	pv._gui_input(up)
+	check(pv.spinning, "and another right-click starts it again")
 	tab.queue_free()
 	Progress.profile = saved
 	Shed.stop()
