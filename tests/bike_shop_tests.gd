@@ -211,6 +211,28 @@ func test_configurator_extras() -> void:
 	check(logos.size() == 2 and brands.size() == 2 and sides == 2 and (brands[0] as Label3D).text == "Bennett Motor Wo",
 		"the logo and the brand are stamped on both sides of the tank (%d logos, %d brands, %d sides)" % [logos.size(), brands.size(), sides])
 	check(pv.backdrop != null and pv.backdrop.visible and pv.backdrop.texture == BikeBadge.texture("wings"), "and the logo stands behind the bike in the preview")
+	# Sized and moved with the sliders under each: bigger and higher logo, the brand further back.
+	var logo_r: Sprite3D = model.find_child("BadgeLogoR", false, false) if model else null
+	var brand_r: Label3D = model.find_child("BadgeBrandR", false, false) if model else null
+	var was_px := logo_r.pixel_size if logo_r else 0.0
+	var was_y := logo_r.position.y if logo_r else 0.0
+	var was_z := brand_r.position.z if brand_r else 0.0
+	(tab.find_child("Slider_logo_size", true, false) as HSlider).value = 1.6
+	(tab.find_child("Slider_logo_y", true, false) as HSlider).value = 0.2
+	(tab.find_child("Slider_brand_x", true, false) as HSlider).value = 0.15
+	await _frames(2)
+	model = pv.pivot.find_children("*", "BikeModel", true, false)[0]
+	logo_r = model.find_child("BadgeLogoR", false, false)
+	brand_r = model.find_child("BadgeBrandR", false, false)
+	check(logo_r != null and is_equal_approx(logo_r.pixel_size, was_px * 1.6) and logo_r.position.y > was_y + 0.001
+		and brand_r != null and brand_r.position.z > was_z + 0.001,
+		"the logo can be made bigger and moved up, the brand moved back along the tank")
+	tab.reset_place("brand")
+	check(not tab.badge.has("brand_x") and is_equal_approx((tab.find_child("Slider_brand_x", true, false) as HSlider).value, 0.0)
+		and is_equal_approx(float(tab._src()["build"]["colors"]["tank"]["badge"].get("logo_size", 0.0)), 1.6),
+		"Reset puts the brand back as it comes, and the logo's size rides on the order")
+	check(BikeBadge.clean({"logo": "star", "logo_size": 9.0, "logo_x": -3, "brand_y": 0.3}) == {"logo": "star", "logo_color": Color(0.92, 0.92, 0.9), "logo_size": BikeBadge.SIZE_MAX, "logo_x": -BikeBadge.MOVE_MAX},
+		"sizes and moves are kept within bounds, and only for what's on the badge")
 	var before: Array = Shed.bikes.keys()
 	tab._press_buy()
 	var id := _new_bike(before)

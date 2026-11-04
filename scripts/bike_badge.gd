@@ -7,7 +7,10 @@ extends RefCounted
 ## saved, sent to the other player and drawn by BikeModel.
 ##
 ## A badge is {logo, logo_color, brand, brand_color}: "logo" one of LOGOS ("" for none) and
-## "brand" free text up to BRAND_MAX letters ("" for none).
+## "brand" free text up to BRAND_MAX letters ("" for none). Each can also be sized and moved:
+## "logo_size"/"brand_size" times its usual size (SIZE_MIN..SIZE_MAX), and "logo_x"/"brand_x" along
+## the tank (towards the seat) and "logo_y"/"brand_y" up it, as a share of the tank's length and
+## height (-MOVE_MAX..MOVE_MAX). Left out, each is as it comes: size 1, not moved.
 
 const BRAND_MAX := 16
 ## The logos to pick from, in picker order, and what each is called.
@@ -15,6 +18,9 @@ const LOGOS := {"wings": "Wings", "star": "Star", "shield": "Shield", "bolt": "L
 	"diamond": "Diamond", "piston": "Piston", "flame": "Flame", "crown": "Crown", "spanners": "Crossed spanners"}
 ## How big the logo's picture is, in pixels (it's drawn at twice that and shrunk, for smooth edges).
 const SIZE := 256
+const SIZE_MIN := 0.4
+const SIZE_MAX := 2.5
+const MOVE_MAX := 0.5
 
 static var _textures := {}
 
@@ -33,6 +39,16 @@ static func clean(badge) -> Dictionary:
 	if brand != "":
 		out["brand"] = brand
 		out["brand_color"] = badge["brand_color"] if badge.get("brand_color") is Color else Color(0.92, 0.92, 0.9)
+	for what in ["logo", "brand"]:
+		if not out.has(what):
+			continue
+		var size = badge.get(what + "_size")
+		if (size is float or size is int) and not is_equal_approx(float(size), 1.0):
+			out[what + "_size"] = clampf(float(size), SIZE_MIN, SIZE_MAX)
+		for axis in ["_x", "_y"]:
+			var v = badge.get(what + axis)
+			if (v is float or v is int) and absf(float(v)) > 0.001:
+				out[what + axis] = clampf(float(v), -MOVE_MAX, MOVE_MAX)
 	return out
 
 
@@ -168,9 +184,12 @@ static func stamp(parent: Node3D, box: AABB, badge: Dictionary) -> Array:
 	var has_brand := b.has("brand")
 	var logo_size := minf(h * 0.55, length * 0.32)
 	# Along the tank (z, its nose at the smaller z): the logo ahead of the brand, or either alone
-	# in the middle.
+	# in the middle, then each sized and moved as asked.
 	var mid := box.get_center().z
 	var logo_z := mid - (length * 0.2 if has_brand else 0.0)
+	var logo_at := Vector3(0.0, y + float(b.get("logo_y", 0.0)) * h, logo_z + float(b.get("logo_x", 0.0)) * length)
+	var brand_dy := float(b.get("brand_y", 0.0)) * h
+	var brand_dz := float(b.get("brand_x", 0.0)) * length
 	var brand_room := length * (0.5 if has_logo else 0.8)
 	for side in [1.0, -1.0]:
 		var x: float = (box.end.x + 0.004) if side > 0.0 else (box.position.x - 0.004)
@@ -181,12 +200,12 @@ static func stamp(parent: Node3D, box: AABB, badge: Dictionary) -> Array:
 			s.name = "BadgeLogoR" if side > 0.0 else "BadgeLogoL"
 			s.texture = texture(str(b["logo"]))
 			s.modulate = b["logo_color"]
-			s.pixel_size = logo_size / float(SIZE)
+			s.pixel_size = logo_size * float(b.get("logo_size", 1.0)) / float(SIZE)
 			s.double_sided = false
 			s.shaded = true
 			s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 			s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-			s.transform = Transform3D(basis, Vector3(x, y, logo_z))
+			s.transform = Transform3D(basis, Vector3(x, logo_at.y, logo_at.z))
 			parent.add_child(s)
 			out.append(s)
 		if has_brand:
@@ -206,10 +225,11 @@ static func stamp(parent: Node3D, box: AABB, badge: Dictionary) -> Array:
 			var wide: float = font.get_string_size(l.text.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x
 			if wide * px > brand_room:
 				px = brand_room / maxf(wide, 1.0)
-			l.pixel_size = px
-			# Its middle just behind the logo (towards the seat: larger z), or the tank's middle.
+			# Its middle just behind where the logo comes (towards the seat: larger z), or the
+			# tank's middle; sizing or moving the logo leaves it be.
 			var bz := logo_z + logo_size * 0.5 + 0.012 + wide * px * 0.5 if has_logo else mid
-			l.transform = Transform3D(basis, Vector3(x, y, bz))
+			l.pixel_size = px * float(b.get("brand_size", 1.0))
+			l.transform = Transform3D(basis, Vector3(x, y + brand_dy, bz + brand_dz))
 			parent.add_child(l)
 			out.append(l)
 	return out

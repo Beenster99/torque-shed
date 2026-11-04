@@ -34,6 +34,11 @@ func _ready() -> void:
 	tab.badge["logo_color"] = Color(0.95, 0.78, 0.25)
 	tab.set_brand("Bennett")
 	tab.badge["brand_color"] = Color(0.95, 0.95, 0.92)
+	tab.badge["logo_size"] = 1.3
+	tab.badge["logo_y"] = 0.1
+	tab.badge["brand_size"] = 0.8
+	tab.badge["brand_x"] = 0.05
+	tab.badge["brand_y"] = -0.15
 	tab.show_mode("new")
 	tab.set_part("panniers", "canvas_throwover")
 	tab.set_part("tail", "classic_mudguard")

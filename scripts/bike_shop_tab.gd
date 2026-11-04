@@ -252,6 +252,7 @@ func _badge_rows() -> void:
 	lcell.add_child(lc)
 	row.add_child(lcell)
 	_left.add_child(row)
+	_place_row("logo")
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 4)
 	brow.add_child(_row_label("Brand name"))
@@ -274,6 +275,58 @@ func _badge_rows() -> void:
 	bcell.add_child(bc)
 	brow.add_child(bcell)
 	_left.add_child(brow)
+	_place_row("brand")
+
+
+## Under the logo's or brand's row (`what`): sliders for its size, how far along the tank it
+## sits and how high, and Reset to put it back where it comes.
+func _place_row(what: String) -> void:
+	var row := HBoxContainer.new()
+	row.name = "Place_" + what
+	row.add_theme_constant_override("separation", 4)
+	row.add_child(_row_label("   size, along, up"))
+	var tips := {"_size": "Smaller or bigger", "_x": "Forwards or back along the tank", "_y": "Down or up the tank"}
+	for axis in ["_size", "_x", "_y"]:
+		var sl := HSlider.new()
+		sl.name = "Slider_" + what + axis
+		sl.tooltip_text = tips[axis]
+		sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		sl.focus_mode = Control.FOCUS_NONE
+		if axis == "_size":
+			sl.min_value = BikeBadge.SIZE_MIN
+			sl.max_value = BikeBadge.SIZE_MAX
+		else:
+			sl.min_value = -BikeBadge.MOVE_MAX
+			sl.max_value = BikeBadge.MOVE_MAX
+		sl.step = 0.01
+		sl.value = float(badge.get(what + axis, 1.0 if axis == "_size" else 0.0))
+		sl.value_changed.connect(func(v): place_badge(what + axis, v))
+		row.add_child(sl)
+	var reset := _button("Reset")
+	reset.name = "Reset_" + what + "_place"
+	reset.add_theme_font_size_override("font_size", 11)
+	reset.tooltip_text = "Back to its usual size and place"
+	reset.custom_minimum_size.x = 84.0
+	reset.pressed.connect(func(): reset_place(what))
+	row.add_child(reset)
+	_left.add_child(row)
+
+
+## Sets the badge's `key` (logo_size, brand_x and so on, see BikeBadge) to `v`.
+func place_badge(key: String, v: float) -> void:
+	badge[key] = v
+	_refresh()
+
+
+## Puts the logo or brand (`what`) back to its usual size and place.
+func reset_place(what: String) -> void:
+	for axis in ["_size", "_x", "_y"]:
+		badge.erase(what + axis)
+		var sl: HSlider = find_child("Slider_" + what + axis, true, false)
+		if sl:
+			sl.set_value_no_signal(1.0 if axis == "_size" else 0.0)
+	_refresh()
 
 
 ## Picks second-hand bike `i`.
