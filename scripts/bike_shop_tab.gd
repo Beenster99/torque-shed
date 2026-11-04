@@ -2,23 +2,32 @@ class_name BikeShopTab
 extends VBoxContainer
 ## The Esc menu's Bike shop tab (the Profile panel): buy a whole bike with your own money, second
 ## hand from today's list or new from the configurator (see BikeShop). The bike turns on a
-## turntable beside the list or the choices, in the same photo studio as the parts computer's,
-## with buttons to stop it turning and zoom in, its price and a button to buy it.
+## turntable beside the list or the choices, in the same photo studio as the parts computer's
+## (drag it, zoom in, stop it turning: the tips under it say how), with its price and a button
+## to buy it. The configurator has a colour beside each part, and a badge for the tank: a logo
+## and a brand name, each in a colour of its own (BikeBadge).
+
+## The configurator's text: small, to fit a whole bike's worth of choices on the screen.
+const FONT := 13
+const HEAD := 12
 
 var mode := "used"
 ## The second-hand bike picked (an index into listings), and today's list.
 var picked := 0
 var listings: Array = []
-## The new bike being configured: its style, parts and colours ({paint, frame, wheels, mudguards}
-## -> Color; mudguards only once picked: till then they're the factory's).
+## The new bike being configured: its style, parts, colours (a slot, or a group of
+## BikeShop.COLOUR_GROUPS -> Color; a part left out comes in the factory's colour, the tank and
+## fairing in `paint`) and badge ({logo, logo_color, brand, brand_color}, see BikeBadge).
 var style := "cafe"
 var parts := {}
 var colours := {}
+var paint := Color.RED
+var badge := {}
 var _used_btn: Button
 var _new_btn: Button
 var _left: VBoxContainer
 var _preview: PartPreview
-var _spin_btn: Button
+var _view_hint: Label
 var _about: Label
 var _buy: Button
 var _status: Label
@@ -26,19 +35,17 @@ var _status: Label
 
 func _ready() -> void:
 	name = "Bike shop"
-	add_theme_constant_override("separation", 8)
+	add_theme_constant_override("separation", 6)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 8)
 	add_child(tabs)
 	var group := ButtonGroup.new()
-	_used_btn = Button.new()
-	_used_btn.text = "Second hand"
+	_used_btn = _button("Second hand")
 	_used_btn.toggle_mode = true
 	_used_btn.button_group = group
 	_used_btn.pressed.connect(func(): show_mode("used"))
 	tabs.add_child(_used_btn)
-	_new_btn = Button.new()
-	_new_btn.text = "New: configure your own"
+	_new_btn = _button("New: configure your own")
 	_new_btn.toggle_mode = true
 	_new_btn.button_group = group
 	_new_btn.pressed.connect(func(): show_mode("new"))
@@ -48,58 +55,84 @@ func _ready() -> void:
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(cols)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(340, 480)
+	scroll.custom_minimum_size = Vector2(400, 480)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	cols.add_child(scroll)
 	_left = VBoxContainer.new()
 	_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_left.add_theme_constant_override("separation", 4)
+	_left.add_theme_constant_override("separation", 2)
 	scroll.add_child(_left)
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.add_theme_constant_override("separation", 6)
+	right.add_theme_constant_override("separation", 4)
 	cols.add_child(right)
 	_preview = PartPreview.new()
 	_preview.use_studio()
+	_preview.pad_view = true
 	_preview.custom_minimum_size = Vector2(420, 320)
 	_preview.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(_preview)
-	var view := HBoxContainer.new()
-	view.alignment = BoxContainer.ALIGNMENT_CENTER
-	view.add_theme_constant_override("separation", 6)
-	right.add_child(view)
-	_spin_btn = Button.new()
-	_spin_btn.name = "StopTurning"
-	_spin_btn.toggle_mode = true
-	_spin_btn.text = "Stop turning"
-	_spin_btn.toggled.connect(func(on): set_spinning(not on))
-	view.add_child(_spin_btn)
-	for z in [["ZoomIn", "Zoom in", PartPreview.ZOOM_STEP * PartPreview.ZOOM_STEP], ["ZoomOut", "Zoom out", 1.0 / (PartPreview.ZOOM_STEP * PartPreview.ZOOM_STEP)]]:
-		var zb := Button.new()
-		zb.name = str(z[0])
-		zb.text = str(z[1])
-		zb.pressed.connect(func(): _preview.zoom_by(float(z[2])))
-		view.add_child(zb)
-	var whole := Button.new()
-	whole.name = "WholeBike"
-	whole.text = "See it all"
-	whole.pressed.connect(_preview.reset_view)
-	view.add_child(whole)
-	var hint := UITheme.label("Drag to turn, scroll to zoom", 13, Color(1, 1, 1, 0.45))   # hint-ok: the mouse on the turntable itself, not a binding
-	hint.autowrap_mode = TextServer.AUTOWRAP_OFF
-	view.add_child(hint)
-	_about = UITheme.label("", 15)
+	_view_hint = UITheme.label("", 12, Color(1, 1, 1, 0.5))
+	_view_hint.name = "ViewHint"
+	_view_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	right.add_child(_view_hint)
+	_about = UITheme.label("", FONT)
 	_about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(_about)
-	_buy = Button.new()
+	_buy = _button("")
 	_buy.pressed.connect(_press_buy)
 	right.add_child(_buy)
-	_status = UITheme.label("", 15, Color(1, 0.5, 0.4))
+	_status = UITheme.label("", FONT, Color(1, 0.5, 0.4))
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(_status)
 	_new_style("cafe")
 	visibility_changed.connect(func(): if is_visible_in_tree(): show_mode(mode))
 	Progress.changed.connect(func(): if is_visible_in_tree(): _refresh())
+	_show_view_hint()
+
+
+func _process(_delta: float) -> void:
+	# (The tips follow the device in use: the mouse's, or the controller's.)
+	if is_visible_in_tree() and _view_hint.get_meta("pad", null) != Controls.using_pad:
+		_show_view_hint()
+
+
+## The tips under the turntable, for the mouse or the controller in use.
+func _show_view_hint() -> void:
+	_view_hint.set_meta("pad", Controls.using_pad)
+	if Controls.using_pad:
+		_view_hint.text = "Right stick: turn and tilt  ·  Triggers: zoom  ·  Click the right stick: stop or start turning"   # hint-ok: the controller on the turntable itself, not a binding
+	else:
+		_view_hint.text = "Drag: turn  ·  Scroll: zoom  ·  Right-click: stop or start turning  ·  Right-drag: look about  ·  Double-click: see it all"   # hint-ok: the mouse on the turntable itself, not a binding
+
+
+func _button(t: String) -> Button:
+	var b := Button.new()
+	b.text = t
+	b.add_theme_font_size_override("font_size", FONT)
+	return b
+
+
+func _row_label(t: String, width := 118.0) -> Label:
+	var l := UITheme.label(t, HEAD, Color(1, 1, 1, 0.6))
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.custom_minimum_size.x = width
+	return l
+
+
+func _heading(t: String) -> Label:
+	var l := UITheme.label(t, HEAD, UITheme.ACCENT)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+
+func _option() -> OptionButton:
+	var ob := OptionButton.new()
+	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ob.clip_text = true
+	ob.add_theme_font_size_override("font_size", FONT)
+	ob.get_popup().add_theme_font_size_override("font_size", FONT)
+	return ob
 
 
 ## Shows the second-hand list ("used") or the configurator ("new").
@@ -113,23 +146,22 @@ func show_mode(m: String) -> void:
 	if m == "used":
 		listings = BikeShop.for_sale().filter(func(l): return not BikeShop.sold.has(str(l["key"])))
 		if listings.is_empty():
-			_left.add_child(UITheme.label("Sold out for today: more tomorrow.", 15))
+			_left.add_child(UITheme.label("Sold out for today: more tomorrow.", FONT))
 			_buy.disabled = true
 			return
 		picked = clampi(picked, 0, listings.size() - 1)
-		_left.add_child(UITheme.label("FOR SALE TODAY", 14, UITheme.ACCENT))
+		_left.add_child(_heading("FOR SALE TODAY"))
 		for i in listings.size():
 			var l: Dictionary = listings[i]
-			var b := Button.new()
+			var b := _button("%s  ·  %s\n%s miles  ·  %s" % [str(l["title"]), TvChannels.money_text(_price_of(l)),
+				_miles(int(l["miles"])), str(l["seller"])])
 			b.name = "Listing%d" % i
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-			b.text = "%s  ·  %s\n%s miles  ·  %s" % [str(l["title"]), TvChannels.money_text(_price_of(l)),
-				_miles(int(l["miles"])), str(l["seller"])]
 			b.pressed.connect(func(): pick(i))
 			_left.add_child(b)
 	else:
-		_left.add_child(UITheme.label("STYLE", 14, UITheme.ACCENT))
-		var st := OptionButton.new()
+		_left.add_child(_heading("STYLE"))
+		var st := _option()
 		st.name = "Style"
 		for s in PartsDB.STYLES:
 			st.add_item(PartsDB.style_name(s))
@@ -138,16 +170,13 @@ func show_mode(m: String) -> void:
 		# sending the signal (that crashed the game, v0.42.0).
 		st.item_selected.connect(func(i): _new_style(PartsDB.STYLES[i]); show_mode("new"), CONNECT_DEFERRED)
 		_left.add_child(st)
-		_left.add_child(UITheme.label("PARTS", 14, UITheme.ACCENT))
+		_left.add_child(_heading("PARTS AND COLOURS"))
 		for slot in BikeShop.CONFIG_SLOTS:
 			var row := HBoxContainer.new()
-			var l := UITheme.label(BikeShop.slot_label(slot), 14, Color(1, 1, 1, 0.6))
-			l.custom_minimum_size.x = 130.0
-			row.add_child(l)
-			var ob := OptionButton.new()
+			row.add_theme_constant_override("separation", 4)
+			row.add_child(_row_label(BikeShop.slot_label(slot)))
+			var ob := _option()
 			ob.name = "Slot_" + slot
-			ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			ob.clip_text = true
 			var opts := BikeShop.options(slot, style, parts)
 			for id in opts:
 				# How it goes on this bike (BikeRig.part_fit): the ones that won't fit greyed out
@@ -165,34 +194,86 @@ func show_mode(m: String) -> void:
 			ob.select(maxi(0, opts.find(str(parts.get(slot, "none")))))
 			ob.item_selected.connect(func(i): set_part(slot, str(opts[i])), CONNECT_DEFERRED)   # (deferred, as Style)
 			row.add_child(ob)
+			_colour_cell(row, slot)
 			_left.add_child(row)
-		_left.add_child(UITheme.label("COLOURS", 14, UITheme.ACCENT))
-		for key in BikeShop.COLOUR_PARTS:
-			# (No mudguards to colour on a bike with none, or only a cowl at the back.)
-			if key == "mudguards" and BikeShop.colour_slots(key, parts).is_empty():
-				continue
-			var row := HBoxContainer.new()
-			var l := UITheme.label(str(BikeShop.COLOUR_PARTS[key]), 14, Color(1, 1, 1, 0.6))
-			l.custom_minimum_size.x = 180.0
-			row.add_child(l)
-			var cp := ColorPickerButton.new()
-			cp.name = "Colour_" + key
-			cp.custom_minimum_size = Vector2(80, 28)
-			cp.edit_alpha = false
-			cp.color = colours[key] if colours.has(key) else BikeShop.factory_mudguards(parts)
-			cp.color_changed.connect(func(c): set_colour(key, c))
-			_compact_picker(cp)
-			row.add_child(cp)
-			if key == "mudguards":
-				var fac := Button.new()
-				fac.name = "MudguardsFactory"
-				fac.text = "As they come"
-				fac.tooltip_text = "Back to the colour the mudguards come in from the factory (chrome stays chrome)."
-				fac.disabled = not colours.has(key)
-				fac.pressed.connect(func(): colours.erase("mudguards"); show_mode("new"), CONNECT_DEFERRED)
-				row.add_child(fac)
-			_left.add_child(row)
+		_badge_rows()
 	_refresh()
+
+
+## The colour beside part `slot` in `row`: its picker (none for an empty slot), and Reset once
+## it's been changed from the factory's.
+func _colour_cell(row: HBoxContainer, slot: String) -> void:
+	var cell := HBoxContainer.new()
+	cell.custom_minimum_size.x = 84.0
+	cell.add_theme_constant_override("separation", 2)
+	row.add_child(cell)
+	if BikeShop.colour_slots(slot, parts).is_empty():
+		return
+	var cp := ColourChoice.new()
+	cp.name = "Colour_" + slot
+	cp.tooltip_text = "The %s's colour" % BikeShop.slot_label(slot).to_lower()
+	cp.color = colour_of(slot)
+	cp.color_changed.connect(func(c): set_colour(slot, c))
+	cell.add_child(cp)
+	var reset := _button("Reset")
+	reset.name = "Reset_" + slot
+	reset.add_theme_font_size_override("font_size", 11)
+	reset.tooltip_text = "Back to the colour it comes in"
+	reset.visible = _changed(slot)
+	reset.pressed.connect(func(): reset_colour(slot), CONNECT_DEFERRED)
+	cell.add_child(reset)
+
+
+## The badge: a logo and a brand name for the tank, each in a colour of its own.
+func _badge_rows() -> void:
+	_left.add_child(_heading("BADGE ON THE TANK"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.add_child(_row_label("Logo"))
+	var ob := _option()
+	ob.name = "Logo"
+	ob.add_theme_constant_override("icon_max_width", 18)
+	ob.get_popup().add_theme_constant_override("icon_max_width", 22)
+	ob.add_item("None")
+	var ids: Array = [""]
+	for id in BikeBadge.LOGOS:
+		ob.add_icon_item(BikeBadge.texture(str(id)), str(BikeBadge.LOGOS[id]))
+		ids.append(str(id))
+	ob.select(maxi(0, ids.find(str(badge.get("logo", "")))))
+	ob.item_selected.connect(func(i): set_logo(str(ids[i])))
+	row.add_child(ob)
+	var lc := ColourChoice.new()
+	lc.name = "Colour_logo"
+	lc.tooltip_text = "The logo's colour"
+	lc.color = badge.get("logo_color", Color(0.92, 0.92, 0.9))
+	lc.color_changed.connect(func(c): badge["logo_color"] = c; _refresh())
+	var lcell := HBoxContainer.new()
+	lcell.custom_minimum_size.x = 84.0
+	lcell.add_child(lc)
+	row.add_child(lcell)
+	_left.add_child(row)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 4)
+	brow.add_child(_row_label("Brand name"))
+	var le := LineEdit.new()
+	le.name = "Brand"
+	le.max_length = BikeBadge.BRAND_MAX
+	le.placeholder_text = "Your own make"
+	le.text = str(badge.get("brand", ""))
+	le.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	le.add_theme_font_size_override("font_size", FONT)
+	le.text_changed.connect(set_brand)
+	brow.add_child(le)
+	var bc := ColourChoice.new()
+	bc.name = "Colour_brand"
+	bc.tooltip_text = "The brand name's colour"
+	bc.color = badge.get("brand_color", Color(0.92, 0.92, 0.9))
+	bc.color_changed.connect(func(c): badge["brand_color"] = c; _refresh())
+	var bcell := HBoxContainer.new()
+	bcell.custom_minimum_size.x = 84.0
+	bcell.add_child(bc)
+	brow.add_child(bcell)
+	_left.add_child(brow)
 
 
 ## Picks second-hand bike `i`.
@@ -202,12 +283,12 @@ func pick(i: int) -> void:
 	_refresh()
 
 
-## Starts a new bike of `s`: its stock build, in a colour of its own.
+## Starts a new bike of `s`: its stock build, in a colour of its own (its badge stays).
 func _new_style(s: String) -> void:
 	style = s
 	parts = PartsDB.sanitize_build(Contracts.style_build(s).duplicate())
-	var paint: Color = Shed.PAINTS[absi(hash(s)) % Shed.PAINTS.size()]
-	colours = {"paint": paint, "frame": Color(0.08, 0.08, 0.09), "wheels": Color(0.1, 0.1, 0.11)}
+	paint = Shed.PAINTS[absi(hash(s)) % Shed.PAINTS.size()]
+	colours = {}
 	if _preview:
 		_preview.reset_view()
 
@@ -219,71 +300,72 @@ func set_part(slot: String, id: String) -> void:
 	show_mode("new")
 
 
+## The colour `slot` is in now: picked, or as it comes.
+func colour_of(slot: String) -> Color:
+	if colours.get(slot) is Color:
+		return colours[slot]
+	for g in BikeShop.COLOUR_GROUPS:
+		if colours.get(g) is Color and BikeShop.colour_slots(g, parts).has(slot):
+			return colours[g]
+	return BikeShop.factory_colour(slot, parts, paint)
+
+
+func _changed(slot: String) -> bool:
+	return not colour_of(slot).is_equal_approx(BikeShop.factory_colour(slot, parts, paint))
+
+
+## Colours `key` (a slot, or a group of BikeShop.COLOUR_GROUPS) `c`.
 func set_colour(key: String, c: Color) -> void:
+	if key == "tank":
+		paint = c   # (the tank's colour is the bike's paint, the fairing's too unless it has its own)
 	colours[key] = c
-	var fac := _left.find_child("MudguardsFactory", true, false) as Button
-	if fac:
-		fac.disabled = not colours.has("mudguards")
+	if BikeShop.COLOUR_GROUPS.has(key):
+		for slot in BikeShop.colour_slots(key, parts):
+			colours.erase(slot)
+	var cp := _left.find_child("Colour_" + key, true, false) as ColourChoice
+	if cp and not cp.color.is_equal_approx(c):
+		cp.color = c
+	var reset := _left.find_child("Reset_" + key, true, false) as Button
+	if reset:
+		reset.visible = _changed(key)
 	_refresh()
 
 
-## Stops the bike on show turning on its own (`on` false), or starts it again.
-func set_spinning(on: bool) -> void:
-	_preview.spinning = on
-	_spin_btn.set_pressed_no_signal(not on)
-	_spin_btn.text = "Start turning" if not on else "Stop turning"
+## Puts `slot` back in the colour it comes in.
+func reset_colour(slot: String) -> void:
+	colours.erase(slot)
+	for g in BikeShop.COLOUR_GROUPS:
+		if BikeShop.colour_slots(g, parts).has(slot):
+			colours.erase(g)
+	if slot == "tank":
+		paint = Shed.PAINTS[absi(hash(style)) % Shed.PAINTS.size()]
+	show_mode("new")
 
 
-## Makes a colour button's picker small enough to fit on the screen with its swatches and recent
-## colours open: the colour square, its hue strip and the hex box, without the sliders, the
-## colour modes and the screen sampler, with the paint shop's colours as its swatches. And when
-## a section opens and it grows, it's kept on the screen (the picker only places itself when
-## it opens).
-func _compact_picker(cp: ColorPickerButton) -> void:
-	var picker := cp.get_picker()
-	picker.sliders_visible = false
-	picker.color_modes_visible = false
-	picker.sampler_visible = false
-	picker.hex_visible = true
-	picker.presets_visible = true
-	picker.can_add_swatches = false
-	for c in picker.get_presets():
-		picker.erase_preset(c)
-	for c in Shed.PAINTS:
-		picker.add_preset(c)
-	var pop := cp.get_popup()
-	# Solid behind it, so the parts list doesn't show through.
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.11, 0.12, 0.14)
-	bg.set_content_margin_all(8.0)
-	bg.set_corner_radius_all(4)
-	bg.border_color = Color(1, 1, 1, 0.12)
-	bg.set_border_width_all(1)
-	pop.add_theme_stylebox_override("panel", bg)
-	pop.about_to_popup.connect(_keep_soon.bind(pop))
-	pop.size_changed.connect(_keep_soon.bind(pop))
-	picker.minimum_size_changed.connect(_keep_soon.bind(pop))
+func set_logo(id: String) -> void:
+	if id == "":
+		badge.erase("logo")
+	else:
+		badge["logo"] = id
+		if not (badge.get("logo_color") is Color):
+			badge["logo_color"] = Color(0.92, 0.92, 0.9)
+	_refresh()
 
 
-## Keeps popup `pop` on the screen now and again next frame (a section opening can settle its
-## size a frame later).
-func _keep_soon(pop: Variant) -> void:
-	_keep_on_screen.call_deferred(pop)
-	if is_inside_tree():
-		get_tree().create_timer(0.0).timeout.connect(_keep_on_screen.bind(pop))
+func set_brand(t: String) -> void:
+	badge["brand"] = t
+	if not (badge.get("brand_color") is Color):
+		badge["brand_color"] = Color(0.92, 0.92, 0.9)
+	_refresh()
 
 
-## Moves (and if need be shrinks) popup `pop` so all of it is on the screen.
-static func _keep_on_screen(p: Variant) -> void:
-	if not is_instance_valid(p) or not (p as PopupPanel).visible:
-		return   # (gone with the colours list rebuilt, or closed)
-	var pop := p as PopupPanel
-	pop.reset_size()
-	var room := Rect2i(pop.get_parent().get_viewport().get_visible_rect())
-	var r := Rect2i(pop.position, pop.size)
-	r.position.y = clampi(r.position.y, room.position.y, maxi(room.position.y, room.end.y - r.size.y))
-	r.position.x = clampi(r.position.x, room.position.x, maxi(room.position.x, room.end.x - r.size.x))
-	pop.position = r.position
+## Everything picked as the order takes it: each slot's colour, the tank's being the paint.
+func _order_colours() -> Dictionary:
+	var out := {}
+	for key in colours:
+		out[key] = colours[key]
+	out["tank"] = paint
+	return out
 
 
 func _price_of(l: Dictionary) -> int:
@@ -295,7 +377,7 @@ func _src() -> Dictionary:
 	if mode == "used":
 		var l: Dictionary = listings[picked]
 		return BikeShop.src_of(str(l["title"]), l["parts"], l["paint"])
-	return BikeShop.src_of(PartsDB.style_name(style), parts, colours["paint"], colours)
+	return BikeShop.src_of(PartsDB.style_name(style), parts, paint, _order_colours(), badge)
 
 
 func _quality() -> float:
@@ -341,7 +423,8 @@ func _refresh() -> void:
 
 
 func _press_buy() -> void:
-	var why := BikeShop.buy_used(listings[picked]) if mode == "used" else BikeShop.buy_new(PartsDB.style_name(style), parts, colours["paint"], colours)
+	var why := BikeShop.buy_used(listings[picked]) if mode == "used" else \
+		BikeShop.buy_new(PartsDB.style_name(style), parts, paint, _order_colours(), badge)
 	_status.text = Controls.hint(why)
 	if why == "" and mode == "used":
 		BikeShop.sold[str(listings[picked]["key"])] = true   # (gone from the list)

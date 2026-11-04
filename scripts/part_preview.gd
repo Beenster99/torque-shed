@@ -36,6 +36,14 @@ var spinning := true
 var zoom := 1.0
 var look := Vector2.ZERO
 var _panning := false
+var _pan_moved := 0.0         # how far the right button has dragged since it went down
+## Whether a controller can work it while it's on screen (the Bike shop's): the right stick turns
+## and tilts it, the triggers zoom, and clicking the right stick stops or starts it turning.
+var pad_view := false
+const PAD_TURN := 2.2         # radians a second at full stick
+const PAD_ZOOM := 1.6         # zoom's growth a second at a full trigger
+## The logo behind the bike in the Bike shop (its badge, see BikeBadge), large and faint.
+var backdrop: Sprite3D
 var _base := Vector3.ZERO     # where the camera sits at no zoom, looking at the middle
 
 
@@ -44,7 +52,7 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
 	custom_minimum_size = Vector2(0, 180)
-	tooltip_text = "Drag to turn it, scroll to zoom in (right-drag to look about), double-click to see all of it again"   # hint-ok: the mouse on it, not a binding
+	tooltip_text = "Drag to turn it, scroll to zoom in, right-click to stop or start it turning (right-drag to look about), double-click to see all of it again"   # hint-ok: the mouse on it, not a binding
 	viewport = SubViewport.new()
 	viewport.own_world_3d = true
 	viewport.transparent_bg = true
@@ -186,12 +194,39 @@ func show_bike(key: String, parts: Dictionary, paint: Color, cond := {}) -> void
 	model.position.y = build.rear_radius
 	holder.add_child(model)
 	model.build_from(build, paint, {}, null, false)
+	_show_backdrop(cond.get("tank", {}).get("badge", {}) if cond.get("tank") is Dictionary else {})
 	# Its middle over the turntable: the wheels sit either side of the model's origin.
 	holder.set_meta("size", Vector3(0.8, 1.15, build.wheelbase + build.rear_radius * 2.0))
 	_put(holder, "bike:" + key)
 	holder.position = Vector3(0.0, -0.55, 0.0)
 	if shadow:
 		shadow.position.y = -0.552
+
+
+## The badge's logo on the backdrop behind the bike, large and faint in its colour (none without
+## a logo). It stands still while the bike turns.
+func _show_backdrop(badge: Dictionary) -> void:
+	var b := BikeBadge.clean(badge)
+	if not b.has("logo"):
+		if backdrop:
+			backdrop.visible = false
+		return
+	if backdrop == null:
+		backdrop = Sprite3D.new()
+		backdrop.name = "Backdrop"
+		backdrop.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		backdrop.shaded = false
+		backdrop.no_depth_test = false
+		backdrop.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		viewport.add_child(backdrop)
+	backdrop.texture = BikeBadge.texture(str(b["logo"]))
+	var c: Color = b["logo_color"]
+	c.a = 0.22
+	backdrop.modulate = c
+	backdrop.pixel_size = 2.4 / float(BikeBadge.SIZE)
+	# Well behind the bike from where the camera looks, a little above the turntable.
+	backdrop.position = Vector3(0.0, 0.25, -2.6)
+	backdrop.visible = true
 
 
 func clear() -> void:
@@ -303,8 +338,30 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree() or showing == "":
 		return
 	_hold = maxf(0.0, _hold - delta)
+	if pad_view and Controls.using_pad:
+		var rs := Controls.stick(true)
+		if rs.length() > 0.0:
+			pivot.rotation.y += rs.x * PAD_TURN * delta
+			pivot.rotation.x = clampf(pivot.rotation.x + rs.y * PAD_TURN * 0.5 * delta, -0.8, 0.8)
+			_hold = 1.5
+		var z := Controls.trigger(true) - Controls.trigger(false)
+		if absf(z) > 0.0:
+			zoom_by(pow(PAD_ZOOM, z * delta))
 	if spinning and not _dragging and _hold <= 0.0:
 		pivot.rotation.y += SPIN * delta
+
+
+func _input(event: InputEvent) -> void:
+	if pad_view and is_visible_in_tree() and showing != "" and event is InputEventJoypadButton \
+			and (event as InputEventJoypadButton).pressed and (event as InputEventJoypadButton).button_index == JOY_BUTTON_RIGHT_STICK:
+		toggle_spinning()
+		get_viewport().set_input_as_handled()
+
+
+## Stops it turning on its own, or starts it again (a right-click, or the right stick's click).
+func toggle_spinning() -> void:
+	spinning = not spinning
+	_hold = 0.0
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -320,10 +377,15 @@ func _gui_input(event: InputEvent) -> void:
 		_hold = 1.5
 		accept_event()
 	elif mb and mb.button_index == MOUSE_BUTTON_RIGHT:
+		# A click stops or starts it turning; a drag looks about.
+		if not mb.pressed and _panning and _pan_moved < 4.0:
+			toggle_spinning()
 		_panning = mb.pressed
+		_pan_moved = 0.0
 		accept_event()
 	elif event is InputEventMouseMotion and _panning:
 		var rel := (event as InputEventMouseMotion).relative
+		_pan_moved += rel.length()
 		look += Vector2(-rel.x, rel.y) * PAN_TURN * _base.length() / zoom
 		_clamp_look()
 		_place_camera()

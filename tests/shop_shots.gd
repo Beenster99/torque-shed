@@ -28,86 +28,57 @@ func _ready() -> void:
 	tab.show_mode("new")
 	await _frames(40)
 	await _shot("01_configurator")
-	var cp: ColorPickerButton = tab.find_child("Colour_paint", true, false)
-	if cp:
-		var at: Vector2 = cp.get_global_rect().get_center()
-		for down in [true, false]:
-			var ev := InputEventMouseButton.new()
-			ev.button_index = MOUSE_BUTTON_LEFT
-			ev.pressed = down
-			ev.position = at
-			ev.global_position = at
-			Input.parse_input_event(ev)
-			await _frames(2)
-		await _frames(10)
-		await _shot("02_colour_popup")
-		var picker := cp.get_picker()
-		for c in [Color.RED, Color.ORANGE, Color.GOLD, Color.SEA_GREEN, Color.ROYAL_BLUE, Color.PURPLE, Color.WHITE, Color.DIM_GRAY, Color.BROWN, Color.PINK]:
-			picker.add_recent_preset(c)
-		_unfold(picker)
-		# (and click the headings open, in case they aren't folding containers)
-		for c in picker.find_children("*", "Button", true, false) + _all(picker):
-			if c is Button and str((c as Button).text) in ["Swatches", "Recent Colors"] and not (c as Button).button_pressed:
-				(c as Button).pressed.emit()
-				if (c as Button).toggle_mode:
-					(c as Button).button_pressed = true
-		await _frames(10)
-		await _shot("03_colour_popup_open")
-		cp.get_popup().hide()
-		await _frames(5)
-		cp = tab.find_child("Colour_mudguards", true, false)
-		for c in [Color.RED, Color.ORANGE, Color.GOLD, Color.SEA_GREEN, Color.ROYAL_BLUE]:
-			cp.get_picker().add_recent_preset(c)
-		(tab._left.get_parent() as ScrollContainer).scroll_vertical = 10000
-		await _frames(5)
-		at = cp.get_global_rect().get_center()
-		for down in [true, false]:
-			var ev := InputEventMouseButton.new()
-			ev.button_index = MOUSE_BUTTON_LEFT
-			ev.pressed = down
-			ev.position = at
-			ev.global_position = at
-			Input.parse_input_event(ev)
-			await _frames(2)
-		await _frames(5)
-		for c in _all(cp.get_picker()):
-			if c is Button and str((c as Button).text) in ["Swatches", "Recent Colors"] and not (c as Button).button_pressed:
-				(c as Button).pressed.emit()
-				if (c as Button).toggle_mode:
-					(c as Button).button_pressed = true
-		await _frames(10)
-		await _shot("03b_mudguard_popup_open")
-		cp.get_popup().hide()
-	await _frames(5)
+	# A cafe racer with its own badge, luggage and red mudguards.
 	tab._new_style("cafe")
+	tab.set_logo("wings")
+	tab.badge["logo_color"] = Color(0.95, 0.78, 0.25)
+	tab.set_brand("Bennett")
+	tab.badge["brand_color"] = Color(0.95, 0.95, 0.92)
 	tab.show_mode("new")
 	tab.set_part("panniers", "canvas_throwover")
-	tab.set_part("top_box", "wooden_crate")
 	tab.set_part("tail", "classic_mudguard")
-	tab.set_colour("mudguards", Color(0.75, 0.1, 0.08))
+	tab.set_colour("front_mudguard", Color(0.75, 0.1, 0.08))
+	tab.set_colour("tail", Color(0.75, 0.1, 0.08))
+	tab.set_colour("tank", Color(0.1, 0.22, 0.5))
 	await _frames(40)
-	await _shot("04_cafe_luggage_red_guards")
-	tab.set_spinning(false)
-	tab._preview.zoom_by(2.2)
-	await _frames(20)
-	await _shot("05_stopped_zoomed")
+	tab._preview.spinning = false
+	tab._preview.pivot.rotation.y = -PI / 2.0 + 0.25
+	await _frames(10)
+	await _shot("02_cafe_badge")
+	tab._preview.zoom_by(2.6)
+	tab._preview.look = Vector2(-0.12, 0.18)
+	tab._preview._clamp_look()
+	tab._preview._place_camera()
+	await _frames(10)
+	await _shot("03_badge_close")
+	tab._preview.reset_view()
+	tab._preview.pivot.rotation.y = -PI / 2.0 + 0.25
+	# The colour panel, with swatches and recent colours, from the lowest colour on the list.
+	for c in [Color.RED, Color.ORANGE, Color.GOLD, Color.SEA_GREEN, Color.ROYAL_BLUE, Color.PURPLE]:
+		ColourChoice.remember(c)
+	(tab._left.get_parent() as ScrollContainer).scroll_vertical = 10000
+	await _frames(5)
+	var cp: ColourChoice = tab.find_child("Colour_brand", true, false)
+	cp.open()
+	await _frames(10)
+	await _shot("04_colour_panel")
+	# Every logo, side by side.
+	var t0 := Time.get_ticks_msec()
+	var sheet := Image.create(BikeBadge.SIZE * 5, BikeBadge.SIZE * 2, false, Image.FORMAT_RGBA8)
+	sheet.fill(Color(0.15, 0.16, 0.18))
+	var i := 0
+	for id in BikeBadge.LOGOS:
+		BikeBadge._textures.erase(id)
+		var img := BikeBadge.texture(str(id)).get_image()
+		img.decompress()
+		if img.has_mipmaps():
+			img.clear_mipmaps()
+		img.convert(Image.FORMAT_RGBA8)
+		sheet.blend_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i((i % 5) * BikeBadge.SIZE, (i / 5) * BikeBadge.SIZE))
+		i += 1
+	print("LOGOS drawn in %d ms" % (Time.get_ticks_msec() - t0))
+	sheet.save_png(out_dir.path_join("05_logos.png"))
 	get_tree().quit()
-
-
-## Opens every folded section under `n` (the picker's Swatches and Recent colours).
-func _unfold(n: Node) -> void:
-	for c in n.get_children(true):
-		if "folded" in c:
-			c.set("folded", false)
-		_unfold(c)
-
-
-func _all(n: Node) -> Array:
-	var out := []
-	for c in n.get_children(true):
-		out.append(c)
-		out.append_array(_all(c))
-	return out
 
 
 func _frames(n: int) -> void:
