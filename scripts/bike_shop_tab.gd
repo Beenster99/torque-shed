@@ -10,6 +10,8 @@ extends VBoxContainer
 ## The configurator's text: small, to fit a whole bike's worth of choices on the screen.
 const FONT := 13
 const HEAD := 12
+## How wide the column beside each part is: its colour, finish and Reset.
+const CELL_W := 220.0
 
 var mode := "used"
 ## The second-hand bike picked (an index into listings), and today's list.
@@ -21,6 +23,7 @@ var listings: Array = []
 var style := "cafe"
 var parts := {}
 var colours := {}
+var finishes := {}   # slot -> one of Shed.FINISHES (left out: as it comes)
 var paint := Color.RED
 var badge := {}
 var _used_btn: Button
@@ -208,7 +211,7 @@ func show_mode(m: String) -> void:
 ## it's been changed from the factory's.
 func _colour_cell(row: HBoxContainer, slot: String) -> void:
 	var cell := HBoxContainer.new()
-	cell.custom_minimum_size.x = 84.0
+	cell.custom_minimum_size.x = CELL_W
 	cell.add_theme_constant_override("separation", 2)
 	row.add_child(cell)
 	if BikeShop.colour_slots(slot, parts).is_empty():
@@ -219,10 +222,24 @@ func _colour_cell(row: HBoxContainer, slot: String) -> void:
 	cp.color = colour_of(slot)
 	cp.color_changed.connect(func(c): set_colour(slot, c))
 	cell.add_child(cp)
+	var fb := OptionButton.new()
+	fb.name = "Finish_" + slot
+	fb.tooltip_text = "How the %s's paint looks" % BikeShop.slot_label(slot).to_lower()
+	fb.custom_minimum_size.x = 104.0
+	fb.clip_text = true
+	fb.focus_mode = Control.FOCUS_NONE
+	fb.add_theme_font_size_override("font_size", 12)
+	fb.get_popup().add_theme_font_size_override("font_size", FONT)
+	fb.add_item("As it comes")
+	for f in Shed.FINISHES:
+		fb.add_item(str(Shed.FINISH_NAMES.get(f, f)))
+	fb.select(Shed.FINISHES.find(str(finishes.get(slot, ""))) + 1)
+	fb.item_selected.connect(func(i): set_finish(slot, "" if i == 0 else Shed.FINISHES[i - 1]))
+	cell.add_child(fb)
 	var reset := _button("Reset")
 	reset.name = "Reset_" + slot
 	reset.add_theme_font_size_override("font_size", 11)
-	reset.tooltip_text = "Back to the colour it comes in"
+	reset.tooltip_text = "Back to the colour and finish it comes in"
 	reset.visible = _changed(slot)
 	reset.pressed.connect(func(): reset_colour(slot), CONNECT_DEFERRED)
 	cell.add_child(reset)
@@ -252,7 +269,7 @@ func _badge_rows() -> void:
 	lc.color = badge.get("logo_color", Color(0.92, 0.92, 0.9))
 	lc.color_changed.connect(func(c): badge["logo_color"] = c; _refresh())
 	var lcell := HBoxContainer.new()
-	lcell.custom_minimum_size.x = 84.0
+	lcell.custom_minimum_size.x = CELL_W
 	lcell.add_child(lc)
 	row.add_child(lcell)
 	_left.add_child(row)
@@ -275,7 +292,7 @@ func _badge_rows() -> void:
 	bc.color = badge.get("brand_color", Color(0.92, 0.92, 0.9))
 	bc.color_changed.connect(func(c): badge["brand_color"] = c; _refresh())
 	var bcell := HBoxContainer.new()
-	bcell.custom_minimum_size.x = 84.0
+	bcell.custom_minimum_size.x = CELL_W
 	bcell.add_child(bc)
 	brow.add_child(bcell)
 	_left.add_child(brow)
@@ -314,7 +331,7 @@ func _font_rows() -> void:
 		grid.add_child(b)
 	row.add_child(grid)
 	var pad := Control.new()
-	pad.custom_minimum_size.x = 84.0
+	pad.custom_minimum_size.x = CELL_W
 	row.add_child(pad)
 	_left.add_child(row)
 
@@ -357,9 +374,11 @@ func _place_row(what: String) -> void:
 	reset.name = "Reset_" + what + "_place"
 	reset.add_theme_font_size_override("font_size", 11)
 	reset.tooltip_text = "Back to its usual size and place"
-	reset.custom_minimum_size.x = 84.0
 	reset.pressed.connect(func(): reset_place(what))
-	row.add_child(reset)
+	var cell := HBoxContainer.new()
+	cell.custom_minimum_size.x = CELL_W
+	cell.add_child(reset)
+	row.add_child(cell)
 	_left.add_child(row)
 
 
@@ -392,6 +411,7 @@ func _new_style(s: String) -> void:
 	parts = PartsDB.sanitize_build(Contracts.style_build(s).duplicate())
 	paint = Shed.PAINTS[absi(hash(s)) % Shed.PAINTS.size()]
 	colours = {}
+	finishes = {}
 	if _preview:
 		_preview.reset_view()
 
@@ -414,7 +434,22 @@ func colour_of(slot: String) -> Color:
 
 
 func _changed(slot: String) -> bool:
-	return not colour_of(slot).is_equal_approx(BikeShop.factory_colour(slot, parts, paint))
+	return finishes.has(slot) or not colour_of(slot).is_equal_approx(BikeShop.factory_colour(slot, parts, paint))
+
+
+## Gives `slot`'s paint finish `f` (one of Shed.FINISHES, "" for as it comes).
+func set_finish(slot: String, f: String) -> void:
+	if Shed.FINISHES.has(f):
+		finishes[slot] = f
+	else:
+		finishes.erase(slot)
+	var fb := _left.find_child("Finish_" + slot, true, false) as OptionButton
+	if fb and fb.selected != Shed.FINISHES.find(f) + 1:
+		fb.select(Shed.FINISHES.find(f) + 1)
+	var reset := _left.find_child("Reset_" + slot, true, false) as Button
+	if reset:
+		reset.visible = _changed(slot)
+	_refresh()
 
 
 ## Colours `key` (a slot, or a group of BikeShop.COLOUR_GROUPS) `c`.
@@ -437,6 +472,7 @@ func set_colour(key: String, c: Color) -> void:
 ## Puts `slot` back in the colour it comes in.
 func reset_colour(slot: String) -> void:
 	colours.erase(slot)
+	finishes.erase(slot)
 	for g in BikeShop.COLOUR_GROUPS:
 		if BikeShop.colour_slots(g, parts).has(slot):
 			colours.erase(g)
@@ -480,7 +516,7 @@ func _src() -> Dictionary:
 	if mode == "used":
 		var l: Dictionary = listings[picked]
 		return BikeShop.src_of(str(l["title"]), l["parts"], l["paint"])
-	return BikeShop.src_of(PartsDB.style_name(style), parts, paint, _order_colours(), badge)
+	return BikeShop.src_of(PartsDB.style_name(style), parts, paint, _order_colours(), badge, finishes)
 
 
 func _quality() -> float:
@@ -527,7 +563,7 @@ func _refresh() -> void:
 
 func _press_buy() -> void:
 	var why := BikeShop.buy_used(listings[picked]) if mode == "used" else \
-		BikeShop.buy_new(PartsDB.style_name(style), parts, paint, _order_colours(), badge)
+		BikeShop.buy_new(PartsDB.style_name(style), parts, paint, _order_colours(), badge, finishes)
 	_status.text = Controls.hint(why)
 	if why == "" and mode == "used":
 		BikeShop.sold[str(listings[picked]["key"])] = true   # (gone from the list)
