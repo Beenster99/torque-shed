@@ -29,6 +29,9 @@ func _ready() -> void:
 	menu.open_tab(menu.bike_shop)
 	await _frames(5)
 	menu.bike_shop.show_mode("new")
+	menu.bike_shop.set_finish("frame", "chrome")
+	menu.bike_shop.set_finish("tank", "metallic")
+	menu.bike_shop.set_finish("saddle", "matte")
 	await _frames(40)
 	await _shot("01_menu_bike_shop")
 	var cp := menu.bike_shop

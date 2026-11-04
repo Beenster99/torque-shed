@@ -261,16 +261,36 @@ func test_configurator_extras() -> void:
 	check(all_load and BikeBadge.clean({"brand": "x", "brand_font": "comic"}).get("brand_font") == null, "every lettering loads, and one it doesn't know is plain")
 	check(BikeBadge.clean({"logo": "star", "logo_size": 9.0, "logo_x": -3, "brand_y": 0.3}) == {"logo": "star", "logo_color": Color(0.92, 0.92, 0.9), "logo_size": BikeBadge.SIZE_MAX, "logo_x": -BikeBadge.MOVE_MAX},
 		"sizes and moves are kept within bounds, and only for what's on the badge")
+	# A finish beside each colour: a chrome frame and a matte tank, the frame keeping its colour.
+	var ff := tab.find_child("Finish_frame", true, false) as OptionButton
+	var tf := tab.find_child("Finish_tank", true, false) as OptionButton
+	check(ff != null and tf != null and ff.item_count == Shed.FINISHES.size() + 1 and ff.get_item_text(0) == "As it comes"
+		and ff.get_parent() == (tab.find_child("Colour_frame", true, false) as Control).get_parent(),
+		"a finish to pick beside each part's colour (%d to choose from)" % (ff.item_count if ff else 0))
+	var frame_was := tab.colour_of("frame")
+	ff.select(Shed.FINISHES.find("chrome") + 1)
+	ff.item_selected.emit(Shed.FINISHES.find("chrome") + 1)
+	tab.set_finish("tank", "matte")
+	var fc: Dictionary = tab._src()["build"]["colors"]
+	check(fc.get("frame", {}).get("finish") == "chrome" and fc["frame"]["color"] == frame_was and fc.get("tank", {}).get("finish") == "matte"
+		and fc["tank"].get("badge", {}).get("logo") == "wings" and (tab.find_child("Reset_frame", true, false) as Button).visible,
+		"picked, the frame's chrome and the tank's matte go on the order (and Reset shows)")
 	var before: Array = Shed.bikes.keys()
 	tab._press_buy()
 	var id := _new_bike(before)
 	var tank_item := Shed.item_on(id, "tank") if id != 0 else 0
 	var g := Shed.item_on(id, "front_mudguard") if id != 0 else 0
+	var fr := Shed.item_on(id, "frame") if id != 0 else 0
+	check(fr != 0 and str(Shed.items[fr].get("finish", "")) == "chrome" and tank_item != 0 and str(Shed.items[tank_item].get("finish", "")) == "matte",
+		"ordered, the frame comes chrome and the tank matte")
 	check(tank_item != 0 and Shed.items[tank_item].get("badge", {}).get("logo") == "wings" and Shed.items[tank_item]["color"] == blue
 		and g != 0 and Shed.items[g]["color"] == red and Shed.item_on(id, "satnav") != 0,
 		"ordered, it comes with its badge on its blue tank, red mudguards and the sat nav fitted")
 	var cond := Shed.condition_of(Shed.items[tank_item]) if tank_item != 0 else {}
 	check(cond.get("badge", {}).get("brand") == "Bennett Motor Wo", "and the tank's condition carries the badge to wherever it's drawn")
+	(tab.find_child("Reset_frame", true, false) as Button).pressed.emit()
+	await _frames(1)
+	check(not tab.finishes.has("frame") and (tab.find_child("Finish_frame", true, false) as OptionButton).selected == 0, "Reset puts the frame's finish back as it comes")
 	(tab.find_child("Reset_front_mudguard", true, false) as Button).pressed.emit()
 	await _frames(1)
 	check(not tab.colours.has("front_mudguard") and not tab._src()["build"]["colors"].has("front_mudguard"), "Reset puts the factory's colour back")

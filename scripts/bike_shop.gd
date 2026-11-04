@@ -130,8 +130,9 @@ static func factory_colour(slot: String, parts: Dictionary, paint: Color) -> Col
 ## A second-hand bike or a configured new one as BikeCopy takes it: {"build": ...}. `colours`
 ## (a slot or a group of COLOUR_GROUPS -> Color) colours the new one's parts, a tank's colour
 ## being its paint too; one left out stays as the factory makes it. `badge` (BikeBadge) is
-## stamped on its tank.
-static func src_of(title: String, parts: Dictionary, paint: Color, colours := {}, badge := {}) -> Dictionary:
+## stamped on its tank. `finishes` (a slot or group -> one of Shed.FINISHES) is how each part's
+## paint looks; one left out keeps the factory's finish.
+static func src_of(title: String, parts: Dictionary, paint: Color, colours := {}, badge := {}, finishes := {}) -> Dictionary:
 	if colours.get("tank") is Color:
 		paint = colours["tank"]
 	var colors := {}
@@ -142,6 +143,16 @@ static func src_of(title: String, parts: Dictionary, paint: Color, colours := {}
 	var src := BikeCopy.build_src(title, parts, paint, {}, true)
 	var c: Dictionary = (src["build"] as Dictionary)["colors"]
 	c.merge(colors, true)
+	# Each finish picked (a slot or a group, as colours) on its parts, in their colour now.
+	for key in finishes:
+		var f := str(finishes[key])
+		if not Shed.FINISHES.has(f):
+			continue
+		for slot in colour_slots(str(key), parts):
+			if c.get(slot) is Dictionary:
+				c[slot]["finish"] = f
+			else:
+				c[slot] = {"color": paint if slot == "tank" else factory_colour(slot, parts, paint), "finish": f}
 	var b := BikeBadge.clean(badge)
 	if not b.is_empty() and str(parts.get("tank", "none")) != "none":
 		if not (c.get("tank") is Dictionary):
@@ -163,8 +174,8 @@ static func buy_used(listing: Dictionary) -> String:
 
 
 ## Orders a new bike configured as `parts` in these colours, with `badge` on its tank. Why not, or "".
-static func buy_new(title: String, parts: Dictionary, paint: Color, colours: Dictionary, badge := {}) -> String:
-	return BikeCopy.order(src_of(title, parts, paint, colours, badge), 1.0)
+static func buy_new(title: String, parts: Dictionary, paint: Color, colours: Dictionary, badge := {}, finishes := {}) -> String:
+	return BikeCopy.order(src_of(title, parts, paint, colours, badge, finishes), 1.0)
 
 
 ## The fabrication a configured bike takes beyond its style's stock one (BikeRig's fit report),
