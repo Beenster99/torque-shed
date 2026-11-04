@@ -228,6 +228,7 @@ func _run_all() -> void:
 	await _t(&"_test_key_bindings")
 	await _t(&"_test_pad_menus")
 	await _t(&"_test_menu_layout")
+	await _t(&"_test_menu_bike_shop_wide")
 	await _t(&"_test_menu_fix_bike")
 	await _t(&"_test_menu_guest_debug")
 	await _t(&"_test_splash")
@@ -24749,6 +24750,10 @@ func _menu_suite() -> RefCounted:
 
 func _test_menu_layout() -> void:
 	await _menu_suite().test_layout()
+
+
+func _test_menu_bike_shop_wide() -> void:
+	await _menu_suite().test_bike_shop_wide()
 
 
 func _test_menu_fix_bike() -> void:
