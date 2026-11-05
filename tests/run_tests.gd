@@ -23457,6 +23457,10 @@ func _test_history_regions() -> void:
 	_history().test_regions()
 
 
+func _test_history_towers() -> void:
+	_history().test_towers()
+
+
 func _furniture() -> RefCounted:
 	return load("res://tests/furniture_tests.gd").new(self)
 

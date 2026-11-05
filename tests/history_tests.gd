@@ -333,3 +333,74 @@ func test_regions() -> void:
 			if not BuildingLooks.of(r, row).is_empty():
 				matched += 1
 		check(matched > 0, "%s: %d of its %d mapped looks on its buildings" % [id, matched, (r.features.get("buildings", []) as Array).size()])
+
+
+## The map's towers (features "towers": tall and big buildings, a tall one's parts): read as "tower" and "skyscraper"
+## areas with their looks, drawn whole by Towers to their real height with their walls facing out and their floors'
+## glass marked to light up, a building of the cell's under one left to it, and a block of a city's laid out quickly.
+func test_towers() -> void:
+	var r := Roads.tee()
+	var frame := Vector2(r.frame_lat, r.frame_lon)
+	var at := func(x: float, z: float) -> Array:
+		var ll := RealRegion.from_frame(frame, x, z)
+		return [roundi(ll.x * 1e5), roundi(ll.y * 1e5)]
+	var square := func(x: float, z: float, s: float) -> Array:
+		var pts := [at.call(x, z), at.call(x + s, z), at.call(x + s, z + s), at.call(x, z + s)]
+		var out: Array = [pts[0][0], pts[0][1]]
+		for k in range(1, 4):
+			out += [pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]]
+		return out
+	var into := {"points": [], "lines": [], "areas": []}
+	RealRegion.add_features(into, {"format": 1, "kinds": [], "names": ["", "Big Tower"], "points": [], "lines": [], "areas": [],
+		"words": ["", "office", "glass", "apartments"],
+		"towers": [[120.0, 0.0, 1, "t1", "g1", 1, 0, 0, 0, 2, 0] + square.call(280.0, 280.0, 30.0),
+			[null, 0.0, 0, "t2", "g2", 0, 0, 0, 0, 0, 0] + square.call(200.0, 300.0, 60.0),
+			[45.0, 20.0, 0, "t3", "g3", 3, 0, 0, 0, 0, 0] + square.call(330.0, 200.0, 20.0)]}, frame)
+	var areas: Array = into["areas"]
+	check(areas.size() == 3 and areas[0][0] == "skyscraper" and areas[1][0] == "tower" and float(areas[0][2]) == 120.0
+		and areas[0][4] == "Big Tower" and areas[0][6]["look"]["material"] == "glass" and areas[2][6]["look"]["class"] == "apartments",
+		"the towers read as areas, the tallest a skyscraper, with their names and looks (%s)" % str(areas.map(func(q): return [q[0], q[2], q[4]])))
+	var ring: PackedVector2Array = areas[0][1]
+	check(ring.size() == 4 and ring[0].distance_to(Vector2(280.0, 280.0)) < 1.5, "in the region's frame (%s)" % str(ring))
+	r.features = into
+	check(BuildingLooks.of(r, [295.0, 295.0, 10.0, 10.0, 0.0, 14.0, 4, 0]).has("tower"), "a cell building inside a tower is left to it")
+	check(not BuildingLooks.of(r, [340.0, 210.0, 6.0, 6.0, 0.0, 14.0, 4, 0]).has("tower"), "but not one under a part that starts 20 m up")
+	check(not BuildingLooks.of(r, [50.0, 50.0, 10.0, 10.0, 0.0, 14.0, 4, 0]).has("tower"), "nor one out in the open")
+	var net := RoadNet.new(r, Roads.flat)
+	var key := RoadBlock.key_of(290.0, 290.0)
+	var rows := {"areas": []}
+	for q in areas:
+		rows["areas"].append([q, SceneryStreamer.kit(str(q[0]))])
+	var got := Towers.lay_out(net, key, rows)
+	var a: Dictionary = got.get("dress", {}).get("arrays", {})
+	var v: PackedVector3Array = a.get("v", PackedVector3Array())
+	var n: PackedVector3Array = a.get("n", PackedVector3Array())
+	var top := -INF
+	var out_ok := true
+	var o := Vector3(key.x * RoadBlock.SIZE, 0.0, key.y * RoadBlock.SIZE)
+	for k in v.size():
+		top = maxf(top, v[k].y)
+		var p := v[k] + o
+		if absf(n[k].y) < 0.1 and Vector2(p.x, p.z).distance_to(Vector2(295.0, 295.0)) < 25.0:
+			out_ok = out_ok and Vector2(n[k].x, n[k].z).dot(Vector2(p.x - 295.0, p.z - 295.0)) > -0.01
+	check(v.size() > 0 and v.size() % 3 == 0 and n.size() == v.size(), "the block's towers draw sound triangles (%d)" % v.size())
+	check(absf(top - (10.0 + 120.0)) < 0.01, "to their real height over the land (%.1f)" % top)
+	check(out_ok, "each wall facing out")
+	var lit := 0
+	for c: Color in (a.get("c", PackedColorArray()) as PackedColorArray):
+		if WindowLights.roll(c) >= 0.0:
+			lit += 1
+	check(lit > 100, "its floors' glass marked to light after dark (%d)" % lit)
+	check(int(got.get("skipped", 0)) == 0 and Towers.VERSION in [1], "every tower placed")
+	# A big block's worth: three hundred towers in one 512 m block, laid out on a worker in good time.
+	var many := {"areas": []}
+	for k in 300:
+		var x := float(k % 17) * 28.0 + key.x * RoadBlock.SIZE + 10.0
+		var z := float(k / 17) * 28.0 + key.y * RoadBlock.SIZE + 10.0
+		var q := ["tower", PackedVector2Array([Vector2(x, z), Vector2(x + 18.0, z), Vector2(x + 18.0, z + 14.0), Vector2(x, z + 14.0)]),
+			40.0 + float(k % 7) * 20.0, 0.0, "", "m%d" % k, {"group": "m%d" % k, "look": {}}]
+		many["areas"].append([q, SceneryStreamer.kit("tower")])
+	var t0 := Time.get_ticks_usec()
+	var big := Towers.lay_out(net, key, many)
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	check(ms < 150.0 and big.has("dress"), "a dense city block of 300 towers in %.0f ms" % ms)

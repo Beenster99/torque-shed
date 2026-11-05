@@ -661,6 +661,30 @@ static func add_features(into: Dictionary, rows: Dictionary, frame: Vector2) -> 
 			for k in range(2, 8):
 				said.append(str(words[int(row[k])]) if int(row[k]) < words.size() else "")
 			(into["buildings"] as Array).append(said)
+	# The towers (tall and big buildings, a tall one's parts) as areas of kind "tower", or "skyscraper" when tall enough
+	# to be seen from miles off (scripts/scenery/towers.gd): [kind, ring, height or null, starts at, name, id,
+	# {"group": its building's id, "look": BuildingLooks.look_of's, with "material" its walls'}].
+	for row in rows.get("towers", []):
+		if not row is Array or (row as Array).size() < 17:
+			continue
+		var pts := PackedVector2Array()
+		var lat := int(row[11])
+		var lon := int(row[12])
+		pts.append(to_frame(frame, lat * 1e-5, lon * 1e-5))
+		for k in range(13, (row as Array).size() - 1, 2):
+			lat += int(row[k])
+			lon += int(row[k + 1])
+			pts.append(to_frame(frame, lat * 1e-5, lon * 1e-5))
+		var said := [0.0, 0.0]
+		for k in range(5, 11):
+			said.append(str(words[int(row[k])]) if int(row[k]) < words.size() else "")
+		var look := BuildingLooks.look_of(said)
+		look["class"] = said[2]
+		look["material"] = said[6]
+		var tall := row[0] != null and float(row[0]) >= Towers.SKYSCRAPER
+		var nm := str(names[int(row[2])]) if int(row[2]) < names.size() else ""
+		(into["areas"] as Array).append(["skyscraper" if tall else "tower", pts, row[0], row[1], nm, row[3],
+			{"group": str(row[4]), "look": look}])
 
 
 ## The trees of `cells` (their own files, CellStore.trees, fetched if this game hasn't the ones the world's index names)

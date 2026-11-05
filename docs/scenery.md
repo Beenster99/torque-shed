@@ -60,6 +60,20 @@ classes in its `CLASSES` table (all nine rounds' kinds, 141 of them, named for t
   `RealRegion.buildings` row it stands in, so a town's roofs are its own without a cell being baked again or a road
   block's seeds moving.
 
+- **Towers** (city buildings): a building 40 m tall or more (`TOWER_M`, or 12 floors), or with a footprint of
+  2,500 m² or more (`BIG_M2`; one under 40 m only near a road a ride can take), is kept whole in `"towers"`:
+  `[[height, min_height, name, id, group, class, roof_shape, roof_color, roof_material, facade_material, facade_color,
+  lat, lon, dlat, dlon, ...], ...]` (the words as the looks', its whole outline in the cell its middle is in; height
+  null where the map gives none). A tall building made of parts (Overture's `building_part`: podium, setbacks, spire)
+  is kept as its parts, each with its own height and where it starts above the ground, `group` its building's id.
+  `RealRegion.add_features` makes each an area of kind `tower` (or `skyscraper` from 100 m up, seen from 8 km) with a
+  seventh field `{"group", "look"}`; `scripts/scenery/towers.gd` draws them, and the road blocks leave out a
+  buildings.json row standing inside a tower that starts on the ground (`BuildingLooks.of` says `"tower"`). Where the
+  map gives a building of buildings.json no height (the baker's one fallback per kind), `BuildingHeights` guesses one
+  from its town's size and how near its middle it stands.
+- The baker reads the map a batch at a time and keeps only what it uses of each row (`slim`: the tags it reads, its
+  name; `near_filter`: no near-only thing far from a road), so a dense city's square fits a runner.
+
 Where the files live:
 
 - World cells: the store's `feature/cROW_COL.json`, its hash in `index.json` `"features"`, fetched with the cell
