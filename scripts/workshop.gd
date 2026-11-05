@@ -945,8 +945,8 @@ func _bike_signature(id: int) -> String:
 			parts.append("%s%s%s" % [sig[0], bool(host.get("bolted", {}).get(slot, false)), sig[1]])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
-	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
-		str(bike.get("blueprint", {}).get("parts", "")) if bike.get("blueprint") is Dictionary else ""]
+	return "%s|%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
+		str(bike.get("blueprint", {}).get("parts", "")) if bike.get("blueprint") is Dictionary else "", str(bike.get("cargo", ""))]
 
 
 ## Each fitted item's part of _bike_signature, kept until the item itself changes: building
@@ -1026,6 +1026,9 @@ func _update_wash_fx_body(delta: float) -> void:
 		fx.update(delta, from, j.get("at", Vector3.ZERO), j.get("normal", Vector3.UP), not j.is_empty())
 
 
+var _cargo_mats: Array[StandardMaterial3D] = []   # cardboard and bare parts, for what's down by a bike
+
+
 func _make_bike_view(id: int, was := {}) -> Node3D:
 	var bike: Dictionary = Shed.bikes[id]
 	var view := Node3D.new()
@@ -1056,6 +1059,15 @@ func _make_bike_view(id: int, was := {}) -> Node3D:
 	model.build_pickers({"bike": id})
 	if on_stand:
 		_paddock_stand(view, build)
+	if not FuelShop.cargo_of(id).is_empty() and int(bike.get("rider", 0)) == 0:
+		# Left out on the road with things down by it (see FuelShop, ToolboxSpares).
+		if _cargo_mats.is_empty():
+			for c in [Color(0.62, 0.47, 0.3), Color(0.18, 0.18, 0.2)]:
+				var m := StandardMaterial3D.new()
+				m.albedo_color = c
+				m.roughness = 0.8
+				_cargo_mats.append(m)
+		RoadsideView.draw_by_bike(view, FuelShop.cargo_of(id), _cargo_mats[0], _cargo_mats[1])
 	var plan = bike.get("blueprint")
 	if plan is Dictionary:
 		# Being built to a blueprint: the parts still to go on show as a hologram, in place.

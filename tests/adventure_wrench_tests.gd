@@ -1,6 +1,6 @@
 extends RefCounted
 ## Roadside wrenching on adventures (see Roadside): fixing what the bike set off with (a slack
-## chain, low oil) with only what the toolbox holds, the bike stood at the roadside for everyone,
+## chain with your own wrench, low oil from the toolbox's bottle), the bike stood at the roadside for everyone,
 ## pushing it and the tow, and normal rides keeping no roadside fixing at all. Run from tests/run_tests.gd: its
 ## _test_adv_wrench_* functions hand over to these.
 
@@ -79,11 +79,13 @@ func test_rules() -> void:
 	check(Roadside.parked(bike) and float(spot["x"]) == 123456.25 and float(spot["z"]) == -987654.5 and int(spot["trip"]) == int(Shed.adventure["id"]),
 		"got off, it's stood at the roadside, kept in the route's frame")
 	check(str(Shed.bikes[bike]["stand"]) == "side" and not Shed.abandoned_bikes().has(bike), "on its side stand, and not left for the recovery truck")
-	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true}).contains("no toolbox"),
-		"no toolbox, nothing to fix it with")
+	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true}) == "",
+		"no toolbox: the chain's tightened with your own wrench all the same")
+	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "oil"}).contains("no toolbox"),
+		"but no toolbox, no oil to top it up with")
 	var box := _toolbox(bike, ["oil"])
-	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true}).contains("tools"),
-		"no tool roll in the toolbox, no tightening the chain (push it, or a tow)")
+	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true}) == "",
+		"no tool roll in the toolbox: still the wrench's job")
 	Shed.items[box]["contents"] = KIT.duplicate()
 	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "chain_slack"}).contains("Crouch"), "crouch to get at the chain")
 	Shed.request({"a": "roadside_fix", "bike": bike, "fault": "chain_slack", "crouched": true})
