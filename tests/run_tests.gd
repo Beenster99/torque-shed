@@ -6898,6 +6898,12 @@ func _test_dyno_room_session() -> void:
 		await get_tree().physics_frame
 	Input.action_release("move_forward")
 	check(w.global_position.z < DynoRoom.CENTER.z + DynoRoom.HALF.y - 0.5, "you can walk through the doorway (z %.1f)" % w.global_position.z)
+	# Its walls and roof hide the yard and the town beyond them from the renderer, as the shed's do, and its big
+	# screen is drawn only when the graph on it changes.
+	var occluded := room.find_children("*", "OccluderInstance3D", true, false).size()
+	check(occluded >= 4, "the dyno room's three walls and roof are occluders (%d)" % occluded)
+	check(room._screen_view.render_target_update_mode != SubViewport.UPDATE_WHEN_VISIBLE
+		and room._screen_view.render_target_update_mode != SubViewport.UPDATE_ALWAYS, "the dyno screen isn't redrawn every frame")
 	# No tool chest or tyre rack along the west wall any more.
 	var west := 0
 	for n in room.find_children("*", "StaticBody3D", true, false):
