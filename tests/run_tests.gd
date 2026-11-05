@@ -906,6 +906,9 @@ func _run_all() -> void:
 	await _t(&"_test_road_cell")
 	await _t(&"_test_road_meshes")
 	await _t(&"_test_road_bridges")
+	await _t(&"_test_bridge_picks")
+	await _t(&"_test_bridge_designs")
+	await _t(&"_test_bridge_blocks")
 	await _t(&"_test_road_join_caps")
 	await _t(&"_test_road_crossed_junction")
 	await _t(&"_test_road_pockets")
@@ -23231,6 +23234,22 @@ func _test_road_meshes() -> void:
 
 func _test_road_bridges() -> void:
 	_roads().test_bridges()
+
+
+func _bridge_kit() -> RefCounted:
+	return load("res://tests/bridge_kit_tests.gd").new(self)
+
+
+func _test_bridge_picks() -> void:
+	_bridge_kit().test_picks()
+
+
+func _test_bridge_designs() -> void:
+	_bridge_kit().test_designs()
+
+
+func _test_bridge_blocks() -> void:
+	_bridge_kit().test_blocks()
 
 
 func _test_road_ride() -> void:

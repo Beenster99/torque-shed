@@ -33,10 +33,9 @@ const COLLIDE_COLS := 8
 ## the road along the way: route.land_reach keeps it well short of them.
 const SHARED_COL := 13
 const CROWN := 0.04
-## A bridge's stone, its parapets' height over the deck (m), and how far apart its piers are at most (m).
+## A bridge's stone (its underside's) and its parapets' height over the deck (m).
 const BRIDGE_STONE := Color(0.62, 0.58, 0.5)
 const PARAPET := 0.95
-const PIER_GAP := 14.0
 ## How far a chunk's road collision runs on past each end, under the next chunk's (m, see _overlapped).
 const SEAM_OVERLAP := 0.05
 ## The most vertices of real buildings a chunk draws (a town's busiest stretch would be several times this).
@@ -768,9 +767,9 @@ static func _cliff_top(route: AdventureRoute, i: int, ax: float, az: float) -> T
 	return Transform3D()
 
 
-## The bridges between knots i0 and i1 (AdventureRoute.deck): a stone parapet each side of the deck, the deck's sides
-## and underside BRIDGE_DEPTH down, and a pier every PIER_GAP metres or so where the ground is well below. Relative to
-## the anchor (ax, az).
+## The bridges between knots i0 and i1 (AdventureRoute.deck): each side of the deck in its design's style
+## (BridgeKit.edge), the deck's sides and underside BRIDGE_DEPTH down, and what's built round it (BridgeKit.draw: its
+## piers, arches, towers and cables), the parts anchored between i0 and i1. Relative to the anchor (ax, az).
 static func _bridge(route: AdventureRoute, i0: int, i1: int, ax: float, az: float) -> Dictionary:
 	var arr := AdventureProps.new_arrays()
 	if route.deck.is_empty():
@@ -780,48 +779,64 @@ static func _bridge(route: AdventureRoute, i0: int, i1: int, ax: float, az: floa
 	var at := func(i: int, lat: float, y: float) -> Vector3:
 		var h := route.hd[i]
 		return Vector3(route.px[i] + cos(h) * lat - ax, y, route.pz[i] + sin(h) * lat - az)
-	var since := 999
-	for i in range(i0, mini(i1, route.deck.size() - 1)):
+	var last := route.deck.size() - 1
+	var rec := {}
+	var run := Vector2i(-1, -1)
+	for i in range(i0, mini(i1, last)):
 		if route.deck[i] <= 0.0 or route.deck[i + 1] <= 0.0:
-			since = 999
 			continue
+		if i > run.y:
+			# (a new bridge: the whole of it, from where its deck starts to where it ends)
+			var first := i
+			while first > 0 and route.deck[first - 1] > 0.0:
+				first -= 1
+			var end := i + 1
+			while end < last and route.deck[end + 1] > 0.0:
+				end += 1
+			run = Vector2i(first, end)
+			rec = _bridge_rec(route, first, end, ax, az)
+			var keep := func(s: float, _p: Vector3) -> bool:
+				var k := first + int(floorf(s / AdventureRoute.STEP))
+				return k >= i0 and k < i1
+			BridgeKit.draw(arr, rec, keep)
+		var style: Dictionary = rec.get("edge", BridgeKit.plain_edge())
 		var e0 := route.width[i] * 0.5
 		var e1 := route.width[i + 1] * 0.5
 		var y0 := route.ph[i]
 		var y1 := route.ph[i + 1]
 		for side: int in [-1, 1]:
 			var s := float(side)
-			# The parapet: its inside, top and outside, then the deck's side on down.
-			var in0: Vector3 = at.call(i, s * (e0 + 0.15), y0 - 0.05)
-			var in1: Vector3 = at.call(i + 1, s * (e1 + 0.15), y1 - 0.05)
-			var out0: Vector3 = at.call(i, s * (e0 + 0.6), y0 - depth)
-			var out1: Vector3 = at.call(i + 1, s * (e1 + 0.6), y1 - depth)
-			var top := Vector3.UP * (PARAPET + 0.05)
-			var outer0: Vector3 = at.call(i, s * (e0 + 0.6), y0)
-			var outer1: Vector3 = at.call(i + 1, s * (e1 + 0.6), y1)
-			if side < 0:
-				AdventureProps._quad(arr, in1, in0, in0 + top, in1 + top, stone.darkened(0.06))
-				AdventureProps._quad(arr, in1 + top, in0 + top, outer0 + top, outer1 + top, stone.lightened(0.08))
-				AdventureProps._quad(arr, outer0 + top, outer1 + top, out1, out0, stone)
-			else:
-				AdventureProps._quad(arr, in0, in1, in1 + top, in0 + top, stone.darkened(0.06))
-				AdventureProps._quad(arr, in0 + top, in1 + top, outer1 + top, outer0 + top, stone.lightened(0.08))
-				AdventureProps._quad(arr, outer1 + top, outer0 + top, out0, out1, stone)
+			BridgeKit.edge(arr, style, at.call(i, s * (e0 + 0.15), y0 - 0.05), at.call(i + 1, s * (e1 + 0.15), y1 - 0.05),
+				at.call(i, s * (e0 + 0.6), y0 - 0.05), at.call(i + 1, s * (e1 + 0.6), y1 - 0.05), PARAPET + 0.05, depth - 0.05)
 		# The underside, seen from the river.
 		var ul0: Vector3 = at.call(i, -(e0 + 0.6), y0 - depth)
 		var ur0: Vector3 = at.call(i, e0 + 0.6, y0 - depth)
 		var ul1: Vector3 = at.call(i + 1, -(e1 + 0.6), y1 - depth)
 		var ur1: Vector3 = at.call(i + 1, e1 + 0.6, y1 - depth)
 		AdventureProps._quad(arr, ul0, ur0, ur1, ul1, stone.darkened(0.25))
-		# A pier where the ground is well below and the last is far enough back.
-		since += 1
-		var mid: Vector3 = at.call(i, 0.0, y0 - depth)
-		var ground := route.natural_height(i, mid.x + ax, mid.z + az)
-		if since * AdventureRoute.STEP >= PIER_GAP and route.deck[i] >= 1.0 and y0 - depth - ground > 1.5:
-			since = 0
-			var xf := Transform3D(Basis(Vector3.UP, -route.hd[i]), Vector3(mid.x, ground - 0.5, mid.z))
-			AdventureProps.box(arr, xf, Vector3(e0 * 2.0 + 0.8, y0 - depth - ground + 0.5, 1.6), stone.darkened(0.12), false)
 	return arr
+
+
+## The bridge from knot `first` to `last` as a BridgeKit record, relative to the anchor (ax, az).
+static func _bridge_rec(route: AdventureRoute, first: int, last: int, ax: float, az: float) -> Dictionary:
+	var pts := PackedVector3Array()
+	var rights := PackedVector3Array()
+	var ground := PackedFloat32Array()
+	var wet := PackedFloat32Array()
+	var real := route.real != null and route.real.terrain != null
+	for i in range(first, last + 1):
+		var x := route.px[i]
+		var z := route.pz[i]
+		pts.append(Vector3(x - ax, route.ph[i], z - az))
+		rights.append(Vector3(cos(route.hd[i]), 0.0, sin(route.hd[i])))
+		ground.append(route.natural_height(i, x, z))
+		wet.append(1.0 if real and _in_water(route, x, z) else 0.0)
+	var mid := (first + last) / 2
+	var kit := RegionKit.for_route(route, mid)
+	var facts := {"region": str(kit.get("region", "")), "country": str(kit.get("country", "")),
+		"roll": float(hash(Vector2i(roundi(route.px[mid]), roundi(route.pz[mid]))) % 10007) / 10007.0}
+	return BridgeKit.make(pts, rights, ground, wet, route.width[mid] * 0.5 + 0.6, AdventureRoute.BRIDGE_DEPTH, facts,
+		AdventureRoute.STEP)
 
 
 static var _bridge_mat: BaseMaterial3D
