@@ -2683,7 +2683,7 @@
    }
   },
   "skyscraper": {
-   "round": "D6",
+   "round": "City",
    "default": {
     "model": "towers:city",
     "reach": 8000
@@ -2829,7 +2829,7 @@
    }
   },
   "tower": {
-   "round": "D6",
+   "round": "City",
    "default": {
     "model": "towers:city",
     "reach": 2500
