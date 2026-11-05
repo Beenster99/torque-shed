@@ -8,7 +8,7 @@ extends RefCounted
 
 ## Bump when what a block holds, or how it's laid out, changes: it's in every block's hash, so a crew on mixed versions
 ## finds out at the lobby.
-const VERSION := 22
+const VERSION := 23
 const SIZE := 512.0
 ## A piece cut by the block's edge runs on this far (m) into the next block, so the two decks overlap at the seam.
 const SEAM := 0.05
@@ -63,15 +63,14 @@ const SHEET_PASSES := 60
 const ISLAND_KERB := 0.3
 const ISLAND_GRASS := Color(0.3, 0.42, 0.2)
 const KERB := Color(0.62, 0.62, 0.6)
-## A bridge's parapets: as thick as this (m), and as tall and of the stone the single-line ride's are
-## (AdventureChunk.PARAPET); a pier under it every PIER_GAP or so where the land is more than PIER_MIN below its deck.
+## A bridge's parapets: as thick as this (m), and as tall as the single-line ride's are (AdventureChunk.PARAPET).
 const PARAPET_W := 0.45
-const PIER_MIN := 1.5
 ## A road crossing over or under another this far (m) above or below it isn't on it (_on_other).
 const OVER := 2.5
 
 var key := Vector2i.ZERO
 var rect := Rect2()
+var _bridges := {}   # Vector2i(edge, its first sample) -> its BridgeKit record, made while laying the block out
 var hash := ""
 var pieces: Array[Dictionary] = []
 var junctions: Array[Dictionary] = []
@@ -691,8 +690,10 @@ func _lay_out() -> void:
 	var kit := RegionKit.at_frame(net.region.frame_lat, net.region.frame_lon, mid.x, mid.y) if net.region != null else {}
 	var marks := RoadMarkings.paint(self, kit)
 	_marked = not marks.is_empty()
+	_bridges = {}
 	for p in pieces:
 		_piece_mesh(p)
+	_bridge_works()
 	for j in junctions:
 		_junction_mesh(j)
 	_join_caps()
@@ -899,25 +900,28 @@ func _piece_mesh(p: Dictionary) -> void:
 			var side := -1.0 if q == 0 else 1.0
 			_verge_strip(pts[k] - o + rights[k] * side * e, pts[k + 1] - o + rights[k + 1] * side * e, rights[k] * side,
 				rights[k + 1] * side, verge_col, verge_out)
-	_bridge_sides(pts, rights, e, ws, surf)
+	_bridge_sides(p, pts, rights, e, ws, surf)
 	if surf == "tarmac" and not _marked:
 		_piece_lines(p, pts, rights, e, s0)
 
 
-## A piece's bridges, where it's out on one (`ws`, RoadNet.bridge_at at each of its points `pts`): a stone parapet
-## each side, its outside on down to the deck's underside BRIDGE_DEPTH under the road, the underside, and a pier every
-## PIER_GAP or so where the land is well below. The parapets' insides are walls (collision `surf`, the road's).
-func _bridge_sides(pts: PackedVector3Array, rights: Array, e: float, ws: PackedFloat32Array, surf: String) -> void:
+## A piece's bridges, where it's out on one (`ws`, RoadNet.bridge_at at each of its points `pts`): each side in its
+## design's style (BridgeKit.edge: a stone parapet, a crash barrier, a railing), its outside on down to the deck's
+## underside BRIDGE_DEPTH under the road, and the underside. The sides' insides are walls PARAPET high whatever their
+## look (collision `surf`, the road's). What's built round the bridge (its piers, arches, towers) is _bridge_works'.
+func _bridge_sides(p: Dictionary, pts: PackedVector3Array, rights: Array, e: float, ws: PackedFloat32Array, surf: String) -> void:
 	var arr: Dictionary = arrays["bridge"]
 	var o := anchor()
 	var stone: Color = AdventureChunk.BRIDGE_STONE
 	var top := Vector3.UP * AdventureChunk.PARAPET
 	var dn := Vector3.DOWN * RoadNet.BRIDGE_DEPTH
-	var since := 0.0
+	var ei := int(p["edge"])
+	var at: PackedFloat32Array = p["at"]
 	for k in pts.size() - 1:
 		if ws[k] <= 0.0 or ws[k + 1] <= 0.0:
-			since = 0.0
 			continue
+		var rec := _bridge_rec(ei, (at[k] + at[k + 1]) * 0.5)
+		var style: Dictionary = rec.get("edge", BridgeKit.plain_edge())
 		var c0 := pts[k] - o
 		var c1 := pts[k + 1] - o
 		var r0: Vector3 = rights[k]
@@ -927,22 +931,91 @@ func _bridge_sides(pts: PackedVector3Array, rights: Array, e: float, ws: PackedF
 			var in1 := c1 + r1 * side * e
 			var out0 := c0 + r0 * side * (e + PARAPET_W)
 			var out1 := c1 + r1 * side * (e + PARAPET_W)
-			AdventureProps._quad(arr, in0, in1, in1 + top, in0 + top, stone.darkened(0.06))
-			AdventureProps._quad(arr, in0 + top, in1 + top, out1 + top, out0 + top, stone.lightened(0.08))
-			AdventureProps._quad(arr, out0 + top, out1 + top, out1 + dn, out0 + dn, stone)
+			BridgeKit.edge(arr, style, in0, in1, out0, out1, top.y, -dn.y)
 			_face(surf, in0, in1, in1 + top)
 			_face(surf, in0, in1 + top, in0 + top)
 		AdventureProps._quad(arr, c0 - r0 * (e + PARAPET_W) + dn, c0 + r0 * (e + PARAPET_W) + dn,
 			c1 + r1 * (e + PARAPET_W) + dn, c1 - r1 * (e + PARAPET_W) + dn, stone.darkened(0.25))
-		since += Vector2(c1.x - c0.x, c1.z - c0.z).length()
-		if since < AdventureChunk.PIER_GAP or ws[k] < 1.0:
+
+
+## The record (BridgeKit.make) of the bridge edge `ei` is on `s` m along, in the block's frame: {} off one. Made once a
+## block, from the whole bridge (the net's, the same whichever block asks), so its design and the places of its piers
+## and towers agree from block to block.
+func _bridge_rec(ei: int, s: float) -> Dictionary:
+	var b := net.bridges_of(ei)
+	var n := net.samples_of(ei)
+	var len := net.length_of(ei)
+	var sp := len / float(n - 1)
+	for k in range(0, b.size() - 1, 2):
+		var sa := sp * b[k]
+		var sb := sp * b[k + 1]
+		if s < sa - 0.01 or s > sb + 0.01:
 			continue
-		var ground := float(net.height.call(pts[k].x, pts[k].z))
-		var bottom := pts[k].y + dn.y
-		if bottom - ground > PIER_MIN:
-			since = 0.0
-			var xf := Transform3D(Basis(Vector3.UP, -_heading(pts, k)), Vector3(c0.x, ground - o.y - 0.5, c0.z))
-			AdventureProps.box(arr, xf, Vector3(e * 2.0 + 0.8, bottom - ground + 0.5, 1.6), stone.darkened(0.12), false)
+		var key := Vector2i(ei, b[k])
+		if _bridges.has(key):
+			return _bridges[key]
+		var rec := _make_bridge(ei, sa, sb)
+		_bridges[key] = rec
+		return rec
+	return {}
+
+
+## Edge `ei`'s bridge from `sa` to `sb` m along as a BridgeKit record, in the block's frame.
+func _make_bridge(ei: int, sa: float, sb: float) -> Dictionary:
+	var o := anchor()
+	var r := net.region
+	var count := maxi(2, ceili((sb - sa) / BridgeKit.DS) + 1)
+	var ds := (sb - sa) / float(count - 1)
+	var pts := PackedVector3Array()
+	var rights := PackedVector3Array()
+	var ground := PackedFloat32Array()
+	var wet := PackedFloat32Array()
+	var terrain: RealTerrain = r.terrain if r != null else null
+	for i in count:
+		var s := sa + ds * i
+		var p := net.point_at(ei, s)
+		var h := net.heading_at(ei, s)
+		pts.append(Vector3(p.x, net.road_y(ei, s), p.y) - o)
+		rights.append(Vector3(cos(h), 0.0, sin(h)))
+		ground.append(float(net.height.call(p.x, p.y)) - o.y)
+		wet.append(1.0 if terrain != null and terrain.cover(p.x, p.y) == RealPack.WATER else 0.0)
+	var mid := net.point_at(ei, (sa + sb) * 0.5)
+	var kit := RegionKit.at_frame(r.frame_lat, r.frame_lon, mid.x, mid.y) if r != null else {}
+	var avoid := []
+	for hit: Vector4 in net.crossings_of(ei):
+		if hit.z >= sa and hit.z <= sb:
+			var half := maxf(6.0, hit.w - RoadNet.DECK_EASE * RoadNet.STEP * 0.5)
+			avoid.append(Vector2(hit.z - sa - half, hit.z - sa + half))
+	var cls := r.class_of(ei) if r != null else ""
+	var facts := {"region": str(kit.get("region", "")), "country": str(kit.get("country", "")),
+		"big": cls in ["motorway", "trunk"], "avoid": avoid,
+		"canal": sb - sa < 45.0 and r != null and _over_canal(r, net.point_at(ei, sa), net.point_at(ei, sb)),
+		"roll": float(hash(Vector2i(roundi(mid.x), roundi(mid.y))) % 10007) / 10007.0}
+	return BridgeKit.make(pts, rights, ground, wet, float(net.width_of(ei)) * 0.5 + PARAPET_W, RoadNet.BRIDGE_DEPTH, facts, ds)
+
+
+## Whether the line from `a` to `b` crosses one of region `r`'s canals (its streams of kind 2).
+static func _over_canal(r: RealRegion, a: Vector2, b: Vector2) -> bool:
+	var box := Rect2(a, Vector2.ZERO).expand(b).grow(2.0)
+	for st: Array in r.streams:
+		if int(st[0]) != 2:
+			continue
+		var line: PackedVector2Array = st[1]
+		for k in range(1, line.size()):
+			if not box.intersects(Rect2(line[k - 1], Vector2.ZERO).expand(line[k])):
+				continue
+			if Geometry2D.segment_intersects_segment(a, b, line[k - 1], line[k]) != null:
+				return true
+	return false
+
+
+## What's built round the block's bridges (BridgeKit.draw): the parts of each whose anchor is in the block.
+func _bridge_works() -> void:
+	var o := anchor()
+	var keep := func(_s: float, p: Vector3) -> bool: return rect.has_point(Vector2(p.x + o.x, p.z + o.z))
+	for rec: Dictionary in _bridges.values():
+		if not rec.is_empty():
+			BridgeKit.draw(arrays["bridge"], rec, keep)
 
 
 ## The verge's colour beside a road of surface `surf`: the place's own, as the land beside it is; at its `outer` edge,
