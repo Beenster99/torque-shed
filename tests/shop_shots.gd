@@ -74,6 +74,18 @@ func _ready() -> void:
 	cp.open()
 	await _frames(10)
 	await _shot("04_colour_panel")
+	cp._popup.hide()
+	# Tyres: a sports rim at the back of a tourer, and the rear tyres that go on it.
+	tab._new_style("tourer")
+	tab.set_part("rear_wheel", "race_mag_gold")
+	await _frames(20)
+	(tab._left.get_parent() as ScrollContainer).scroll_vertical = 0
+	await _frames(5)
+	var ob: OptionButton = tab.find_child("Slot_rear_tyre", true, false)
+	ob.show_popup()
+	await _frames(10)
+	await _shot("06_tyres")
+	ob.get_popup().hide()
 	# Every logo, side by side.
 	var t0 := Time.get_ticks_msec()
 	var sheet := Image.create(BikeBadge.SIZE * 5, BikeBadge.SIZE * 2, false, Image.FORMAT_RGBA8)
