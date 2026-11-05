@@ -271,5 +271,61 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(sorted(got["words"]), ["", "#FF0000", "flat"])
 
 
+    def big(self, lon, lat, metres):
+        """A square outline `metres` a side at (lon, lat)."""
+        m_lat, m_lon = fb.sketch_bake.metres_per_degree(lat)
+        dx, dy = metres / m_lon, metres / m_lat
+        return wkb_polygon([(lon, lat), (lon + dx, lat), (lon + dx, lat + dy), (lon, lat + dy), (lon, lat)])
+
+    def test_a_tall_building_is_a_tower_row_with_its_outline(self):
+        got = self.bake([(BLD, {"id": "t1", "geometry": self.big(W + 0.2, S + 0.2, 30.0), "class": "office", "height": 120.0,
+                                "names": {"primary": "Big Tower"}, "facade_material": "glass"}),
+                         (BLD, {"id": "t2", "geometry": self.big(W + 0.21, S + 0.2, 30.0), "class": "apartments", "num_floors": 20}),
+                         (BLD, {"id": "t3", "geometry": self.big(W + 0.22, S + 0.2, 30.0), "class": "office", "height": 25.0})])
+        towers = got["towers"]
+        self.assertEqual(len(towers), 2)   # (25 m is no tower: buildings.json has it)
+        by_h = {q[0]: q for q in towers}
+        self.assertEqual(set(by_h), {120.0, round(20 * fb.STOREY_M + 1.0, 1)})
+        q = by_h[120.0]
+        self.assertEqual(got["names"][q[2]], "Big Tower")
+        self.assertEqual(got["words"][q[5]], "office")
+        self.assertEqual(got["words"][q[9]], "glass")
+        self.assertEqual(q[1], 0.0)
+        ring = points(q, 11)
+        self.assertEqual(len(ring), 4)
+        self.assertAlmostEqual(ring[0][0], S + 0.2, places=4)
+
+    def test_a_big_low_building_only_near_a_road(self):
+        near = self.big(W + 0.055, S + 0.1003, 60.0)
+        far = self.big(W + 0.2, S + 0.2, 60.0)
+        got = self.bake([(BLD, {"id": "n", "geometry": near, "class": "retail"}), (BLD, {"id": "f", "geometry": far})])
+        self.assertEqual(len(got["towers"]), 1)
+        self.assertIsNone(got["towers"][0][0])   # (no height mapped: the game guesses)
+
+    def test_a_tall_buildings_parts_stand_in_for_it(self):
+        tower = fb.towers_from([{"id": "b", "geometry": self.big(W + 0.2, S + 0.2, 40.0), "class": "office", "height": 150.0,
+                                 "has_parts": True, "facade_color": "#336699"}], [])
+        parts = fb.towers_from([], [
+            {"id": "p1", "building_id": "b", "geometry": self.big(W + 0.2, S + 0.2, 40.0), "height": 20.0},
+            {"id": "p2", "building_id": "b", "geometry": self.big(W + 0.2001, S + 0.2001, 20.0), "height": 150.0, "min_height": 20.0},
+            {"id": "p3", "building_id": "b", "geometry": self.big(W + 0.2001, S + 0.2001, 2.0), "height": 160.0}])
+        got = fb.merge_parts(tower, parts)
+        self.assertEqual(len(got), 2)   # (a 4 m2 finial is too small to keep)
+        self.assertEqual(sorted(t["h"] for t in got), [20.0, 150.0])
+        self.assertEqual({t["group"] for t in got}, {fb.short_id("b")})
+        self.assertEqual([t["min"] for t in got if t["h"] == 150.0], [20.0])
+        self.assertTrue(all(t["words"][0] == "office" and t["words"][5] == "#336699" for t in got))
+        baked = self.bake([(fb.TOWER, t) for t in got])
+        self.assertEqual(len(baked["towers"]), 2)
+
+    def test_merge_keeps_the_towers(self):
+        a = self.bake([(BLD, {"id": "a", "geometry": self.big(W + 0.2, S + 0.2, 30.0), "height": 80.0, "names": {"primary": "A"}})])
+        b = self.bake([(BLD, {"id": "b", "geometry": self.big(W + 0.21, S + 0.2, 30.0), "height": 90.0, "roof_shape": "flat"})])
+        got = fb.merge([a, b])
+        self.assertEqual(sorted(q[0] for q in got["towers"]), [80.0, 90.0])
+        self.assertIn("A", got["names"])
+        self.assertIn("flat", got["words"])
+
+
 if __name__ == "__main__":
     unittest.main()

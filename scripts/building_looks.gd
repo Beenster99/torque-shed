@@ -9,8 +9,9 @@ extends RefCounted
 ## Nothing here changes where a building stands or what a road does: it only colours and shapes what RoadBlock already
 ## draws. Its VERSION is folded into History's (scripts/scenery/history.gd), which is in the builder hash.
 
-## Bumped when what a look does to a building changes (History.VERSION goes up with it).
-const VERSION := 1
+## Bumped when what a look does to a building changes (History.VERSION goes up with it); the guessed heights'
+## (BuildingHeights) are folded in.
+const VERSION := 1 + BuildingHeights.VERSION + Towers.VERSION
 ## The looks are filed in squares this size (m).
 const GRID := 24.0
 ## A look stands for a building when its middle is inside the building's box grown by this much (m).
@@ -36,18 +37,24 @@ const FACADE_MATERIALS := {"brick": "#8c4a36", "stone": "#a49a87", "plaster": "#
 	"mud": "#a8784a", "adobe": "#b8885a", "plastic": "#e0e0d8", "render": "#e4dcc8"}
 
 static var _index := {}     # region instance id -> {"grid": {Vector2i: [index]}, "rows": Array}
+static var _towers := {}    # region instance id -> {"grid": {Vector2i: [PackedVector2Array]}, "n": areas}
 static var _lock := Mutex.new()
 
 
 ## The look of RealRegion.buildings row `row` ([x, z, w, d, yaw, ...] in `region`'s frame): {class, roof (a kit roof
 ## form), roof_colour, wall_colour (Colors), timber (bool), lat (degrees north, for choosing a style)}, only the keys the
-## map gives, or {} where it says nothing. Safe on a worker.
+## map gives, or {} where it says nothing; {"tower": true} where its middle is inside one of the map's towers that
+## stands on the ground (Towers draws that whole instead). Safe on a worker.
 static func of(region: RealRegion, row: Array) -> Dictionary:
-	if region == null or not region.features.has("buildings"):
+	if region == null:
 		return {}
-	var idx := _index_of(region)
 	var bx := float(row[0])
 	var bz := float(row[1])
+	if in_tower(region, bx, bz):
+		return {"tower": true}
+	if not region.features.has("buildings"):
+		return {}
+	var idx := _index_of(region)
 	var w := float(row[2])
 	var d := float(row[3])
 	var yaw := float(row[4])
@@ -135,6 +142,46 @@ static func dress_kit(kit: Dictionary, look: Dictionary) -> Dictionary:
 	if bool(look.get("timber", false)) and not (out.get("timber") is Color):
 		out["timber"] = Color(0.36, 0.25, 0.17)
 	return out
+
+
+## Whether region point (x, z) is inside the outline of one of `region`'s towers (features' "tower" and "skyscraper"
+## areas) that starts on the ground. Safe on a worker: the outlines are filed once a region, under a lock.
+static func in_tower(region: RealRegion, x: float, z: float) -> bool:
+	var areas = region.features.get("areas")
+	if not areas is Array or (areas as Array).is_empty():
+		return false
+	var id := region.get_instance_id()
+	_lock.lock()
+	var got = _towers.get(id)
+	if got == null or int(got["n"]) != (areas as Array).size():
+		if _towers.size() > 4:
+			_towers.clear()
+		var grid := {}
+		for a in areas:
+			if not str(a[0]) in ["tower", "skyscraper"] or (a[3] != null and float(a[3]) >= 3.0):
+				continue
+			var ring: PackedVector2Array = a[1]
+			if ring.size() < 3:
+				continue
+			var lo := ring[0]
+			var hi := ring[0]
+			for p in ring:
+				lo = lo.min(p)
+				hi = hi.max(p)
+			for gx in range(floori(lo.x / GRID), floori(hi.x / GRID) + 1):
+				for gz in range(floori(lo.y / GRID), floori(hi.y / GRID) + 1):
+					var k := Vector2i(gx, gz)
+					if not grid.has(k):
+						grid[k] = []
+					(grid[k] as Array).append(ring)
+		got = {"grid": grid, "n": (areas as Array).size()}
+		_towers[id] = got
+	_lock.unlock()
+	var p := Vector2(x, z)
+	for ring: PackedVector2Array in (got["grid"] as Dictionary).get(Vector2i(floori(x / GRID), floori(z / GRID)), []):
+		if Geometry2D.is_point_in_polygon(p, ring):
+			return true
+	return false
 
 
 ## The looks of `region`, filed in GRID squares: worked out once a region, under a lock (the road blocks' workers ask).

@@ -25,6 +25,15 @@ lat and lon the step from the building before (the first from 0), the rest index
 nothing). The game matches them to the cell's buildings.json by where they stand (scripts/building_looks.gd), so a
 town's roofs are its own without a cell being baked again.
 
+"towers" (and "words" with it) is there only where a cell has a building TOWER_M tall or more, or BIG_M2 big:
+
+     "towers": [[height, min_height, name, id, group, class, roof_shape, roof_color, roof_material, facade_material,
+                 facade_color, lat, lon, dlat, dlon, ...], ...]
+
+each its whole outline (not cut at the cell's edge: it's in the cell its middle is in), its height (m, null where the
+map gives none: a big one), where it starts above the ground (m, 0 for most: a part over another), its name, its id and
+its building's (group: the same for a tall building's parts, which stand in for it), and the words as the looks' are.
+
 kind is an index into "kinds" (the names CLASSES gives, the same every cell bakes them), name an index into "names" (0
 none). lat and lon are in 1e-5 degrees, each point of a line or an area after its first the step from the one before
 (as the streams have them, stream_bake.py). height (m: a tower's, a turbine's hub, a dam's), elevation (m above sea
@@ -186,6 +195,17 @@ BUILDING_CLASSES = ("cathedral", "chapel", "church", "mosque", "temple", "synago
                     "train_station", "transportation", "trullo", "ger", "stilt_house", "beach_hut", "boathouse",
                     "pavilion", "castle", "fort", "lighthouse", "windmill", "kiosk", "cabin", "hut",
                     "transformer_tower", "storage_tank", "slurry_tank", "grain_silo", "military", "guardhouse")
+# Towers (city buildings): a building at least TOWER_M tall (or TOWER_FLOORS floors), or with a footprint of BIG_M2 or
+# more, is kept whole as a tower row: its outline, height, where it starts above the ground and its look, so the game
+# draws the city's real skyline (the cells' buildings.json keeps a building no taller than 40 m, nor bigger than
+# 2,500 m2). A tall building made of parts (Overture's building_part: a podium, its setbacks, a spire) is kept as its
+# parts instead. A big one under TOWER_M (a station, a shopping centre) only near a road a ride can take.
+TOWER_M = 40.0
+TOWER_FLOORS = 12
+BIG_M2 = 2500.0
+STOREY_M = 3.2
+TOWER_KIND = "tower"   # (the game makes a tower row an area of this kind, or "skyscraper" from 100 m: scripts/scenery/towers.gd)
+TOWER_PART_AREA = 12.0   # (a part smaller than this, m2, is a detail: a spire's finial, a lift motor room)
 # D8: a border line is named for the divisions either side of it, "LEFT|RIGHT" (facing along the line: Overture's
 # division_ids order), each a country's ISO code (a region's ISO 3166-2 code for a region's border; "" where the map
 # doesn't say), so the game switches kit and driving side at the line itself rather than by cell.
@@ -211,7 +231,7 @@ SEGMENT_SUBTYPES = ("rail", "water")
 GENERATORS = {"wind": "wind_turbine", "solar": "solar", "photovoltaic": "solar"}
 # The kinds in the order every file names them.
 KINDS = sorted({k for table in CLASSES.values() for k, _ in table.values()} | set(GENERATORS.values())
-               | {t[2] for table in TAGGED.values() for rules in table.values() for t in rules})
+               | {t[2] for table in TAGGED.values() for rules in table.values() for t in rules} | {TOWER_KIND, "skyscraper"})
 
 
 def classes_hash():
@@ -221,7 +241,8 @@ def classes_hash():
               for key, table in sorted(TAGGED.items())}
     text = json.dumps({"format": FORMAT, "classes": rows, "tagged": tagged, "name_tags": NAME_TAGS, "subtypes": SEGMENT_SUBTYPES, "generators": GENERATORS,
                        "tolerance": TOLERANCE, "near": NEAR_M, "place_confidence": PLACE_CONFIDENCE,
-                       "looks": LOOKS, "building_classes": BUILDING_CLASSES, "border_sides": BORDER_SIDES},
+                       "looks": LOOKS, "building_classes": BUILDING_CLASSES, "border_sides": BORDER_SIDES,
+                       "towers": [TOWER_M, TOWER_FLOORS, BIG_M2, STOREY_M, TOWER_PART_AREA]},
                       sort_keys=True)
     return hashlib.sha1(text.encode()).hexdigest()[:12]
 
@@ -495,19 +516,59 @@ def english_or_primary(names):
 
 # ---------------------------------------------------------------------------- fetching
 
-COLUMNS = ["id", "geometry", "subtype", "class", "names", "source_tags", "height", "elevation", "rail_flags", "bbox",
+COLUMNS = ["id", "geometry", "subtype", "class", "names", "source_tags", "height", "elevation", "rail_flags",
            "taxonomy", "confidence", "division_ids"]
+# The OpenStreetMap tags anything here reads (kind_of, heading, cell_features): a row keeps only these, so a city's
+# hundreds of thousands of poles and benches don't each carry every tag they were mapped with.
+TAGS_READ = ({"direction", "height", "ele", "width", "generator:source", "generator:method"}
+             | {t for tags in NAME_TAGS.values() for t in tags}
+             | {t[0] for table in TAGGED.values() for rules in table.values() for t in rules})
 
 
-def fetch(box, release, bucket=None, filesystem=None, log=print):
-    """Every row of the kept classes touching box (south, west, north, east): [(source key, row)]."""
+def slim(row):
+    """Row `row` with only what is read of it: the OpenStreetMap tags in TAGS_READ, its name (english_or_primary's) as
+    its only one, and nothing the map left empty."""
+    tags = row.get("source_tags")
+    if tags:
+        row["source_tags"] = [(k, v) for k, v in tags if k in TAGS_READ]
+    if row.get("names"):
+        name = english_or_primary(row["names"])
+        row["names"] = {"primary": name} if name else None
+    return {k: v for k, v in row.items() if v is not None and v != []}
+
+
+def near_filter(grid):
+    """A keep(key, row) for fetch: leaves out a row this baker would leave out of every cell anyway (no kind of ours,
+    or a near-only one nowhere near a road in `grid`), as it's read."""
+    def keep(key, row):
+        kind, only_near = kind_of(key, row)
+        if kind is None:
+            return False
+        if not only_near:
+            return True
+        if grid is None:
+            return False
+        try:
+            pts, lns, rings = parse_any(row["geometry"])
+        except (ValueError, struct.error):
+            return False
+        every = list(pts) + [p for ln in lns for p in ln] + [p for ring in rings for p in ring]
+        return any(grid.near(lon, lat) for lon, lat in every)
+    return keep
+
+
+def fetch(box, release, bucket=None, filesystem=None, log=print, keep=None):
+    """Every row of the kept classes touching box (south, west, north, east): [(source key, row)], read a batch at a
+    time, each row slimmed to the tags read (slim) and, with `keep` (near_filter), only those it keeps."""
     import pyarrow.compute as pc
     import pyarrow.dataset as ds
     import pyarrow.fs as pafs
     import route_bake as rb
     s3 = filesystem or pafs.S3FileSystem(anonymous=True, region="us-west-2")
     south, west, north, east = box
-    out = []
+    # The buildings first: reading them takes the most memory, and little is kept of them (their looks and towers).
+    out = fetch_buildings(box, release, bucket, s3, log)
+    _release_memory()
     for key in sorted(CLASSES):
         theme, kind, column = key
         d = ds.dataset("%s/release/%s/theme=%s/type=%s" % (bucket or rb.OVERTURE_BUCKET, release, theme, kind),
@@ -521,16 +582,30 @@ def fetch(box, release, bucket=None, filesystem=None, log=print):
         else:
             f = f & pc.field(column).isin(sorted(set(CLASSES[key]) | set(TAGGED.get(key, {}))))
         cols = [c for c in COLUMNS if c in d.schema.names]
-        rows = d.to_table(columns=cols, filter=f).to_pylist()
-        log("features: %s/%s %d rows" % (theme, kind, len(rows)))
-        out += [(key, r) for r in rows if r.get("geometry")]
+        n = kept = 0
+        for batch in d.to_batches(columns=cols, filter=f, batch_size=BATCH, **READ):
+            for r in batch.to_pylist():
+                n += 1
+                if r.get("geometry") and (keep is None or keep(key, r)):
+                    out.append((key, slim(r)))
+                    kept += 1
+        log("features: %s/%s %d rows, %d kept" % (theme, kind, n, kept))
     borders = [r for key, r in out if key[0] == "divisions"]
     if borders:
         codes = fetch_division_codes(box, release, bucket, s3, log)
         for r in borders:
             r["sides"] = border_sides(r, codes)
-    out += fetch_buildings(box, release, bucket, s3, log)
     return out
+
+
+def _release_memory():
+    """Hands what pyarrow has freed back to the system, so the rows read next have it."""
+    import pyarrow as pa
+    try:
+        pa.jemalloc_set_decay_ms(0)
+    except (NotImplementedError, AttributeError):
+        pass
+    pa.default_memory_pool().release_unused()
 
 
 def fetch_division_codes(box, release, bucket=None, filesystem=None, log=print):
@@ -558,25 +633,138 @@ def border_sides(r, codes):
 
 
 BUILDINGS = ("buildings", "building", "class")
+# What fetch_buildings hands on, worked out as each batch of rows is read so a city's millions of outlines are never
+# held at once: a building's look (building_look, its middle and words) and a tower (towers_from).
+LOOK = ("buildings", "building", "look")
+TOWER = ("buildings", "building", "tower")
+BATCH = 20000
+# How far ahead pyarrow reads (its defaults read several files' worth of a theme at once, gigabytes in a city).
+READ = {"batch_readahead": 2, "fragment_readahead": 1}
 
 
 def fetch_buildings(box, release, bucket=None, filesystem=None, log=print):
-    """The buildings touching box that the map says something about (LOOKS, BUILDING_CLASSES): [(BUILDINGS, row)]."""
+    """The buildings touching box that the map says something about (LOOKS, BUILDING_CLASSES) as their looks, and its
+    towers (tall or big, TOWER_M and BIG_M2, or a tall one's parts): [(LOOK, [lat, lon, words...]), (TOWER, tower)].
+    Read a batch at a time, each row's outline dropped once its look and tower are made."""
     import pyarrow.compute as pc
     import pyarrow.dataset as ds
     import route_bake as rb
     south, west, north, east = box
-    d = ds.dataset("%s/release/%s/theme=buildings/type=building" % (bucket or rb.OVERTURE_BUCKET, release),
-                   filesystem=filesystem, format="parquet")
+    root = "%s/release/%s/theme=buildings" % (bucket or rb.OVERTURE_BUCKET, release)
+    d = ds.dataset(root + "/type=building", filesystem=filesystem, format="parquet")
     f = ((pc.field("bbox", "xmin") < east) & (pc.field("bbox", "xmax") > west)
          & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south))
     said = pc.field("class").isin(list(BUILDING_CLASSES))
     for col in LOOKS:
         said = said | pc.field(col).is_valid()
-    cols = [c for c in ["geometry", "class"] + list(LOOKS) if c in d.schema.names]
-    rows = d.to_table(columns=cols, filter=f & said).to_pylist()
-    log("features: buildings/building %d rows" % len(rows))
-    return [(BUILDINGS, r) for r in rows if r.get("geometry")]
+    m_lat, m_lon = sketch_bake.metres_per_degree((south + north) / 2.0)
+    span = BIG_M2 / (m_lat * m_lon)
+    tall = ((pc.field("height") >= TOWER_M) | (pc.field("num_floors") >= TOWER_FLOORS)
+            | ((pc.field("bbox", "xmax") - pc.field("bbox", "xmin")) * (pc.field("bbox", "ymax") - pc.field("bbox", "ymin")) >= span))
+    cols = [c for c in ["id", "geometry", "class", "names", "height", "num_floors", "min_height", "min_floor", "has_parts"]
+            + list(LOOKS) if c in d.schema.names]
+    out = []
+    towers = []
+    n = 0
+    for batch in d.to_batches(columns=cols, filter=f & (said | tall), batch_size=BATCH, **READ):
+        for r in batch.to_pylist():
+            if not r.get("geometry"):
+                continue
+            n += 1
+            look = building_look(r, None)
+            if look is not None:
+                out.append((LOOK, look))
+            towers += towers_from([r], [])
+    log("features: buildings/building %d rows, %d towers" % (n, len(towers)))
+    # A tall building's parts, where it has them: any part TOWER_M tall makes its building's parts its tower rows.
+    parts = []
+    p = ds.dataset(root + "/type=building_part", filesystem=filesystem, format="parquet")
+    ptall = (pc.field("height") >= TOWER_M) | (pc.field("num_floors") >= TOWER_FLOORS)
+    groups = set(t["group"] for t in towers if t["parts"] and not t["big_low"])
+    for batch in p.to_batches(columns=["building_id"], filter=f & ptall, batch_size=BATCH, **READ):
+        groups.update(short_id(b) for b in batch.column("building_id").to_pylist())
+    if groups:
+        pcols = [c for c in ["id", "building_id", "geometry", "height", "num_floors", "min_height", "min_floor", "names"]
+                 + list(LOOKS) if c in p.schema.names]
+        for batch in p.to_batches(columns=pcols, filter=f, batch_size=BATCH, **READ):
+            ids = batch.column("building_id").to_pylist()
+            keep = [k for k, b in enumerate(ids) if short_id(b) in groups]
+            if keep:
+                rows = batch.take(keep).to_pylist()
+                parts += towers_from([], [r for r in rows if r.get("geometry")])
+    log("features: buildings/building_part %d parts of %d towers" % (len(parts), len(groups)))
+    return out + [(TOWER, t) for t in merge_parts(towers, parts)]
+
+
+def merge_parts(towers, parts):
+    """Towers with each building that has parts (`parts`, towers_from's of building_part rows) replaced by them, the
+    parts with no height of their own taking their building's."""
+    by_group = {}
+    for t in parts:
+        by_group.setdefault(t["group"], []).append(t)
+    out = []
+    for t in towers:
+        got = by_group.pop(t["group"], None)
+        if got is None:
+            out.append(t)
+            continue
+        for q in got:
+            if q["h"] is None:
+                q["h"] = t["h"]
+            if not q["name"]:
+                q["name"] = t["name"]
+            q["words"] = [t["words"][0]] + [q["words"][k] or t["words"][k] for k in range(1, len(q["words"]))]
+            out.append(q)
+    for got in by_group.values():   # (a tall part whose building is outside the box: kept as it is)
+        out += [q for q in got if q["h"] is not None]
+    return out
+
+
+def towers_from(buildings, parts):
+    """The towers among Overture building rows `buildings` (TOWER_M tall, or BIG_M2 big) and every building_part row
+    in `parts`: [{"mid": (lon, lat), "ring": [(lon, lat)], "h": metres or None, "min": metres off the ground, "name",
+    "id", "group" (its building's id), "words": [class, roof_shape, roof_color, roof_material, facade_material,
+    facade_color], "big_low": a big one under TOWER_M, "parts": whether the map says it has parts}]."""
+    out = []
+    for is_part, rows in ((False, buildings), (True, parts)):
+        for r in rows:
+            try:
+                _, _, rings = parse_any(r["geometry"])
+            except (ValueError, struct.error, KeyError, TypeError):
+                continue
+            if not rings:
+                continue
+            ring = max(rings, key=lambda q: abs(_ring_area(q)))
+            if len(ring) > 3 and ring[0] == ring[-1]:
+                ring = ring[:-1]
+            if len(ring) < 3:
+                continue
+            lon, lat = _ring_middle(ring)
+            m_lat, m_lon = sketch_bake.metres_per_degree(lat)
+            area = abs(_ring_area(ring)) * m_lat * m_lon
+            h = number(r.get("height"))
+            floors = number(r.get("num_floors"))
+            if h is None and floors:
+                h = round(floors * STOREY_M + 1.0, 1)
+            low = number(r.get("min_height"))
+            if low is None and number(r.get("min_floor")):
+                low = round(number(r.get("min_floor")) * STOREY_M, 1)
+            tall = h is not None and h >= TOWER_M
+            if is_part:
+                if area < TOWER_PART_AREA or (h is None and low is None):
+                    continue
+            elif not tall and area < BIG_M2:
+                continue
+            kept = simple(ring, lat, closed=True)
+            if len(kept) < 3:
+                continue
+            cls = str(r["class"]).lower() if r.get("class") else None
+            out.append({"mid": (lon, lat), "ring": kept, "h": h, "min": max(0.0, low or 0.0),
+                        "name": english_or_primary(r.get("names")), "id": short_id(r.get("id", "")),
+                        "group": short_id(r.get("building_id") if is_part else r.get("id", "")),
+                        "words": [cls] + [_look_word(c, r.get(c)) for c in LOOKS],
+                        "big_low": not is_part and not tall, "parts": bool(r.get("has_parts"))})
+    return out
 
 
 class NearGrid:
@@ -616,8 +804,9 @@ def fetch_roads(box, release):
 
 
 def fetch_square(box, release, log=print):
-    """What a square's cells' features are made from: (its roads' NearGrid, its rows)."""
-    return fetch_roads(box, release), fetch(box, release, log=log)
+    """What a square's cells' features are made from: (its roads' NearGrid, its rows, near_filter's only)."""
+    grid = fetch_roads(box, release)
+    return grid, fetch(box, release, log=log, keep=near_filter(grid))
 
 
 # ---------------------------------------------------------------------------- a cell's features
@@ -654,11 +843,22 @@ def cell_features(rows, grid, row, col, release=""):
             words.append(v)
         return word_ids[v]
 
+    towers = []
     for key, r in rows:
         if key == BUILDINGS:
             got = building_look(r, box)
             if got is not None:
                 looks.append(got)
+            towers += [t for t in towers_from([r], []) if inside(t["mid"][0], t["mid"][1], box)
+                       and (not t["big_low"] or near(t["ring"]))]
+            continue
+        if key == LOOK:
+            if s_inside(r, box):
+                looks.append(list(r))
+            continue
+        if key == TOWER:
+            if inside(r["mid"][0], r["mid"][1], box) and (not r["big_low"] or near(r["ring"])):
+                towers.append(r)
             continue
         kind, only_near = kind_of(key, r)
         if kind is None:
@@ -706,14 +906,20 @@ def cell_features(rows, grid, row, col, release=""):
     points.sort(key=lambda p: (p[0], p[1], p[2], p[7] or ""))
     lines.sort(key=lambda ln: (ln[0], ln[6:], ln[5] or ""))
     areas.sort(key=lambda a: (a[0], a[5:], a[4] or ""))
+    # The towers: [height, min height, name, id, group, class, roof_shape, roof_color, roof_material, facade_material,
+    # facade_color, lat, lon, dlat, dlon, ...], the words numbered with the looks' (below).
+    tower_rows = []
+    for t in towers:
+        tower_rows.append([t["h"], t["min"], name_id(t["name"]), t["id"], t["group"]] + list(t["words"]) + flat(t["ring"]))
+    tower_rows.sort(key=lambda q: (q[11:], q[3], q[4]))
     order = {}
-    for rows_, at in ((points, 6), (lines, 4), (areas, 3)):
+    for rows_, at in ((points, 6), (lines, 4), (areas, 3), (tower_rows, 2)):
         for row_ in rows_:
             n = names[row_[at]]
             if n and n not in order:
                 order[n] = len(order) + 1
     new_names = [""] + sorted(order, key=order.get)
-    for rows_, at in ((points, 6), (lines, 4), (areas, 3)):
+    for rows_, at in ((points, 6), (lines, 4), (areas, 3), (tower_rows, 2)):
         for row_ in rows_:
             row_[at] = order.get(names[row_[at]], 0)
     out = {"format": FORMAT, "cell": "%d_%d" % (row, col), "release": release, "classes": classes_hash(),
@@ -723,9 +929,19 @@ def cell_features(rows, grid, row, col, release=""):
         looks.sort(key=lambda b: ["" if v is None else v for v in b])
         for b in looks:
             b[2:] = [word(v) for v in b[2:]]
-        out["words"] = words
         out["buildings"] = delta_rows(looks)
+    if tower_rows:
+        for q in tower_rows:
+            q[5:11] = [word(v) for v in q[5:11]]
+        out["towers"] = tower_rows
+    if looks or tower_rows:
+        out["words"] = words
     return out
+
+
+def s_inside(look, box):
+    """Whether a look ([lat, lon (1e-5 degrees), ...]) stands in box."""
+    return inside(look[1] / SCALE, look[0] / SCALE, box)
 
 
 def building_look(r, box):
@@ -740,7 +956,7 @@ def building_look(r, box):
         return None
     ring = max(rings, key=lambda q: abs(_ring_area(q)))
     lon, lat = _ring_middle(ring)
-    if not inside(lon, lat, box):
+    if box is not None and not inside(lon, lat, box):
         return None
     cls = r.get("class") if r.get("class") in BUILDING_CLASSES else None
     said = [cls] + [_look_word(c, r.get(c)) for c in LOOKS]
@@ -907,10 +1123,32 @@ def merge(cells, box=None):
                     words.append(w)
                 row.append(wids[w])
             looks.append(row)
+    towers = []
+    for got in cells:
+        for q in got.get("towers", []):
+            if box is not None and not _touches(q, 11, box):
+                continue
+            q = list(q)
+            n = got["names"][q[2]]
+            if n not in ids:
+                ids[n] = len(names)
+                names.append(n)
+            q[2] = ids[n]
+            for k in range(5, 11):
+                w = got["words"][q[k]]
+                if w not in wids:
+                    wids[w] = len(words)
+                    words.append(w)
+                q[k] = wids[w]
+            towers.append(q)
     if looks:
         looks.sort()
-        out["words"] = words
         out["buildings"] = delta_rows(looks)
+    if towers:
+        towers.sort(key=lambda q: (q[11:], q[3], q[4]))
+        out["towers"] = towers
+    if looks or towers:
+        out["words"] = words
     return out
 
 

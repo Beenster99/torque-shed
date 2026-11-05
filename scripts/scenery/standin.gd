@@ -8,7 +8,8 @@ const VERSION := 1
 ## Each round's stand-in colour.
 const ROUND_COLOURS := {"D1": Color(0.95, 0.3, 0.2), "D2": Color(0.35, 0.35, 0.4), "D3": Color(0.2, 0.55, 0.95),
 	"D4": Color(0.95, 0.95, 0.95), "D5": Color(0.4, 0.8, 0.25), "D6": Color(0.75, 0.55, 0.25),
-	"D7": Color(0.1, 0.85, 0.85), "D8": Color(0.95, 0.85, 0.15), "D9": Color(0.75, 0.3, 0.8)}
+	"D7": Color(0.1, 0.85, 0.85), "D8": Color(0.95, 0.85, 0.15), "D9": Color(0.75, 0.3, 0.8),
+	"City": Color(0.45, 0.6, 0.75)}
 ## The post: this tall and this thick (m).
 const POST_H := 3.0
 const POST_W := 0.25

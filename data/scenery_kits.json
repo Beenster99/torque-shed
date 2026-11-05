@@ -2682,6 +2682,13 @@
     }
    }
   },
+  "skyscraper": {
+   "round": "City",
+   "default": {
+    "model": "towers:city",
+    "reach": 8000
+   }
+  },
   "solar": {
    "round": "D1",
    "default": {
@@ -2819,6 +2826,13 @@
     "north_africa_middle_east": {
      "roof": "green"
     }
+   }
+  },
+  "tower": {
+   "round": "City",
+   "default": {
+    "model": "towers:city",
+    "reach": 2500
    }
   },
   "tram": {
