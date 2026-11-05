@@ -879,6 +879,16 @@ func bridges_of(edge: int) -> PackedInt32Array:
 	return out
 
 
+## The other roads edge `edge`'s bridges cross over (_crossings): [Vector4(x, z, s along edge, how far either side of
+## it the bridge runs to clear it), ...].
+func crossings_of(edge: int) -> Array:
+	bridges_of(edge)
+	_lock.lock()
+	var got: Array = _over.get(edge, [])
+	_lock.unlock()
+	return got
+
+
 ## Edge `edge`'s bridges as the map has them (the region's spans of kind 0, RoutePlanner.spans_along), as its samples
 ## [first, last, ...].
 func _mapped(edge: int) -> PackedInt32Array:
