@@ -566,7 +566,9 @@ def fetch(box, release, bucket=None, filesystem=None, log=print, keep=None):
     import route_bake as rb
     s3 = filesystem or pafs.S3FileSystem(anonymous=True, region="us-west-2")
     south, west, north, east = box
-    out = []
+    # The buildings first: reading them takes the most memory, and little is kept of them (their looks and towers).
+    out = fetch_buildings(box, release, bucket, s3, log)
+    _release_memory()
     for key in sorted(CLASSES):
         theme, kind, column = key
         d = ds.dataset("%s/release/%s/theme=%s/type=%s" % (bucket or rb.OVERTURE_BUCKET, release, theme, kind),
@@ -581,7 +583,7 @@ def fetch(box, release, bucket=None, filesystem=None, log=print, keep=None):
             f = f & pc.field(column).isin(sorted(set(CLASSES[key]) | set(TAGGED.get(key, {}))))
         cols = [c for c in COLUMNS if c in d.schema.names]
         n = kept = 0
-        for batch in d.to_batches(columns=cols, filter=f, batch_size=BATCH):
+        for batch in d.to_batches(columns=cols, filter=f, batch_size=BATCH, **READ):
             for r in batch.to_pylist():
                 n += 1
                 if r.get("geometry") and (keep is None or keep(key, r)):
@@ -593,8 +595,17 @@ def fetch(box, release, bucket=None, filesystem=None, log=print, keep=None):
         codes = fetch_division_codes(box, release, bucket, s3, log)
         for r in borders:
             r["sides"] = border_sides(r, codes)
-    out += fetch_buildings(box, release, bucket, s3, log)
     return out
+
+
+def _release_memory():
+    """Hands what pyarrow has freed back to the system, so the rows read next have it."""
+    import pyarrow as pa
+    try:
+        pa.jemalloc_set_decay_ms(0)
+    except (NotImplementedError, AttributeError):
+        pass
+    pa.default_memory_pool().release_unused()
 
 
 def fetch_division_codes(box, release, bucket=None, filesystem=None, log=print):
@@ -627,6 +638,8 @@ BUILDINGS = ("buildings", "building", "class")
 LOOK = ("buildings", "building", "look")
 TOWER = ("buildings", "building", "tower")
 BATCH = 20000
+# How far ahead pyarrow reads (its defaults read several files' worth of a theme at once, gigabytes in a city).
+READ = {"batch_readahead": 2, "fragment_readahead": 1}
 
 
 def fetch_buildings(box, release, bucket=None, filesystem=None, log=print):
@@ -653,7 +666,7 @@ def fetch_buildings(box, release, bucket=None, filesystem=None, log=print):
     out = []
     towers = []
     n = 0
-    for batch in d.to_batches(columns=cols, filter=f & (said | tall), batch_size=BATCH):
+    for batch in d.to_batches(columns=cols, filter=f & (said | tall), batch_size=BATCH, **READ):
         for r in batch.to_pylist():
             if not r.get("geometry"):
                 continue
@@ -668,12 +681,12 @@ def fetch_buildings(box, release, bucket=None, filesystem=None, log=print):
     p = ds.dataset(root + "/type=building_part", filesystem=filesystem, format="parquet")
     ptall = (pc.field("height") >= TOWER_M) | (pc.field("num_floors") >= TOWER_FLOORS)
     groups = set(t["group"] for t in towers if t["parts"] and not t["big_low"])
-    for batch in p.to_batches(columns=["building_id"], filter=f & ptall, batch_size=BATCH):
+    for batch in p.to_batches(columns=["building_id"], filter=f & ptall, batch_size=BATCH, **READ):
         groups.update(short_id(b) for b in batch.column("building_id").to_pylist())
     if groups:
         pcols = [c for c in ["id", "building_id", "geometry", "height", "num_floors", "min_height", "min_floor", "names"]
                  + list(LOOKS) if c in p.schema.names]
-        for batch in p.to_batches(columns=pcols, filter=f, batch_size=BATCH):
+        for batch in p.to_batches(columns=pcols, filter=f, batch_size=BATCH, **READ):
             ids = batch.column("building_id").to_pylist()
             keep = [k for k, b in enumerate(ids) if short_id(b) in groups]
             if keep:
