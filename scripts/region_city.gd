@@ -5,7 +5,8 @@ extends RefCounted
 ## houses, plain modern blocks (with balconies where the region has them), glass towers, panel blocks, shophouses with
 ## their arcades and signboards, flat-roofed courtyard houses, residential high-rises, arcaded streets. Each building
 ## takes a style its height suits, its own colour from the style's palette, and its own roofline, rooftop and ground
-## floor, so no two streets look alike. Written into AdventureProps' plain arrays as RegionBuildings does.
+## floor, so no two streets look alike; North America's brownstones and Art Deco blocks stepping back as they climb.
+## Written into AdventureProps' plain arrays as RegionBuildings does.
 
 const SKIRT := AdventureProps.SKIRT
 ## The heights (m) each style is built to, [lowest, highest].
@@ -13,9 +14,10 @@ const HEIGHTS := {
 	"terrace": [0.0, 12.0], "tenement": [7.0, 21.0], "mansard": [10.0, 28.0], "gabled": [0.0, 18.0],
 	"modern": [0.0, 45.0], "tower": [24.0, INF], "panel": [10.0, 55.0], "shophouse": [0.0, 16.0],
 	"courtyard": [0.0, 14.0], "highrise": [18.0, INF], "arcade": [0.0, 21.0],
+	"brownstone": [7.0, 19.0], "deco": [16.0, INF],
 }
 ## The styles a house (not a block) of a town may be built in: the low, street-front ones.
-const LOW := ["terrace", "gabled", "shophouse", "arcade", "courtyard", "tenement"]
+const LOW := ["terrace", "gabled", "shophouse", "arcade", "courtyard", "tenement", "brownstone"]
 ## More windows than this on a building and its floors are drawn as bands of glass instead (towers stay light).
 const MOST_WINDOWS := 260
 const CONCRETE := Color(0.72, 0.71, 0.68)
@@ -99,6 +101,10 @@ static func build(a: Dictionary, xf: Transform3D, w: float, d: float, h: float, 
 			_highrise(a, xf, w, d, h, wall, glass, kit, rng)
 		"arcade":
 			_arcade(a, xf, w, d, h, wall, roof, trim, glass, kit, rng)
+		"brownstone":
+			_brownstone(a, xf, w, d, h, wall, trim, glass, shop, kit, rng)
+		"deco":
+			_deco(a, xf, w, d, h, wall, trim, glass, shop, kit, rng)
 		_:
 			_modern(a, xf, w, d, h, wall, glass, bool(style.get("balconies", false)), shop, kit, rng)
 
@@ -240,47 +246,139 @@ static func _gabled(a: Dictionary, xf: Transform3D, w: float, d: float, h: float
 
 
 ## A modern block: render or concrete, a band of windows round every floor, a glazed ground floor for a shop, balconies
-## where the region has them, a parapet and the plant room and odds and ends on its flat roof.
+## where the region has them, a parapet and the plant room and odds and ends on its flat roof. Some have a ground floor
+## clad in another stone, fins up the front, or their top floor or two stepped back behind a terrace.
 static func _modern(a: Dictionary, xf: Transform3D, w: float, d: float, h: float, wall: Color, glass: Color, balconies: bool,
 		shop: bool, kit: Dictionary, rng: RandomNumberGenerator) -> void:
-	var fh := 3.2
-	var floors := clampi(int(h / fh), 1, 14)
-	var top := floors * fh
+	var fh := rng.randf_range(3.0, 3.5)
+	var floors := clampi(int(h / fh), 1, 16)
+	# The top floor or two set back behind a terrace on a block of four or more.
+	var back := 0
+	if floors >= 4 and minf(w, d) > 9.0 and rng.randf() < 0.35:
+		back = 1 if floors < 8 or rng.randf() < 0.6 else 2
+	var low := floors - back
+	var top := low * fh
 	AdventureProps.box(a, xf, Vector3(w, top + SKIRT, d), wall, false)
 	var body := xf.translated_local(Vector3(0, SKIRT, 0))
 	# Windows in a grid, or in bands as tall as the building's taste.
 	var grid := rng.randf() < 0.55
 	var wh := rng.randf_range(1.2, 1.9) if grid else rng.randf_range(0.9, 1.6)
-	_windows(a, body, w, d, floors, fh, 1 if shop else 0, rng.randf_range(1.1, 2.0), wh, rng.randf_range(2.4, 3.6) if grid else 0.0, glass,
-		wall.darkened(0.15), true)
+	var ww := rng.randf_range(1.1, 2.0)
+	var gap := rng.randf_range(2.4, 3.6) if grid else 0.0
+	_windows(a, body, w, d, low, fh, 1 if shop else 0, ww, wh, gap, glass, wall.darkened(0.15), true)
+	if not shop and rng.randf() < 0.4:
+		# A ground floor clad in stone or tile of another colour.
+		var base := wall.darkened(0.3) if rng.randf() < 0.5 else CONCRETE.lerp(Color(0.55, 0.5, 0.44), rng.randf())
+		AdventureProps.box(a, xf, Vector3(w + 0.12, SKIRT + fh * 0.95, d + 0.12), base, false)
+		_windows(a, body, w, d, 1, fh, 0, ww, wh, gap, glass, base.darkened(0.15), true)
 	if shop:
 		_shopfronts(a, body, w, d, kit, glass, rng)
-	if balconies and floors >= 2:
+	if not grid and rng.randf() < 0.3 and low >= 3:
+		# Fins up the front between the bands of glass.
+		var fin := wall.lightened(0.12) if rng.randf() < 0.6 else DARK
+		var n := clampi(int(w / 3.0), 2, 16)
+		for k in n + 1:
+			var x := (float(k) / n - 0.5) * (w - 0.3)
+			AdventureProps.box(a, body.translated_local(Vector3(x, fh, d * 0.5 + 0.2)), Vector3(0.22, top - fh, 0.4), fin)
+	if balconies and low >= 2:
 		var rail := wall.lightened(0.1) if rng.randf() < 0.5 else DARK
-		for f in range(1, floors):
+		for f in range(1, low):
 			_balconies(a, body, w, d, f * fh, rail, wall)
-	_flat_top(a, body, w, d, top, wall, kit, rng)
+	if back == 0:
+		_flat_top(a, body, w, d, top, wall, kit, rng)
+		return
+	# The terrace round the set-back floors: a rail along its edge, the floors above with walls of glass.
+	AdventureProps.box(a, body.translated_local(Vector3(0, top, 0)), Vector3(w + 0.1, 0.12, d + 0.1), Color(0.42, 0.4, 0.38))
+	for side in _sides(body, w, d):
+		RegionBuildings._plate(a, side[0], Vector3(0, top + 0.1, side[1]), Vector2(side[2], 1.0), DARK)
+	var bw := w - 3.0
+	var bd := d - 3.0
+	var up := body.translated_local(Vector3(0, top, 0))
+	AdventureProps.box(a, up, Vector3(bw, back * fh, bd), wall.lightened(0.06), false)
+	_windows(a, up, bw, bd, back, fh, 0, 2.2, 2.2, 3.0, glass, wall.darkened(0.1), true)
+	_flat_top(a, up, bw, bd, back * fh, wall, kit, rng)
 
 
-## A glass tower: a curtain wall with the floors' edges showing, a podium at its foot, a crown and a mast on top.
+## A glass tower: a curtain wall with the floors' edges showing, a podium at its foot, and its own top: straight up,
+## stepped back once or twice as it climbs, a crown of fins or a sloping glass top, a spire on the tallest, a mast on
+## others, and lamps on its corners lit after dark.
 static func _tower(a: Dictionary, xf: Transform3D, w: float, d: float, h: float, wall: Color, glass: Color, rng: RandomNumberGenerator) -> void:
-	var tint: Color = [glass.lightened(0.15), Color(0.22, 0.32, 0.38), Color(0.3, 0.36, 0.34), Color(0.2, 0.24, 0.3)][rng.randi_range(0, 3)]
+	var tint: Color = [glass.lightened(0.15), Color(0.22, 0.32, 0.38), Color(0.3, 0.36, 0.34), Color(0.2, 0.24, 0.3),
+		Color(0.36, 0.3, 0.24), Color(0.5, 0.56, 0.6)][rng.randi_range(0, 5)]
 	var fh := 3.6
-	var floors := clampi(int(h / fh), 6, 80)
-	var top := floors * fh
+	var floors := clampi(int(h / fh), 6, 90)
 	var frame := CONCRETE.lerp(wall, 0.3) if rng.randf() < 0.6 else DARK
-	AdventureProps.box(a, xf, Vector3(w, top + SKIRT, d), tint, false)
 	var body := xf.translated_local(Vector3(0, SKIRT, 0))
-	AdventureProps.box(a, xf, Vector3(w + 1.0, SKIRT + 7.0, d + 1.0), frame)   # the podium
-	# The floors' edges, every floor or every other on a tall one.
-	var every := 1 if floors <= 30 else 2
-	for f in range(2, floors, every):
-		for side in _sides(body, w, d):
-			RegionBuildings._plate(a, side[0], Vector3(0, f * fh - 0.25, side[1]), Vector2(side[2] + 0.04, 0.35), frame)
+	# The podium: a low skirt, or a block of a few floors of its own with shops.
+	var pod := 7.0
+	if minf(w, d) > 22.0 and rng.randf() < 0.45:
+		pod = fh * rng.randi_range(2, 4)
+		AdventureProps.box(a, xf, Vector3(w + 2.0, SKIRT + pod, d + 2.0), frame.lerp(tint, 0.3), false)
+		_windows(a, body, w + 2.0, d + 2.0, int(pod / fh), fh, 0, 3.0, 2.4, 4.0, glass, frame, true)
+		AdventureProps.box(a, body.translated_local(Vector3(0, pod, 0)), Vector3(w + 2.1, 0.3, d + 2.1), frame.darkened(0.1))
+	else:
+		AdventureProps.box(a, xf, Vector3(w + 1.0, SKIRT + pod, d + 1.0), frame)
+	# Its tiers: straight up, or stepped back once or twice on a tall one.
+	var tiers := 1
+	if floors >= 18 and rng.randf() < 0.45:
+		tiers = 2 if floors < 36 or rng.randf() < 0.5 else 3
+	var tw := w
+	var td := d
+	var from := 0
+	var top := 0.0
+	for t in tiers:
+		var to := floors if t == tiers - 1 else int(floors * (0.55 + 0.25 * t))
+		var y0 := from * fh
+		top = to * fh
+		var at := body.translated_local(Vector3(0, y0, 0))
+		AdventureProps.box(a, at if t > 0 else xf, Vector3(tw, top - y0 + (0.0 if t > 0 else SKIRT), td), tint, false)
+		# The floors' edges, every floor or every other on a tall one.
+		var every := 1 if floors <= 30 else 2
+		for f in range(maxi(from, 2), to, every):
+			for side in _sides(body, tw, td):
+				RegionBuildings._plate(a, side[0], Vector3(0, f * fh - 0.25, side[1]), Vector2(side[2] + 0.04, 0.35), frame)
+		# A few lit windows' worth of glass marked on each floor, so it has its pattern after dark.
+		for f in range(maxi(from, 2), to, 2 if floors > 40 else 1):
+			for side in _sides(body, tw, td):
+				var n := maxi(1, int(float(side[2]) / 6.0))
+				for k in n:
+					var x := ((float(k) + 0.5) / n - 0.5) * float(side[2])
+					var p := Vector3(x, f * fh + 0.9, float(side[1]) + 0.01)
+					RegionBuildings._plate(a, side[0], p, Vector2(float(side[2]) / n - 0.6, 2.0), WindowLights.mark(tint, side[0] * p))
+		if t < tiers - 1:
+			AdventureProps.box(a, body.translated_local(Vector3(0, top, 0)), Vector3(tw + 0.2, 0.5, td + 0.2), frame)
+			tw *= rng.randf_range(0.7, 0.82)
+			td *= rng.randf_range(0.7, 0.82)
+		from = to
 	var crown := body.translated_local(Vector3(0, top, 0))
-	AdventureProps.box(a, crown, Vector3(w * 0.7, 3.5, d * 0.7), frame)
-	if rng.randf() < 0.5:
+	match rng.randi_range(0, 3):
+		0:
+			# A plant room behind a screen.
+			AdventureProps.box(a, crown, Vector3(tw * 0.7, 3.5, td * 0.7), frame)
+		1:
+			# A crown of fins standing proud of the roof.
+			var n := clampi(int(tw / 2.5), 3, 12)
+			for side in _sides(crown, tw, td):
+				for k in n + 1:
+					var x := (float(k) / n - 0.5) * (float(side[2]) - 0.3)
+					AdventureProps.box(a, (side[0] as Transform3D).translated_local(Vector3(x, 0, float(side[1]) - 0.15)), Vector3(0.25, 6.0, 0.3), frame)
+		2:
+			# A sloping glass top.
+			RegionBuildings._roof(a, crown, tw, td, 0.0, "hip", 0.9, 0.0, tint.lightened(0.1), tint, rng, {})
+		_:
+			# A stepped top, each step a little smaller.
+			for k in 3:
+				var f := 0.8 - 0.2 * k
+				AdventureProps.box(a, crown.translated_local(Vector3(0, k * 2.5, 0)), Vector3(tw * f, 2.5, td * f), frame if k % 2 == 0 else tint)
+	if top > 140.0 and rng.randf() < 0.6:
+		AdventureProps.cone(a, crown, minf(tw, td) * 0.12, 0.0, top * 0.18, Color(0.72, 0.73, 0.75), 6)
+	elif rng.randf() < 0.5:
 		AdventureProps.box(a, crown.translated_local(Vector3(0, 3.5, 0)), Vector3(0.25, 8.0, 0.25), Color(0.7, 0.7, 0.72))
+	# Lamps on its corners for the aircraft, lit after dark as a window is.
+	for cx: float in [-0.5, 0.5]:
+		for cz: float in [-0.5, 0.5]:
+			var p := Vector3(cx * (tw - 0.4), 0.0, cz * (td - 0.4))
+			AdventureProps.box(a, crown.translated_local(p), Vector3(0.35, 0.35, 0.35), Color(0.75, 0.08, 0.06, float(WindowLights.LOW) / 255.0))
 
 
 ## A panel block: rows of identical windows, columns of balconies up the front, a flat roof.
@@ -408,6 +506,90 @@ static func _arcade(a: Dictionary, xf: Transform3D, w: float, d: float, h: float
 		_flat_top(a, body, w, d, top, wall, kit, rng)
 	else:
 		RegionBuildings._roof(a, body, w, d, top, "hip", 0.3, 0.5, roof, wall, rng, kit)
+
+
+## A brownstone row: tall narrow houses of brown stone, each with its stoop of steps up to a raised door, tall windows
+## with stone heads, and a heavy cornice along the top; a shop in the raised basement now and then.
+static func _brownstone(a: Dictionary, xf: Transform3D, w: float, d: float, h: float, wall: Color, trim: Color, glass: Color,
+		shop: bool, kit: Dictionary, rng: RandomNumberGenerator) -> void:
+	var fh := 3.4
+	var floors := clampi(int(h / fh), 3, 5)
+	var top := floors * fh + 1.2
+	var n := maxi(1, roundi(w / 6.0))
+	var uw := w / n
+	var body := xf.translated_local(Vector3(0, SKIRT, 0))
+	for u in n:
+		var ux := (float(u) + 0.5) * uw - w * 0.5
+		var c := _jitter(wall, rng, 0.06)
+		AdventureProps.box(a, xf.translated_local(Vector3(ux, 0, 0)), Vector3(uw, top + SKIRT, d), c, false)
+		var left := u % 2 == 0
+		var dx := ux + uw * (0.28 if left else -0.28)
+		# The stoop: steps up to the door on the raised first floor, its rails.
+		for k in 6:
+			AdventureProps.box(a, body.translated_local(Vector3(dx, 0, d * 0.5 + 2.6 - k * 0.42)), Vector3(1.6, 0.22 * (k + 1), 0.45), c.darkened(0.1))
+		RegionBuildings._plate(a, body, Vector3(dx, 1.4, d * 0.5), Vector2(1.1, 2.4), RegionKit.pick(rng, kit["door"]))
+		RegionBuildings._plate(a, body, Vector3(dx, 3.8, d * 0.5), Vector2(1.5, 0.3), c.darkened(0.2))
+		for f in floors:
+			var y := 1.6 + f * fh
+			for k in (2 if f == 0 else 3):
+				var x := ux + (uw * (-0.15 if left else 0.15)) + (k - (0.5 if f == 0 else 1.0)) * 1.35
+				if f == 0:
+					x = ux - uw * (0.18 if left else -0.18) + (k - 0.5) * 1.3
+				RegionBuildings._plate(a, body, Vector3(x, y - 0.1, d * 0.5), Vector2(1.05, 2.15), trim)
+				RegionBuildings._plate(a, body, Vector3(x, y, d * 0.5 + 0.01), Vector2(0.85, 1.95), WindowLights.mark(glass, body * Vector3(x, y, d * 0.5)))
+				RegionBuildings._plate(a, body, Vector3(x, y + 2.0, d * 0.5 + 0.02), Vector2(1.2, 0.22), c.darkened(0.22))
+		if shop and u % 3 == 1:
+			RegionBuildings._plate(a, body, Vector3(ux - uw * 0.1, -0.2, d * 0.5 + 0.02), Vector2(uw * 0.4, 1.4), WindowLights.mark(glass.lightened(0.2), body * Vector3(ux, 0, d * 0.5)))
+	# The cornice along the top.
+	AdventureProps.box(a, body.translated_local(Vector3(0, top - 0.6, d * 0.5 + 0.3)), Vector3(w + 0.2, 0.7, 0.6), trim.darkened(0.15))
+	AdventureProps.box(a, body.translated_local(Vector3(0, top, 0)), Vector3(w, 0.1, d), Color(0.3, 0.3, 0.31))
+	_rooftop(a, body, w, d, top, kit, rng)
+
+
+## An Art Deco block: stone or buff brick piers running up between recessed windows, its upper floors stepped back in
+## tiers, a crown on the top step.
+static func _deco(a: Dictionary, xf: Transform3D, w: float, d: float, h: float, wall: Color, trim: Color, glass: Color,
+		shop: bool, kit: Dictionary, rng: RandomNumberGenerator) -> void:
+	var fh := 3.5
+	var floors := clampi(int(h / fh), 5, 70)
+	var body := xf.translated_local(Vector3(0, SKIRT, 0))
+	var stone := wall.lerp(Color(0.82, 0.76, 0.62), 0.4)
+	var tiers := 1 if floors < 9 else (2 if floors < 24 else 3)
+	var tw := w
+	var td := d
+	var from := 0
+	var top := 0.0
+	for t in tiers:
+		var to := floors if t == tiers - 1 else int(floors * (0.6 + 0.2 * t))
+		top = to * fh
+		var y0 := from * fh
+		var at := body.translated_local(Vector3(0, y0, 0))
+		AdventureProps.box(a, at if t > 0 else xf, Vector3(tw, top - y0 + (0.0 if t > 0 else SKIRT), td), stone, false)
+		for side in _sides(body, tw, td):
+			var len := float(side[2])
+			var n := clampi(int(len / 3.2), 2, 24)
+			for k in n:
+				var x := ((float(k) + 0.5) / n - 0.5) * len
+				# A strip of recessed windows and dark spandrels, a pier either side.
+				RegionBuildings._plate(a, side[0], Vector3(x, y0 + (fh if t == 0 else 0.3), float(side[1])), Vector2(len / n - 0.9,
+					top - y0 - (fh if t == 0 else 0.3) - 0.8), Color(0.2, 0.2, 0.22))
+				for f in range(maxi(from, 1), to):
+					var p := Vector3(x, f * fh + 0.7, float(side[1]) + 0.01)
+					RegionBuildings._plate(a, side[0], p, Vector2(len / n - 1.2, 2.0), WindowLights.mark(glass, side[0] * p))
+			for k in n + 1:
+				var x := (float(k) / n - 0.5) * len
+				AdventureProps.box(a, (side[0] as Transform3D).translated_local(Vector3(x, y0, float(side[1]))), Vector3(0.5, top - y0 + 1.0, 0.3), stone.lightened(0.06))
+		AdventureProps.box(a, body.translated_local(Vector3(0, top, 0)), Vector3(tw + 0.3, 0.6, td + 0.3), trim)
+		tw *= 0.78
+		td *= 0.78
+		from = to
+	if shop:
+		_shopfronts(a, body, w, d, kit, glass, rng)
+	var crown := body.translated_local(Vector3(0, top + 0.6, 0))
+	AdventureProps.box(a, crown, Vector3(tw, 3.0, td), stone)
+	AdventureProps.box(a, crown.translated_local(Vector3(0, 3.0, 0)), Vector3(tw * 0.6, 2.4, td * 0.6), stone.lightened(0.05))
+	if floors > 25:
+		AdventureProps.cone(a, crown.translated_local(Vector3(0, 5.4, 0)), minf(tw, td) * 0.18, 0.0, floors * 0.6, Color(0.7, 0.71, 0.72), 8)
 
 
 # ---------------------------------------------------------------------------- the parts

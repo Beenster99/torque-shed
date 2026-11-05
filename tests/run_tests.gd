@@ -25090,6 +25090,10 @@ func _test_region_kit_city() -> void:
 	_region_kit().test_city()
 
 
+func _test_region_kit_heights() -> void:
+	_region_kit().test_heights()
+
+
 func _net() -> RefCounted:
 	return load("res://tests/net_route_tests.gd").new(self)
 

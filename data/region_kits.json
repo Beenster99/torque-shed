@@ -19,6 +19,7 @@
 				{"style": "terrace", "share": 0.35, "walls": ["#8c4a36", "#9a5640", "#7e4232", "#e8e4d8", "#c8bca4"], "roofs": ["#3c3e44", "#46484e"]},
 				{"style": "tenement", "share": 0.3, "walls": ["#9a5a46", "#a86a52", "#c8b08a", "#bda57e", "#8e4e3c"], "roofs": ["#3c3e44"]},
 				{"style": "modern", "share": 0.25, "walls": ["#c8c4bc", "#a8a49c", "#8c8478", "#d8d0c0", "#8c4a36", "#5a5650"]},
+				{"style": "deco", "share": 0.05, "walls": ["#e8e4d8", "#d8ccb0"]},
 				{"style": "tower", "share": 0.1}
 			],
 			"walls": ["#a49a87", "#8d8578", "#b3a68c", "#e8e4d8", "#8c4a36"], "roofs": ["#3c3e44", "#46484e", "#6b3a2c"],
@@ -147,9 +148,11 @@
 		"north_america": {
 			"name": "North America",
 			"city": [
-				{"style": "terrace", "share": 0.2, "walls": ["#8c4a36", "#7e4232", "#a85a44", "#6a4a3a"], "roofs": ["#3a3a3c"]},
-				{"style": "modern", "share": 0.4, "walls": ["#c8c4bc", "#a8a49c", "#e4e2dc", "#8c8478", "#b89a7a", "#8c4a36", "#4a4c50"]},
-				{"style": "tower", "share": 0.4, "glass": "#3a5a74"}
+				{"style": "terrace", "share": 0.15, "walls": ["#8c4a36", "#7e4232", "#a85a44", "#6a4a3a"], "roofs": ["#3a3a3c"]},
+				{"style": "brownstone", "share": 0.15, "walls": ["#6a4a3a", "#7a5240", "#5e4034", "#8c6a52", "#9a4a36"]},
+				{"style": "modern", "share": 0.3, "walls": ["#c8c4bc", "#a8a49c", "#e4e2dc", "#8c8478", "#b89a7a", "#8c4a36", "#4a4c50"]},
+				{"style": "deco", "share": 0.15, "walls": ["#d8ccb0", "#c8b896", "#b8a88a", "#e0d8c4"]},
+				{"style": "tower", "share": 0.3, "glass": "#3a5a74"}
 			],
 			"walls": ["#eeeeea", "#c8ccc8", "#a8b8c4", "#d8ccb0", "#e4dcc8", "#7a8a94"], "roofs": ["#3a3a3c", "#4a4440", "#5a5650", "#2e2e30"],
 			"trim": "#f6f6f2", "door": ["#7a2a24", "#2a3a4a", "#efefea"],
@@ -224,6 +227,7 @@
 			"city": [
 				{"style": "terrace", "share": 0.25, "walls": ["#8c4a36", "#e8dcc4", "#c8b48c", "#f2f0e8"], "roofs": ["#a8aca8", "#3e4248"]},
 				{"style": "modern", "share": 0.45, "walls": ["#e4e2dc", "#c8c4bc", "#d8ccb0", "#a8a49c", "#8c4a36", "#5a5a5c"]},
+				{"style": "deco", "share": 0.12, "walls": ["#e8dcc4", "#d8ccb0", "#c8b48c"]},
 				{"style": "tower", "share": 0.3, "glass": "#3a5a74"}
 			],
 			"walls": ["#f2f0e8", "#e4dcc4", "#c8d4d8", "#d8e0c8", "#b0a896", "#f0e0c0"], "roofs": ["#a8aca8", "#8a2e26", "#2e4a3a", "#3e4248", "#b8bcb8"],

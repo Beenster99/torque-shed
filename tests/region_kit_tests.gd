@@ -200,3 +200,62 @@ func _measure(a: Dictionary, what: String, worst: Dictionary, broken: Array) -> 
 	if v.size() > int(worst["verts"]):
 		worst["verts"] = v.size()
 		worst["what"] = what
+
+
+## Where the map gives a building no height (the baker's fallback for its kind), BuildingHeights gives it one that
+## suits where it stands: low in a village, taller and mixed towards a big city's middle with the odd tower there, a
+## street's heights hanging together; the same in every game; and a height the map gives is kept.
+func test_heights() -> void:
+	var r := RealRegion.new()
+	r.places = [{"kind": "town", "name": "Big", "x": 0.0, "z": 0.0, "pop": 3000000},
+		{"kind": "town", "name": "Small", "x": 30000.0, "z": 0.0, "pop": 4000},
+		{"kind": "village", "name": "Quarter", "x": 500.0, "z": 0.0, "pop": 0}]
+	var kit := RegionKit.choose(PlaceProfile.parse({"country": "US", "density": "city"}))
+	var block := RealPack.BUILDING_KINDS.find("block")
+	var house := RealPack.BUILDING_KINDS.find("house")
+	var mid := []
+	var edge := []
+	var village := []
+	var towers := 0
+	for k in 400:
+		var x := float(k % 20) * 37.0 - 370.0
+		var z := float(k / 20) * 41.0 - 410.0
+		mid.append(BuildingHeights.of(r, [x, z, 22.0, 18.0, 0.0, 14.0, block, 0], kit))
+		edge.append(BuildingHeights.of(r, [x + 6500.0, z, 22.0, 18.0, 0.0, 14.0, block, 0], kit))
+		village.append(BuildingHeights.of(r, [x + 30000.0, z, 22.0, 18.0, 0.0, 14.0, block, 0], kit))
+		if float(mid[-1]) > 40.0:
+			towers += 1
+	var mean := func(a: Array) -> float:
+		var s := 0.0
+		for v in a:
+			s += float(v)
+		return s / a.size()
+	var spread := {}
+	for v in mid:
+		spread[v] = true
+	check(float(mean.call(mid)) > float(mean.call(edge)) + 5.0 and float(mean.call(edge)) >= float(mean.call(village)),
+		"a big city's middle is taller than its edge, its edge than a small town (%.0f, %.0f, %.0f m)" % [mean.call(mid), mean.call(edge), mean.call(village)])
+	check(spread.size() >= 6, "a city's middle has a mix of heights (%d)" % spread.size())
+	check(towers > 0 and towers < 120, "and the odd tower (%d of 400)" % towers)
+	check(float(village.max()) <= 6.0 * BuildingHeights.STOREY + BuildingHeights.GROUND, "a small town's blocks stay low (%.0f m)" % village.max())
+	check(BuildingHeights.of(r, [10.0, 10.0, 22.0, 18.0, 0.0, 23.0, block, 0], kit) == 23.0
+		and BuildingHeights.of(r, [10.0, 10.0, 22.0, 18.0, 0.0, 14.0, RealPack.BUILDING_KINDS.find("barn"), 0], kit) == 14.0,
+		"a height the map gives is kept, and a barn is never guessed")
+	check(BuildingHeights.of(r, [10.0, 10.0, 22.0, 18.0, 0.0, 14.0, block, 0], kit) == BuildingHeights.of(r, [10.0, 10.0, 22.0, 18.0, 0.0, 14.0, block, 0], kit),
+		"the same building, the same height")
+	check(BuildingHeights.of(r, [30200.0, 400.0, 8.0, 9.0, 0.0, 5.5, house, 0], kit) == 5.5, "a small town's houses stay as they were")
+	var houses := {}
+	for k in 50:
+		houses[BuildingHeights.of(r, [float(k) * 9.0, 30.0, 12.0, 6.0, 0.0, 5.5, house, 0], kit)] = true
+	check(houses.size() >= 2, "a city's town houses aren't all two storeys (%s)" % str(houses.keys()))
+	# A street's neighbours mostly match: next-door blocks closer in height than blocks across town.
+	var near := 0.0
+	var far := 0.0
+	for k in 200:
+		var x := float(k) * BuildingHeights.STREET * 2.0 + 10.0   # (next door in the same street square)
+		var a := BuildingHeights.guess("block", 20.0, 16.0, x, 0.0, 6.5, 0.9, "western_europe", 14.0)
+		var b := BuildingHeights.guess("block", 20.0, 16.0, x + 4.0, 3.0, 6.5, 0.9, "western_europe", 14.0)
+		var c := BuildingHeights.guess("block", 20.0, 16.0, x + 4000.0, 3000.0, 6.5, 0.9, "western_europe", 14.0)
+		near += absf(a - b)
+		far += absf(a - c)
+	check(near < far * 0.8, "next-door blocks are closer in height than blocks across town (%.0f vs %.0f)" % [near, far])

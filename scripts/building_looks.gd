@@ -9,8 +9,9 @@ extends RefCounted
 ## Nothing here changes where a building stands or what a road does: it only colours and shapes what RoadBlock already
 ## draws. Its VERSION is folded into History's (scripts/scenery/history.gd), which is in the builder hash.
 
-## Bumped when what a look does to a building changes (History.VERSION goes up with it).
-const VERSION := 1
+## Bumped when what a look does to a building changes (History.VERSION goes up with it); the guessed heights'
+## (BuildingHeights) are folded in.
+const VERSION := 1 + BuildingHeights.VERSION
 ## The looks are filed in squares this size (m).
 const GRID := 24.0
 ## A look stands for a building when its middle is inside the building's box grown by this much (m).
