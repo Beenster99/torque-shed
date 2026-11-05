@@ -989,6 +989,7 @@ func _run_all() -> void:
 	await _t(&"_test_region_kit_choose")
 	await _t(&"_test_region_kit_buildings")
 	await _t(&"_test_region_kit_city")
+	await _t(&"_test_region_kit_city_far")
 	await _t(&"_test_road_markings_style")
 	await _t(&"_test_road_markings_paint")
 	await _t(&"_test_road_signs")
@@ -25111,6 +25112,10 @@ func _test_region_kit_buildings() -> void:
 
 func _test_region_kit_city() -> void:
 	_region_kit().test_city()
+
+
+func _test_region_kit_city_far() -> void:
+	_region_kit().test_city_far()
 
 
 func _test_region_kit_heights() -> void:

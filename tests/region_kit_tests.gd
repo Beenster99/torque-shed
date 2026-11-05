@@ -189,6 +189,63 @@ func test_city() -> void:
 		and RegionCity.style_for(gb, "barn", 20.0, 12.0, 8.0, 0.5).is_empty(), "a country house stays a house, a town's row of houses takes a street style, a barn stays a barn")
 
 
+## A city's small pieces (its windows and their surrounds, sills, chimneys and rooftop odds) go in squares of their own,
+## drawn close to only and without a shadow, and its street fronts' floors as bands of glass from there on (Simon, 5 Nov:
+## "we were down at 20fps" in the cities): every triangle goes one way or the other, the small ones are small, the bands
+## are few and light up after dark, the two swap over at once, and a ride that has no far bands draws as before.
+func test_city_far() -> void:
+	var kit := RegionKit.choose(PlaceProfile.parse({"country": "GB", "density": "city"}))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var a := AdventureProps.new_arrays()
+	a["far"] = AdventureProps.new_arrays()
+	var plain := AdventureProps.new_arrays()
+	for k in 24:
+		var kind: String = ["block", "shop", "civic", "house"][k % 4]
+		var h: float = [7.0, 10.0, 14.0, 22.0][k % 4] if kind != "house" else 7.0
+		var at := Vector3(20.0 + (k % 6) * 70.0, 0.0, 30.0 + (k / 6) * 110.0)
+		RegionBuildings.real_building(a, at, 14.0 + (k % 3) * 6.0, 10.0, 0.0, h, kind, kit)
+		RegionBuildings.real_building(plain, at, 14.0 + (k % 3) * 6.0, 10.0, 0.0, h, kind, kit)
+	check(not plain.has("far") and (plain["v"] as PackedVector3Array).size() == (a["v"] as PackedVector3Array).size(),
+		"buildings drawn without far bands (the planned road's) are drawn just as before")
+	var tiles := RoadStreamer.building_tiles(a)
+	var count := func(list: Array) -> int:
+		return list.reduce(func(n, t): return n + (t["v"] as PackedVector3Array).size() / 3, 0)
+	var shell: int = count.call(tiles["shell"])
+	var fine: int = count.call(tiles["fine"])
+	var far: int = count.call(tiles["far"])
+	var total := (a["v"] as PackedVector3Array).size() / 3
+	check(shell + fine == total and far == (a["far"]["v"] as PackedVector3Array).size() / 3,
+		"every triangle is in the shell or the small pieces, once (%d + %d of %d)" % [shell, fine, total])
+	var big := 0
+	var edge := RoadStreamer.FINE_EDGE * RoadStreamer.FINE_EDGE
+	for t: Dictionary in tiles["fine"]:
+		var v: PackedVector3Array = t["v"]
+		for i in range(0, v.size(), 3):
+			if v[i].distance_squared_to(v[i + 1]) >= edge or v[i + 1].distance_squared_to(v[i + 2]) >= edge or v[i + 2].distance_squared_to(v[i]) >= edge:
+				big += 1
+	check(big == 0, "the small pieces are all small (%d aren't)" % big)
+	check(fine > shell, "most of a city street's triangles are its small pieces (%d small, %d shell)" % [fine, shell])
+	check(far > 0 and far * 4 < fine, "far off, its floors are a few bands of glass (%d triangles, for %d close to)" % [far, fine])
+	var lit := 0
+	for c in a["far"]["c"]:
+		lit += int(WindowLights.roll(c) >= 0.0)
+	check(lit == (a["far"]["c"] as PackedColorArray).size(), "the bands light up after dark, as the windows do")
+	var i := 0
+	while (tiles["fine"][i]["v"] as PackedVector3Array).is_empty() or (tiles["far"][i]["v"] as PackedVector3Array).is_empty():
+		i += 1
+	var sq := RoadStreamer.fine_square(tiles["fine"][i], tiles["far"][i], 350.0, "Windows_%d" % i)
+	var near := sq.get_node("Near") as MeshInstance3D
+	var far_mi := sq.get_node("Far") as MeshInstance3D
+	check(near.visibility_range_end == 350.0 and near.visibility_range_begin == 0.0 and far_mi.visibility_range_begin == 350.0
+		and far_mi.visibility_range_end == 0.0 and (near.mesh as ArrayMesh).custom_aabb == (far_mi.mesh as ArrayMesh).custom_aabb
+		and (near.mesh as ArrayMesh).custom_aabb.encloses(far_mi.mesh.get_aabb()),
+		"the small pieces are drawn close to, the bands from there on, swapping over at once (one box for both)")
+	check(near.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and far_mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		and Lighting.gi_mode_for(near) == GeometryInstance3D.GI_MODE_DISABLED, "neither casts a shadow or bounces light")
+	sq.free()
+
+
 func _measure(a: Dictionary, what: String, worst: Dictionary, broken: Array) -> void:
 	var v: PackedVector3Array = a["v"]
 	var n: PackedVector3Array = a["n"]

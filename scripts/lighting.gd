@@ -406,6 +406,8 @@ static func tune_caster(g: GeometryInstance3D, p: Dictionary) -> bool:
 ## particles, rain) or is small (parts, tools, props) is left out, so nothing leaves a stale
 ## ghost of bounced light behind when it moves.
 static func gi_mode_for(g: GeometryInstance3D) -> int:
+	if g.has_meta("no_gi"):
+		return GeometryInstance3D.GI_MODE_DISABLED
 	if g is CPUParticles3D or g is GPUParticles3D or g is Label3D or g is SpriteBase3D:
 		return GeometryInstance3D.GI_MODE_DISABLED
 	var n: Node = g
