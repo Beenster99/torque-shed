@@ -325,6 +325,47 @@ func test_tyres() -> void:
 		if hole != "":
 			holes.append("%s: %s" % [tread, hole])
 	check(holes.is_empty(), "every tread pattern's tyre is whole across its crown, with no gap round the middle, at every level of detail %s" % str(holes))
+	# On a Rig built bike the road tyres' grooves are cut into the Blender tyre just as into the
+	# code's (TextureKit.apply_tread): its UVs run once round the tyre and from bead to bead with the
+	# crown in the middle, and it has tangents for the grooves' normal map. A slick stays smooth,
+	# and a winter tyre keeps its sipes.
+	for pair in [["sport_road_120", "sport_road_190", "sport"], ["race_slick_120", "race_slick", ""], ["winter_tyre_90", "winter_tyre_150", "sipes"]]:
+		var m := BikeModel.new()
+		m.look = BikeLook.NEW
+		t.add_child(m)
+		m.build_from(BikeBuild.new(PartsDB.sanitize_build(BikeBuild.sensible_fork({"frame": "alu_twin_spar", "front_tyre": pair[0], "rear_tyre": pair[1]}, 7))))
+		var bad := []
+		for slot in ["front_tyre", "rear_tyre"]:
+			var tyre: MeshInstance3D = null
+			for mi in m._slot_meshes.get(slot, []):
+				if mi is MeshInstance3D and _blender_made(mi) and m._hoops.has(mi.get_instance_id()):
+					tyre = mi
+			if tyre == null:
+				bad.append("%s: no Blender tyre" % slot)
+				continue
+			var mat := tyre.material_override as StandardMaterial3D
+			var arrays := tyre.mesh.surface_get_arrays(0)
+			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			var lo := Vector2.INF
+			var hi := -Vector2.INF
+			for uv in uvs:
+				lo = lo.min(uv)
+				hi = hi.max(uv)
+			if lo.x < -0.001 or hi.x > 1.001 or lo.y < -0.001 or hi.y > 1.001 or hi.x < 0.99 or hi.y - lo.y < 0.6:
+				bad.append("%s: UVs %s to %s" % [slot, lo, hi])
+			if pair[2] == "sport":
+				if mat.get_meta("tread", "") != "sport" or mat.normal_texture == null or mat.albedo_texture == null:
+					bad.append("%s: no grooves cut in" % slot)
+				if arrays[Mesh.ARRAY_TANGENT] == null or (arrays[Mesh.ARRAY_TANGENT] as PackedFloat32Array).size() != uvs.size() * 4:
+					bad.append("%s: no tangents" % slot)
+			elif mat.has_meta("tread") or mat.normal_texture != null:
+				bad.append("%s: grooves cut into a %s tyre" % [slot, "slick" if pair[2] == "" else pair[2]])
+			var rings := (m._slot_meshes.get(slot, []) as Array).filter(func(mi): return mi is MultiMeshInstance3D).size()
+			if (rings > 0) != (pair[2] == "sipes"):
+				bad.append("%s: %d rings of tread pieces" % [slot, rings])
+		check(bad.is_empty(), "Rig built %s tyres: %s %s" % [pair[2] if pair[2] != "" else "slick",
+			{"sport": "their grooves cut into the Blender rubber", "": "smooth", "sipes": "their sipes across them"}[pair[2]], str(bad)])
+		m.queue_free()
 
 
 ## Where a tyre's Blender section (`path`, in the tyre's units) is open across its crown: straight

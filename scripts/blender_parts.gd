@@ -763,6 +763,7 @@ static func with_lods(lods: Array) -> Array:
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var tangents: PackedFloat32Array = arrays[Mesh.ARRAY_TANGENT] if arrays[Mesh.ARRAY_TANGENT] != null else PackedFloat32Array()
 		var tris := [(arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3]
 		var levels := {}
 		for k in range(1, lods.size()):
@@ -777,6 +778,8 @@ static func with_lods(lods: Array) -> Array:
 				verts.append_array(a[Mesh.ARRAY_VERTEX])
 				normals.append_array(a[Mesh.ARRAY_NORMAL])
 				uvs.append_array(a[Mesh.ARRAY_TEX_UV])
+				if not tangents.is_empty():
+					tangents.append_array(a[Mesh.ARRAY_TANGENT])
 				idx = PackedInt32Array()
 				for i in a[Mesh.ARRAY_INDEX]:
 					idx.append(base + i)
@@ -789,6 +792,7 @@ static func with_lods(lods: Array) -> Array:
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		arrays[Mesh.ARRAY_TANGENT] = tangents if not tangents.is_empty() else null
 		arrays[Mesh.ARRAY_INDEX] = index
 		var am := ArrayMesh.new()
 		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], levels)
@@ -850,8 +854,10 @@ static func tyre_hoop(path: String, rim_r: float, radius: float, width: float, r
 					if v.z < 0.001 or v.z > 0.999:
 						n.z = 0.0
 					nn.append((Vector3.RIGHT * (n.x / half) + out_dir * (n.y / span) + round_dir * (n.z / (step * r))).normalized())
-					# (1 UV unit = 1 m, round the tyre and across it.)
-					nuv.append(Vector2(a * r, v.x * half))
+					# (UVs as BikeModel's tyre_mesh has them, so a road tread's grooves (TextureKit.apply_tread)
+					# land on the crown just the same: u from 0 to 1 once round the tyre, v from one bead
+					# over the crown (0.5) to the other.)
+					nuv.append(Vector2((k + v.z) / TYRE_SECTIONS, tyre_v(v.x, v.y)))
 				for i in idx:
 					ni.append(i + k * verts.size())
 			var arrays := []
@@ -860,7 +866,23 @@ static func tyre_hoop(path: String, rim_r: float, radius: float, width: float, r
 			arrays[Mesh.ARRAY_NORMAL] = nn
 			arrays[Mesh.ARRAY_TEX_UV] = nuv
 			arrays[Mesh.ARRAY_INDEX] = ni
-			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			# Tangents for the tread's normal map.
+			var st := SurfaceTool.new()
+			st.create_from_arrays(arrays)
+			st.generate_tangents()
+			am = st.commit(am)
 			am.surface_set_material(am.get_surface_count() - 1, mesh.surface_get_material(s))
 		out.append(am)
 	return out
+
+
+## Where a point of a tyre section (`x` across from -1 to 1, `y` up from the bead at 0 to the crown
+## at 1) falls across BikeModel's tyre_mesh UVs: 0 at one bead, 0.5 in the middle of the crown and
+## 1 at the other bead, the crown running from 0.19 to 0.81 and the sidewalls outside it.
+static func tyre_v(x: float, y: float) -> float:
+	var off: float
+	if y >= TYRE_BULGE:
+		off = 0.3125 * (1.0 - acos(clampf(absf(x), 0.0, 1.0)) / (PI * 0.5))
+	else:
+		off = 0.3125 + 0.1875 * (1.0 - y / TYRE_BULGE)
+	return 0.5 + (off if x >= 0.0 else -off)

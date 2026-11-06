@@ -7516,13 +7516,14 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	rubber.metallic = 0.0
 	rubber.metallic_specular = 0.3
 	# Its tread: a road tyre's grooves are cut into its own surface (TextureKit.apply_tread), so
-	# they cost nothing to draw; knobs and blocks stand up off it (see below).
+	# they cost nothing to draw; knobs and blocks stand up off it (see below). The new look's
+	# tyre carries the same UVs, so its grooves are cut in just the same.
 	var tread := tread_pattern(_part())
+	TextureKit.apply_tread(rubber, tread)
 	# The new look's tyre is its tread's Blender section bent round the hoop, knobs and all.
 	var tyre_mi: MeshInstance3D = _blender_tyre(wheel, rim_r, radius, width, rim_w, tread, rubber) if _blender_on() else null
 	var blender := tyre_mi != null
 	if not blender:
-		TextureKit.apply_tread(rubber, tread)
 		tyre_mi = _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
 		tyre_mi.rotation.z = PI * 0.5
 		tyre_mi.set_meta("hoop", Vector3(rim_r, radius, width))
@@ -7542,7 +7543,8 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	_tyre_lettering(tyre_mi, rim_r, radius, width)
 	# The tread that stands off the tyre: knobs on an off-road tyre (bigger, flatter blocks on a
 	# 50/50 adventure one, studs in them on a studded one), fine sipes cut across a winter tyre.
-	if blender or not tread in ["sipes", "knobs", "blocks", "studs"]:
+	# The new look's Blender tyre has its knobs, blocks and studs made on it, but not its sipes.
+	if not tread in ["sipes", "knobs", "blocks", "studs"] or (blender and tread != "sipes"):
 		return
 	if tread == "sipes":
 		_tread_ring(wheel, radius, Vector3(width * 0.72, 0.003, 0.004), 72, 0.0015, 0.0, _mat(Color(0.015, 0.015, 0.015), 0.0, 0.95))
