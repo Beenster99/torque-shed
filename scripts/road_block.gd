@@ -701,6 +701,7 @@ func _lay_out() -> void:
 	arrays["signals"] = _signals(kit)
 	_roadside(kit)
 	var houses := AdventureProps.new_arrays()
+	houses["far"] = AdventureProps.new_arrays()   # (the street fronts' floors as bands of glass, drawn far off: RoadStreamer)
 	var o := anchor()
 	if _marked:
 		for k: String in ["v", "n", "c"]:

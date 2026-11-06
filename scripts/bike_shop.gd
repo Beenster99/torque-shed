@@ -19,13 +19,15 @@ extends RefCounted
 const FOR_SALE := 16
 ## The slots the configurator offers a choice in (the rest follow from them, see sanitize_build).
 const CONFIG_SLOTS: Array[String] = ["frame", "engine", "tank", "fairing", "saddle", "exhaust", "front_wheel",
-	"rear_wheel", "fork", "headlight", "handlebars", "dashboard", "front_mudguard", "tail", "panniers", "top_box", "satnav", "toolbox"]
+	"front_tyre", "rear_wheel", "rear_tyre", "fork", "headlight", "handlebars", "dashboard", "front_mudguard", "tail", "panniers", "top_box", "satnav", "toolbox"]
 ## The slots a second-hand bike's last owner might have changed (not its luggage: a race bike
 ## with panniers on it would be a strange thing to find for sale).
 const SWAP_SLOTS: Array[String] = ["frame", "engine", "tank", "fairing", "saddle", "exhaust", "front_wheel",
 	"rear_wheel", "fork", "headlight", "handlebars", "dashboard"]
 ## What the configurator calls a slot where the parts list's name for it isn't clear enough.
 const SLOT_LABELS := {"tail": "Rear guard, tail"}
+## The configurator's slots that don't take a colour of their own (tyres are black rubber).
+const NO_COLOUR: Array[String] = ["front_tyre", "rear_tyre"]
 ## Groups of parts a colour can be given to at once (besides any one slot by its own name): the
 ## wheels, and the mudguards (front and rear; a tail cowl is bodywork, so it keeps its own colour).
 const COLOUR_GROUPS := {"wheels": "Wheels", "mudguards": "Mudguards"}
@@ -56,7 +58,7 @@ static func for_sale(day := -1) -> Array:
 			var opts := options(slot, style, parts)
 			if not opts.is_empty():
 				parts[slot] = opts[rng.randi() % opts.size()]
-		parts = PartsDB.sanitize_build(parts)
+		parts = fit_tyres(PartsDB.sanitize_build(parts), style)
 		var q := snappedf(rng.randf_range(0.3, 0.95), BikeCopy.QUALITY_STEP)
 		var miles := roundi(lerpf(60000.0, 1500.0, q) * rng.randf_range(0.75, 1.25) / 100.0) * 100
 		out.append({"key": "%d_%d" % [day, i], "title": "%s %s" % [word_for(q), PartsDB.style_noun(style)], "style": style, "parts": parts,
@@ -75,12 +77,15 @@ static func word_for(quality: float) -> String:
 
 ## The parts slot `slot` can have on a `style` bike built of `parts`: the ones that suit the style
 ## (all of that kind when hardly any do), "none" too where the slot can be empty, and whatever's
-## there now.
+## there now. A tyre slot offers only the tyres that go on the wheel it's on now.
 static func options(slot: String, style: String, parts: Dictionary) -> Array:
 	var kind: String = PartsDB.SLOT_KIND.get(slot, "")
 	if kind == "" or not PartsDB.by_kind.has(kind):
 		return []
 	var all: Array = PartsDB.by_kind[kind].map(func(id): return str(id))
+	var wheel := _wheel_of(slot)
+	if wheel != "":
+		all = PartsDB.tyres_for(str(parts.get(wheel, ""))).map(func(id): return str(id))
 	var suits := all.filter(func(id): return PartsDB.styles_of(id).has(style))
 	var out: Array = suits if suits.size() >= 2 else all.duplicate()
 	if PartsDB.may_be_empty(slot) and not out.has("none"):
@@ -88,6 +93,39 @@ static func options(slot: String, style: String, parts: Dictionary) -> Array:
 	var now := str(parts.get(slot, ""))
 	if now != "" and not out.has(now):
 		out.push_front(now)
+	return out
+
+
+## The wheel slot tyre slot `slot` goes on, or "" when it isn't a tyre slot.
+static func _wheel_of(slot: String) -> String:
+	for ws in Shed.WHEEL_TYRE:
+		if str(Shed.WHEEL_TYRE[ws]) == slot:
+			return str(ws)
+	return ""
+
+
+## `parts` with a tyre that goes on each wheel: a tyre that doesn't is swapped for one that does,
+## of the same family where there is one (a sports road tyre for a sports road tyre), else one made
+## for `style`, else a road tyre rather than a slick.
+static func fit_tyres(parts: Dictionary, style: String) -> Dictionary:
+	var out := parts.duplicate()
+	for ws in Shed.WHEEL_TYRE:
+		var ts: String = Shed.WHEEL_TYRE[ws]
+		var now := str(out.get(ts, ""))
+		if PartsDB.tyre_fit(now, str(out.get(ws, ""))) == 0:
+			continue
+		var fits: Array = PartsDB.tyres_for(str(out.get(ws, "")))
+		if fits.is_empty():
+			continue
+		var family := now.get_slice("_", 0) + "_" + now.get_slice("_", 1)
+		var pick := ""
+		for pool in [fits.filter(func(t): return str(t).begins_with(family)),
+				fits.filter(func(t): return PartsDB.styles_of(str(t)).has(style)),
+				fits.filter(func(t): return str(PartsDB.get_part(str(t)).get("style", "")) != "slick"), fits]:
+			if not pool.is_empty():
+				pick = str(pool[0])
+				break
+		out[ts] = pick
 	return out
 
 
@@ -116,7 +154,7 @@ static func colour_slots(key: String, parts: Dictionary) -> Array:
 			if is_rear_guard(str(parts.get("tail", "none"))):
 				out.append("tail")
 			return out
-	return [key] if PartsDB.SLOT_KIND.has(key) and str(parts.get(key, "none")) != "none" else []
+	return [key] if PartsDB.SLOT_KIND.has(key) and not NO_COLOUR.has(key) and str(parts.get(key, "none")) != "none" else []
 
 
 ## The colour slot `slot` of a bike of `parts` painted `paint` comes in from the factory: the
