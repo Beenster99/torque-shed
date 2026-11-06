@@ -144,6 +144,54 @@ func test_configurator() -> void:
 ## colour picker next to the option)", a logo and a brand name "stamped on the tank and background
 ## of preview (colour picker too)", and the view worked with the mouse (right-click stops and
 ## starts it turning) instead of buttons. The colour panel shows its swatches and recent colours.
+## Tyres in the configurator: a row for each, offering only the tyres that go on the wheel it's on
+## now; a new wheel brings a tyre that fits; the tyre picked is the one on the order.
+func test_configurator_tyres() -> void:
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.set_money(1000000)
+	var tab := BikeShopTab.new()
+	t.add_child(tab)
+	await _frames(1)
+	tab._new_style("tourer")
+	tab.show_mode("new")
+	for ws in Shed.WHEEL_TYRE:
+		var ts: String = Shed.WHEEL_TYRE[ws]
+		var ob: OptionButton = tab.find_child("Slot_" + ts, true, false)
+		var opts := BikeShop.options(ts, "tourer", tab.parts)
+		check(ob != null and ob.item_count == opts.size() and opts.size() >= 2, "a %s row with a choice of tyres (%s)" % [ts, opts])
+		check(opts.all(func(id): return PartsDB.tyre_fit(str(id), str(tab.parts[ws])) == 0),
+			"only tyres that go on the %s %s are offered (%s)" % [ws, tab.parts[ws], opts])
+		check(tab.find_child("Colour_" + ts, true, false) == null, "no colour picker for a %s" % ts)
+	# A fat sports rim at the back: the tourer's tyre won't go on it, so one that does comes with it.
+	tab.set_part("rear_wheel", "race_mag_gold")
+	check(PartsDB.tyre_fit(str(tab.parts["rear_tyre"]), "race_mag_gold") == 0,
+		"a new wheel comes with a tyre that fits it (%s)" % tab.parts["rear_tyre"])
+	var rear := BikeShop.options("rear_tyre", "tourer", tab.parts)
+	check(not rear.is_empty() and rear.all(func(id): return PartsDB.tyre_fit(str(id), "race_mag_gold") == 0)
+		and rear.size() < PartsDB.by_kind["tyre"].size(), "the rear tyres offered now are the ones for that rim (%s)" % [rear])
+	# A spoked 21 at the front: skinny tyres only.
+	tab.set_part("front_wheel", "spoked_21")
+	var front := BikeShop.options("front_tyre", "tourer", tab.parts)
+	check(front.all(func(id): return int(PartsDB.get_part(str(id)).get("width", 0)) <= 100) and front.has(str(tab.parts["front_tyre"])),
+		"a 21-inch spoked front wheel offers its narrow tyres (%s)" % [front])
+	var pick := str(front[front.size() - 1])
+	(tab.find_child("Slot_front_tyre", true, false) as OptionButton).item_selected.emit(front.size() - 1)
+	await _frames(2)
+	check(tab.parts["front_tyre"] == pick, "picking a tyre puts it on (%s)" % tab.parts["front_tyre"])
+	var b: Dictionary = tab._src()["build"]
+	check(str(b["parts"]["front_tyre"]) == pick and PartsDB.tyre_fit(str(b["parts"]["rear_tyre"]), "race_mag_gold") == 0,
+		"the tyres picked are the ones on the order")
+	# Second-hand bikes come with tyres that go on their wheels too.
+	var bad := []
+	for l in BikeShop.for_sale(20000):
+		for ws in Shed.WHEEL_TYRE:
+			if PartsDB.tyre_fit(str(l["parts"][Shed.WHEEL_TYRE[ws]]), str(l["parts"][ws])) != 0:
+				bad.append(str(l["title"]))
+	check(bad.is_empty(), "every second-hand bike's tyres go on its wheels %s" % [bad])
+	tab.queue_free()
+	Progress.profile = saved
+
+
 func test_configurator_extras() -> void:
 	Shed.start_new("Tester", 54)
 	var saved: Dictionary = Progress.profile.duplicate(true)
@@ -163,7 +211,7 @@ func test_configurator_extras() -> void:
 	# A colour beside every part that's there.
 	var missing := []
 	for slot in BikeShop.CONFIG_SLOTS:
-		var there := str(tab.parts.get(slot, "none")) != "none"
+		var there := str(tab.parts.get(slot, "none")) != "none" and not BikeShop.NO_COLOUR.has(slot)
 		if there != (tab.find_child("Colour_" + slot, true, false) != null):
 			missing.append(slot)
 	check(missing.is_empty(), "a colour beside each part on the bike, none beside an empty slot %s" % [missing])

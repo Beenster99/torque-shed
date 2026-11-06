@@ -408,7 +408,7 @@ func pick(i: int) -> void:
 ## Starts a new bike of `s`: its stock build, in a colour of its own (its badge stays).
 func _new_style(s: String) -> void:
 	style = s
-	parts = PartsDB.sanitize_build(Contracts.style_build(s).duplicate())
+	parts = BikeShop.fit_tyres(PartsDB.sanitize_build(Contracts.style_build(s).duplicate()), s)
 	paint = Shed.PAINTS[absi(hash(s)) % Shed.PAINTS.size()]
 	colours = {}
 	finishes = {}
@@ -419,7 +419,8 @@ func _new_style(s: String) -> void:
 ## Puts part `id` in `slot` on the new bike (and sorts out the rest to fit).
 func set_part(slot: String, id: String) -> void:
 	parts[slot] = id
-	parts = PartsDB.sanitize_build(parts)
+	# A new wheel keeps its tyre when it goes on, else takes one that does (BikeShop.fit_tyres).
+	parts = BikeShop.fit_tyres(PartsDB.sanitize_build(parts), style)
 	show_mode("new")
 
 
