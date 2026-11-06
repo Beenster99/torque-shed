@@ -3,8 +3,9 @@ extends Node3D
 ## The bikes left at the side of the road on an adventure, for everyone: each up on its stand
 ## where its rider got off (kept in the route's frame, see Roadside, so the floating origin
 ## never moves it), with click targets on its parts for the walker; with its toolbox open the
-## kit is laid out on a cloth beside it, and the parts worked on show out there too; what's strapped on it (see FuelShop)
-## sits over its seat. And the tow straps between bikes on a tow.
+## kit is laid out on a cloth beside it, and the parts worked on show out there too; what's down by it (see FuelShop:
+## bought at a fuel station's shop, or taken off with the wrench) sits on the ground on its other side. And the tow
+## straps between bikes on a tow.
 ## A child of the AdventureWorld, so it goes when the adventure does.
 
 var world: AdventureWorld
@@ -126,32 +127,31 @@ func _make_view(id: int, r: Dictionary) -> Node3D:
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
 	model.build_pickers({"bike": id})
 	model.show_dirt(Dirt.of_bike(id))
-	_strapped(lean, id, build)
+	draw_by_bike(view, FuelShop.cargo_of(id), _cardboard, _box_mat)
 	var out: Array = r.get("out", [])
 	if r.get("open", false) or not out.is_empty():
 		_lay_out(view, id, r)
 	return view
 
 
-## What's strapped on the bike (see FuelShop): a stack of boxes and bundles over the back of its
-## seat, held down by a strap.
-func _strapped(lean: Node3D, id: int, build: BikeBuild) -> void:
-	var cargo := FuelShop.cargo_of(id)
-	if cargo.is_empty():
-		return
-	var y := build.seat_height + 0.02   # (from the ground: the seat's top)
+## What's down by the bike (see FuelShop): boxes and bare parts in a row on the ground on its
+## left, away from the cloth, each sized by its weight. Shared with the shed's own bike views
+## for a bike left out on the road (see Workshop).
+static func draw_by_bike(view: Node3D, cargo: Array, cardboard: Material, bare: Material) -> void:
+	var z := -0.55
 	for i in cargo.size():
 		var kg := FuelShop.part_kg(str(cargo[i].get("part", "")))
-		var w := clampf(0.18 + kg * 0.012, 0.18, 0.42)
-		var h := clampf(0.08 + kg * 0.006, 0.08, 0.22)
-		var b := _box(Vector3(w, h, w * 0.8), _cardboard if cargo[i].get("boxed", false) else _box_mat)
+		var w := clampf(0.18 + kg * 0.012, 0.18, 0.6)
+		var h := clampf(0.08 + kg * 0.006, 0.08, 0.4)
+		var b := MeshInstance3D.new()
+		var m := BoxMesh.new()
+		m.size = Vector3(w, h, w * 0.8)
+		m.material = cardboard if cargo[i].get("boxed", false) else bare
+		b.mesh = m
 		b.name = "Cargo%d" % i
-		b.position = Vector3(0.0, y + h * 0.5, 0.45)
-		lean.add_child(b)
-		y += h
-	var strap := _box(Vector3(0.03, 0.005, 0.5), _strap_mesh.material)
-	strap.position = Vector3(0.0, y + 0.003, 0.45)
-	lean.add_child(strap)
+		b.position = Vector3(-0.55 - w * 0.5, h * 0.5, z + w * 0.4)
+		view.add_child(b)
+		z += w * 0.8 + 0.08
 
 
 ## The cloth on the ground on the bike's right (away from the side stand) and what's on it.

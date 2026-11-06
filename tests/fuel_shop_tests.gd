@@ -1,9 +1,9 @@
 extends RefCounted
-## The fuel station shops on an adventure and what's strapped on a bike (see FuelShop,
-## FuelShopView): buying on the business's account, strapped on the bike on the forecourt or
-## sent to the shed when it's too big to carry, taking it off the straps to fit and strapping
-## things on, the weight of it, a mate doing the same through the host, and everything put in
-## the delivery area at home. Run from tests/run_tests.gd: its _test_fuel_shop_* functions hand
+## The fuel station shops on an adventure and what's by a bike (see FuelShop, FuelShopView):
+## buying on the business's account, put down next to the bike on the forecourt whatever it is,
+## picking it up to fit and putting things down, strapped on when it's ridden off (the weight of
+## it) with what's too big sent on to the shed, a mate doing the same through the host, and
+## everything put in the delivery area at home. And the wrench out of the shed with no toolbox. Run from tests/run_tests.gd: its _test_fuel_shop_* functions hand
 ## over to these.
 
 const Rides := preload("res://tests/rides.gd")
@@ -57,7 +57,7 @@ func test_rules() -> void:
 	var mirrors := str(PartsDB.by_kind["mirrors"][0])
 	var screen := ""   # (the heaviest panniers that go on the straps)
 	for id in PartsDB.by_kind["panniers"]:
-		if FuelShop.part_kg(str(id)) <= FuelShop.CARRY_ONE_KG and (screen == "" or FuelShop.part_kg(str(id)) > FuelShop.part_kg(screen)):
+		if screen == "" or FuelShop.part_kg(str(id)) > FuelShop.part_kg(screen):
 			screen = str(id)
 	check(Shed.check(me, {"a": "shop_buy", "part": mirrors, "bike": bike}).contains("out on an adventure"), "no fuel station shops at home")
 	_at_roadside(bike)
@@ -65,44 +65,54 @@ func test_rules() -> void:
 	var mass0: float = Shed.build_of(bike).total_mass
 	var money0 := Shed.garage_money
 	var cost := Money.buy_price(mirrors, me)
-	# Bought: boxed and strapped on, paid by the business.
+	# Bought: boxed and put down by the bike, paid by the business.
 	check(Shed.check(me, {"a": "shop_buy", "part": "no_such_part", "bike": bike}) != "", "only parts in the catalogue")
 	check(Shed.check(me, {"a": "shop_buy", "part": mirrors, "bike": bike}) == "", "mirrors can be bought")
 	Shed.request({"a": "shop_buy", "part": mirrors, "bike": bike})
 	check(FuelShop.cargo_of(bike).size() == 1 and str(FuelShop.cargo_of(bike)[0]["part"]) == mirrors and FuelShop.cargo_of(bike)[0].get("boxed", false),
-		"the mirrors, boxed, strapped on the bike")
+		"the mirrors, boxed, by the bike")
 	check(Shed.garage_money == money0 - cost and Shed.bank.size() > 0, "paid from the business's account (%d)" % cost)
 	check(not FuelShop.cargo_of(bike)[0].has("id") and not FuelShop.cargo_of(bike)[0].has("at"), "kept as a part's record, not somewhere in the shed")
 	check(Shed.build_of(bike).total_mass > mass0 + 0.1, "the bike's that bit heavier (%.2f kg)" % (Shed.build_of(bike).total_mass - mass0))
-	# Too big to carry: an engine's sent on to the shed.
+	# With no bike on the forecourt it's sent on to the shed.
 	var engine := "twin_700"
-	check(FuelShop.carry_reason(bike, engine).contains("too big"), "an engine won't go on the straps")
-	check(Shed.check(me, {"a": "shop_buy", "part": engine, "bike": bike}).contains("too big"), "so it can't be strapped on")
+	check(Shed.check(me, {"a": "shop_buy", "part": engine, "bike": bike}) == "", "but whatever's bought goes by the bike, an engine too")
 	var before := _loose_parts(engine).size()
 	Shed.request({"a": "shop_buy", "part": engine, "bike": 0})
 	var sent := _loose_parts(engine)
-	check(sent.size() == before + 1, "bought with nowhere to strap it: sent to the shed")
+	check(sent.size() == before + 1, "bought with no bike on the forecourt: sent to the shed")
 	var at_home: Dictionary = Shed.items[sent[-1]] if not sent.is_empty() else {}
 	check(at_home.get("boxed", false) and str(at_home.get("at", "")) in ["floor", "spot"], "boxed in the delivery area")
 	# Off the straps, out of its box, in your hands.
 	check(Shed.check(me, {"a": "cargo_take", "bike": bike, "index": 0, "part": "nothing"}) != "", "the part has to be the one asked for")
 	Shed.request({"a": "cargo_take", "bike": bike, "index": 0, "part": mirrors})
 	var held := Shed.held_by(me)
-	check(held != 0 and str(Shed.items[held]["part"]) == mirrors and not Shed.items[held].get("boxed", false), "the mirrors off the straps and out of the box, in your hands")
-	check(FuelShop.cargo_of(bike).is_empty(), "nothing strapped on now")
-	check(Shed.check(me, {"a": "mount", "bike": bike}).contains("Strap the"), "can't ride off holding them: strap them on")
+	check(held != 0 and str(Shed.items[held]["part"]) == mirrors and not Shed.items[held].get("boxed", false), "the mirrors picked up and out of the box, in your hands")
+	check(FuelShop.cargo_of(bike).is_empty(), "nothing by the bike now")
+	check(Shed.check(me, {"a": "mount", "bike": bike}).contains("down by the bike"), "can't ride off holding them: put them down by the bike")
 	check(Shed.check(me, {"a": "cargo_take", "bike": bike, "index": 0}) != "", "one thing at a time")
 	Shed.request({"a": "cargo_strap", "bike": bike})
-	check(Shed.held_by(me) == 0 and not Shed.items.has(held) and FuelShop.cargo_of(bike).size() == 1, "strapped back on")
-	check(Shed.check(me, {"a": "cargo_strap", "bike": bike}).contains("not holding"), "nothing in your hands to strap on")
-	# Loaded up: the straps take so much.
+	check(Shed.held_by(me) == 0 and not Shed.items.has(held) and FuelShop.cargo_of(bike).size() == 1, "put back down by the bike")
+	check(Shed.check(me, {"a": "cargo_strap", "bike": bike}).contains("not holding"), "nothing in your hands to put down")
+	# Whatever's bought goes by the bike, an engine too; ridden off, it's all left behind, gone
+	# (Simon, 6 Nov).
 	if screen != "":
-		var n := 0
-		while Shed.check(me, {"a": "shop_buy", "part": screen, "bike": bike}) == "" and n < 20:
+		for i in 6:
 			Shed.request({"a": "shop_buy", "part": screen, "bike": bike})
-			n += 1
-		check(n > 0 and n < 20 and FuelShop.cargo_kg(bike) <= FuelShop.CARRY_KG, "panniers strapped on till it's loaded up (%d, %.1f kg)" % [n, FuelShop.cargo_kg(bike)])
-		check(Shed.check(me, {"a": "shop_buy", "part": screen, "bike": bike}).contains("loaded up"), "then it says it's loaded up")
+		Shed.request({"a": "shop_buy", "part": engine, "bike": bike})
+		check(FuelShop.cargo_of(bike).size() == 8, "six panniers and an engine by the bike too (%.1f kg)" % FuelShop.cargo_kg(bike))
+		var engines := _loose_parts(engine).size()
+		var n_items := Shed.items.size()
+		var mass_before: float = Shed.build_of(bike).total_mass
+		Shed.request({"a": "mount", "bike": bike})
+		check(Shed.riding(me) == bike and FuelShop.cargo_of(bike).is_empty(), "ridden off: nothing's by it any more")
+		check(_loose_parts(engine).size() == engines and Shed.items.size() == n_items, "left behind, gone: nothing sent to the shed")
+		check(Shed.build_of(bike).total_mass < mass_before - 1.0, "and the bike carries none of it")
+		Shed.request({"a": "dismount", "bike": bike, "xf": Transform3D(Basis(), Vector3(3.0, 0.0, -6000.0)),
+			"roadside": {"x": 100.0, "y": 2.0, "z": -900.0, "yaw": 0.0, "s": 500.0}})
+		check(Roadside.parked(bike) and FuelShop.ride_off(bike) == "", "off again, nothing to leave behind")
+		Shed.request({"a": "shop_buy", "part": mirrors, "bike": bike})
+		Shed.request({"a": "shop_buy", "part": screen, "bike": bike})
 	# A mate takes one off through the host.
 	var mate := 4242
 	Shed.crew[mate] = {"name": "Mate", "tool": "hands", "activity": "", "riding": 0}
@@ -129,60 +139,54 @@ func test_rules() -> void:
 	Shed.stop()
 
 
-## The roadside spanner (see ToolboxSpares.BOLT_ON_SLOTS): with the toolbox open the front
-## mudguard comes off and the bike's lighter, it's strapped on to take home, panniers bought at
-## the shop go on and bolt up, and the parts a bike can't do without stay a job for the shed.
+## The wrench out of the shed (see ToolboxSpares.BOLT_ON_SLOTS), no toolbox needed: at an
+## adventure's roadside one go takes the front mudguard off and puts it down by the bike, which is
+## lighter, panniers bought at the shop are fitted from beside the bike and bolted up in one go,
+## hands still work as in the shed, the parts a bike can't do without stay a job for the shed,
+## and on an ordinary ride the same works wherever the bike's left.
 func test_spanner() -> void:
 	Shed.start_new("Tester", 82)
 	var me := Shed.me()
 	var bike: int = t._bike_named("Old Faithful")
 	Shed.garage_money = 100000
-	var box := Shed._new_item("alloy_toolbox", 0.0, 0.0, 0.0)
-	Shed._move(box, "bike", bike)
-	Shed.bikes[bike]["slots"]["toolbox"] = box
-	Shed.bikes[bike]["bolted"]["toolbox"] = true
-	Shed.items[box]["contents"] = ["tools", "oil"]
+	check(Shed.item_on(bike, "toolbox") == 0, "Old Faithful has no toolbox")
 	var guard := Shed.item_on(bike, "front_mudguard")
 	check(guard != 0, "Old Faithful has a front mudguard")
 	_at_roadside(bike)
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_mudguard"}).contains("Open the toolbox"), "the toolbox has to be open")
-	Shed.request({"a": "roadside_open", "bike": bike, "open": true})
 	var mass0: float = Shed.build_of(bike).total_mass
-	# The front mudguard off at the roadside.
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_mudguard"}) == "", "the spanners undo the front mudguard")
-	Shed.request({"a": "unbolt", "bike": bike, "slot": "front_mudguard"})
-	Shed.request({"a": "remove", "bike": bike, "slot": "front_mudguard"})
-	check(Shed.item_on(bike, "front_mudguard") == 0 and Shed.held_by(me) == guard, "the front mudguard off, in your hands")
-	var lighter: float = Shed.build_of(bike).total_mass
-	check(lighter < mass0 - 0.1, "the bike's lighter without it (%.2f kg off)" % (mass0 - lighter))
-	check(Shed.is_complete(bike) and Shed.missing_slots(bike).is_empty(), "and still complete: it rides without one")
-	Shed.request({"a": "cargo_strap", "bike": bike})
-	check(Shed.held_by(me) == 0 and FuelShop.cargo_of(bike).size() == 1, "strapped on to take home")
+	# The front mudguard off at the roadside, in one go.
+	var off := {"a": "spanner_off", "bike": bike, "slot": "front_mudguard"}
+	check(Shed.check(me, off) == "", "the wrench takes the front mudguard off, no toolbox (%s)" % Shed.check(me, off))
+	Shed.request(off)
+	check(Shed.item_on(bike, "front_mudguard") == 0 and Shed.held_by(me) == 0, "the front mudguard off")
+	check(FuelShop.cargo_of(bike).size() == 1 and str(FuelShop.cargo_of(bike)[0]["kind"]) == "front_mudguard", "and down by the bike")
+	check(Shed.is_complete(bike) and Shed.missing_slots(bike).is_empty(), "still complete: it rides without one")
 	check(Shed.check(me, {"a": "mount", "bike": bike}) == "", "and it can be ridden off")
-	# Other bolt-on parts it rides without: the tail unit and the headlight come off too.
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "tail"}) == "", "the tail unit can come off")
+	# Hands work too, as in the shed.
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "tail"}) == "", "the tail unit can be unbolted")
 	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "headlight"}) == "", "and the headlight")
 	# What it can't do without stays on.
 	for slot in ["engine", "frame", "front_wheel", "rear_tyre", "tank", "saddle", "fork", "shock", "handlebars", "exhaust", "gearbox"]:
 		check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": slot}).contains("job for the shed"), "the %s is a job for the shed" % slot)
+		check(Shed.check(me, {"a": "spanner_off", "bike": bike, "slot": slot}).contains("job for the shed"), "the wrench won't take the %s off" % slot)
 	# The Rig built fit (BikeRig.part_tier) has its say: a bike can't do without its tank.
 	check(ToolboxSpares.rig_says(bike, "tank", "none").ends_with("That's a job for the shed.") and ToolboxSpares.rig_says(bike, "mirrors", "none") == "",
 		"the rig's fit call is asked: %s" % ToolboxSpares.rig_says(bike, "tank", "none"))
-	# Panniers bought at the shop, off the straps and fitted.
-	var panniers := ""
-	for id in PartsDB.by_kind["panniers"]:
-		if FuelShop.carry_reason(bike, str(id)) == "":
-			panniers = str(id)
-			break
+	# Panniers bought at the shop, fitted from beside the bike and bolted up in one go.
+	var panniers := str(PartsDB.by_kind["panniers"][0])
 	Shed.request({"a": "shop_buy", "part": panniers, "bike": bike})
-	Shed.request({"a": "cargo_take", "bike": bike, "index": 1, "part": panniers})
-	check(Shed.held_by(me) != 0, "the panniers off the straps")
-	var why := Shed.check(me, {"a": "install", "bike": bike, "slot": "panniers"})
-	check(why == "", "they fit at the roadside (%s)" % why)
-	Shed.request({"a": "install", "bike": bike, "slot": "panniers"})
-	Shed.request({"a": "bolt", "bike": bike, "slot": "panniers"})
+	check(FuelShop.cargo_of(bike).size() == 2, "the panniers put down by the bike")
+	var on := {"a": "spanner_on", "bike": bike, "index": 1, "part": panniers}
+	check(Shed.check(me, on) == "", "they fit at the roadside (%s)" % Shed.check(me, on))
+	check(Shed.check(me, {"a": "spanner_on", "bike": bike, "index": 1, "part": "nothing"}) != "", "the part has to be the one asked for")
+	Shed.request(on)
 	check(PartsDB.kind_of(str(Shed.items.get(Shed.item_on(bike, "panniers"), {}).get("part", ""))) == "panniers" and Shed.is_bolted(bike, "panniers"),
 		"fitted and bolted up")
+	check(FuelShop.cargo_of(bike).size() == 1, "only the mudguard left by the bike")
+	check(Shed.build_of(bike).total_mass < mass0 + FuelShop.part_kg(panniers) + 0.5, "weights add up")
+	# An engine by the bike won't go on with the wrench.
+	Shed.request({"a": "shop_buy", "part": "twin_700", "bike": bike})
+	check(Shed.check(me, {"a": "spanner_on", "bike": bike, "index": 1, "part": "twin_700"}) != "", "an engine's a job for the shed")
 	check(Shed.check(me, {"a": "mount", "bike": bike}) == "", "ready to ride")
 	# Home: the mudguard's in the delivery area, nothing lost.
 	var loose := func() -> int:
@@ -194,6 +198,21 @@ func test_spanner() -> void:
 	var before: int = loose.call()
 	Shed.request({"a": "adventure_end"})
 	check(int(loose.call()) == before + 1 and FuelShop.cargo_of(bike).is_empty(), "home: the front mudguard's in the delivery area")
+	# An ordinary ride: the same wherever it's left.
+	Shed.bikes[bike]["xf"] = Transform3D(Basis(), Vector3(0.0, 0.0, 140.0))
+	Shed.bikes[bike]["rider"] = 0
+	check(not Shed.bike_at_work(bike) and ToolboxSpares.stood_out(bike), "out on the town's road, stood")
+	check(Shed.check(me, {"a": "spanner_off", "bike": bike, "slot": "panniers"}) == "", "the wrench takes the panniers off out here too")
+	Shed.request({"a": "spanner_off", "bike": bike, "slot": "panniers"})
+	check(Shed.item_on(bike, "panniers") == 0 and FuelShop.cargo_of(bike).size() == 1, "off and down by the bike")
+	Shed.request({"a": "cargo_take", "bike": bike, "index": 0, "part": panniers})
+	check(Shed.held_by(me) != 0, "picked up by hand")
+	Shed.request({"a": "cargo_strap", "bike": bike})
+	check(Shed.held_by(me) == 0 and FuelShop.cargo_of(bike).size() == 1, "and put back down")
+	# Ridden off, the panniers are left behind, gone.
+	var n_items := Shed.items.size()
+	Shed.request({"a": "mount", "bike": bike})
+	check(Shed.riding(me) == bike and FuelShop.cargo_of(bike).is_empty() and Shed.items.size() == n_items, "ridden off, the panniers left behind")
 	Shed.stop()
 
 
@@ -260,18 +279,17 @@ func test_session() -> void:
 	var mirrors := str(PartsDB.by_kind["mirrors"][0])
 	pc._show_kind("mirrors")
 	pc._show_part(mirrors)
-	check(pc._order.text.begins_with("Buy it") and pc._order.text.contains("strapped on Old Faithful"), "Buy: strapped on the bike (%s)" % pc._order.text)
+	check(pc._order.text.begins_with("Buy it") and pc._order.text.contains("next to Old Faithful"), "Buy: next to the bike (%s)" % pc._order.text)
 	pc.order()
 	await _ticks(3)
-	check(FuelShop.cargo_of(faithful).size() == 1, "bought and strapped on")
+	check(FuelShop.cargo_of(faithful).size() == 1, "bought and put by the bike")
 	pc._show_kind("engine")
 	pc._show_part("twin_700")
-	check(pc._order.text.contains("sent to the shed"), "an engine's sent to the shed (%s)" % pc._order.text)
+	check(pc._order.text.contains("next to Old Faithful"), "an engine goes by the bike too (%s)" % pc._order.text)
 	var engines := Shed.items.values().filter(func(it): return str(it["part"]) == "twin_700").size()
 	pc.order()
 	await _ticks(3)
-	check(Shed.items.values().filter(func(it): return str(it["part"]) == "twin_700").size() == engines + 1 and FuelShop.cargo_of(faithful).size() == 1,
-		"the engine's at home, not on the bike")
+	check(FuelShop.cargo_of(faithful).size() == 2, "the engine's by the bike")
 	pc._search.text = "mirror"
 	pc._refresh_list()
 	var shed_hits := 0
@@ -281,26 +299,46 @@ func test_session() -> void:
 	check(shed_hits == 0, "the shop's search finds bike parts only")
 	pc.close_computer()
 	check(not pc.visible and pc.shop.is_empty() and pc._bike_btn.visible and pc._head_title.text == "PARTS COMPUTER", "closed, it's the shed's parts computer again")
-	# At the bike: take the mirrors off the straps, then strap them back on.
+	# At the bike: the wrench's second button fits the mirrors; hands pick the engine up and put it down.
 	w.place(Transform3D(Basis(), Roadside.xf_in(trip.world, Roadside.spot_of(faithful)).origin + Vector3(1.0, 0.05, 0.0)))
-	w.tool = "hands"
+	var old_mirrors := Shed.item_on(faithful, "mirrors")
+	if old_mirrors != 0:
+		w.tool = "wrench"
+		w.target = {"kind": "part", "bike": faithful, "slot": "mirrors", "roadside": true}
+		w._make_plan()
+		check(str(w.plan.get("action", {}).get("a", "")) == "spanner_off" and w.plan["blocked"] == "", "the wrench on the old mirrors: take them off")
+		Shed.request(w.plan["action"])
+		await _ticks(2)
+		check(Shed.item_on(faithful, "mirrors") == 0 and FuelShop.cargo_of(faithful).size() == 3, "off and down by the bike")
+	w.tool = "wrench"
+	w.cargo_pick = 0
 	w.target = {"kind": "part", "bike": faithful, "slot": "tail", "roadside": true}
 	w._make_plan()
-	check(str(w.alt_plan.get("action", {}).get("a", "")) == "cargo_take" and w.alt_plan["blocked"] == "", "empty-handed at the bike: the second button takes it off the straps")
+	check(str(w.alt_plan.get("action", {}).get("a", "")) == "spanner_on" and w.alt_plan["blocked"] == "",
+		"the wrench's second button fits the new mirrors from beside the bike (%s)" % str(w.alt_plan.get("blocked", "")))
 	var info := "\n".join(w.roadside_lines(faithful, "tail"))
-	check(info.contains("Strapped on") and info.contains(PartsDB.part_name(mirrors)), "the part info lists what's strapped on")
+	check(info.contains("By the bike") and info.contains(PartsDB.part_name(mirrors)), "the part info lists what's by the bike")
 	Shed.request(w.alt_plan["action"])
 	await _ticks(2)
-	check(Shed.held_by(me) != 0 and FuelShop.cargo_of(faithful).is_empty(), "the mirrors in your hands")
+	check(str(Shed.items.get(Shed.item_on(faithful, "mirrors"), {}).get("part", "")) == mirrors and Shed.is_bolted(faithful, "mirrors"), "the new mirrors fitted and bolted up")
+	w.tool = "hands"
+	w.cargo_pick = 0
+	w.target = {"kind": "part", "bike": faithful, "slot": "tail", "roadside": true}
+	w._make_plan()
+	check(str(w.alt_plan.get("action", {}).get("a", "")) == "cargo_take" and w.alt_plan["blocked"] == "", "empty-handed at the bike: the second button picks it up")
+	Shed.request(w.alt_plan["action"])
+	await _ticks(2)
+	check(Shed.held_by(me) != 0, "picked up")
 	w.target = {"kind": "part", "bike": faithful, "slot": "tail", "roadside": true}
 	w._make_plan()
 	check(str(w.alt_plan.get("action", {}).get("a", "")) == "cargo_strap" and w.alt_plan.get("blocked", "x") == "",
-		"holding them: the second button straps them on")
+		"holding it: the second button puts it down by the bike")
 	if w.alt_plan.is_empty():
 		w.alt_plan = {"action": {"a": "cargo_strap", "bike": faithful}}
 	Shed.request(w.alt_plan["action"])
 	await _ticks(2)
-	check(Shed.held_by(me) == 0 and FuelShop.cargo_of(faithful).size() == 1, "strapped back on")
+	var by_bike := FuelShop.cargo_of(faithful).size()
+	check(Shed.held_by(me) == 0 and by_bike >= 1, "put back down")
 	var view: RoadsideView = null
 	for c in trip.world.get_children():
 		if c is RoadsideView:
@@ -308,10 +346,10 @@ func test_session() -> void:
 	var drawn := false
 	if view != null and view._views.has(faithful):
 		drawn = (view._views[faithful]["node"] as Node).find_child("Cargo0", true, false) != null
-	check(drawn, "the bike's drawn with its load strapped on")
+	check(drawn, "the bike's drawn with what's down by it")
 	main._try_mount(faithful)
 	await _ticks(3)
-	check(main.bike != null, "back on with it strapped on")
+	check(main.bike != null and FuelShop.cargo_of(faithful).is_empty(), "back on, what was by the bike left behind")
 	await _end(main)
 
 

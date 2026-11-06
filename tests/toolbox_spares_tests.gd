@@ -138,16 +138,15 @@ func test_rules() -> void:
 	Shed.request({"a": "dismount", "bike": bike, "xf": Transform3D(Basis(), Vector3(3.0, 0.0, -6000.0)),
 		"roadside": {"x": 100.0, "y": 2.0, "z": -900.0, "yaw": 0.0, "s": 500.0}})
 	check(Roadside.parked(bike), "stood at the roadside")
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}).contains("Open the toolbox"), "the toolbox has to be open to work on it")
-	check(Shed.check(me, {"a": "spare_take", "item": box, "index": 0}).contains("Open the toolbox"), "and to get at the spares")
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}) == "", "the wrench can unbolt the front pads, toolbox shut")
+	check(Shed.check(me, {"a": "spare_take", "item": box, "index": 0}).contains("Open the toolbox"), "the toolbox has to be open to get at the spares")
 	Shed.request({"a": "roadside_open", "bike": bike, "open": true})
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}) == "", "open, the wrench can unbolt the front pads")
 	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "engine"}).contains("job for the shed")
 		and Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_wheel"}).contains("job for the shed")
 		and Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "frame"}).contains("job for the shed"), "but not the engine, a wheel or the frame")
 	check(Shed.check(me, {"a": "toolbox_pack", "item": box, "what": "chain_lube"}).contains("Ride it back"), "kit's still packed in the shed only")
 	Shed.items[box]["contents"] = ["oil", "brake_fluid"]
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}).contains("tool roll"), "no tool roll, no spanners")
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}) == "", "no tool roll in the box: the wrench is your own")
 	Shed.items[box]["contents"] = KIT.duplicate()
 	# Worn pads off and a fresh spare on, all at the roadside.
 	var old_pads := Shed.item_on(bike, "front_pads")
@@ -185,9 +184,9 @@ func test_rules() -> void:
 	check(Shed.item_on(bike, "spark_plugs") != 0 and Shed.is_bolted(bike, "spark_plugs") and Shed.held_by(mate) == 0, "and back in, tight")
 	# Bigger jobs wait for the shed.
 	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "handlebars"}).contains("job for the shed"), "the bars stay on out here")
-	# Shut, it's back to the toolbox's own fixes.
+	# Shut, the wrench still works (Simon, 5 Nov: no toolbox needed).
 	Shed.request({"a": "roadside_open", "bike": bike, "open": false})
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}).contains("Open the toolbox"), "shut, no more spanners")
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}) == "", "shut, the wrench still works")
 	# Saved and loaded, the spares are still in the box.
 	var saved: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
 	Shed.load_state(saved, "Tester")
@@ -196,8 +195,9 @@ func test_rules() -> void:
 	Shed.request({"a": "adventure_end"})
 	Shed.bikes[bike]["xf"] = Transform3D(Basis(), Vector3(0.0, 0.0, 140.0))
 	check(not Shed.bike_at_work(bike) and not Roadside.parked(bike), "out on the town's road, no roadside")
-	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}).contains("Ride it back"), "a normal ride: no spanners on the road")
-	check(Shed.check(me, {"a": "spare_take", "item": box, "index": 0}).contains("Ride it back"), "nor spares out of its toolbox")
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "front_pads"}) == "", "a normal ride: the wrench works on the road too")
+	check(Shed.check(me, {"a": "unbolt", "bike": bike, "slot": "engine"}).contains("job for the shed"), "but the engine's still a job for the shed")
+	check(Shed.check(me, {"a": "spare_take", "item": box, "index": 0}).contains("Ride it back"), "spares come out of its toolbox at an adventure's roadside or the shed")
 	Shed.stop()
 
 
@@ -253,11 +253,11 @@ func test_session() -> void:
 	w = main.walker
 	var old_pads := Shed.item_on(faithful, "front_pads")
 	Shed.items[old_pads]["wear"] = 0.85
-	# The wrench at the pads with the box shut: open it first.
+	# The wrench at the pads with the box shut: it works all the same (no toolbox needed).
 	w.tool = "wrench"
 	w.target = {"kind": "part", "bike": faithful, "slot": "front_pads", "roadside": true}
 	p = w._make_plan()
-	check(str(p.get("action", {}).get("a", "")) == "unbolt" and str(p["blocked"]).contains("Open the toolbox"), "the wrench at the pads: open the toolbox first")
+	check(str(p.get("action", {}).get("a", "")) == "spanner_off" and p["blocked"] == "", "the wrench at the pads: off with them, box shut or not")
 	w.tool = "hands"
 	w.target = {"kind": "part", "bike": faithful, "slot": "toolbox", "roadside": true}
 	Shed.request(w._make_plan()["action"])
@@ -270,17 +270,23 @@ func test_session() -> void:
 	var info := "\n".join(w.roadside_lines(faithful, "toolbox"))
 	check(info.contains("Spare parts") and info.contains("> ") and info.contains("pads"),
 		"the part info lists the spares: %s" % info.replace("\n", " / ").left(200))
-	# The wrench: unbolt the worn pads, hands take them off, into the box.
+	# The wrench: the worn pads off in one go, down by the bike; hands pick them up, into the box.
 	w.tool = "wrench"
 	w.target = {"kind": "part", "bike": faithful, "slot": "front_pads", "roadside": true}
 	p = w._make_plan()
-	check(str(p.get("action", {}).get("a", "")) == "unbolt" and p["blocked"] == "", "the wrench at the pads: unbolt them (%s)" % str(p.get("blocked", "")))
-	Shed.request(p["action"])
-	w.tool = "hands"
-	p = w._make_plan()
-	check(str(p.get("action", {}).get("a", "")) == "remove" and p["blocked"] == "", "hands: take them off")
+	check(str(p.get("action", {}).get("a", "")) == "spanner_off" and p["blocked"] == "", "the wrench at the pads: off with them (%s)" % str(p.get("blocked", "")))
 	Shed.request(p["action"])
 	await _ticks(2)
+	check(Shed.item_on(faithful, "front_pads") == 0 and FuelShop.cargo_of(faithful).size() == 1, "off, down by the bike")
+	w.tool = "hands"
+	w.cargo_pick = 0
+	w.target = {"kind": "part", "bike": faithful, "slot": "tail", "roadside": true}
+	w._make_plan()
+	check(str(w.alt_plan.get("action", {}).get("a", "")) == "cargo_take" and w.alt_plan["blocked"] == "", "hands: pick them up")
+	Shed.request(w.alt_plan["action"])
+	await _ticks(2)
+	old_pads = Shed.held_by(me)
+	check(old_pads != 0 and float(Shed.items[old_pads].get("wear", 0.0)) > 0.5, "the worn pads picked up")
 	check(Shed.held_by(me) == old_pads and Shed.item_on(faithful, "front_pads") == 0, "the worn pads in your hands")
 	w.target = {"kind": "part", "bike": faithful, "slot": "toolbox", "roadside": true}
 	p = w._make_plan()

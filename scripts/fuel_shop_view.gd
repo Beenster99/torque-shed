@@ -3,7 +3,7 @@ extends Node
 ## Your side of a fuel station's shop out on an adventure (see FuelShop for the rules): walk up
 ## to the counter at the kiosk's door (an "adv_counter" node of a "fuel" site, see
 ## AdventureStops.fuel_shop) and {interact} opens the parts computer as the station's shop, what's
-## bought strapped on the bike you left on the forecourt.
+## bought put down next to the bike you left on the forecourt.
 
 ## How close (m) you have to be to the counter.
 const REACH := 2.5

@@ -12342,8 +12342,9 @@ func _test_headlight_sequence() -> void:
 	await _done(r)
 
 
-## Away from the shed a bike is just for riding: no tools, no parts, no inspecting. Left out
-## there, the recovery truck brings it back to the yard for a small fee.
+## Away from the shed a bike is mostly for riding: the wrench only does the bolt-on parts it rides
+## without (Simon, 5 Nov; see ToolboxSpares), no other tools, no inspecting. Left out there, the
+## recovery truck brings it back to the yard for a small fee.
 func _test_road_bike_rules() -> void:
 	Shed.start_new("Tester", 7)
 	var me := Shed.me()
@@ -12356,8 +12357,9 @@ func _test_road_bike_rules() -> void:
 	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Vector3(150.0, 2.0, 20.0))
 	check(not Shed.bike_at_work(faithful) and Shed.abandoned_bikes() == [faithful], "left out on the road it's abandoned")
 	var why := Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "exhaust"})
-	check(why.contains("ride"), "out there the wrench won't touch it (%s)" % why)
-	for a in ["bolt", "remove", "install", "adjust_chain", "tune", "geo_save"]:
+	check(why.contains("job for the shed"), "out there the wrench won't touch its exhaust (%s)" % why)
+	check(Shed.check(me, {"a": "spanner_off", "bike": faithful, "slot": "front_mudguard"}) == "", "but it takes the front mudguard off")
+	for a in ["bolt", "remove", "adjust_chain", "tune", "geo_save"]:
 		check(Shed.check(me, {"a": a, "bike": faithful, "slot": "exhaust", "key": "chain", "value": 30.0, "geo": {}, "crouched": true}).contains("shed"),
 			"no %s out on the road" % a)
 	var tank := Shed.item_on(faithful, "tank")
@@ -12454,12 +12456,12 @@ func _test_riding_feedback_session() -> void:
 	w._look(0.0, -atan2(eye.y - aim.y, Vector2(eye.x - aim.x, eye.z - aim.z).length()))
 	for i in 5:
 		await get_tree().physics_frame
-	check(int(w.target.get("bike", 0)) == faithful and w.target.get("road", false), "looking at it out there (%s)" % str(w.target))
+	check(int(w.target.get("bike", 0)) == faithful and w.target.get("roadside", false), "looking at it out there (%s)" % str(w.target))
 	w.set_tool("wrench")
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	check(w.plan.is_empty() and w.info.contains("Out on the road") and not w.info.contains("bolted") and not w.info.contains("geometry"),
-		"no wrench work and no part details, just a bike to ride (%s)" % w.info.replace("\n", " / "))
+	check(w.plan.is_empty() and w.info.contains("out on the road") and w.info.contains("job for the shed") and not w.info.contains("geometry"),
+		"no wrench work on its tank out there, no geometry mode (%s)" % w.info.replace("\n", " / "))
 	w.set_tool("hands")
 	main.open_geometry()
 	check(not main.geometry.active, "and no geometry mode")

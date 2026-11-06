@@ -12,13 +12,13 @@ extends RefCounted
 ##
 ## Stopped on an adventure you get off, and the bike stands at the roadside on its stand (drawn
 ## for the whole crew by RoadsideView, with its toolbox open and parts out on a cloth when
-## they're being worked on). You fix it with only what its toolbox holds: each fix needs its kit
-## (the tool roll, a litre of oil), and what gets used up is gone from the box (shown as gone,
-## until it's packed again in the shed). No toolbox, or not the right thing in it, and that can't
-## be fixed here: push the bike (wheel it along on foot), or a mate tows you to the next stop on
-## a strap from their bike.
-## With the toolbox open the crew can also take its spanners to the bike's small parts, and fit
-## the spare parts packed in it: see ToolboxSpares.
+## they're being worked on). The wrench is your own, so a slack chain is tightened with or
+## without a toolbox (Simon, 5 Nov: "I do not need a toolbox"); what's poured in comes out of the
+## toolbox (a litre of oil), and what gets used up is gone from the box (shown as gone, until
+## it's packed again in the shed). No oil in it and that can't be fixed here: push the bike
+## (wheel it along on foot), or a mate tows you to the next stop on a strap from their bike.
+## The wrench takes the bike's bolt-on parts off and fits others, and the spare parts packed in
+## a toolbox come out of it with the toolbox open: see ToolboxSpares.
 ##
 ## Shared state, all in Shed (so the crew see it and it's saved):
 ##   bikes[id]["roadside"]  where a bike was left on this adventure, in the route's frame (the
@@ -51,8 +51,8 @@ const STOP_REACH := 30.0
 const INFO := {
 	"chain_slack": {"name": "Slack chain", "light": "",
 		"symptom": "A slapping and clunking from the back: the chain's gone slack and snatches on and off the throttle.",
-		"hint": "Stop and tighten it: crouch at the chain with the wrench (the tool roll's spanners).",
-		"needs": ["tools"]},
+		"hint": "Stop and tighten it: crouch at the chain with the wrench.",
+		"needs": []},
 	"oil": {"name": "Low oil", "light": "OIL",
 		"symptom": "The oil light's on: it's low on oil. Top it up before the engine suffers for it.",
 		"hint": "Stop and top it up from the toolbox's bottle of oil (hands, at the engine).",
@@ -203,6 +203,8 @@ static func repacked(box: int, what := "") -> void:
 
 ## Why the toolbox can't fix `kind` ("" when it can): no toolbox, or not the right kit in it.
 static func kit_missing(bike_id: int, kind: String) -> String:
+	if needs(kind).is_empty():
+		return ""   # (the wrench is your own)
 	if toolbox_of(bike_id) == 0:
 		return "There's no toolbox on %s, so there's nothing to fix it with out here. Push it, or get a mate to tow you." % str(Shed.bikes[bike_id]["name"])
 	var kit := kit_of(bike_id)

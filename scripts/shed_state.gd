@@ -2468,7 +2468,26 @@ func lift_raised(bike_id: int) -> bool:
 func install_slot(action: Dictionary, item_id: int) -> Dictionary:
 	if not items.has(item_id):
 		return {"error": "You're not holding a part."}
-	var k: String = items[item_id]["kind"]
+	return install_slot_of(action, str(items[item_id]["kind"]), str(items[item_id]["part"]))
+
+
+## Why the part in `slot` can't come off `host` (a bike or an engine) yet because something else
+## is fitted to it ("Take the fairing off first."), or "".
+func parts_on_it(host: Dictionary, slot: String, engine_id := 0) -> String:
+	for dep in PartsDB.dependents(slot):
+		if int(host["slots"].get(dep, 0)) != 0 and not (engine_id == 0 and WHEEL_TYRE.get(slot, "") == dep):
+			return "Take the %s off first." % PartsDB.slot_name(dep).to_lower()
+	# Parts that bolt onto this one as well as their own mounts (fairing-mount mirrors).
+	for other in host["slots"]:
+		var on := int(host["slots"][other])
+		if on != 0 and items.has(on) and PartsDB.part_mounts(str(other), str(items[on]["part"])).has(slot) \
+				and not PartsDB.MOUNTS.get(other, []).has(slot):
+			return "Take the %s off first." % PartsDB.slot_name(str(other)).to_lower()
+	return ""
+
+
+## Where a part of kind `k` (catalogue id `part`) would go, as install_slot: {slot} or {error}.
+func install_slot_of(action: Dictionary, k: String, part: String) -> Dictionary:
 	var candidates := PartsDB.slots_for_kind(k)
 	if candidates.is_empty():
 		return {"error": "That doesn't bolt on anywhere."}
@@ -2488,7 +2507,7 @@ func install_slot(action: Dictionary, item_id: int) -> Dictionary:
 		if int(host["slots"].get(slot, 0)) != 0:
 			continue
 		var ok := true
-		for m in PartsDB.part_mounts(slot, str(items[item_id]["part"])):
+		for m in PartsDB.part_mounts(slot, part):
 			if m == "engine" and on_engine:
 				continue
 			if int(host["slots"].get(m, 0)) == 0:
@@ -2535,13 +2554,13 @@ func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	if a.begins_with("roadside_"):
 		return Roadside.check(peer, action)
-	if a.begins_with("spare_"):
+	if a.begins_with("spare_") or a.begins_with("spanner_"):
 		return ToolboxSpares.check(peer, action)
 	if a.begins_with("shop_") or a.begins_with("cargo_"):
 		return FuelShop.check(peer, action)   # a fuel station's shop, and what's strapped on a bike (see FuelShop)
 	var roadside_job := ToolboxSpares.roadside_check(peer, action)
 	if roadside_job != "":
-		return roadside_job   # working on a bike at the roadside with its toolbox (see ToolboxSpares)
+		return roadside_job   # working on a bike out of the shed with the spanner (see ToolboxSpares)
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
@@ -2642,15 +2661,9 @@ func check(peer: int, action: Dictionary) -> String:
 					return "Your hands are full."
 				if bolted:
 					return "Unbolt it with the wrench first."
-				for dep in PartsDB.dependents(slot):
-					if int(host["slots"].get(dep, 0)) != 0 and not (engine_id == 0 and WHEEL_TYRE.get(slot, "") == dep):
-						return "Take the %s off first." % PartsDB.slot_name(dep).to_lower()
-				# Parts that bolt onto this one as well as their own mounts (fairing-mount mirrors).
-				for other in host["slots"]:
-					var on := int(host["slots"][other])
-					if on != 0 and items.has(on) and PartsDB.part_mounts(str(other), str(items[on]["part"])).has(slot) \
-							and not PartsDB.MOUNTS.get(other, []).has(slot):
-						return "Take the %s off first." % PartsDB.slot_name(str(other)).to_lower()
+				var first := parts_on_it(host, slot, engine_id)
+				if first != "":
+					return first
 		"install":
 			if held == 0:
 				return "You're not holding a part."
@@ -3094,9 +3107,9 @@ func check(peer: int, action: Dictionary) -> String:
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
-				# At an adventure's roadside there's nowhere to put it down: strap it on (see FuelShop).
-				return "Strap the %s on the bike first (look at the bike, {alt_act})." % item_title(held).to_lower() \
-					if Roadside.parked(bike_id) else "Put the part down first."
+				# Out of the shed it goes down by the bike, and comes along with it (see FuelShop).
+				return "Put the %s down by the bike first (look at the bike, {alt_act})." % item_title(held).to_lower() \
+					if ToolboxSpares.stood_out(bike_id) else "Put the part down first."
 			if moving(peer) != 0:
 				return "Let go of what you're pushing first."
 			var missing := missing_slots(bike_id)
@@ -3464,7 +3477,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("roadside_"):
 		_roadside_apply(peer, action)
 		return
-	if str(action.get("a", "")).begins_with("spare_"):
+	if str(action.get("a", "")).begins_with("spare_") or str(action.get("a", "")).begins_with("spanner_"):
 		_spare_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("shop_") or str(action.get("a", "")).begins_with("cargo_"):
@@ -4021,6 +4034,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"mount":
 			if bikes[bike_id].get("stand", "") == "down":
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
+			var by_bike := FuelShop.ride_off(bike_id)   # what's still by the bike is left behind, gone
+			if by_bike != "":
+				text = by_bike if text == "" else text + ". " + by_bike
 			bikes[bike_id]["rider"] = peer
 			bikes[bike_id]["stand"] = ""
 			bikes[bike_id].erase("push")

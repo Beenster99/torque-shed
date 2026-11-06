@@ -88,7 +88,7 @@ var spray_finish := 0       # index into spray_loads(): the paint finishes, then
 var crouched := false
 var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
 var spare_pick := 0         # which of a toolbox's spare parts the second button takes out (the turn keys pick; see ToolboxSpares)
-var cargo_pick := 0         # which of the things strapped on a bike at the roadside the second button takes off (see FuelShop)
+var cargo_pick := 0         # which of the things by a bike out of the shed the second button fits or picks up (see FuelShop)
 ## A one-press action shown with the work prompts, as "F: fill the spray gun's cup" (or ""): what a
 ## tap of the interact key does right now that isn't a hold of either work button.
 var tap_prompt := ""
@@ -281,7 +281,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			pick_spare(-1 if event.is_action_pressed("rotate_left") else 1)
 		elif target.get("roadside", false) and FuelShop.cargo_of(int(target.get("bike", 0))).size() > 1:
-			# Empty-handed at a bike at the roadside: the turn keys pick what comes off its straps.
+			# Empty-handed at a bike out of the shed: the turn keys pick which thing by it to fit or pick up.
 			get_viewport().set_input_as_handled()
 			cargo_pick = posmod(cargo_pick + (-1 if event.is_action_pressed("rotate_left") else 1), FuelShop.cargo_of(int(target["bike"])).size())
 			_plan_key = ""
@@ -869,8 +869,8 @@ func _update_target() -> void:
 		var c: Object = hit["collider"]
 		if c.has_meta("bike") and Shed.bikes.has(int(c.get_meta("bike"))):
 			t = {"kind": "part", "bike": int(c.get_meta("bike")), "slot": str(c.get_meta("slot"))}
-			if Roadside.parked(int(t["bike"])):
-				t["roadside"] = true   # stood at the roadside on an adventure: what its toolbox can fix (see Roadside)
+			if ToolboxSpares.stood_out(int(t["bike"])):
+				t["roadside"] = true   # stood out of the shed: the spanner works on it (see ToolboxSpares, Roadside)
 			elif not Shed.bike_at_work(int(t["bike"])):
 				t["road"] = true   # out on the road: ride it or wheel it, no spanners
 		elif c.has_meta("engine") and Shed.is_engine(int(c.get_meta("engine"))):
@@ -2028,9 +2028,11 @@ func _set_down_plan(key: String) -> Dictionary:
 	return {"action": {"a": "set_down", "top": key, "xf": place}, "time": 0.25, "verb": verb}
 
 
-## At the roadside on an adventure (see Roadside): the fix for what's wrong where the crosshair
-## is, with what the bike's toolbox holds: the wrench tightens a slack chain, hands top up the
-## oil, or open and shut the toolbox.
+## At a bike stood out of the shed (see ToolboxSpares.stood_out; at an adventure's roadside, see
+## Roadside, the fix for what's wrong where the crosshair is comes first: the wrench tightens a
+## slack chain, hands top up the oil, or open and shut the toolbox). The wrench takes a bolt-on
+## part off in one go, putting it down by the bike, and its second button fits the thing picked
+## from beside the bike and bolts it up; hands pick things up from beside the bike.
 func _roadside_plan(held: int) -> Dictionary:
 	if held != 0:
 		if PartsDB.is_fluid(Shed.items[held]["part"]) or tool != "hands":
@@ -2043,16 +2045,17 @@ func _roadside_plan(held: int) -> Dictionary:
 		fit["a"] = "install"
 		var fp := {"action": fit, "time": 1.2, "verb": "fit the " + Shed.item_title(held)}
 		fp["blocked"] = Shed.check(Shed.me(), fit)
-		# The second button straps it on the bike to take home (see FuelShop).
+		# The second button puts it down by the bike: it comes along when it's ridden off (see FuelShop).
 		var strap := {"a": "cargo_strap", "bike": int(target["bike"])}
-		alt_plan = {"action": strap, "time": 1.0, "verb": "strap the %s on the bike" % Shed.item_title(held).to_lower(),
+		alt_plan = {"action": strap, "time": 0.6, "verb": "put the %s down by the bike" % Shed.item_title(held).to_lower(),
 			"blocked": Shed.check(Shed.me(), strap)}
 		return fp
 	var me := Shed.me()
 	var bike := int(target["bike"])
 	var slot := str(target.get("slot", ""))
 	var p := {}
-	for f in Roadside.at_slot(bike, slot):
+	var faults := Roadside.at_slot(bike, slot) if Roadside.parked(bike) else []
+	for f in faults:
 		var kind := str(f["kind"])
 		var a := {"a": "roadside_fix", "bike": bike, "fault": kind}
 		match kind:
@@ -2065,7 +2068,7 @@ func _roadside_plan(held: int) -> Dictionary:
 					p = {"action": a, "time": 3.0, "verb": "top the oil up from the toolbox's bottle"}
 		if not p.is_empty():
 			break
-	if p.is_empty() and tool == "hands" and slot == "toolbox":
+	if p.is_empty() and tool == "hands" and slot == "toolbox" and Roadside.parked(bike):
 		var open := bool(Roadside.spot_of(bike).get("open", false))
 		p = {"action": {"a": "roadside_open", "bike": bike, "open": not open}, "time": 0.5,
 			"verb": "shut the toolbox" if open else "open the toolbox and lay the kit out"}
@@ -2076,20 +2079,31 @@ func _roadside_plan(held: int) -> Dictionary:
 			spare_pick = clampi(spare_pick, 0, spares.size() - 1)
 			alt_plan = _spare_take_plan(box, spare_pick)
 	var cargo := FuelShop.cargo_of(bike)
-	if alt_plan.is_empty() and not cargo.is_empty() and (slot != "toolbox" or tool != "hands"):
-		# Empty-handed: the second button takes what the turn keys pick off the bike's straps.
+	if alt_plan.is_empty() and not cargo.is_empty() and (slot != "toolbox" or tool != "hands") and tool in ["hands", "wrench"]:
+		# Empty-handed: the second button fits (wrench) or picks up (hands) what the turn keys pick
+		# from beside the bike.
 		cargo_pick = clampi(cargo_pick, 0, cargo.size() - 1)
-		var take := {"a": "cargo_take", "bike": bike, "index": cargo_pick, "part": str(cargo[cargo_pick].get("part", ""))}
-		alt_plan = {"action": take, "time": 1.0, "verb": "take the %s off the straps%s" % [FuelShop.cargo_name(cargo[cargo_pick]).to_lower(),
-			" (%s: pick another)" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""], "blocked": Shed.check(me, take)}
-	if p.is_empty() and Roadside.at_slot(bike, slot).is_empty() and ToolboxSpares.roadside_slot(slot) and Shed.item_on(bike, slot) != 0:
-		# Nothing wrong here the toolbox's kit fixes: the wrench from its tool roll and your hands
-		# work on the part as in the shed (with the toolbox open; see ToolboxSpares).
+		var what := FuelShop.cargo_name(cargo[cargo_pick]).to_lower()
+		var others := " (%s: pick another)" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""
+		if tool == "wrench":
+			var on := {"a": "spanner_on", "bike": bike, "slot": slot, "index": cargo_pick, "part": str(cargo[cargo_pick].get("part", ""))}
+			alt_plan = {"action": on, "time": 2.0, "verb": "fit the %s from beside the bike and bolt it up%s" % [what, others],
+				"blocked": Shed.check(me, on)}
+		else:
+			var take := {"a": "cargo_take", "bike": bike, "index": cargo_pick, "part": str(cargo[cargo_pick].get("part", ""))}
+			alt_plan = {"action": take, "time": 0.6, "verb": "pick up the %s from beside the bike%s" % [what, others], "blocked": Shed.check(me, take)}
+	if p.is_empty() and faults.is_empty() and ToolboxSpares.roadside_slot(slot) and Shed.item_on(bike, slot) != 0:
+		# Nothing wrong here to fix: the wrench takes the part off in one go and puts it down by
+		# the bike (or bolts up one fitted by hand), and hands work on it as in the shed (see
+		# ToolboxSpares).
 		var a := _where()
 		if tool == "wrench":
-			var bolted := Shed.is_bolted(bike, slot)
-			a["a"] = "unbolt" if bolted else "bolt"
-			p = {"action": a, "time": 1.6, "verb": "unbolt it with the toolbox's spanners" if bolted else "bolt it up"}
+			if Shed.is_bolted(bike, slot):
+				a["a"] = "spanner_off"
+				p = {"action": a, "time": 1.8, "verb": "take the %s off and put it down by the bike" % PartsDB.slot_name(slot).to_lower()}
+			else:
+				a["a"] = "bolt"
+				p = {"action": a, "time": 1.6, "verb": "bolt it up"}
 		elif tool == "hands":
 			a["a"] = "remove"
 			p = {"action": a, "time": 1.0, "verb": "take it off"}
@@ -2119,9 +2133,19 @@ func _spare_take_plan(box: int, pick: int) -> Dictionary:
 ## What the part info says about a bike stood at the roadside: what's wrong with it and how to
 ## fix it, what's in the toolbox (and what's used up), and how to ride, push or get it towed.
 func roadside_lines(bike: int, slot: String) -> Array:
-	var lines := ["%s  ·  at the roadside" % str(Shed.bikes[bike]["name"])]
+	var on_trip := Roadside.parked(bike)
+	var lines := ["%s  ·  %s" % [str(Shed.bikes[bike]["name"]), "at the roadside" if on_trip else "out on the road"]]
 	if slot != "":
 		lines.append(PartsDB.slot_name(slot))
+	if ToolboxSpares.roadside_slot(slot) and Shed.item_on(bike, slot) != 0:
+		lines.append("The wrench takes it off and puts it down by the bike")
+	elif slot != "" and Shed.item_on(bike, slot) != 0:
+		lines.append("A job for the shed: out here the wrench does bolt-on parts it rides without, plugs and pads")
+	if not on_trip:
+		_by_bike_lines(bike, lines)
+		var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike})
+		lines.append("{interact}: ride it" if ride == "" else ride)
+		return lines
 	var wrong := Roadside.active(bike)
 	if wrong.is_empty():
 		lines.append("Nothing wrong with it that you can see.")
@@ -2133,9 +2157,7 @@ func roadside_lines(bike: int, slot: String) -> Array:
 			if missing != "":
 				lines.append(missing)
 	var box := Roadside.toolbox_of(bike)
-	if box == 0:
-		lines.append("No toolbox: nothing to fix it with out here.")
-	else:
+	if box != 0:
 		var have := []
 		var gone := []
 		for k in Roadside.kit_lines(box):
@@ -2149,17 +2171,21 @@ func roadside_lines(bike: int, slot: String) -> Array:
 		if not spares.is_empty():
 			lines.append("Spare parts (%s: pick one):" % _keys("rotate_left", "rotate_right"))
 			lines.append_array(ToolboxSpares.lines(box, spare_pick if slot == "toolbox" else -1).map(func(l): return "  " + str(l)))
-		if Roadside.spot_of(bike).get("open", false) and ToolboxSpares.roadside_slot(slot):
-			lines.append("With the toolbox open: the wrench unbolts and bolts it up, hands take it off and fit a spare or a part off the straps")
-	var cargo := FuelShop.cargo_of(bike)
-	if not cargo.is_empty():
-		lines.append("Strapped on (%s, comes home with it)%s:" % [Units.mass(FuelShop.cargo_kg(bike), 0),
-			"; %s: pick one" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""])
-		lines.append_array(FuelShop.lines(bike, cargo_pick).map(func(l): return "  " + str(l)))
+	_by_bike_lines(bike, lines)
 	var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": bike})
 	lines.append("{interact}: ride it" if ride_on == "" else ride_on)
 	lines.append("Hold {interact}: wheel it along on foot")
 	return lines
+
+
+## What's down by a bike out of the shed (see FuelShop), for the part info.
+func _by_bike_lines(bike: int, lines: Array) -> void:
+	var cargo := FuelShop.cargo_of(bike)
+	if cargo.is_empty():
+		return
+	lines.append("By the bike (left behind if you ride off; wrench {alt_act}: fit it%s):" % [
+		", %s: pick one" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""])
+	lines.append_array(FuelShop.lines(bike, cargo_pick).map(func(l): return "  " + str(l)))
 
 
 ## With a can or bottle in hand: pour it into the tank, engine or brakes (first button), drain

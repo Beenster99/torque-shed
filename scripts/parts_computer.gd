@@ -45,7 +45,7 @@ var _head_title: Label
 var _subtitle: Label
 var _shed_only: Array[Control] = []   # the header's shed things, hidden in a shop
 const SUBTITLE := "Pick a kind of part, then a model. Sort and filter the list below. Orders arrive in boxes outside the roller door."
-const SHOP_SUBTITLE := "Every part for a bike, at the parts computer's prices, paid from the business's account. Boxed and strapped on your bike on the forecourt; too big to carry and it's sent to the shed."
+const SHOP_SUBTITLE := "Every part for a bike, at the parts computer's prices, paid from the business's account. Put down next to your bike on the forecourt, to fit there and then with the wrench."
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell": "Sell"}
@@ -319,7 +319,7 @@ func _ready() -> void:
 			return
 		_refresh_bank()
 		if not shop.is_empty() and _part != "" and section_of(_kind) == "bike":
-			_shop_button(_part)   # (strapped on till the bike's loaded up, then sent to the shed)
+			_shop_button(_part)   # (next to the bike on the forecourt, or sent to the shed with none there)
 		if _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
 			_show_kind(_kind)
 		elif _kind.begins_with("paint:") and str(PaintBay.stock()) != _paint_shown:
@@ -659,7 +659,7 @@ func open() -> void:
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.delivery_place(Vector3(0.25, 0.15, 0.25)).is_empty() else "yes")
 	if not shop.is_empty():
 		var bike := int(shop.get("bike", 0))
-		_status.text = "Strapped on %s when bought (%s on it now)." % [str(Shed.bikes[bike]["name"]), Units.mass(FuelShop.cargo_kg(bike), 0)] \
+		_status.text = "Put down next to %s when bought (%d by it now)." % [str(Shed.bikes[bike]["name"]), FuelShop.cargo_of(bike).size()] \
 			if Shed.bikes.has(bike) else "No bike on the forecourt: what's bought is sent to the shed."
 	_fill_bike_pick()
 	if not Shed.bikes.has(fits_bike):
@@ -700,7 +700,7 @@ func close_computer() -> void:
 	closed.emit()
 
 
-## Opens as the shop at fuel station `station`, what's bought strapped on `bike` (0: sent to the
+## Opens as the shop at fuel station `station`, what's bought put next to `bike` (0: sent to the
 ## shed): only the Bike aisle (see FuelShop).
 func open_shop(station: String, bike: int) -> void:
 	_set_shop({"name": station, "bike": bike})
@@ -723,22 +723,20 @@ func _set_shop(s: Dictionary) -> void:
 		_show_section("bike")
 
 
-## The Buy button for `part` in a shop: its price and where it goes. Returns the bike it's
-## strapped on (0: sent to the shed).
+## The Buy button for `part` in a shop: its price and where it goes. Returns the bike it's put
+## next to (0: sent to the shed).
 func _shop_button(part: String) -> int:
 	var on := shop_bike_for(part)
 	_order.text = "Buy it: %s, %s" % [TvChannels.money_text(Money.buy_price(part, Shed.me())),
-		"strapped on %s" % str(Shed.bikes[on]["name"]) if on != 0 else "sent to the shed"]
+		"put next to %s" % str(Shed.bikes[on]["name"]) if on != 0 else "sent to the shed"]
 	return on
 
 
-## Where the shop puts `part` when it's bought: the bike on the forecourt it's strapped on, or 0
-## to send it to the shed (no bike there, or too much to carry).
-func shop_bike_for(part: String) -> int:
+## Where the shop puts `part` when it's bought: next to the bike on the forecourt, or 0 to send
+## it to the shed (no bike there). Whatever it is (Simon, 5 Nov).
+func shop_bike_for(_part: String) -> int:
 	var bike := int(shop.get("bike", 0))
-	if not Shed.bikes.has(bike) or FuelShop.carry_reason(bike, part) != "":
-		return 0
-	return bike
+	return bike if Shed.bikes.has(bike) else 0
 
 
 func _show_kind(k: String) -> void:
@@ -1036,8 +1034,8 @@ func _fill_part(id: String) -> void:
 		" (Haggler discount)" if cost < Money.part_price(id) else ""]
 	if not shop.is_empty():
 		var on := _shop_button(id)
-		if on == 0 and Shed.bikes.has(int(shop.get("bike", 0))):
-			_desc.text += " " + FuelShop.carry_reason(int(shop["bike"]), id) + " The shop sends it on to the shed."
+		if on != 0:
+			_desc.text += " It's put next to the bike: fit it there, or it's left behind when you ride off."
 	if _kind == "chain_lube":
 		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold {work} to lube it." \
 			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
