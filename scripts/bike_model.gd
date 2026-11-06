@@ -8792,11 +8792,21 @@ func _basis_up(up: Vector3) -> Basis:
 ## Moves wheels, suspension, steering and rider to match the simulation.
 func update_pose(bike: Bike) -> void:
 	update_pose_from(bike.steer, bike.wheels[0]["spin"], bike.wheels[1]["spin"],
-		bike.wheels[0]["compression"], bike.wheels[1]["compression"], bike.body_shift, bike.lean_input)
+		bike.wheels[0]["compression"], bike.wheels[1]["compression"], bike.body_shift, bike.lean_input,
+		bike.get_physics_process_delta_time())
 
 
+## How quickly (s) the rider's body follows the lean and the weight shift asked for. The keys and the stick ask for them
+## at once (a tap on a lean key, or going from one side to the other, is a step), and a body moved there in a single
+## tick jumped the whole rider, and the first-person eye sat on them, several centimetres from one frame to the next
+## (Simon, v0.51.0: "my avatar was flickering ... a little jumpy in the corners").
+const BODY_FOLLOW_TIME := 0.12
+
+
+## `delta` (s) since the last pose eases the rider's body towards `body_shift` and `lean_in` (BODY_FOLLOW_TIME); 0 puts
+## it there at once (a bike only ever posed now and then, or posed afresh).
 func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float, comp_r: float,
-		body_shift: float, lean_in: float) -> void:
+		body_shift: float, lean_in: float, delta := 0.0) -> void:
 	if _build == null:
 		return
 	var wb := _build.wheelbase
@@ -8812,8 +8822,12 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	var to_axle := rear_axle - _pivot
 	_swingarm.rotation.x = -atan2(to_axle.y, to_axle.z)
 	_update_struts()
-	_lean_in = lean_in
-	_body_shift = body_shift
+	if delta > 0.0:
+		_lean_in = RiderStyle.ease_to(_lean_in, lean_in, BODY_FOLLOW_TIME, delta)
+		_body_shift = RiderStyle.ease_to(_body_shift, body_shift, BODY_FOLLOW_TIME, delta)
+	else:
+		_lean_in = lean_in
+		_body_shift = body_shift
 	_apply_body()
 	if not geometry.is_empty():
 		_update_geometry()

@@ -137,7 +137,7 @@ func _process_body(delta: float) -> void:
 		collision_layer = 2   # where they are: solid now, so bikes can bump into each other
 	_last = sb
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
-		lerpf(sa[14], sb[14], f), sb[18], 0.0)
+		lerpf(sa[14], sb[14], f), sb[18], 0.0, delta)
 	# Their rider in their riding style (see BikeModel.update_rider): the lean from the bike's
 	# roll, the braking from how fast it's slowing, with the stop lamp.
 	var fwd_speed := Vector3(sa[7], sa[8], sa[9]).lerp(Vector3(sb[7], sb[8], sb[9]), f).dot(-global_transform.basis.z)
