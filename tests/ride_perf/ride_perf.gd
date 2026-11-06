@@ -7,13 +7,19 @@ extends Node
 ##   tests/ride_perf/ride_perf.sh                          # the Dales and Shodoshima, headless: the main thread's times
 ##   tests/ride_perf/ride_perf.sh --draw                   # drawn (on the processor under xvfb): the draw call counts
 ##   tests/ride_perf/ride_perf.sh --only=dales --metres=3000 --speed=25
+##   tests/ride_perf/ride_perf.sh --only=london --from=3000 --wait=60 --census   # what's drawn in a city, by kind
+##   tests/ride_perf/ride_perf.sh --draw --only=london --from=3000 --wait=60 --bench   # each kind and setting's cost
 ## Headless, nothing is drawn, so its frame times are the game's own work (the spikes); drawn on the processor the frame
 ## times are the software renderer's, so only the counts mean anything there.
 
 const Rides := preload("res://tests/rides.gd")
 
 ## The rides: a bundled region's tour, from how far along it.
-const RIDES := {"dales": {"region": "dales", "from": 1500.0}, "shodoshima": {"region": "shodoshima", "from": 300.0}}
+const RIDES := {"dales": {"region": "dales", "from": 1500.0}, "shodoshima": {"region": "shodoshima", "from": 300.0},
+	# Through the middle of London (Hammersmith, Kensington, Westminster, the City), its towers and all: a city's frame
+	# rate. Its cells are fetched from the world's store the first time (only when asked for: --only=london).
+	"london": {"region": "area:@565_719,566_719", "pins": [[-6811, -13016], [-1300, -13900], [2502, -15353]],
+		"from": 4000.0, "asked": true}}
 ## A frame this much longer than the ride's median is a spike (ms).
 const SPIKE_MS := 12.0
 
@@ -21,6 +27,8 @@ var only: Array = []
 var metres := 3000.0
 var speed := 25.0
 var draw := false
+## Where along the ride to start (m), instead of the ride's own (--from=).
+var from_at := NAN
 var out := "user://ride_perf.json"
 ## A crew of two (ride_perf.sh --crew): "host" or "client", each its own game on this machine; the client rides GAP m
 ## behind the host, and each also measures how smoothly the other's bike is drawn.
@@ -39,6 +47,8 @@ func _ready() -> void:
 			speed = float(a.trim_prefix("--speed="))
 		elif a == "--draw":
 			draw = true
+		elif a.begins_with("--from="):
+			from_at = float(a.trim_prefix("--from="))
 		elif a.begins_with("--out="):
 			out = a.trim_prefix("--out=")
 		elif a.begins_with("--crew="):
@@ -52,7 +62,7 @@ func _ready() -> void:
 	Engine.max_fps = 0
 	var results := {}
 	for id: String in RIDES:
-		if only.is_empty() or only.has(id):
+		if (only.is_empty() and not RIDES[id].get("asked", false)) or only.has(id):
 			results[id] = await _ride(id)
 			print("RIDE PERF %s %s" % [id, JSON.stringify(results[id])])
 	var f := FileAccess.open(out, FileAccess.WRITE)
@@ -66,7 +76,12 @@ func _ride(id: String) -> Dictionary:
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
-	var plan := AdventurePlans.tour(str(spec["region"]))
+	var plan := AdventurePlans.tour(str(spec["region"])) if not spec.has("pins") else \
+		AdventurePlans.clean({"region": spec["region"], "region_hash": "", "pins": spec["pins"], "mode": "main"})
+	if spec.has("pins"):
+		var t_plan := Time.get_ticks_msec()
+		var planned := AdventurePlans.result(plan, true)
+		print("RIDE PERF %s planned in %.1f s: %s" % [id, (Time.get_ticks_msec() - t_plan) / 1000.0, planned.get("error", "ok")])
 	var trip: AdventureTrip = main.trip
 	if crew != "":
 		Settings.player_name = "Perf %s" % crew
@@ -95,7 +110,7 @@ func _ride(id: String) -> Dictionary:
 		got["error"] = "not out on the ride"
 		return await _done(got)
 	var w := trip.world
-	var from := float(spec["from"]) - (GAP if crew == "client" else 0.0)
+	var from := (float(spec["from"]) if is_nan(from_at) else from_at) - (GAP if crew == "client" else 0.0)
 	trip.jump(from - w.distance_of(main.bike.global_position, "own"))
 	# Settled: the land and roads round the start built, as when a rider's been riding a while.
 	var t_settle := Time.get_ticks_msec()
@@ -105,6 +120,13 @@ func _ride(id: String) -> Dictionary:
 		_hold(w, from)
 		await get_tree().process_frame
 		still = still + 1 if Time.get_ticks_usec() - a < 30000 else 0
+	# (--wait=S: held there S seconds more, so the far blocks are in as well)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--wait="):
+			var until := Time.get_ticks_msec() + int(float(a.trim_prefix("--wait=")) * 1000.0)
+			await _until(func():
+				_hold(w, from)
+				return Time.get_ticks_msec() > until, 600.0)
 	got["settle_s"] = snappedf((Time.get_ticks_msec() - t_settle) / 1000.0, 0.1)
 	# A crew sets off together: the host a moment after both have settled, the client as soon as it sees the host go.
 	if crew == "host":
@@ -123,6 +145,9 @@ func _ride(id: String) -> Dictionary:
 			if is_nan(start_s[0]):
 				start_s[0] = rs
 			return rs - float(start_s[0]) > 1.0, 60.0)
+	if OS.get_cmdline_user_args().has("--bench"):
+		got["bench"] = await bench(w, from)
+		return await _done(got)
 	if OS.get_cmdline_user_args().has("--census"):
 		got["census"] = census(main, get_viewport().get_camera_3d())
 	if OS.get_cmdline_user_args().has("--listeners"):
@@ -178,6 +203,59 @@ func _ride(id: String) -> Dictionary:
 		got["them"] = smoothness(them, speed)
 	got["streaming"] = w.timing_text()
 	return await _done(got)
+
+
+## What each thing drawn costs, stood still at `from` (--bench, drawn): the frame's render time on the GPU and its
+## counts as they are, then with each kind of thing hidden or each setting off in turn (and back again).
+func bench(w: AdventureWorld, from: float) -> Array:
+	var vp := get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(vp, true)
+	var hide_named := func(on: bool, pattern: String) -> void:
+		var stack: Array[Node] = [main]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			stack.append_array(n.get_children())
+			if n is GeometryInstance3D and str(n.name).match(pattern):
+				(n as GeometryInstance3D).visible = on
+	var cases := [["as it is", func(_on): pass]]
+	for pat in ["Buildings*", "Near", "Far", "Towers", "Trees_*", "Land*", "Deck_*", "Baked_*"]:
+		cases.append(["hide " + pat, hide_named.bind(pat)])
+	for k: Array in [["gfx_gi", "off", "sdfgi"], ["gfx_shadows", "low", "high"], ["gfx_mirrors", "off", "medium"],
+			["gfx_volumetrics", "off", "high"], ["gfx_ssr", false, true], ["gfx_ssao", false, true], ["gfx_draw_distance", 0.6, 1.0]]:
+		cases.append(["%s %s" % [k[0], k[1]], func(on: bool): Settings.set_graphics(k[0], k[2] if on else k[1])])
+	cases.append(["sun shadow off", _sun_shadow])
+	var out := []
+	for c: Array in cases:
+		(c[1] as Callable).call(false)
+		var row := {"case": c[0]}
+		for i in 4:
+			_hold(w, from)
+			await get_tree().process_frame
+		var gpu := 0.0
+		for i in 2:
+			_hold(w, from)
+			await get_tree().process_frame
+			gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp) / 2.0
+		row["gpu_ms"] = snappedf(gpu, 0.1)
+		row["draws"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		row["prims"] = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+		row["shadow_draws"] = RenderingServer.viewport_get_render_info(vp, RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW,
+			RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		row["shadow_prims"] = RenderingServer.viewport_get_render_info(vp, RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW,
+			RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME)
+		print("BENCH %s" % JSON.stringify(row))
+		out.append(row)
+		(c[1] as Callable).call(true)
+	return out
+
+
+func _sun_shadow(on: bool) -> void:
+	var stack: Array[Node] = [main]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is DirectionalLight3D and (n as DirectionalLight3D).visible:
+			(n as DirectionalLight3D).shadow_enabled = on
 
 
 func _remote_bike() -> Node3D:
@@ -239,12 +317,14 @@ func _until(cond: Callable, seconds: float) -> bool:
 
 
 ## What there is to draw round the camera: for each kind of thing (its node's name without numbers, and its parent's),
-## how many there are within their visibility range (and 600 m), their triangles (a MultiMesh's times its instances) and how many
-## of those cast a shadow, biggest first.
-static func census(root: Node, cam: Camera3D) -> Array:
+## how many are in view (within their visibility range, their box in the camera's frustum), their triangles (a
+## MultiMesh's times its instances), and the triangles of those casting a shadow within `shadow_m` of the camera (what
+## the sun's shadow draws, once for each of its splits that reaches them), biggest first.
+static func census(root: Node, cam: Camera3D, shadow_m := 220.0) -> Array:
 	var by := {}
 	var stack: Array[Node] = [root]
 	var re := RegEx.create_from_string("[-_]?[0-9]+")
+	var planes: Array[Plane] = cam.get_frustum() if cam else [] as Array[Plane]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		for c in n.get_children():
@@ -252,8 +332,11 @@ static func census(root: Node, cam: Camera3D) -> Array:
 		if not n is GeometryInstance3D or not (n as Node3D).is_visible_in_tree():
 			continue
 		var g := n as GeometryInstance3D
-		var d := g.global_position.distance_to(cam.global_position) if cam else 0.0
-		if g.visibility_range_end > 0.0 and d > g.visibility_range_end + 600.0:
+		var box := g.global_transform * g.get_aabb()
+		var d := box.get_center().distance_to(cam.global_position) if cam else 0.0
+		if g.visibility_range_end > 0.0 and d > g.visibility_range_end + g.visibility_range_end_margin:
+			continue
+		if d < g.visibility_range_begin:
 			continue
 		var tris := 0
 		if g is MeshInstance3D and (g as MeshInstance3D).mesh:
@@ -261,23 +344,44 @@ static func census(root: Node, cam: Camera3D) -> Array:
 		elif g is MultiMeshInstance3D and (g as MultiMeshInstance3D).multimesh and (g as MultiMeshInstance3D).multimesh.mesh:
 			var mm := (g as MultiMeshInstance3D).multimesh
 			tris = _tris(mm.mesh) * (mm.visible_instance_count if mm.visible_instance_count >= 0 else mm.instance_count)
-		var key := "%s/%s %s" % [re.sub(str(n.get_parent().name), "", true), re.sub(str(n.name), "", true), n.get_class()]
+		var seen := _in_frustum(box, planes)
+		var near := cam == null or _box_distance(box, cam.global_position) < shadow_m
+		var up := n.get_parent()
+		var where := str(up.name)
+		while where.begins_with("@") and up.get_parent() != null:
+			up = up.get_parent()
+			where = str(up.name) + "/" + where
+		var key := "%s/%s %s" % [re.sub(where, "", true), re.sub(str(n.name), "", true), n.get_class()]
 		var row: Array = by.get(key, [0, 0, 0])
-		row[0] += 1
-		row[1] += tris
-		if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		row[0] += int(seen)
+		row[1] += tris if seen else 0
+		if near and g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 			row[2] += tris
 		by[key] = row
 	var keys := by.keys()
-	keys.sort_custom(func(a, b): return int(by[a][1]) > int(by[b][1]))
+	keys.sort_custom(func(a, b): return int(by[a][1]) + int(by[a][2]) > int(by[b][1]) + int(by[b][2]))
 	var total := [0, 0, 0]
 	for k in keys:
 		for i in 3:
 			total[i] += int(by[k][i])
-	var out := [["all", total]]
-	for k in keys.slice(0, 40):
+	var out := [["all (in view, their triangles, shadow triangles)", total]]
+	for k in keys.slice(0, 30):
 		out.append([k, by[k]])
 	return out
+
+
+static func _in_frustum(box: AABB, planes: Array[Plane]) -> bool:
+	for pl in planes:
+		# (the box's corner furthest along the plane's outward normal: outside when even that one is)
+		var c := box.position + Vector3(box.size.x if pl.normal.x < 0.0 else 0.0, box.size.y if pl.normal.y < 0.0 else 0.0,
+			box.size.z if pl.normal.z < 0.0 else 0.0)
+		if pl.is_point_over(c):
+			return false
+	return true
+
+
+static func _box_distance(box: AABB, p: Vector3) -> float:
+	return (p.clamp(box.position, box.end) - p).length()
 
 
 static func _tris(m: Mesh) -> int:

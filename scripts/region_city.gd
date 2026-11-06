@@ -607,6 +607,9 @@ static func _windows(a: Dictionary, body: Transform3D, w: float, d: float, floor
 		for side in sides:
 			count += maxi(1, int(float(side[2]) / gap)) * (floors - from)
 	var bands := gap <= 0.0 or count > MOST_WINDOWS
+	# (windows drawn one by one are drawn close to only: from further off, the bands of glass a["far"] has, where it has
+	# them, are drawn in their place: see RoadStreamer.FINE_REACH)
+	var far: Dictionary = a.get("far", {}) if not bands else {}
 	for side in sides:
 		var sxf: Transform3D = side[0]
 		var z: float = side[1]
@@ -617,6 +620,8 @@ static func _windows(a: Dictionary, body: Transform3D, w: float, d: float, floor
 			if bands:
 				RegionBuildings._plate(a, sxf, Vector3(0, y, z), Vector2(len - 1.0, wh), WindowLights.mark(glass, sxf * Vector3(0, y, z)))
 				continue
+			if not far.is_empty():
+				RegionBuildings._plate(far, sxf, Vector3(0, y, z), Vector2(len - 1.0, wh), WindowLights.mark(glass, sxf * Vector3(0, y, z)))
 			for k in n:
 				var x := ((float(k) + 0.5) / n - 0.5) * len
 				RegionBuildings._plate(a, sxf, Vector3(x, y - 0.1, z), Vector2(ww + 0.2, wh + 0.2), surround)

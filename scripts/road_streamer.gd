@@ -19,6 +19,15 @@ const TREES_REACH := 900.0
 ## the camera's view and each of the sun's shadow splits then only draw the squares they reach, not every tree and
 ## house of a 512 m block that one corner of it is in (the shadows' many times over).
 const TILES := 2
+## A town's small pieces (each of a building's triangles no side of which is FINE_EDGE m or more: its windows and their
+## surrounds, doors, sills, chimneys, the odds on its roof, a shop's lettering) are drawn only while the camera is
+## within FINE_REACH (m, times the draw distance) of their square of FINE_TILES x FINE_TILES a block, and cast no
+## shadow; past it a street front's floors are drawn as bands of glass instead (RegionCity._windows' "far"), so a city's
+## thousands of windows a mile off aren't drawn one by one (London: some two thirds of what was drawn, Simon 5 Nov:
+## "we were down at 20fps").
+const FINE_EDGE := 3.0
+const FINE_REACH := 350.0
+const FINE_TILES := 4
 
 var world: AdventureWorld
 var net: RoadNet
@@ -156,16 +165,16 @@ func _laid(k: Vector2i) -> RoadBlock:
 		shapes[surf] = StreamPieces.shapes(StreamPieces.split(b.arrays["faces"][surf], RoadBlock.SIZE))
 	b.set_meta("shapes", shapes)
 	if b.arrays.has("buildings"):
-		b.set_meta("building_tiles", tile_soup(b.arrays["buildings"]))
+		b.set_meta("building_tiles", building_tiles(b.arrays["buildings"]))
 	b.set_meta("tree_tiles", tile_lists(b.trees))
 	b.set_meta("roadside_tiles", tile_lists(b.roadside))
 	return b
 
 
-## Which of a block's TILES x TILES squares block-local point `p` is in (0 .. TILES² - 1).
-static func tile_of(p: Vector3) -> int:
-	var n := RoadBlock.SIZE / TILES
-	return clampi(int(p.z / n), 0, TILES - 1) * TILES + clampi(int(p.x / n), 0, TILES - 1)
+## Which of a block's `n` x `n` squares (TILES by default) block-local point `p` is in (0 .. n² - 1).
+static func tile_of(p: Vector3, n := TILES) -> int:
+	var size := RoadBlock.SIZE / n
+	return clampi(int(p.z / size), 0, n - 1) * n + clampi(int(p.x / size), 0, n - 1)
 
 
 ## Triangle soup `a` ({v, n, c}, block-local) cut into the squares its triangles' middles are in: one soup a square.
@@ -173,15 +182,48 @@ static func tile_soup(a: Dictionary) -> Array:
 	var out := []
 	for i in TILES * TILES:
 		out.append(AdventureProps.new_arrays())
+	_cut(a, out, TILES)
+	return out
+
+
+## A block's buildings (`a`, with its "far" bands of glass if it has them) as {shell, fine, far}: the shell (walls, roofs
+## and anything else big) in TILES x TILES squares, the small pieces (see FINE_EDGE) and the far bands in FINE_TILES x
+## FINE_TILES squares.
+static func building_tiles(a: Dictionary) -> Dictionary:
+	var out := {"shell": [], "fine": [], "far": []}
+	for i in TILES * TILES:
+		out["shell"].append(AdventureProps.new_arrays())
+	for i in FINE_TILES * FINE_TILES:
+		out["fine"].append(AdventureProps.new_arrays())
+		out["far"].append(AdventureProps.new_arrays())
+	var v: PackedVector3Array = a["v"]
+	var nrm: PackedVector3Array = a["n"]
+	var col: PackedColorArray = a["c"]
+	var edge := FINE_EDGE * FINE_EDGE
+	for t in range(0, v.size() - 2, 3):
+		var p0 := v[t]
+		var p1 := v[t + 1]
+		var p2 := v[t + 2]
+		var mid := (p0 + p1 + p2) / 3.0
+		var small := p0.distance_squared_to(p1) < edge and p1.distance_squared_to(p2) < edge and p2.distance_squared_to(p0) < edge
+		var o: Dictionary = out["fine"][tile_of(mid, FINE_TILES)] if small else out["shell"][tile_of(mid)]
+		o["v"].append_array([p0, p1, p2])
+		o["n"].append_array([nrm[t], nrm[t + 1], nrm[t + 2]])
+		o["c"].append_array([col[t], col[t + 1], col[t + 2]])
+	if a.has("far"):
+		_cut(a["far"], out["far"], FINE_TILES)
+	return out
+
+
+static func _cut(a: Dictionary, into: Array, n: int) -> void:
 	var v: PackedVector3Array = a["v"]
 	var nrm: PackedVector3Array = a["n"]
 	var col: PackedColorArray = a["c"]
 	for t in range(0, v.size() - 2, 3):
-		var o: Dictionary = out[tile_of((v[t] + v[t + 1] + v[t + 2]) / 3.0)]
+		var o: Dictionary = into[tile_of((v[t] + v[t + 1] + v[t + 2]) / 3.0, n)]
 		o["v"].append_array([v[t], v[t + 1], v[t + 2]])
 		o["n"].append_array([nrm[t], nrm[t + 1], nrm[t + 2]])
 		o["c"].append_array([col[t], col[t + 1], col[t + 2]])
-	return out
 
 
 ## {kind: [transforms]} cut into the squares each stands in: {kind: [[transforms] a square]}.
@@ -317,18 +359,24 @@ func commit(b: RoadBlock, at_once := false) -> Node3D:
 		lmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(lmi)
 	if b.arrays.has("buildings") and not (b.arrays["buildings"]["v"] as PackedVector3Array).is_empty():
-		var tiles: Array = b.get_meta("building_tiles") if b.has_meta("building_tiles") else tile_soup(b.arrays["buildings"])
-		for i in tiles.size():
-			if (tiles[i]["v"] as PackedVector3Array).is_empty():
+		var tiles: Dictionary = b.get_meta("building_tiles") if b.has_meta("building_tiles") else building_tiles(b.arrays["buildings"])
+		var shell: Array = tiles["shell"]
+		for i in shell.size():
+			if (shell[i]["v"] as PackedVector3Array).is_empty():
 				continue
 			var make := func() -> Node:
 				var bmi := MeshInstance3D.new()
 				bmi.name = "Buildings_%d" % i
-				bmi.mesh = AdventureProps.to_mesh(tiles[i])
+				bmi.mesh = AdventureProps.to_mesh(shell[i])
 				bmi.material_override = WindowLights.material()   # (their windows lit after dark)
 				return bmi
 			# (a town's houses are made into meshes a square a frame, over the frames after: see StreamPieces)
 			_put(node, make, at_once or solid_now)
+		var reach := FINE_REACH * clampf(Settings.gfx_draw_distance, 0.5, 2.0)
+		for i in FINE_TILES * FINE_TILES:
+			if (tiles["fine"][i]["v"] as PackedVector3Array).is_empty() and (tiles["far"][i]["v"] as PackedVector3Array).is_empty():
+				continue
+			_put(node, fine_square.bind(tiles["fine"][i], tiles["far"][i], reach, "Windows_%d" % i), at_once or solid_now)
 	for l: Dictionary in b.arrays.get("labels", []):
 		var label := Label3D.new()
 		label.text = str(l["text"])
@@ -415,6 +463,37 @@ static func _signals(s: Dictionary) -> Node:
 	sig.add_child(pmi)
 	sig.add_child(sbody)
 	return sig
+
+
+## A square's small pieces (`fine`: drawn within `reach` of the camera) and its far bands of glass (`far`: from there
+## on), under a node named `name`. Both are culled and ranged by the same box, so one takes over from the other at once.
+static func fine_square(fine: Dictionary, far: Dictionary, reach: float, name: String) -> Node:
+	var holder := Node3D.new()
+	holder.name = name
+	var meshes: Array[ArrayMesh] = []
+	var box := AABB()
+	for part: Dictionary in [fine, far]:
+		var m: ArrayMesh = AdventureProps.to_mesh(part) if not (part["v"] as PackedVector3Array).is_empty() else null
+		if m != null:
+			box = m.get_aabb() if meshes.all(func(x): return x == null) else box.merge(m.get_aabb())
+		meshes.append(m)
+	for k in 2:
+		if meshes[k] == null:
+			continue
+		meshes[k].custom_aabb = box
+		var mi := MeshInstance3D.new()
+		mi.name = "Near" if k == 0 else "Far"
+		mi.mesh = meshes[k]
+		mi.material_override = WindowLights.material()   # (lit after dark, as the buildings' walls)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.set_meta("no_gi", true)   # (too small to bounce light: Lighting leaves them out of the GI)
+		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+		if k == 0:
+			mi.visibility_range_end = reach
+		else:
+			mi.visibility_range_begin = reach
+		holder.add_child(mi)
+	return holder
 
 
 ## Puts `make`'s node (made now or when its turn comes) into block `node`: `now`, or over the next frames (StreamPieces).
