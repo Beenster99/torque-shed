@@ -4034,7 +4034,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"mount":
 			if bikes[bike_id].get("stand", "") == "down":
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
-			var by_bike := FuelShop.ride_off(bike_id)   # what's by the bike comes along, or goes on to the shed
+			var by_bike := FuelShop.ride_off(bike_id)   # what's still by the bike is left behind, gone
 			if by_bike != "":
 				text = by_bike if text == "" else text + ". " + by_bike
 			bikes[bike_id]["rider"] = peer
@@ -4066,8 +4066,6 @@ func _apply(peer: int, action: Dictionary) -> void:
 				if deck != null:
 					bikes[bike_id]["roadside"]["deck"] = deck   # (left on a ferry's deck: it goes where the boat goes)
 			_park(bike_id)
-			if not Adventure.active() and bike_at_work(bike_id) and FuelShop.unload(bike_id) > 0:
-				_tell(peer, "What came home with %s is in the delivery area." % str(bikes[bike_id]["name"]), true)
 			if bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over. Fit a side stand."
 			elif showroom_spot_of(bike_id) >= 0:

@@ -261,7 +261,7 @@ static func spanner_apply(peer: int, action: Dictionary) -> String:
 			Shed._xp(peer, "remove", 1.0, "item:%d" % item)
 			var name := PartsDB.part_name(str(Shed.items[item]["part"]))
 			FuelShop._strap(bike, item)
-			return "Took the %s off: it's by the bike, and comes along when you ride off." % name.to_lower()
+			return "Took the %s off: it's by the bike (ride off and it's left behind)." % name.to_lower()
 		"spanner_on":
 			var c: Array = FuelShop.cargo_of(bike).duplicate()
 			var i := int(action.get("index", 0))

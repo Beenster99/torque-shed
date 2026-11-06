@@ -9,28 +9,24 @@ extends RefCounted
 ## What's bought is put down next to the bike stood on the forecourt (the bike you came in on),
 ## whatever it is (Simon, 5 Nov: "whatever I buy is put next to my bike"): fit it there and then
 ## with the wrench (see ToolboxSpares, "spanner_on"), or pick it up with your hands. What's by a
-## bike is its "cargo", and so is what the wrench takes off it out of the shed. When the bike's
-## ridden off it comes along strapped on (its weight counts), all but what's too big and heavy
-## to carry on a bike (an engine, a frame), which is sent on to the shed's delivery area (see
-## ride_off). Home again, it all goes in the delivery area. Nothing bought, and nothing taken off
-## a bike out of the shed, is ever lost. With nobody on the forecourt it's sent on to the shed.
+## bike is its "cargo", and so is what the wrench takes off it out of the shed. Ride off and
+## whatever's still by the bike is left behind, gone for good (Simon, 6 Nov: "riding off leaves
+## everything behind - which is deleted"; see ride_off). With no bike on the forecourt what's
+## bought is sent on to the shed.
 ##
 ## Everything goes through Shed.request, so the host decides it, every mate sees it and it's
 ## saved. Shared state, in Shed:
-##   bikes[id]["cargo"]   what's by a bike (or strapped on it while it's ridden): item records as
+##   bikes[id]["cargo"]   what's by a bike: item records as
 ##                        they were when put down (part, kind, boxed, rust, wear, colour...),
 ##                        without their id or place, in the order they went down. Picked up or
 ##                        fitted, each is an item again.
 
-## The most one strapped-on part may weigh (kg), and all of them on one bike, when it's ridden off.
-const CARRY_ONE_KG := 25.0
-const CARRY_KG := 40.0
 ## How far from the shop's counter (m) a bike still counts as on the forecourt, to put what's
 ## bought next to.
 const FORECOURT := 40.0
 
 
-## What's strapped on a bike (item records, see the top of this file).
+## What's by a bike (item records, see the top of this file).
 static func cargo_of(bike_id: int) -> Array:
 	var c = Shed.bikes.get(bike_id, {}).get("cargo", [])
 	return c if c is Array else []
@@ -48,19 +44,6 @@ static func cargo_kg(bike_id: int) -> float:
 static func part_kg(part: String) -> float:
 	var p := PartsDB.get_part(part)
 	return float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * float(p.get("cylinders", 2))))
-
-
-## Why `part` can't be strapped on `bike_id` ("" when it can): too heavy for straps, or the
-## bike's loaded up already.
-static func carry_reason(bike_id: int, part: String) -> String:
-	var kg := part_kg(part)
-	var name := PartsDB.part_name(part).to_lower()
-	if kg > CARRY_ONE_KG:
-		return "The %s is too big and heavy to strap on a bike (%s; %s at most)." % [name, Units.mass(kg, 0), Units.mass(CARRY_ONE_KG, 0)]
-	if cargo_kg(bike_id) + kg > CARRY_KG:
-		return "%s is loaded up already (%s strapped on; %s at most)." % [str(Shed.bikes[bike_id]["name"]),
-			Units.mass(cargo_kg(bike_id), 0), Units.mass(CARRY_KG, 0)]
-	return ""
 
 
 ## What a part by the bike is called in the lists: "Touring screen (boxed)".
@@ -182,7 +165,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var held := Shed.held_by(peer)
 			var name := Shed.item_title(held).to_lower()
 			_strap(bike, held)
-			return "Put the %s down by %s: it comes along when you ride off." % [name, str(Shed.bikes[bike]["name"])]
+			return "Put the %s down by %s: ride off and it's left behind." % [name, str(Shed.bikes[bike]["name"])]
 	return ""
 
 
@@ -220,38 +203,19 @@ static func _send_home(item_id: int) -> void:
 
 # ---------------------------------------------------------------------------- riding off, and home again
 
-## The bike's ridden off (host, as it's mounted): what's by it is strapped on, all but what's too
-## big and heavy to carry, or more than the straps take, which is sent on to the shed's delivery
-## area. Returns what to tell the rider ("" when nothing's sent on).
+## The bike's ridden off (host, as it's mounted): whatever's still by it is left behind, gone for
+## good. Returns what to tell the rider ("" when nothing was left).
 static func ride_off(bike_id: int) -> String:
 	var c := cargo_of(bike_id)
 	if c.is_empty():
 		return ""
-	var kept := []
-	var sent := []
-	var kg := 0.0
-	for rec in c:
-		var r: Dictionary = rec
-		var w := part_kg(str(r.get("part", "")))
-		if w <= CARRY_ONE_KG and kg + w <= CARRY_KG:
-			kept.append(r)
-			kg += w
-		else:
-			sent.append(r)
-	Shed.bikes[bike_id]["cargo"] = kept
-	if sent.is_empty():
-		return ""
-	var names := []
-	for r in sent:
-		var rr: Dictionary = (r as Dictionary).duplicate(true)
-		if not PartsDB.is_fluid(str(rr.get("part", ""))):
-			rr["boxed"] = true
-		names.append(PartsDB.part_name(str(rr.get("part", ""))).to_lower())
-		_send_home(_make_item(rr))
-	return "Too much to carry on the bike, so the %s %s sent on to the shed's delivery area" % [", ".join(names), "is" if names.size() == 1 else "are"]
+	var names := c.map(func(r): return PartsDB.part_name(str(r.get("part", ""))).to_lower())
+	Shed.bikes[bike_id].erase("cargo")
+	return "Rode off and left the %s behind" % (", ".join(names.slice(0, names.size() - 1)) + " and " + str(names[-1]) if names.size() > 1 else str(names[0]))
 
 
-## Whatever's strapped on `bike_id` goes in the shed's delivery area (the bike's home). Host only.
+## Whatever's by `bike_id` goes in the shed's delivery area (the adventure's over with it stood at the roadside,
+## or a save's loaded). Host only.
 static func unload(bike_id: int) -> int:
 	var c := cargo_of(bike_id)
 	if c.is_empty():

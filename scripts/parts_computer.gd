@@ -1034,8 +1034,8 @@ func _fill_part(id: String) -> void:
 		" (Haggler discount)" if cost < Money.part_price(id) else ""]
 	if not shop.is_empty():
 		var on := _shop_button(id)
-		if on != 0 and FuelShop.part_kg(id) > FuelShop.CARRY_ONE_KG:
-			_desc.text += " Too big to carry on a bike: fit it there, or it's sent on to the shed when you ride off."
+		if on != 0:
+			_desc.text += " It's put next to the bike: fit it there, or it's left behind when you ride off."
 	if _kind == "chain_lube":
 		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold {work} to lube it." \
 			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."

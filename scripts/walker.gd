@@ -2183,7 +2183,7 @@ func _by_bike_lines(bike: int, lines: Array) -> void:
 	var cargo := FuelShop.cargo_of(bike)
 	if cargo.is_empty():
 		return
-	lines.append("By the bike (comes along when you ride off; wrench {alt_act}: fit it%s):" % [
+	lines.append("By the bike (left behind if you ride off; wrench {alt_act}: fit it%s):" % [
 		", %s: pick one" % _keys("rotate_left", "rotate_right") if cargo.size() > 1 else ""])
 	lines.append_array(FuelShop.lines(bike, cargo_pick).map(func(l): return "  " + str(l)))
 
