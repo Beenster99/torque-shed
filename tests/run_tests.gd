@@ -336,6 +336,7 @@ func _run_all() -> void:
 	print("Riding: camera orbit, ride-by camera, circle burnouts, headlight and fog, bikes left on the road")
 	await _t(&"_test_ride_camera_orbit")
 	await _t(&"_test_ride_smooth_between_ticks")
+	await _t(&"_test_rider_body_eases_with_input")
 	await _t(&"_test_ride_by_camera")
 	await _t(&"_test_circle_burnout")
 	await _t(&"_test_headlight_sequence")
@@ -12146,6 +12147,45 @@ func _test_ride_smooth_between_ticks() -> void:
 	r["root"].queue_free()
 	get_tree().physics_interpolation = was_on
 	get_tree().root.physics_interpolation_mode = root_mode
+
+
+## The rider's body follows a lean or weight shift asked for smoothly, not in a single tick: the keys ask for one at once
+## (a tap, or swapping from one side to the other), and a body put there in a tick jumped the whole rider, and the
+## first-person eye sat on them, several centimetres from one frame to the next (Simon, v0.51.0: "my avatar was
+## flickering ... a little jumpy in the corners").
+func _test_rider_body_eases_with_input() -> void:
+	var r := await ride({}, 4.0, func(b, t): b.throttle = 0.5 if b.speed < 15.0 else 0.15; b.lean_input = 0.7 if t > 2.5 else 0.0)
+	var bike: Bike = r["bike"]
+	var m: BikeModel = bike.model
+	# Over to the other side at once, as the keys do: the body and the eye go across a little each tick.
+	var steps := await _body_steps(bike, func(): bike.lean_input = -0.7)
+	check(steps[0] < 0.01 and steps[1] < 0.015, "swapping sides, the rider's body and eye move at most %.1f, %.1f mm a tick" % [steps[0] * 1000.0, steps[1] * 1000.0])
+	check(steps[2] > 0.015, "and in a moment they're over on the other side (%.0f mm)" % (steps[2] * 1000.0))
+	# Tucking in on the tank the same.
+	steps = await _body_steps(bike, func(): bike.body_shift = 1.0)
+	check(steps[0] < 0.015 and steps[2] > 0.08, "tucking in, the body eases forward (at most %.1f mm a tick, %.0f mm in all)" % [steps[0] * 1000.0, steps[2] * 1000.0])
+	# A bike posed now and then (no time between poses) is still posed there at once.
+	m.update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+	check(is_equal_approx(m._lean_in, 1.0), "posed without a time step, the body goes straight there")
+	r["root"].queue_free()
+
+
+## Rides `bike` on for 0.6 s with `ask` asked each tick: the most the rider's body and eye move in a tick (m), and how
+## far the body went in all.
+func _body_steps(bike: Bike, ask: Callable) -> Array:
+	var m: BikeModel = bike.model
+	var start := m._rider.transform.origin
+	var body := start
+	var eye := m.eye_transform().origin
+	var most := [0.0, 0.0]
+	for i in int(0.6 * Engine.physics_ticks_per_second):
+		ask.call()
+		await get_tree().physics_frame
+		most[0] = maxf(most[0], m._rider.transform.origin.distance_to(body))
+		most[1] = maxf(most[1], m.eye_transform().origin.distance_to(eye))
+		body = m._rider.transform.origin
+		eye = m.eye_transform().origin
+	return [most[0], most[1], body.distance_to(start)]
 
 
 func _test_ride_camera_orbit() -> void:
