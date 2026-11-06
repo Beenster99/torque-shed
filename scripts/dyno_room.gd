@@ -278,6 +278,8 @@ func _update_screen(bike: int) -> void:
 		return
 	_screen_sig = sig
 	screen.show_runs(title, runs, p, live, msg)
+	# Drawn again only when the graph changes (every frame during a run), not every frame it's in view.
+	_screen_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 # ---------------------------------------------------------------------------- building
@@ -323,6 +325,8 @@ func _solid(center: Vector3, size: Vector3, mat: Material) -> StaticBody3D:
 	mi.mesh = bm
 	mi.material_override = mat
 	body.add_child(mi)
+	# The walls and roof hide the yard and the town beyond them from the renderer, as the shed's do.
+	workshop._occluder(body, size)
 	add_child(body)
 	return body
 
@@ -523,7 +527,7 @@ func _build_desk() -> void:
 func _build_screen() -> void:
 	_screen_view = SubViewport.new()
 	_screen_view.size = Vector2i(1280, 720)
-	_screen_view.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	_screen_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 	add_child(_screen_view)
 	screen = DynoGraph.new()
 	screen.size = Vector2(1280, 720)
