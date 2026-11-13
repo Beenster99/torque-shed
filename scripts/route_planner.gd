@@ -20,7 +20,7 @@ const MIN_RADIUS := 10.0
 ## corner stays a corner, every bend a curve as wide as such a road would have, a street's tighter than a main road's.
 ## A class not here takes FAIR_DEFAULT.
 const FAIR := {"motorway": 18.0, "trunk": 16.0, "primary": 13.0, "secondary": 11.0, "tertiary": 9.0, "unclassified": 7.0,
-	"residential": 5.0, "living_street": 4.0, "track": 6.0}
+	"residential": 5.0, "living_street": 4.0, "track": 6.0, "service": 3.0}
 const FAIR_DEFAULT := 7.0
 ## A mapped corner turning more than this (radians) is first rounded into an arc this many times the road's fairing
 ## (_fillet).
@@ -53,25 +53,27 @@ const BRIDGE_REACH := 10.0
 
 ## What a metre of each class of road costs, by the style of ride ("main": the quick way, "scenic": quiet back roads,
 ## "tracks": gravel and tracks where there are any).
+## Service roads (drives, alleys, car park aisles: the world's cells have them from OSM stage 4) cost so much that a route
+## takes one only to reach a pin that lies on it, never as a short cut through a car park.
 const CLASS_COST := {
 	"main": {"motorway": 0.7, "trunk": 0.75, "primary": 0.8, "secondary": 0.9, "tertiary": 1.0, "unclassified": 1.15,
-		"residential": 1.3, "living_street": 1.4, "track": 3.0},
+		"residential": 1.3, "living_street": 1.4, "track": 3.0, "service": 8.0},
 	"scenic": {"motorway": 3.0, "trunk": 2.0, "primary": 1.3, "secondary": 0.95, "tertiary": 0.9, "unclassified": 0.9,
-		"residential": 1.2, "living_street": 1.5, "track": 3.0},
+		"residential": 1.2, "living_street": 1.5, "track": 3.0, "service": 8.0},
 	"tracks": {"motorway": 5.0, "trunk": 3.0, "primary": 2.0, "secondary": 1.4, "tertiary": 1.1, "unclassified": 0.9,
-		"residential": 1.2, "living_street": 1.5, "track": 0.7},
+		"residential": 1.2, "living_street": 1.5, "track": 0.7, "service": 8.0},
 }
 const WIDTH := {"motorway": 7.4, "trunk": 7.4, "primary": 7.4, "secondary": 6.0, "tertiary": 6.0, "unclassified": 4.6,
-	"residential": 4.6, "living_street": 4.6, "track": 3.3}
-const ORDER: Array[String] = ["motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street", "track"]
+	"residential": 4.6, "living_street": 4.6, "track": 3.3, "service": 3.5}
+const ORDER: Array[String] = ["motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street", "track", "service"]
 ## Speed limits (km/h) where the data has none: by class, by country, lower where built up (tools/road_facts.py LIMITS).
 const LIMITS := {
 	"uk": {"motorway": 112, "trunk": 96, "primary": 96, "secondary": 96, "tertiary": 96, "unclassified": 96,
-		"residential": 48, "living_street": 32, "track": 48, "built_up": 48},
+		"residential": 48, "living_street": 32, "track": 48, "service": 24, "built_up": 48},
 	"jp": {"motorway": 100, "trunk": 60, "primary": 60, "secondary": 50, "tertiary": 40, "unclassified": 40,
-		"residential": 30, "living_street": 20, "track": 30, "built_up": 40},
+		"residential": 30, "living_street": 20, "track": 30, "service": 20, "built_up": 40},
 	"world": {"motorway": 110, "trunk": 90, "primary": 80, "secondary": 80, "tertiary": 70, "unclassified": 60,
-		"residential": 40, "living_street": 20, "track": 30, "built_up": 50},
+		"residential": 40, "living_street": 20, "track": 30, "service": 20, "built_up": 50},
 }
 const BUILT_UP_PER_CHUNK := 8
 ## How far (m) buildings are kept from the route, places from it by kind, and landmarks by kind.

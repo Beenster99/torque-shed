@@ -111,6 +111,34 @@ class Rows(unittest.TestCase):
         self.assertTrue(all(len(e["g"]) == 12 for e in rows["edges"]))
         self.assertNotIn("ids", rg.graph_rows(self.graph(), 1))     # a region's rows are as they were
 
+    def test_a_cells_rows_carry_service_roads_numbers_second_names_and_finer_surfaces(self):
+        a684 = seg("A", "B", [(0, 0), (1000, 0)], "primary", "Leyburn Road")
+        a684["routes"] = [{"ref": "A684", "network": None}]
+        welsh = seg("B", "C", [(1000, 0), (2000, 0)], "secondary", "High Street")
+        welsh["names"] = {"primary": "Stryd Fawr", "common": {"en": "High Street", "cy": "Stryd Fawr"}}
+        cobbles = seg("B", "D", [(1000, 0), (1000, 500)], "residential", "Shambles", "sett")
+        drive = seg("D", "E", [(1000, 500), (1100, 500)], "service")
+        drive["subclass"] = "parking_aisle"
+        segs = [a684, welsh, cobbles, drive]
+        # a region (and the adventure's routes) never has service roads; a cell has them, last of its classes
+        self.assertEqual(len(rg.graph_rows(rb.Graph(segs, F), 1)["edges"]), 3)
+        rows = rg.graph_rows(rb.Graph(segs, F, classes=rb.SERVICE_CLASSES, details=True), 1, ids=True,
+                             classes=rg.CELL_CLASSES, details=True)
+        self.assertEqual(rows["classes"][:len(rg.GENERIC)], rg.GENERIC)
+        self.assertEqual(rows["classes"][-1], "service")
+        by = {rows["names"][e["n"]]: e for e in rows["edges"]}
+        self.assertEqual(rows["refs"][by["Route A684"]["r"]], "A684")             # (its label: the number, where no English name)
+        self.assertNotIn("n2", by["Route A684"])
+        self.assertEqual(rows["names"][by["High Street"]["n2"]], "Stryd Fawr")
+        self.assertEqual(rows["surface_details"][by["Shambles"]["sd"]], "paving_stones")
+        self.assertEqual(rows["surfaces"][by["Shambles"]["s"]], "tarmac")    # an older game still reads it as before
+        aisle = next(e for e in rows["edges"] if rows["classes"][e["c"]] == "service")
+        self.assertEqual(rows["subclasses"][aisle["sc"]], "parking_aisle")
+        self.assertNotIn("r", aisle)                                         # nothing to say: left out
+        gravel = seg("X", "Y", [(0, 0), (500, 0)], "tertiary", surface="dirt")
+        g = rg.graph_rows(rb.Graph([gravel], F, details=True), 1, details=True)
+        self.assertEqual((g["surfaces"][g["edges"][0]["s"]], g["surface_details"][g["edges"][0]["sd"]]), ("gravel", "dirt"))
+
     def test_the_grid_of_cells(self):
         self.assertEqual(rg.cell_of(54.3, -1.9), (577, 712))
         self.assertEqual(rg.cell_of(54.3, -2.1), (577, 711))
