@@ -47,9 +47,14 @@ PLACE_KINDS = {"locality": "town", "county": "town", "borough": "town", "macroho
 BUILDING_MAX = 60000
 # Each class's carriageway width (m), as the game lays it (RoutePlanner.WIDTH): the buildings are kept off it.
 ROAD_WIDTH = {"motorway": 7.4, "trunk": 7.4, "primary": 7.4, "secondary": 6.0, "tertiary": 6.0, "unclassified": 4.6,
-              "residential": 4.6, "living_street": 4.6, "track": 3.3}
+              "residential": 4.6, "living_street": 4.6, "track": 3.3, "service": 3.5}
 GENERIC = list(rb.CLASSES)
+# [OSM stage 4] A cell's classes: the same, and service roads last (an older game reads an unknown class as a plain
+# road; the game from stage 4 rides them only to start or finish a journey).
+CELL_CLASSES = list(rb.SERVICE_CLASSES)
 SURFACES = ["tarmac", "gravel"]
+# [OSM stage 4] The finer surfaces (an edge's "sd", 0 none): beside "s", which an older game reads as before.
+SURFACE_DETAILS = [""] + list(rb.SURFACE_DETAILS)
 
 
 CELL_DEG = 0.25             # the world's grid of cells: this many degrees of latitude and of longitude a side
@@ -94,14 +99,19 @@ def simplify(pts, tol):
     return [tuple(p) for p in a[keep]]
 
 
-def graph_rows(graph, min_network=MIN_NETWORK, ids=False):
+def graph_rows(graph, min_network=MIN_NETWORK, ids=False, classes=GENERIC, details=False):
     """The road graph as plain rows: {nodes: [[x, z]], edges: [{a, b, c, s, l, n, o, p}], bans: [[from edge, node, to
     edge]], classes, surfaces, names}.
 
     Networks of fewer than `min_network` junctions are left out (stray bits of road). Nodes and names are numbered in a
     fixed order, so the same data bakes to the same bytes. With `ids` the rows also carry "ids", each node's short id
     (short_id of its Overture connector), and each edge a "g", its segment's: a cell's roads that run on into the next
-    cell are the same nodes and edges there, and the game joins the two by these (RealRegion.stitch)."""
+    cell are the same nodes and edges there, and the game joins the two by these (RealRegion.stitch).
+
+    [OSM stage 4] With `details` (a cell's bake) an edge also has, where the map gives them: "r", its road number (an
+    index into "refs", 0 none), "n2", a second name (Welsh, Gaelic: an index into "names"), "sd", a finer surface (an
+    index into "surface_details") and, for a service road, "sc", what kind (an index into "subclasses": driveway,
+    alley, parking_aisle). An edge without them leaves them out."""
     keep = set()
     seen = set()
     for n0 in sorted(graph.pos):
@@ -113,24 +123,34 @@ def graph_rows(graph, min_network=MIN_NETWORK, ids=False):
             keep |= comp
     node_ids = sorted(keep)
     index = {n: i for i, n in enumerate(node_ids)}
-    names = sorted({e["label"] or "" for e in graph.edges})
+    kept = [e for e in graph.edges if e["a"] in index and e["b"] in index]
+    names = sorted({e["label"] or "" for e in graph.edges} | ({e.get("name2") or "" for e in kept} if details else set()))
+    refs = [""] + sorted({e.get("ref") or "" for e in kept} - {""}) if details else [""]
+    subclasses = [""] + sorted({e.get("sub") or "" for e in kept} - {""}) if details else [""]
     edges = []
     for ei, e in enumerate(graph.edges):
         if e["a"] not in index or e["b"] not in index:
             continue
         mid = simplify(e["pts"], SIMPLIFY_M)[1:-1]
-        row = {"a": index[e["a"]], "b": index[e["b"]], "c": GENERIC.index(e["cls"]), "s": SURFACES.index(e["surface"]),
+        row = {"a": index[e["a"]], "b": index[e["b"]], "c": classes.index(e["cls"]), "s": SURFACES.index(e["surface"]),
                "l": int(e.get("limit") or 0), "n": names.index(e["label"] or ""), "o": int(e.get("oneway", 0)),
                "p": [round(v, 1) for p in mid for v in p], "_ei": ei}
         if ids:
             row["g"] = short_id(e.get("seg") or "")
+        if details:
+            for key, value, table in (("r", e.get("ref"), refs), ("n2", e.get("name2"), names),
+                                      ("sd", e.get("detail"), SURFACE_DETAILS), ("sc", e.get("sub"), subclasses)):
+                if value:
+                    row[key] = table.index(value)
         edges.append(row)
     edges.sort(key=lambda r: (r["a"], r["b"], r["p"][:2]))
     new_index = {r.pop("_ei"): i for i, r in enumerate(edges)}
     bans = sorted([new_index[ef], index[node], new_index[et]] for ef, node, et in graph.bans
                   if ef in new_index and et in new_index and node in index)
     nodes = [[round(graph.pos[n][0], 1), round(graph.pos[n][1], 1)] for n in node_ids]
-    out = {"nodes": nodes, "edges": edges, "bans": bans, "classes": GENERIC, "surfaces": SURFACES, "names": names}
+    out = {"nodes": nodes, "edges": edges, "bans": bans, "classes": list(classes), "surfaces": SURFACES, "names": names}
+    if details:
+        out.update({"refs": refs, "surface_details": SURFACE_DETAILS, "subclasses": subclasses})
     if ids:
         out["ids"] = [short_id(n) for n in node_ids]
     return out
@@ -207,11 +227,12 @@ def bake(args, log=print):
     lat0, lon0 = (args.south + args.north) / 2.0, (args.west + args.east) / 2.0
     frame = rb.Frame(lat0, lon0)
     segments = rb.fetch_segments(args.south, args.west, args.north, args.east, release, log)
-    graph = rb.Graph(segments, frame, set(args.avoid or []))
     cell = getattr(args, "cell", None)
+    # ([OSM stage 4] a cell keeps its service roads, road numbers, second names and finer surfaces)
+    graph = rb.Graph(segments, frame, set(args.avoid or []), rb.SERVICE_CLASSES if cell else rb.CLASSES, details=bool(cell))
     cover_levels = levels.CELL_COVER_LEVELS if cell else levels.COVER_LEVELS
     # (a cell keeps every bit of road: a stub at its edge is part of a network in the next cell)
-    rows = graph_rows(graph, 1, ids=True) if cell else graph_rows(graph)
+    rows = graph_rows(graph, 1, ids=True, classes=CELL_CLASSES, details=True) if cell else graph_rows(graph)
     log("roads: %d junctions, %d roads kept, %d one-way, %d banned turns" % (
         len(rows["nodes"]), len(rows["edges"]), sum(1 for e in rows["edges"] if e["o"]), len(rows["bans"])))
     if not rows["edges"]:

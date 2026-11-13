@@ -18,11 +18,11 @@ import numpy as np
 # Speed limits (km/h) where the data has none: by road class, in the country the road is in; built-up ground is lower.
 LIMITS = {
     "uk": {"motorway": 112, "trunk": 96, "primary": 96, "secondary": 96, "tertiary": 96, "unclassified": 96,
-           "residential": 48, "living_street": 32, "track": 48, "built_up": 48},
+           "residential": 48, "living_street": 32, "track": 48, "service": 24, "built_up": 48},
     "jp": {"motorway": 100, "trunk": 60, "primary": 60, "secondary": 50, "tertiary": 40, "unclassified": 40,
-           "residential": 30, "living_street": 20, "track": 30, "built_up": 40},
+           "residential": 30, "living_street": 20, "track": 30, "service": 20, "built_up": 40},
     "world": {"motorway": 110, "trunk": 90, "primary": 80, "secondary": 80, "tertiary": 70, "unclassified": 60,
-              "residential": 40, "living_street": 20, "track": 30, "built_up": 50},
+              "residential": 40, "living_street": 20, "track": 30, "service": 20, "built_up": 50},
 }
 # Rough boxes: (south, west, north, east).
 REGIONS = {"uk": (49.8, -8.7, 60.9, 1.8), "jp": (24.0, 122.9, 45.6, 146.0)}

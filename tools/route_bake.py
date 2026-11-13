@@ -70,6 +70,17 @@ CLASSES = {
     "track": (3.3, 3.0),
 }
 UNPAVED = {"unpaved", "gravel", "dirt", "ground", "grass", "sand", "mud", "compacted", "fine_gravel", "pebblestone"}
+# [OSM stage 4] Service roads (drives, alleys, car park aisles): baked into the world's cells only (region_bake.py
+# --cell), where the game rides them to start or finish a journey; never in a route or a bundled region.
+SERVICE_CLASSES = dict(CLASSES, service=(3.5, 8.0))
+# The finer surface a road's map gives (region_bake.py's "surface_details"): the raw OpenStreetMap values each stands for.
+SURFACE_DETAILS = {
+    "paving_stones": {"paving_stones", "sett", "cobblestone", "unhewn_cobblestone", "bricks", "paved_stones"},
+    "concrete": {"concrete", "concrete:plates", "concrete:lanes"},
+    "dirt": {"dirt", "ground", "earth", "mud", "grass", "sand", "soil"},
+    "gravel": {"gravel", "fine_gravel", "compacted", "pebblestone", "unpaved"},
+    "metal": {"metal", "metal_grid"},
+}
 GENERIC_NAMES = {"motorway": "Motorway", "trunk": "Trunk road", "primary": "Main road", "secondary": "B road",
                  "tertiary": "Minor road", "unclassified": "Minor road", "residential": "Street",
                  "living_street": "Street", "track": "Track"}
@@ -280,7 +291,7 @@ def fetch_segments(south, west, north, east, release, log=print):
                    filesystem=s3, format="parquet")
     f = ((pc.field("bbox", "xmin") < east) & (pc.field("bbox", "xmax") > west)
          & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south))
-    tb = d.to_table(columns=["id", "geometry", "subtype", "class", "connectors", "road_surface", "road_flags",
+    tb = d.to_table(columns=["id", "geometry", "subtype", "class", "subclass", "connectors", "road_surface", "road_flags",
                              "names", "routes", "speed_limits", "access_restrictions", "prohibited_transitions"], filter=f)
     log("roads: %d segments in the box" % tb.num_rows)
     return tb.to_pylist()
@@ -304,9 +315,9 @@ def segment_label(seg):
     return names.get("primary") or None
 
 
-def segment_kind(seg):
+def segment_kind(seg, classes=CLASSES):
     """(class, surface) of a road segment the adventure rides ("tarmac" or "gravel"), or None."""
-    if seg.get("subtype") != "road" or seg.get("class") not in CLASSES:
+    if seg.get("subtype") != "road" or seg.get("class") not in classes:
         return None
     cls = seg["class"]
     surface = "gravel" if cls == "track" else "tarmac"
@@ -314,6 +325,42 @@ def segment_kind(seg):
         if rule.get("between") is None and str(rule.get("value")) in UNPAVED:
             surface = "gravel"
     return cls, surface
+
+
+def segment_ref(seg):
+    """[OSM stage 4] A road's number ("A684"), or None: the first of its routes with a ref."""
+    for r in seg.get("routes") or []:
+        ref = r.get("ref") if isinstance(r, dict) else None
+        if ref:
+            return str(ref)
+    return None
+
+
+def segment_name2(seg):
+    """[OSM stage 4] A road's second name, or None: its Welsh or Scottish Gaelic name, or its own name where that isn't
+    the English one (kept for the game's later use: signs in two languages)."""
+    names = seg.get("names") or {}
+    label = segment_label(seg)
+    common = _as_dict(names.get("common"))
+    for lang in ("cy", "gd"):
+        v = common.get(lang)
+        if v and str(v) != label:
+            return str(v)
+    primary = names.get("primary")
+    if primary and str(primary) != label and not str(label or "").startswith("Route "):
+        return str(primary)
+    return None
+
+
+def segment_detail(seg):
+    """[OSM stage 4] The finer surface the map gives for the whole of a road (a key of SURFACE_DETAILS), or None."""
+    for rule in seg.get("road_surface") or []:
+        if rule.get("between") is None:
+            v = str(rule.get("value"))
+            for detail, raw in SURFACE_DETAILS.items():
+                if v in raw:
+                    return detail
+    return None
 
 
 def _general(rule):
@@ -395,13 +442,13 @@ def cut_at_connectors(pts, cons):
 class Graph:
     """The ridden roads as a graph: nodes are Overture connectors, edges are road segments."""
 
-    def __init__(self, segments, frame, avoid=()):
+    def __init__(self, segments, frame, avoid=(), classes=CLASSES, details=False):
         self.edges = []     # {a, b, pts [(x, z)] from a to b, cls, surface, label, length, oneway (segment_direction), seg}
         self.pos = {}       # connector id -> (x, z)
         self.adj = {}       # connector id -> [(other id, edge index)]
         self.bans = set()   # (edge arrived by, connector, edge left by): turns the road rules prohibit
         for s in segments:
-            info = segment_kind(s)
+            info = segment_kind(s, classes)
             cons = s.get("connectors") or []
             if info is None or len(cons) < 2 or info[0] in avoid:
                 continue
@@ -426,6 +473,10 @@ class Graph:
                     e = {"a": a, "b": b, "pts": sub, "cls": info[0], "surface": info[1], "label": segment_label(s),
                          "length": length_of(sub), "limit": road_facts.segment_limit(s.get("speed_limits")),
                          "oneway": segment_direction(s), "seg": s.get("id")}
+                    if details:
+                        # ([OSM stage 4] its number, second name, finer surface and, for a service road, what kind)
+                        e.update({"ref": segment_ref(s), "name2": segment_name2(s), "detail": segment_detail(s),
+                                  "sub": str(s.get("subclass") or "") if info[0] == "service" else ""})
                     self.adj.setdefault(a, []).append((b, len(self.edges)))
                     self.adj.setdefault(b, []).append((a, len(self.edges)))
                     self.edges.append(e)
