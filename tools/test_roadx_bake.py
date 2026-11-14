@@ -71,6 +71,10 @@ class RoadxTest(unittest.TestCase):
 
     def test_matched_share(self):
         self.assertEqual(self.baked["matched"], [4, 5])
+        # (a segment of a footway alone is no road's: not counted)
+        osm = rb.OsmCut.read(os.path.join(self.dir, "t.osm"))
+        foot = rb.bake_cell(self.cell[0], self.cell[1], [seg("f", 104, [(54.42, -1.76), (54.4201, -1.76)])], osm, "r")
+        self.assertEqual(foot["matched"], [0, 0])
 
     def test_lanes_lit_and_halves(self):
         a, b = self.row("a"), self.row("b")

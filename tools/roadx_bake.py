@@ -321,6 +321,7 @@ class OsmCut:
         self.ways = {}        # id: (tags, [node id], [(lat, lon)])
         self.nodes = {}       # id: (tags, (lat, lon))
         self.barriers = []    # (kind, [(lat, lon)])
+        self.not_roads = set()   # the ids of ways for walkers and riders (footways, paths, cycleways): not a road's
         self.timestamp = ""
 
     @classmethod
@@ -352,6 +353,8 @@ class OsmCut:
                         out.barriers.append((BARRIERS[barrier], pts))
                     continue
                 if hw not in ROADS and hw != "construction":
+                    if hw:
+                        out.not_roads.add(o.id)
                     continue
                 if way_ids is not None and o.id not in way_ids:
                     continue
@@ -471,6 +474,8 @@ def bake_cell(row, col, segments, osm, release=""):
         wid = way_of(s.get("sources"))
         way = osm.ways.get(wid) if wid is not None else None
         if way is None:
+            if wid in osm.not_roads:
+                seen.discard(g)   # (a footway's: the share matched counts the roads alone)
             continue
         matched += 1
         tags, refs, pts = way
